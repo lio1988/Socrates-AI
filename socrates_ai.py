@@ -433,6 +433,18 @@ class DialogManager:
             icon = ModelConfig.MODELS[model_id]["icon"]
             print(f"  {icon} {model_name}: {score}")
 
+    def display_final_scores(self) -> None:
+        """Display final scores"""
+        print("\n" + "=" * 80)
+        print("📊 ΤΕΛΙΚΟΙ ΣΚΟΡΟΙ")
+        print("=" * 80)
+        sorted_scores = sorted(self.scores.items(), key=lambda x: x[1], reverse=True)
+        for model_id, score in sorted_scores:
+            model_name = ModelConfig.MODELS[model_id]["name"]
+            icon = ModelConfig.MODELS[model_id]["icon"]
+            print(f"  {icon} {model_name}: {score} πόντοι")
+        print("=" * 80)
+
     async def _delay(self) -> None:
         """Add delay based on configured speed"""
         if self.config.speed.delay > 0:
