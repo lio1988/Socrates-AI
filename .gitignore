@@ -1,0 +1,29 @@
+# Environment
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Output
+*.json
+*.md
+dialog_*.txt
+*.log
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
