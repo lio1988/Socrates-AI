@@ -9,6 +9,13 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+# Load .env (if present) BEFORE anything reads os.environ for API keys.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:  # python-dotenv optional; env vars may be set externally
+    pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
