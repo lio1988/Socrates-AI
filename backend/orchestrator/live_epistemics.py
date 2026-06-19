@@ -96,13 +96,14 @@ def record_epistemic_claim(session, model_id: str, text: str, round_num: int) ->
     session.live_claim_ids_by_turn[(round_num, model_id, turn_index)] = claim.claim_id
     session.epistemic_trace.append(
         "Round {round}: {model} proposed claim {claim_id} "
-        "(evidence={evidence}, gaps={gaps}, contradictions={contradictions}).".format(
+        "(evidence={evidence}, gaps={gaps}, contradictions={contradictions}, score={score}).".format(
             round=round_num,
             model=model_id,
             claim_id=claim.claim_id,
             evidence=write_result["evidence_count"],
             gaps=write_result["evidence_gap_count"],
             contradictions=write_result["contradiction_count"],
+            score=round(write_result.get("epistemic_score", 0.0), 3),
         )
     )
     return claim.claim_id

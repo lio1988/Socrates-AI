@@ -15,6 +15,7 @@ from typing import Iterable
 from backend.epistemic.claim import Claim, Evidence
 from backend.epistemic.epistemic_graph import EdgeType, EpistemicGraph, NodeType
 from backend.epistemic.epistemic_state import EpistemicState, IllegalTransition
+from backend.orchestrator.epistemic_scoring import EpistemicScoreBreakdown, EpistemicScoringEngine
 from backend.orchestrator.structured_epistemic_parser import (
     ParsedEpistemicAnswer,
     StructuredEpistemicParser,
@@ -22,6 +23,7 @@ from backend.orchestrator.structured_epistemic_parser import (
 
 
 PARSER = StructuredEpistemicParser()
+SCORER = EpistemicScoringEngine()
 
 
 EVIDENCE_MARKERS = StructuredEpistemicParser.EVIDENCE_MARKERS
@@ -70,7 +72,8 @@ def write_answer_to_graph(session, claim_id: str, model_id: str, text: str, roun
     structured_counts = _attach_structured_nodes(graph, claim, parsed, model_id, round_num)
     contradiction_count = _link_live_contradictions(graph, claim, model_id, round_num)
 
-    _refresh_claim_payload(graph, claim, parsed)
+    score = SCORER.apply_score(graph, claim, parsed)
+    _refresh_claim_payload(graph, claim, parsed, score)
 
     return {
         "claim_id": claim_id,
@@ -79,6 +82,9 @@ def write_answer_to_graph(session, claim_id: str, model_id: str, text: str, roun
         "contradiction_count": contradiction_count + structured_counts["contradictions"],
         "structured_counts": structured_counts,
         "uncertainty_level": parsed.uncertainty_level,
+        "epistemic_score": score.score,
+        "confidence_after": score.confidence_after,
+        "confidence_level": score.confidence_level,
     }
 
 
@@ -336,6 +342,7 @@ def _refresh_claim_payload(
     graph: EpistemicGraph,
     claim: Claim,
     parsed: ParsedEpistemicAnswer | None = None,
+    score: EpistemicScoreBreakdown | None = None,
 ) -> None:
     node = graph.nodes.get(claim.claim_id)
     if node is None:
@@ -365,6 +372,13 @@ def _refresh_claim_payload(
                 "revision_suggestions": len(parsed.revision_suggestions),
             },
             "structured_parser": parsed.to_dict(),
+        })
+
+    if score is not None:
+        payload.update({
+            "epistemic_score": score.to_dict(),
+            "confidence_level": score.confidence_level,
+            "scoring_engine_version": EpistemicScoringEngine.VERSION,
         })
 
     node.payload = payload
