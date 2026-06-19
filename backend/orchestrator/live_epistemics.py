@@ -1,4 +1,4 @@
-"""Live CED integration helpers for the dialog pipeline.
+﻿"""Live CED integration helpers for the dialog pipeline.
 
 This module makes the running dialog claim-centric. The old dialogue history is
 kept as a trace, but the live source of truth becomes ``session.epistemic_graph``:
@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Optional
 
 from backend.config import EmergenceThresholds
+from backend.orchestrator.ced_live_writer import write_answer_to_graph
 from backend.epistemic.claim import Claim as EpistemicClaim
 from backend.epistemic.epistemic_graph import EpistemicGraph, EdgeType, NodeType
 from backend.epistemic.epistemic_state import EpistemicState, IllegalTransition
@@ -32,6 +33,9 @@ def _sync_claim_node(graph: EpistemicGraph, claim: EpistemicClaim) -> None:
     payload.update({
         "state": claim.state.value,
         "confidence": round(claim.confidence, 3),
+        "evidence_count": len(claim.evidence),
+        "evidence_quality": round(claim.evidence_quality, 3),
+        "contradiction_count": len(claim.contradictions),
         "has_been_challenged": claim.has_been_challenged,
         "revision_count": len(claim.revision_history),
     })
@@ -78,15 +82,28 @@ def record_epistemic_question(session, model_id: str, text: str, round_num: int)
 
 
 def record_epistemic_claim(session, model_id: str, text: str, round_num: int) -> str:
-    """Store a substantive model response as a first-class CED Claim."""
+    """Store a substantive model response as a first-class CED Claim and enrich it live."""
     graph = ensure_live_epistemics(session)
     claim = EpistemicClaim(text=text[:400], author_model=model_id, confidence=0.5)
     graph.add_claim(claim)
     _sync_claim_node(graph, claim)
+
+    write_result = write_answer_to_graph(session, claim.claim_id, model_id, text, round_num)
+    _sync_claim_node(graph, claim)
+
     session.live_claim_ids_by_round[round_num] = claim.claim_id
-    session.live_claim_ids_by_turn[(round_num, model_id, len(session.history))] = claim.claim_id
+    turn_index = len(getattr(session, "history", []))
+    session.live_claim_ids_by_turn[(round_num, model_id, turn_index)] = claim.claim_id
     session.epistemic_trace.append(
-        f"Round {round_num}: {model_id} proposed claim {claim.claim_id}."
+        "Round {round}: {model} proposed claim {claim_id} "
+        "(evidence={evidence}, gaps={gaps}, contradictions={contradictions}).".format(
+            round=round_num,
+            model=model_id,
+            claim_id=claim.claim_id,
+            evidence=write_result["evidence_count"],
+            gaps=write_result["evidence_gap_count"],
+            contradictions=write_result["contradiction_count"],
+        )
     )
     return claim.claim_id
 
@@ -239,3 +256,4 @@ def produce_current_best_explanation(session) -> CurrentBestExplanation:
     )
     session.current_best_explanation = cbe
     return cbe
+
