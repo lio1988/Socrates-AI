@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<title>Socrates AI — Dialog Viewer</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #181b24; --border: #2a2e3a;
+    --text: #e6e8ee; --muted: #8b92a5; --accent: #8b5cf6;
+    --socratic: #f59e0b; --elenchus: #ef4444; --reflection: #10b981;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: .9rem; margin-bottom: 20px; }
+  .panel { background: var(--panel); border:1px solid var(--border);
+    border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  label { display:block; font-size:.8rem; color:var(--muted); margin-bottom:4px; }
+  input, select { width:100%; background:#0f1117; border:1px solid var(--border);
+    color:var(--text); border-radius:8px; padding:9px 10px; font-size:.95rem; }
+  .row { display:flex; gap:12px; }
+  .row > div { flex:1; }
+  button { background:var(--accent); color:white; border:none; border-radius:8px;
+    padding:10px 18px; font-size:.95rem; font-weight:600; cursor:pointer; margin-top:14px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.secondary { background:transparent; border:1px solid var(--border); color:var(--text); }
+  .status-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    font-size:.85rem; color:var(--muted); margin-bottom:10px; }
+  .badge { padding:3px 9px; border-radius:20px; font-size:.78rem; font-weight:600; }
+  .badge.running { background:#3b2f0a; color:#fbbf24; }
+  .badge.completed { background:#0a3b1d; color:#34d399; }
+  .badge.error { background:#3b0a0a; color:#f87171; }
+  .turn { border-radius:10px; padding:12px 14px; margin-bottom:10px;
+    border-left:3px solid var(--border); background:#11131b; }
+  .turn.socratic { border-left-color: var(--socratic); }
+  .turn.elenchus { border-left-color: var(--elenchus); }
+  .turn.reflection { border-left-color: var(--reflection); }
+  .turn-head { display:flex; justify-content:space-between; font-size:.78rem;
+    color:var(--muted); margin-bottom:6px; }
+  .turn-head .model { font-weight:700; color:var(--text); }
+  .tag { font-size:.7rem; padding:1px 7px; border-radius:10px; margin-left:6px; }
+  .tag.socratic { background:#3b2f0a; color:#f59e0b; }
+  .tag.elenchus { background:#3b0a0a; color:#ef4444; }
+  .content { white-space: pre-wrap; line-height:1.5; font-size:.93rem; }
+  .scores { display:flex; gap:14px; flex-wrap:wrap; font-size:.85rem; }
+  .scores span b { color: var(--text); }
+  .violations { color:#f87171; font-size:.85rem; }
+  .empty { color:var(--muted); text-align:center; padding:30px 0; font-size:.9rem; }
+  #log { max-height: 60vh; overflow-y:auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏛️ Socrates AI</h1>
+  <div class="sub">Multi-Agent Socratic Reasoning — talks directly to your local backend (no API keys needed here; keys live in your server's .env)</div>
+
+  <div class="panel" id="start-panel">
+    <div class="row">
+      <div style="flex:3">
+        <label>Topic</label>
+        <input id="topic" value="Is knowledge justified true belief?">
+      </div>
+      <div style="flex:1">
+        <label>Rounds</label>
+        <input id="rounds" type="number" min="2" max="20" value="6">
+      </div>
+    </div>
+    <button id="startBtn" onclick="startDialog()">Start Dialog</button>
+    <button class="secondary" onclick="loadActive()">Show Active Sessions</button>
+  </div>
+
+  <div class="panel" id="status-panel" style="display:none">
+    <div class="status-bar">
+      <span class="badge" id="statusBadge">—</span>
+      <span id="topicLabel"></span>
+      <span id="roundsLabel"></span>
+      <span id="domainLabel"></span>
+    </div>
+    <div class="scores" id="scores"></div>
+    <div class="violations" id="violations"></div>
+  </div>
+
+  <div id="log"><div class="empty">No dialog yet. Start one above.</div></div>
+</div>
+
+<script>
+const API = "http://localhost:8000";
+let sessionId = null, pollTimer = null, renderedCount = 0;
+
+async function startDialog() {
+  const topic = document.getElementById('topic').value.trim();
+  const rounds = parseInt(document.getElementById('rounds').value, 10) || 6;
+  if (!topic) { alert("Βάλε ένα topic."); return; }
+
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('log').innerHTML = '<div class="empty">Starting…</div>';
+  renderedCount = 0;
+
+  try {
+    const res = await fetch(`${API}/dialog/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, rounds })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    sessionId = data.session_id;
+    document.getElementById('status-panel').style.display = 'block';
+    poll();
+    pollTimer = setInterval(poll, 2500);
+  } catch (e) {
+    document.getElementById('log').innerHTML = `<div class="empty">❌ ${e.message}. Is the backend running at ${API}?</div>`;
+  } finally {
+    document.getElementById('startBtn').disabled = false;
+  }
+}
+
+async function poll() {
+  if (!sessionId) return;
+  try {
+    const res = await fetch(`${API}/dialog/${sessionId}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const s = await res.json();
+    render(s);
+    if (s.status === 'completed' || s.status === 'stopped' || s.status === 'error') {
+      clearInterval(pollTimer);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function badgeClass(status) {
+  if (status === 'completed') return 'completed';
+  if (status === 'error') return 'error';
+  return 'running';
+}
+
+function render(s) {
+  const badge = document.getElementById('statusBadge');
+  badge.textContent = s.status;
+  badge.className = 'badge ' + badgeClass(s.status);
+  document.getElementById('topicLabel').textContent = s.topic;
+  document.getElementById('roundsLabel').textContent =
+    `Round ${s.rounds_completed}/${s.rounds_planned}`;
+  document.getElementById('domainLabel').textContent =
+    s.complexity ? `· ${s.complexity.domain}/${s.complexity.level}` : '';
+
+  const scoresEl = document.getElementById('scores');
+  scoresEl.innerHTML = Object.entries(s.scores || {})
+    .map(([m, v]) => `<span>${m}: <b>${v}</b></span>`).join('');
+
+  const violEl = document.getElementById('violations');
+  violEl.innerHTML = (s.constitution_violations || []).length
+    ? '⚠️ ' + s.constitution_violations.join(' · ')
+    : '';
+
+  const log = document.getElementById('log');
+  if (renderedCount === 0) log.innerHTML = '';
+  const turns = s.history || [];
+  for (let i = renderedCount; i < turns.length; i++) {
+    log.appendChild(renderTurn(turns[i]));
+  }
+  renderedCount = turns.length;
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderTurn(t) {
+  const div = document.createElement('div');
+  let cls = 'turn';
+  let tag = '';
+  if (t.is_socratic) { cls += ' socratic'; tag = '<span class="tag socratic">SOCRATIC</span>'; }
+  if (t.is_elenchus) { cls += ' elenchus'; tag = '<span class="tag elenchus">ELENCHUS</span>'; }
+  if (t.is_reflection) { cls += ' reflection'; tag = '<span class="tag" style="background:#0a3b1d;color:#10b981">REFLECTION</span>'; }
+  div.className = cls;
+  div.innerHTML = `
+    <div class="turn-head">
+      <span><span class="model">${t.model_id}</span> ${tag}</span>
+      <span>round ${t.round}</span>
+    </div>
+    <div class="content"></div>`;
+  div.querySelector('.content').textContent = t.content; // textContent: safe + correct UTF-8 rendering
+  return div;
+}
+
+async function loadActive() {
+  try {
+    const res = await fetch(`${API}/dialog/list/active`);
+    const data = await res.json();
+    const list = (data.sessions || []).map(s =>
+      `${s.session_id} — ${s.topic} [${s.status}]`).join('\n');
+    alert(list || 'No active sessions.');
+  } catch (e) {
+    alert('Backend not reachable at ' + API);
+  }
+}
+</script>
+</body>
+</html>
