@@ -1,4 +1,4 @@
-"""Live claim-centric CED dialog pipeline.
+﻿"""Live claim-centric CED dialog pipeline.
 
 The old conversation history is kept as a trace. The active source of truth is
 the live EpistemicGraph attached to the session.
@@ -25,6 +25,10 @@ from backend.orchestrator.live_epistemics import (
 from backend.orchestrator.router import select_synthesis_model
 from backend.orchestrator.session import EnhancedDialogSession, session_manager
 from backend.storage.models import *
+from backend.reasoning.elenchus_explanation import (
+    explain_elenchus_result,
+    format_elenchus_for_user,
+)
 
 
 async def _run_dialog_pipeline(session_id: str) -> None:
@@ -34,6 +38,8 @@ async def _run_dialog_pipeline(session_id: str) -> None:
 
     s.status = "running"
     ensure_live_epistemics(s)
+    if not hasattr(s, "provider_runtime_statuses"):
+        s.provider_runtime_statuses = {}
 
     try:
         for round_num in range(1, s.enforced_rounds + 1):
@@ -74,6 +80,7 @@ async def _run_dialog_pipeline(session_id: str) -> None:
                     is_elenchus=False,
                     is_reflection=False,
                     timestamp=datetime.now().isoformat(),
+                    provider_status=getattr(s, "provider_runtime_statuses", {}).get(socrates_id),
                 ))
                 record_epistemic_question(s, socrates_id, socratic_response, round_num)
 
@@ -108,6 +115,7 @@ async def _run_dialog_pipeline(session_id: str) -> None:
                         is_elenchus=False,
                         is_reflection=False,
                         timestamp=datetime.now().isoformat(),
+                        provider_status=getattr(s, "provider_runtime_statuses", {}).get(participant_id),
                     ))
                     record_epistemic_claim(s, participant_id, response_content, round_num)
                     _extract_claims(s, participant_id, response_content, round_num)
@@ -129,14 +137,18 @@ async def _run_dialog_pipeline(session_id: str) -> None:
                 s.history.append(DialogTurnResponse(
                     round=round_num,
                     model_id=challenger,
-                    content=(
-                        f"[ELENCHUS target={getattr(elenchus, 'target_claim_id', None)}] "
-                        f"Falsification {'successful' if elenchus.falsification_successful else 'unsuccessful'}."
+                    content=format_elenchus_for_user(
+                        explain_elenchus_result(
+                            getattr(elenchus, "target_claim_id", None),
+                            getattr(elenchus, "target_claim_text", "") or elenchus.target_claim_summary,
+                            elenchus.dict(),
+                        )
                     ),
                     is_socratic=False,
                     is_elenchus=True,
                     is_reflection=False,
                     timestamp=datetime.now().isoformat(),
+                    provider_status=elenchus.provider_status,
                 ))
                 if elenchus.falsification_successful and elenchus.revision_required:
                     await _revision_round(s, elenchus, round_num, context)
@@ -171,6 +183,26 @@ def _build_context(s: EnhancedDialogSession) -> str:
     return "\n".join(lines)
 
 
+
+def _provider_status(
+    s: EnhancedDialogSession,
+    model_id: str,
+    *,
+    real_api_call: Optional[bool],
+    fallback_used: Optional[bool],
+    error_type: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> ProviderRuntimeStatus:
+    return ProviderRuntimeStatus(
+        provider_name=model_id,
+        configured=model_id in getattr(s, "api_keys", {}),
+        real_api_call=real_api_call,
+        fallback_used=fallback_used,
+        error_type=error_type,
+        error_message=error_message[:220] if error_message else None,
+        latency_ms=None,
+    )
+
 async def _call_model(
     s: EnhancedDialogSession,
     model_id: str,
@@ -179,10 +211,28 @@ async def _call_model(
 ) -> Optional[str]:
     try:
         if s.manager is None:
+            if not hasattr(s, "provider_runtime_statuses"):
+                s.provider_runtime_statuses = {}
+            s.provider_runtime_statuses[model_id] = _provider_status(
+                s, model_id, real_api_call=False, fallback_used=True,
+                error_type="no_manager", error_message="No dialog manager configured."
+            )
             return None
         prompt = system_prompt if not context else f"{system_prompt}\n\nConversation trace:\n{context}"
-        return await s.manager._call_model(model_id, prompt)
+        result = await s.manager._call_model(model_id, prompt)
+        if not hasattr(s, "provider_runtime_statuses"):
+            s.provider_runtime_statuses = {}
+        s.provider_runtime_statuses[model_id] = _provider_status(
+            s, model_id, real_api_call=bool(result), fallback_used=not bool(result)
+        )
+        return result
     except Exception as exc:
+        if not hasattr(s, "provider_runtime_statuses"):
+            s.provider_runtime_statuses = {}
+        s.provider_runtime_statuses[model_id] = _provider_status(
+            s, model_id, real_api_call=False, fallback_used=True,
+            error_type=type(exc).__name__, error_message=str(exc)
+        )
         print(f"Model call failed for {model_id}: {type(exc).__name__}")
         return None
 
@@ -295,27 +345,25 @@ async def _elenchus_phase(
         f"You are the Elenchus challenger ({challenger_id}). Challenge this exact claim only.\n"
         f"CLAIM_ID: {target_claim_id}\nCLAIM_TEXT: {target_claim_text}\n"
         f"Return JSON only with challenged_assumptions, logic_gaps, evidence_issues, "
-        f"conclusion_issues, falsification_successful."
+        f"conclusion_issues, falsification_successful, reason, remaining_uncertainty, "
+        f"next_socratic_question, evidence_needed."
     )
     raw = await _call_model(s, challenger_id, system, context)
     if not raw:
-        result = ElenchusResult(
-            round=round_num,
-            target_claim_summary=target_claim_text[:200],
-            challenger_model=challenger_id,
-            challenged_assumptions=["No challenger output; structural challenge recorded."],
-            logic_gaps=[],
-            evidence_issues=[],
-            conclusion_issues=[],
-            falsification_successful=False,
-            revision_required=False,
-        )
-        object.__setattr__(result, "target_claim_id", target_claim_id)
-        return result
+        data = {
+            "challenged_assumptions": ["No challenger output; structural challenge recorded."],
+            "logic_gaps": [],
+            "evidence_issues": [],
+            "conclusion_issues": [],
+            "falsification_successful": False,
+        }
+    else:
+        data = _parse_elenchus_payload(raw)
 
-    data = _parse_elenchus_payload(raw)
     falsified = bool(data.get("falsification_successful", False))
-    result = ElenchusResult(
+    provider_status = getattr(s, "provider_runtime_statuses", {}).get(challenger_id)
+    explanation = explain_elenchus_result(target_claim_id, target_claim_text, data)
+    return ElenchusResult(
         round=round_num,
         target_claim_summary=target_claim_text[:200],
         challenger_model=challenger_id,
@@ -325,9 +373,17 @@ async def _elenchus_phase(
         conclusion_issues=data.get("conclusion_issues", []),
         falsification_successful=falsified,
         revision_required=falsified,
+        target_claim_id=target_claim_id,
+        target_claim_text=target_claim_text,
+        target_is_epistemic_claim=explanation.target_is_epistemic_claim,
+        outcome=explanation.outcome,
+        reason=explanation.reason,
+        remaining_uncertainty=explanation.remaining_uncertainty,
+        next_socratic_question=explanation.next_socratic_question,
+        evidence_needed=explanation.evidence_needed,
+        falsification_status=explanation.falsification_status,
+        provider_status=provider_status,
     )
-    object.__setattr__(result, "target_claim_id", target_claim_id)
-    return result
 
 
 async def _revision_round(
@@ -358,6 +414,7 @@ async def _revision_round(
             is_elenchus=False,
             is_reflection=False,
             timestamp=datetime.now().isoformat(),
+            provider_status=getattr(s, "provider_runtime_statuses", {}).get(target_model),
         ))
         s.scores[target_model] = s.scores.get(target_model, 0) + 2
 

@@ -190,6 +190,20 @@ class ConsensusMemoryData(BaseModel):
 
 # ── Rule 3: Elenchus ────────────────────────────────────────────────────────
 
+
+# ── v10.2: Provider runtime transparency ─────────────────────────────────────
+
+class ProviderRuntimeStatus(BaseModel):
+    """Runtime visibility for provider calls. Never stores API keys."""
+    provider_name: str
+    configured: bool = False
+    real_api_call: Optional[bool] = None
+    fallback_used: Optional[bool] = None
+    error_type: Optional[str] = None
+    error_message: Optional[str] = None
+    latency_ms: Optional[int] = None
+
+
 class ElenchusResult(BaseModel):
     """Result of a mandatory Elenchus (falsification) phase (Rule 3)"""
     elenchus_id:             str  = Field(default_factory=lambda: str(uuid.uuid4())[:8])
@@ -204,6 +218,17 @@ class ElenchusResult(BaseModel):
     # Rule 3: If successful, original answer MUST be revised
     revision_required:       bool     = False
     revision_submitted:      bool     = False
+    # v10.2: human-useful Elenchus explanation and claim target clarity.
+    target_claim_id:         Optional[str] = None
+    target_claim_text:       str = ""
+    target_is_epistemic_claim: Optional[bool] = None
+    outcome:                 str = "not_refuted_yet"
+    reason:                  str = ""
+    remaining_uncertainty:   str = ""
+    next_socratic_question:  str = ""
+    evidence_needed:         List[str] = []
+    falsification_status:    str = "not_refuted_yet"
+    provider_status:         Optional[ProviderRuntimeStatus] = None
     timestamp:               str      = Field(default_factory=lambda: datetime.now().isoformat())
 
 
@@ -300,6 +325,7 @@ class DialogTurnResponse(BaseModel):
     is_elenchus: bool = False
     is_reflection: bool = False
     timestamp:  str
+    provider_status: Optional[ProviderRuntimeStatus] = None
 
 
 class SocraticRotationInfo(BaseModel):
