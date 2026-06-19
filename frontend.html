@@ -48,6 +48,28 @@
   .scores span b { color: var(--text); }
   .violations { color:#f87171; font-size:.85rem; }
   .empty { color:var(--muted); text-align:center; padding:30px 0; font-size:.9rem; }
+
+  /* CED Graph v9 — Frontend Replay Viewer */
+  .replay-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+  .replay-actions button { margin-top:0; }
+  .replay-viewer { display:grid; gap:12px; margin-top:12px; }
+  .replay-card { background:#11131b; border:1px solid var(--border);
+    border-radius:10px; padding:12px; }
+  .replay-card h3 { margin:0 0 8px; font-size:.95rem; font-weight:650; }
+  .replay-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap:8px; }
+  .metric { background:#0f1117; border:1px solid var(--border); border-radius:8px;
+    padding:9px; }
+  .metric .k { color:var(--muted); font-size:.72rem; margin-bottom:4px; }
+  .metric .v { color:var(--text); font-weight:700; font-size:.95rem; }
+  .check-ok { color:#34d399; }
+  .check-bad { color:#f87171; }
+  .timeline-list { margin:0; padding-left:18px; color:var(--muted); font-size:.86rem; }
+  .timeline-list li { margin:4px 0; }
+  pre.replay-json { margin:0; white-space:pre-wrap; word-break:break-word;
+    max-height:220px; overflow:auto; background:#0f1117; border:1px solid var(--border);
+    border-radius:8px; padding:10px; color:var(--muted); font-size:.78rem; }
+
   #log { max-height: 60vh; overflow-y:auto; }
 </style>
 </head>
@@ -82,6 +104,24 @@
     <div class="violations" id="violations"></div>
   </div>
 
+
+  <div class="panel" id="replay-panel" style="display:none">
+    <div class="status-bar">
+      <span class="badge completed">CED Replay</span>
+      <span>Audit trail viewer and JSON download</span>
+    </div>
+    <div class="replay-actions">
+      <button id="viewReplayBtn" class="secondary" onclick="viewReplay()" disabled>View Replay</button>
+      <button id="downloadAuditBtn" class="secondary" onclick="downloadAuditJson()" disabled>Download Audit JSON</button>
+      <button id="downloadCanonicalBtn" class="secondary" onclick="downloadCanonicalReplay()" disabled>Download Canonical JSON</button>
+      <button id="clearReplayBtn" class="secondary" onclick="clearReplayViewer()" disabled>Clear Replay</button>
+    </div>
+    <div id="replayStatus" class="sub" style="margin-top:10px;margin-bottom:0">
+      Complete a session to enable replay export.
+    </div>
+    <div id="replayViewer" class="replay-viewer"></div>
+  </div>
+
   <div id="log"><div class="empty">No dialog yet. Start one above.</div></div>
 </div>
 
@@ -97,6 +137,8 @@ async function startDialog() {
   document.getElementById('startBtn').disabled = true;
   document.getElementById('log').innerHTML = '<div class="empty">Starting…</div>';
   renderedCount = 0;
+  sessionId = null;
+  resetReplayViewer();
 
   try {
     const res = await fetch(`${API}/dialog/start`, {
@@ -108,6 +150,7 @@ async function startDialog() {
     const data = await res.json();
     sessionId = data.session_id;
     document.getElementById('status-panel').style.display = 'block';
+    resetReplayViewer();
     poll();
     pollTimer = setInterval(poll, 2500);
   } catch (e) {
@@ -165,6 +208,196 @@ function render(s) {
   }
   renderedCount = turns.length;
   log.scrollTop = log.scrollHeight;
+  updateReplayControls(s.status);
+}
+
+
+// ============================================================================
+// CED Graph v9 — Frontend Replay Viewer
+// ============================================================================
+
+function replayExportUrl() {
+  if (!sessionId) return null;
+  return `${API}/api/epistemic/replay/export/${sessionId}`;
+}
+
+function replayAuditUrl() {
+  if (!sessionId) return null;
+  return `${API}/api/epistemic/replay/audit/${sessionId}`;
+}
+
+function replayCanonicalUrl() {
+  if (!sessionId) return null;
+  return `${API}/api/epistemic/replay/export/${sessionId}/canonical`;
+}
+
+function resetReplayViewer() {
+  document.getElementById('replay-panel').style.display = sessionId ? 'block' : 'none';
+  document.getElementById('replayViewer').innerHTML = '';
+  document.getElementById('replayStatus').textContent =
+    sessionId ? 'Replay will be available when the session completes.' : 'Complete a session to enable replay export.';
+  updateReplayControls('initialized');
+}
+
+function updateReplayControls(status) {
+  const enabled = Boolean(sessionId) && ['completed', 'stopped', 'error'].includes(status);
+  ['viewReplayBtn', 'downloadAuditBtn', 'downloadCanonicalBtn', 'clearReplayBtn'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !enabled;
+  });
+  const panel = document.getElementById('replay-panel');
+  if (sessionId) panel.style.display = 'block';
+  const statusEl = document.getElementById('replayStatus');
+  if (!enabled && sessionId) {
+    statusEl.textContent = 'Replay export will unlock when this session finishes.';
+  } else if (enabled) {
+    statusEl.textContent = 'Replay export is ready.';
+  }
+}
+
+async function viewReplay() {
+  const url = replayExportUrl();
+  if (!url) return alert('No active session.');
+  const statusEl = document.getElementById('replayStatus');
+  statusEl.textContent = 'Loading replay export…';
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const replay = await res.json();
+    renderReplaySummary(replay);
+    statusEl.textContent = `Replay ${replay.replay_version || 'v?'} loaded.`;
+  } catch (e) {
+    statusEl.textContent = `Replay load failed: ${e.message}`;
+  }
+}
+
+async function downloadAuditJson() {
+  const url = replayExportUrl();
+  if (!url) return alert('No active session.');
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const replay = await res.json();
+    downloadJson(`ced-replay-${sessionId}.json`, replay);
+  } catch (e) {
+    alert(`Download failed: ${e.message}`);
+  }
+}
+
+function downloadCanonicalReplay() {
+  const url = replayCanonicalUrl();
+  if (!url) return alert('No active session.');
+  window.location.href = url;
+}
+
+function clearReplayViewer() {
+  document.getElementById('replayViewer').innerHTML = '';
+  document.getElementById('replayStatus').textContent = sessionId
+    ? 'Replay viewer cleared. Export is still available.'
+    : 'Complete a session to enable replay export.';
+}
+
+function downloadJson(filename, payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+}
+
+function metric(label, value) {
+  const safe = value === undefined || value === null ? '—' : value;
+  return `<div class="metric"><div class="k">${label}</div><div class="v">${safe}</div></div>`;
+}
+
+function renderAuditChecks(checks) {
+  const entries = Object.entries(checks || {});
+  if (!entries.length) return '<div class="empty">No audit checks available.</div>';
+  return `<ul class="timeline-list">${
+    entries.map(([k, v]) =>
+      `<li><span class="${v ? 'check-ok' : 'check-bad'}">${v ? '✓' : '✗'}</span> ${k}</li>`
+    ).join('')
+  }</ul>`;
+}
+
+function renderClaimTimeline(rows) {
+  if (!rows || !rows.length) return '<div class="empty">No claims in replay.</div>';
+  return `<ol class="timeline-list">${
+    rows.slice(0, 12).map(row => {
+      const state = row.state || 'unknown';
+      const confidence = row.confidence === undefined ? '—' : row.confidence;
+      const text = (row.text || '').slice(0, 180);
+      return `<li><b>${state}</b> · confidence ${confidence}<br>${escapeHtml(text)}</li>`;
+    }).join('')
+  }</ol>`;
+}
+
+function renderReplaySummary(replay) {
+  const meta = replay.metadata || {};
+  const cbe = replay.current_best_explanation || {};
+  const process = replay.process_evaluation || {};
+  const viewer = document.getElementById('replayViewer');
+
+  viewer.innerHTML = `
+    <div class="replay-card">
+      <h3>Replay metadata</h3>
+      <div class="replay-grid">
+        ${metric('Version', replay.replay_version || meta.replay_version)}
+        ${metric('Claims', meta.claim_count)}
+        ${metric('Evidence', meta.evidence_count)}
+        ${metric('Contradictions', meta.contradiction_count)}
+        ${metric('Lineage events', meta.lineage_event_count)}
+        ${metric('Trace events', meta.trace_event_count)}
+      </div>
+    </div>
+
+    <div class="replay-card">
+      <h3>Current Best Explanation</h3>
+      <div class="content">${escapeHtml(cbe.question || meta.topic || 'No CBE available.')}</div>
+      <div class="replay-grid" style="margin-top:8px">
+        ${metric('CBE confidence', cbe.confidence)}
+        ${metric('Strongest claims', (cbe.strongest_claims || []).length)}
+        ${metric('Open questions', (cbe.open_questions || []).length)}
+      </div>
+    </div>
+
+    <div class="replay-card">
+      <h3>Meta-Socrates process evaluation</h3>
+      <div class="replay-grid">
+        ${metric('Process score', process.process_score)}
+        ${metric('Process level', process.process_level)}
+        ${metric('Strengths', (process.strengths || []).length)}
+        ${metric('Weaknesses', (process.weaknesses || []).length)}
+      </div>
+    </div>
+
+    <div class="replay-card">
+      <h3>Audit checks</h3>
+      ${renderAuditChecks(replay.audit_checks)}
+    </div>
+
+    <div class="replay-card">
+      <h3>Claim timeline</h3>
+      ${renderClaimTimeline(replay.claim_timeline)}
+    </div>
+
+    <div class="replay-card">
+      <h3>Raw replay preview</h3>
+      <pre class="replay-json">${escapeHtml(JSON.stringify(replay, null, 2).slice(0, 4000))}</pre>
+    </div>
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 function renderTurn(t) {
