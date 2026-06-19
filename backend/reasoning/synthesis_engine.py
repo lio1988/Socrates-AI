@@ -20,6 +20,7 @@ from ..epistemic.claim import Claim
 from ..epistemic.epistemic_state import EpistemicState
 from ..epistemic.epistemic_graph import EpistemicGraph
 from ..orchestrator.epistemic_scoring import EpistemicScoringEngine
+from .answer_quality import AnswerQualityEngine
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -45,6 +46,10 @@ class CurrentBestExplanation:
     ranking_version: str = "v4"
     # v5: lineage metadata for the strongest claims (claim_id -> lineage summary).
     lineage_by_claim: Dict[str, Dict] = field(default_factory=dict)
+    # v10: practical, user-facing answer quality contract.
+    answer_quality: Dict[str, object] = field(default_factory=dict)
+    practical_answer: Dict[str, object] = field(default_factory=dict)
+    socratic_pressure: Dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +66,9 @@ class CurrentBestExplanation:
             "why_preferred": self.why_preferred,
             "reasoning_trace": self.reasoning_trace,
             "lineage": self.lineage_by_claim,
+            "answer_quality": self.answer_quality,
+            "practical_answer": self.practical_answer,
+            "socratic_pressure": self.socratic_pressure,
             "note": "This is a current best explanation, not final truth.",
         }
 
@@ -94,8 +102,13 @@ class SynthesisEngine:
         EpistemicState.UNKNOWN: -0.08,
     }
 
-    def __init__(self, scorer: EpistemicScoringEngine | None = None) -> None:
+    def __init__(
+        self,
+        scorer: EpistemicScoringEngine | None = None,
+        quality_engine: AnswerQualityEngine | None = None,
+    ) -> None:
         self.scorer = scorer or EpistemicScoringEngine()
+        self.quality_engine = quality_engine or AnswerQualityEngine()
 
     def synthesize(self, question: str, graph: EpistemicGraph,
                    trace: List[str]) -> CurrentBestExplanation:
@@ -121,7 +134,7 @@ class SynthesisEngine:
         disagreement_penalty = min(0.30, 0.05 * len(disputed))
         conf = max(0.0, top_score - disagreement_penalty)
 
-        return CurrentBestExplanation(
+        cbe = CurrentBestExplanation(
             question=question,
             summary_claim_ids=[row["claim_id"] for row in strongest_rows[:3]],
             strongest_claims=[row["claim"] for row in strongest_rows[:3]],
@@ -151,6 +164,14 @@ class SynthesisEngine:
             reasoning_trace=trace,
             ranking_version=self.RANKING_VERSION,
         )
+
+        # v10: pressure-test the CBE into a practical answer quality contract.
+        # This is rendering/evaluation only; it must not mint claims or alter ranking.
+        quality = self.quality_engine.evaluate(question, graph, cbe)
+        cbe.answer_quality = quality.to_dict()
+        cbe.practical_answer = quality.practical_answer
+        cbe.socratic_pressure = quality.socratic_pressure
+        return cbe
 
     def _rank_claims(
         self,
