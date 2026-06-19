@@ -9,6 +9,7 @@ import asyncio
 
 from socrates_ai import DialogConfig, DialogMode, DialogSpeed, SummaryMode
 from backend.epistemic.epistemic_graph import NodeType
+from backend.epistemic.epistemic_state import EpistemicState
 from backend.orchestrator.session import EnhancedDialogSession, session_manager
 from backend.orchestrator import dialog_pipeline_ced
 
@@ -25,7 +26,21 @@ class _FakeManager:
         return "INITIAL: a\nCRITICISM: b\nREVISION: c\nFINAL: Knowledge requires justified claims and surviving critique."
 
 
-def _make_session(sid, rounds=2):
+class _RevisionFakeManager:
+    async def _call_model(self, model_id, prompt):
+        if "CLAIM_ID:" in prompt or "challenge this exact claim" in prompt.lower():
+            return (
+                '{"challenged_assumptions":["draft is too broad"],'
+                '"logic_gaps":["needs revision"],'
+                '"evidence_issues":[],"conclusion_issues":[],'
+                '"falsification_successful":true}'
+            )
+        if "Revise the targeted claim" in prompt:
+            return "Revised claim: knowledge is a responsible process of revisable justified commitment."
+        return "INITIAL: a\nCRITICISM: b\nREVISION: c\nFINAL: Original draft: knowledge is just a final answer."
+
+
+def _make_session(sid, rounds=2, manager=None):
     cfg = DialogConfig(
         topic="Is knowledge justified true belief?",
         rounds=rounds,
@@ -34,7 +49,7 @@ def _make_session(sid, rounds=2):
         summary_mode=SummaryMode.NONE,
     )
     s = EnhancedDialogSession(sid, cfg, {"claude": "x", "chatgpt": "y"})
-    s.manager = _FakeManager()
+    s.manager = manager or _FakeManager()
     s.enforced_rounds = rounds
     session_manager._sessions[sid] = s
     return s
@@ -85,3 +100,17 @@ def test_history_is_trace_not_source_of_truth():
     assert s.history, "dialogue history remains available as trace"
     assert s.epistemic_graph.claims, "EpistemicGraph is the live source of truth"
     assert s.current_best_explanation.reasoning_trace
+
+
+def test_revision_updates_live_claim_and_cbe_uses_revised_text():
+    s = _make_session("test_live_ced_6", manager=_RevisionFakeManager())
+    asyncio.run(dialog_pipeline_ced._run_dialog_pipeline(s.session_id))
+
+    assert s.epistemic_graph.claims
+    claim = next(iter(s.epistemic_graph.claims.values()))
+    assert claim.state == EpistemicState.SUPPORTED
+    assert claim.has_been_challenged is True
+    assert "responsible process" in claim.text
+    assert "responsible process" in s.current_best_explanation.strongest_claims[0]["text"]
+    node = s.epistemic_graph.nodes[claim.claim_id]
+    assert node.payload["state"] == "SUPPORTED"
