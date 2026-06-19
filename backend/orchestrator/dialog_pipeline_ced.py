@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from backend.constitution_guard import ConstitutionGuard, ConstitutionViolationError
 from backend.orchestrator.live_epistemics import (
@@ -187,6 +187,62 @@ async def _call_model(
         return None
 
 
+def _as_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    return [str(value)]
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1", "successful", "falsified"}
+    return bool(value)
+
+
+def _default_elenchus_payload(reason: str) -> dict:
+    return {
+        "challenged_assumptions": [reason],
+        "logic_gaps": [],
+        "evidence_issues": [],
+        "conclusion_issues": [],
+        "falsification_successful": False,
+    }
+
+
+def _parse_elenchus_payload(raw: str) -> dict:
+    """Parse real model Elenchus output defensively.
+
+    Live models sometimes return fenced JSON, a JSON list, or a partial object.
+    Elenchus should degrade to a structural challenge, not crash the session.
+    """
+    try:
+        clean = raw.strip()
+        fence = re.search(r"```(?:json)?\s*(.*?)```", clean, re.DOTALL | re.IGNORECASE)
+        if fence:
+            clean = fence.group(1).strip()
+        data = json.loads(clean)
+    except Exception:
+        return _default_elenchus_payload("Unable to parse structured Elenchus.")
+
+    if not isinstance(data, dict):
+        return _default_elenchus_payload("Structured Elenchus was not a JSON object.")
+
+    return {
+        "challenged_assumptions": _as_list(data.get("challenged_assumptions")),
+        "logic_gaps": _as_list(data.get("logic_gaps")),
+        "evidence_issues": _as_list(data.get("evidence_issues")),
+        "conclusion_issues": _as_list(data.get("conclusion_issues")),
+        "falsification_successful": _as_bool(data.get("falsification_successful", False)),
+    }
+
+
 async def _reflection_step(
     s: EnhancedDialogSession,
     model_id: str,
@@ -257,22 +313,7 @@ async def _elenchus_phase(
         object.__setattr__(result, "target_claim_id", target_claim_id)
         return result
 
-    try:
-        clean = raw.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```")[1]
-            if clean.startswith("json"):
-                clean = clean[4:]
-        data = json.loads(clean)
-    except Exception:
-        data = {
-            "challenged_assumptions": ["Unable to parse structured Elenchus."],
-            "logic_gaps": [],
-            "evidence_issues": [],
-            "conclusion_issues": [],
-            "falsification_successful": False,
-        }
-
+    data = _parse_elenchus_payload(raw)
     falsified = bool(data.get("falsification_successful", False))
     result = ElenchusResult(
         round=round_num,
