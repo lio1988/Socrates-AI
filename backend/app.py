@@ -18,6 +18,20 @@ except ImportError:  # python-dotenv optional; env vars may be set externally
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+
+class UTF8JSONResponse(JSONResponse):
+    """JSONResponse with an explicit charset.
+
+    Starlette's default JSONResponse sends `Content-Type: application/json`
+    with NO charset. Without it, some HTTP clients (notably Windows
+    PowerShell 5.1's Invoke-RestMethod) guess Latin-1/Windows-1252 instead of
+    UTF-8, corrupting any non-ASCII content (Greek text, em-dashes, etc.) into
+    mojibake on the client side. The bytes sent over the wire were always
+    correct UTF-8; only the missing charset hint was the problem.
+    """
+    media_type = "application/json; charset=utf-8"
 
 from backend.api.routes_dialog import router as dialog_router
 from backend.api.routes_claims import router as claims_router
@@ -42,6 +56,7 @@ def create_app() -> FastAPI:
         ),
         version="2.0.0",
         lifespan=lifespan,
+        default_response_class=UTF8JSONResponse,
     )
 
     app.add_middleware(
