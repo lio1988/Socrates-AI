@@ -258,3 +258,132 @@ async def get_synthesis(session_id: str):
     if not s.synthesis_result:
         raise HTTPException(404, "Synthesis not yet produced. Dialog may still be running.")
     return s.synthesis_result.dict()
+
+
+def _serialize_current_best_explanation(cbe):
+    if cbe is None:
+        return None
+    if hasattr(cbe, "to_dict"):
+        return cbe.to_dict()
+    if hasattr(cbe, "dict"):
+        return cbe.dict()
+    return cbe
+
+
+def _serialize_live_ced_session(s):
+    graph = getattr(s, "epistemic_graph", None)
+    claims = []
+    contradictions = []
+    if graph is not None:
+        claims = [claim.to_dict() for claim in getattr(graph, "claims", {}).values()]
+        contradictions = [
+            {
+                "contradiction_id": edge.edge_id,
+                "claim_a": edge.src,
+                "claim_b": edge.dst,
+                "type": edge.edge_type.value,
+                "weight": edge.weight,
+            }
+            for edge in getattr(graph, "edges", {}).values()
+            if getattr(edge.edge_type, "value", edge.edge_type) == "contradicts"
+        ]
+    return {
+        "session_id": s.session_id,
+        "question": s.config.topic,
+        "dialogue": [turn.dict() for turn in s.history],
+        "claims": claims,
+        "contradictions": contradictions,
+        "current_best_explanation": _serialize_current_best_explanation(getattr(s, "current_best_explanation", None)),
+        "epistemic_events": list(getattr(s, "epistemic_trace", [])),
+    }
+
+
+@router.get("/dialog/{session_id}/ced", tags=["CED Graph v0"])
+async def get_ced_response(session_id: str):
+    """Return the claim-centric CED response without removing legacy dialogue."""
+    s = session_manager.require(session_id)
+    return _serialize_live_ced_session(s)
+
+
+@router.get("/dialog/{session_id}/epistemic-graph", tags=["CED Graph v0"])
+async def get_epistemic_graph(session_id: str):
+    s = session_manager.require(session_id)
+    graph = getattr(s, "epistemic_graph", None)
+    if graph is None:
+        return {"nodes": [], "edges": [], "claims": []}
+    payload = graph.to_dict()
+    payload["claims"] = [claim.to_dict() for claim in getattr(graph, "claims", {}).values()]
+    return payload
+
+
+@router.get("/dialog/{session_id}/current-best-explanation", tags=["CED Graph v0"])
+async def get_current_best_explanation(session_id: str):
+    s = session_manager.require(session_id)
+    cbe = getattr(s, "current_best_explanation", None)
+    if cbe is None:
+        raise HTTPException(404, "Current Best Explanation not yet produced.")
+    return _serialize_current_best_explanation(cbe)
+
+
+# ── Rule 14: Evolution Log ────────────────────────────────────────────────────
+
+
+@router.get("/dialog/{session_id}/evolution", tags=["Rule 14 — Evolution"])
+async def get_evolution_log(session_id: str):
+    s = session_manager.require(session_id)
+    return {"entries": [e.dict() for e in s.evolution_log], "count": len(s.evolution_log)}
+
+
+@router.get("/dialog/{session_id}/violations", tags=["Constitution"])
+async def get_violations(session_id: str):
+    s = session_manager.require(session_id)
+    return {
+        "count": len(s.constitution_violations),
+        "violations": s.constitution_violations,
+        "status": "clean" if not s.constitution_violations else "violations_detected",
+    }
+
+
+@router.post("/dialog/{session_id}/pause", tags=["Dialog"])
+async def pause_dialog(session_id: str):
+    s = session_manager.require(session_id)
+    s._paused.clear()
+    return {"session_id": session_id, "status": "paused"}
+
+
+@router.post("/dialog/{session_id}/resume", tags=["Dialog"])
+async def resume_dialog(session_id: str):
+    s = session_manager.require(session_id)
+    s._paused.set()
+    return {"session_id": session_id, "status": "resumed"}
+
+
+@router.post("/dialog/{session_id}/stop", tags=["Dialog"])
+async def stop_dialog(session_id: str):
+    s = session_manager.require(session_id)
+    s._stop_requested = True
+    s._paused.set()
+    return {"session_id": session_id, "status": "stop_requested"}
+
+
+@router.post("/dialog/{session_id}/inject", tags=["Dialog"])
+async def inject_question(session_id: str, body: InjectQuestionRequest):
+    s = session_manager.require(session_id)
+    if s.status != "running":
+        raise HTTPException(400, "Injection only possible while dialog is running.")
+    s.pending_injection = body.question
+    return {"session_id": session_id, "queued": body.question}
+
+
+@router.get("/dialog/list/active", tags=["Dialog"])
+async def list_sessions():
+    return {"count": len(session_manager._sessions), "sessions": session_manager.list_all()}
+
+
+@router.delete("/dialog/{session_id}", tags=["Dialog"])
+async def delete_session(session_id: str):
+    session_manager.require(session_id)
+    session_manager.delete(session_id)
+    return {"session_id": session_id, "status": "deleted"}
+
+
