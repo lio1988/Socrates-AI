@@ -22,7 +22,7 @@ from backend.orchestrator.session import (
     session_manager, get_api_keys, generate_session_id,
     mode_to_model, speed_to_model, summary_to_model,
 )
-from backend.orchestrator.dialog_pipeline import _run_dialog_pipeline
+from backend.orchestrator.dialog_pipeline_ced import _run_dialog_pipeline
 
 router = APIRouter()
 
@@ -225,7 +225,7 @@ async def get_complexity(session_id: str):
     return s.complexity.dict()
 
 
-# ── Rule 11: Convergence ──────────────────────────────────────────────────────
+# ── Rule 11: Convergence ─────────────────────────────────────────────────────
 
 
 @router.get("/dialog/{session_id}/convergence", tags=["Rule 11 — Consensus Stability"])
@@ -258,88 +258,3 @@ async def get_synthesis(session_id: str):
     if not s.synthesis_result:
         raise HTTPException(404, "Synthesis not yet produced. Dialog may still be running.")
     return s.synthesis_result.dict()
-
-
-# ── Rule 14: Evolution Log ────────────────────────────────────────────────────
-
-
-@router.get("/dialog/{session_id}/evolution", tags=["Rule 14 — Evolution"])
-async def get_evolution_log(session_id: str):
-    """
-    Rule 14: Evolution log — routing, prompt, and strategy changes over time.
-    Every knowledge modification carries an explicit reason.
-    """
-    s = session_manager.require(session_id)
-    return {
-        "entries": [e.dict() for e in s.evolution_log],
-        "count":   len(s.evolution_log),
-    }
-
-
-# ── Constitution Violations ───────────────────────────────────────────────────
-
-
-@router.get("/dialog/{session_id}/violations", tags=["Constitution"])
-async def get_violations(session_id: str):
-    """List all Constitution rule violations detected in this session"""
-    s = session_manager.require(session_id)
-    return {
-        "count":      len(s.constitution_violations),
-        "violations": s.constitution_violations,
-        "status":     "clean" if not s.constitution_violations else "violations_detected",
-    }
-
-
-# ── Export ────────────────────────────────────────────────────────────────────
-
-
-@router.post("/dialog/{session_id}/pause", tags=["Dialog"])
-async def pause_dialog(session_id: str):
-    s = session_manager.require(session_id)
-    s._paused.clear()
-    return {"session_id": session_id, "status": "paused"}
-
-
-@router.post("/dialog/{session_id}/resume", tags=["Dialog"])
-async def resume_dialog(session_id: str):
-    s = session_manager.require(session_id)
-    s._paused.set()
-    return {"session_id": session_id, "status": "resumed"}
-
-
-@router.post("/dialog/{session_id}/stop", tags=["Dialog"])
-async def stop_dialog(session_id: str):
-    s = session_manager.require(session_id)
-    s._stop_requested = True
-    s._paused.set()
-    return {"session_id": session_id, "status": "stop_requested"}
-
-
-# ── Inject Question ───────────────────────────────────────────────────────────
-
-
-@router.post("/dialog/{session_id}/inject", tags=["Dialog"])
-async def inject_question(session_id: str, body: InjectQuestionRequest):
-    """Inject a user question into the running dialogue"""
-    s = session_manager.require(session_id)
-    if s.status != "running":
-        raise HTTPException(400, "Injection only possible while dialog is running.")
-    s.pending_injection = body.question
-    return {"session_id": session_id, "queued": body.question}
-
-
-# ── List / Delete ─────────────────────────────────────────────────────────────
-
-
-@router.get("/dialog/list/active", tags=["Dialog"])
-async def list_sessions():
-    return {"count": len(session_manager._sessions), "sessions": session_manager.list_all()}
-
-
-@router.delete("/dialog/{session_id}", tags=["Dialog"])
-async def delete_session(session_id: str):
-    session_manager.require(session_id)
-    session_manager.delete(session_id)
-    return {"session_id": session_id, "status": "deleted"}
-
-
