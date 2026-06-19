@@ -273,9 +273,25 @@ def _serialize_current_best_explanation(cbe):
 def _serialize_live_ced_session(s):
     graph = getattr(s, "epistemic_graph", None)
     claims = []
+    evidence = []
     contradictions = []
+    graph_payload = {"nodes": [], "edges": []}
+
     if graph is not None:
         claims = [claim.to_dict() for claim in getattr(graph, "claims", {}).values()]
+        graph_payload = graph.to_dict() if hasattr(graph, "to_dict") else graph_payload
+
+        evidence = [
+            {
+                "node_id": node.node_id,
+                "text": node.label,
+                "type": getattr(node.node_type, "value", node.node_type),
+                "payload": node.payload or {},
+            }
+            for node in getattr(graph, "nodes", {}).values()
+            if getattr(node.node_type, "value", node.node_type) == "Evidence"
+        ]
+
         contradictions = [
             {
                 "contradiction_id": edge.edge_id,
@@ -287,14 +303,17 @@ def _serialize_live_ced_session(s):
             for edge in getattr(graph, "edges", {}).values()
             if getattr(edge.edge_type, "value", edge.edge_type) == "contradicts"
         ]
+
     return {
         "session_id": s.session_id,
         "question": s.config.topic,
         "dialogue": [turn.dict() for turn in s.history],
         "claims": claims,
+        "evidence": evidence,
         "contradictions": contradictions,
         "current_best_explanation": _serialize_current_best_explanation(getattr(s, "current_best_explanation", None)),
         "epistemic_events": list(getattr(s, "epistemic_trace", [])),
+        "graph": graph_payload,
     }
 
 
