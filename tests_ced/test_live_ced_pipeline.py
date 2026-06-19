@@ -16,7 +16,9 @@ from backend.orchestrator import dialog_pipeline_ced
 
 class _FakeManager:
     async def _call_model(self, model_id, prompt):
-        if "CLAIM_ID:" in prompt or "challenge this exact claim" in prompt.lower():
+        # Context may contain previous Elenchus prompts, so route by the active
+        # system prompt at the beginning rather than by any text in the trace.
+        if prompt.startswith("You are the Elenchus challenger"):
             return (
                 '{"challenged_assumptions":["assumes the premise holds"],'
                 '"logic_gaps":["inference is incomplete"],'
@@ -28,15 +30,17 @@ class _FakeManager:
 
 class _RevisionFakeManager:
     async def _call_model(self, model_id, prompt):
-        if "CLAIM_ID:" in prompt or "challenge this exact claim" in prompt.lower():
+        # Order matters: revision prompts include TARGET_CLAIM_ID and the
+        # conversation trace can include the earlier Elenchus challenge.
+        if prompt.startswith("Revise the targeted claim"):
+            return "Revised claim: knowledge is a responsible process of revisable justified commitment."
+        if prompt.startswith("You are the Elenchus challenger"):
             return (
                 '{"challenged_assumptions":["draft is too broad"],'
                 '"logic_gaps":["needs revision"],'
                 '"evidence_issues":[],"conclusion_issues":[],'
                 '"falsification_successful":true}'
             )
-        if "Revise the targeted claim" in prompt:
-            return "Revised claim: knowledge is a responsible process of revisable justified commitment."
         return "INITIAL: a\nCRITICISM: b\nREVISION: c\nFINAL: Original draft: knowledge is just a final answer."
 
 
