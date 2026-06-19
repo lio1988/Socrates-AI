@@ -21,6 +21,7 @@ from ..epistemic.epistemic_state import EpistemicState
 from ..epistemic.epistemic_graph import EpistemicGraph
 from ..orchestrator.epistemic_scoring import EpistemicScoringEngine
 from .answer_quality import AnswerQualityEngine
+from .socratic_pressure import evaluate_answer_pressure
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -50,6 +51,8 @@ class CurrentBestExplanation:
     answer_quality: Dict[str, object] = field(default_factory=dict)
     practical_answer: Dict[str, object] = field(default_factory=dict)
     socratic_pressure: Dict[str, object] = field(default_factory=dict)
+    # v10.1: scope-narrowing / Socratic pressure report on the practical answer.
+    socratic_pressure_report: Dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -69,6 +72,7 @@ class CurrentBestExplanation:
             "answer_quality": self.answer_quality,
             "practical_answer": self.practical_answer,
             "socratic_pressure": self.socratic_pressure,
+            "socratic_pressure_report": self.socratic_pressure_report,
             "note": "This is a current best explanation, not final truth.",
         }
 
@@ -171,6 +175,18 @@ class SynthesisEngine:
         cbe.answer_quality = quality.to_dict()
         cbe.practical_answer = quality.practical_answer
         cbe.socratic_pressure = quality.socratic_pressure
+
+        # v10.1: pressure-test the practical answer against the strong-knowledge
+        # bar. Synthesis is the final acceptance gate, so round 5 (final_gate)
+        # applies. Deterministic; mints no claims and references no claim_ids.
+        pa = quality.practical_answer
+        answer_text = " ".join(
+            str(pa.get(key, "")) for key in (
+                "direct_answer", "plain_explanation", "practical_example",
+                "strongest_objection", "uncertainty",
+            )
+        )
+        cbe.socratic_pressure_report = evaluate_answer_pressure(question, answer_text, 5).to_dict()
         return cbe
 
     def _rank_claims(
