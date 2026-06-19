@@ -43,6 +43,8 @@ class CurrentBestExplanation:
     reasoning_trace: List[str] = field(default_factory=list)
     ranked_claims: List[Dict] = field(default_factory=list)
     ranking_version: str = "v4"
+    # v5: lineage metadata for the strongest claims (claim_id -> lineage summary).
+    lineage_by_claim: Dict[str, Dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -58,6 +60,7 @@ class CurrentBestExplanation:
             "confidence": round(self.confidence, 3),
             "why_preferred": self.why_preferred,
             "reasoning_trace": self.reasoning_trace,
+            "lineage": self.lineage_by_claim,
             "note": "This is a current best explanation, not final truth.",
         }
 

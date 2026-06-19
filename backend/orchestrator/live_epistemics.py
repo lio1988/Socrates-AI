@@ -16,6 +16,17 @@ from typing import Optional
 
 from backend.config import EmergenceThresholds
 from backend.orchestrator.ced_live_writer import write_answer_to_graph
+from backend.orchestrator.knowledge_evolution_memory import (
+    ensure_knowledge_evolution_memory,
+    sync_lineage_payload,
+    EVENT_CREATED,
+    EVENT_CHALLENGED,
+    EVENT_REVISED,
+    EVENT_SUPPORTED_AFTER_REVISION,
+    EVENT_SUPERSEDED,
+    EVENT_REJECTED,
+    EVENT_USED_IN_CBE,
+)
 from backend.epistemic.claim import Claim as EpistemicClaim
 from backend.epistemic.epistemic_graph import EpistemicGraph, EdgeType, NodeType
 from backend.epistemic.epistemic_state import EpistemicState, IllegalTransition
@@ -94,6 +105,20 @@ def record_epistemic_claim(session, model_id: str, text: str, round_num: int) ->
     session.live_claim_ids_by_round[round_num] = claim.claim_id
     turn_index = len(getattr(session, "history", []))
     session.live_claim_ids_by_turn[(round_num, model_id, turn_index)] = claim.claim_id
+
+    # v5: open this claim's lineage with a "created" event.
+    memory = ensure_knowledge_evolution_memory(session)
+    memory.record(
+        claim.claim_id,
+        EVENT_CREATED,
+        actor=model_id,
+        reason="Claim proposed in dialogue.",
+        text_snapshot=claim.text,
+        confidence_snapshot=claim.confidence,
+        state_snapshot=claim.state.value,
+    )
+    sync_lineage_payload(graph, claim.claim_id, memory)
+
     session.epistemic_trace.append(
         "Round {round}: {model} proposed claim {claim_id} "
         "(evidence={evidence}, gaps={gaps}, contradictions={contradictions}, score={score}).".format(
@@ -200,6 +225,19 @@ def apply_elenchus_to_claim(session, elenchus) -> None:
         f"Round {elenchus.round}: Elenchus by {elenchus.challenger_model} targeted {claim_id}."
     )
 
+    # v5: record the challenge in the claim's lineage.
+    memory = ensure_knowledge_evolution_memory(session)
+    memory.record(
+        claim_id,
+        EVENT_CHALLENGED,
+        actor=f"elenchus:{elenchus.challenger_model}",
+        reason="Elenchus challenged this claim.",
+        text_snapshot=claim.text,
+        confidence_snapshot=claim.confidence,
+        state_snapshot=claim.state.value,
+    )
+    sync_lineage_payload(graph, claim_id, memory)
+
 
 def apply_revision_to_claim(session, claim_id: Optional[str], revision_text: str, actor: str) -> None:
     """Apply a revision to the concrete claim challenged by Elenchus.
@@ -236,6 +274,42 @@ def apply_revision_to_claim(session, claim_id: Optional[str], revision_text: str
         graph.link(revision_node, claim_id, EdgeType.REFINES)
         _sync_claim_node(graph, claim)
         session.epistemic_trace.append(f"Revision by {actor} refined claim {claim_id}.")
+
+        # v5: preserve the previous text version and record the lineage of the
+        # revision (superseded old version -> revised new version -> supported).
+        memory = ensure_knowledge_evolution_memory(session)
+        memory.add_text_version(claim_id, previous_text)
+        memory.record(
+            claim_id,
+            EVENT_SUPERSEDED,
+            actor=actor,
+            reason="Previous version superseded by revision.",
+            text_snapshot=previous_text,
+            confidence_snapshot=claim.confidence,
+            state_snapshot=claim.state.value,
+            previous_claim_id=claim_id,
+        )
+        memory.record(
+            claim_id,
+            EVENT_REVISED,
+            actor=actor,
+            reason="Revised after Elenchus.",
+            text_snapshot=claim.text,
+            confidence_snapshot=claim.confidence,
+            state_snapshot=claim.state.value,
+            previous_claim_id=claim_id,
+        )
+        if claim.state == EpistemicState.SUPPORTED:
+            memory.record(
+                claim_id,
+                EVENT_SUPPORTED_AFTER_REVISION,
+                actor=actor,
+                reason="Revision accepted; claim supported after revision.",
+                text_snapshot=claim.text,
+                confidence_snapshot=claim.confidence,
+                state_snapshot=claim.state.value,
+            )
+        sync_lineage_payload(graph, claim_id, memory)
     except IllegalTransition as exc:
         session.constitution_violations.append(
             f"[CED] Illegal revision transition for {claim_id}: {exc}"
@@ -255,6 +329,46 @@ def produce_current_best_explanation(session) -> CurrentBestExplanation:
         graph,
         list(session.epistemic_trace),
     )
+
+    # v5: record lineage for claims selected by CBE ranking and expose lineage
+    # metadata on the CBE. This references only existing claim_ids and invents
+    # no new facts.
+    memory = ensure_knowledge_evolution_memory(session)
+    lineage_by_claim = {}
+    for strongest in cbe.strongest_claims:
+        claim_id = strongest.get("claim_id")
+        if not claim_id:
+            continue
+        claim = graph.claims.get(claim_id)
+        memory.record(
+            claim_id,
+            EVENT_USED_IN_CBE,
+            actor="cbe",
+            reason="Selected among strongest claims by CBE ranking.",
+            text_snapshot=claim.text if claim else strongest.get("text", ""),
+            confidence_snapshot=claim.confidence if claim else 0.0,
+            state_snapshot=claim.state.value if claim else strongest.get("state", ""),
+        )
+        summary = memory.lineage_summary(claim_id)
+        strongest["lineage"] = summary
+        lineage_by_claim[claim_id] = summary
+        sync_lineage_payload(graph, claim_id, memory)
+
+    # Record rejection lineage for any rejected claims (no state change here).
+    for claim_id, claim in graph.claims.items():
+        if claim.state == EpistemicState.REJECTED and not memory.has_event(claim_id, EVENT_REJECTED):
+            memory.record(
+                claim_id,
+                EVENT_REJECTED,
+                actor="knowledge_emergence",
+                reason="Claim rejected during knowledge emergence.",
+                text_snapshot=claim.text,
+                confidence_snapshot=claim.confidence,
+                state_snapshot=claim.state.value,
+            )
+            sync_lineage_payload(graph, claim_id, memory)
+
+    cbe.lineage_by_claim = lineage_by_claim
     session.current_best_explanation = cbe
     return cbe
 
