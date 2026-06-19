@@ -8,6 +8,7 @@ epistemic packages (directive §3, §15: each engine independent).
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 # Load .env (if present) BEFORE anything reads os.environ for API keys.
 try:
@@ -18,7 +19,7 @@ except ImportError:  # python-dotenv optional; env vars may be set externally
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 
 
 class UTF8JSONResponse(JSONResponse):
@@ -71,6 +72,21 @@ def create_app() -> FastAPI:
     app.include_router(claims_router)
     app.include_router(graph_router)
     app.include_router(export_router)
+
+    # Serve the bundled frontend at the site root, same-origin with the API.
+    # Opening frontend.html via file:// triggers Chrome's "unique opaque
+    # origin" restriction, which silently blocks fetch() to localhost:8000.
+    # Serving it from this same FastAPI app sidesteps that entirely.
+    # Only this single file is exposed -- NOT the whole repo (so .env stays
+    # inaccessible regardless of what a client requests).
+    frontend_path = Path(__file__).resolve().parent.parent / "frontend.html"
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def serve_frontend():
+        if not frontend_path.exists():
+            return HTMLResponse("<h1>frontend.html not found</h1>", status_code=404)
+        return HTMLResponse(frontend_path.read_text(encoding="utf-8"))
+
     return app
 
 
