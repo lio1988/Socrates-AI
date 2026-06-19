@@ -2,23 +2,9 @@
 Dialog → CED Epistemic Bridge
 =============================
 
-Connects the dialog pipeline (agent-centric turns) to the claim-centric CED
-core (directive's true target). A completed Socratic dialogue is replayed onto
-the epistemic state machine so that:
-
-  * each Socratic position becomes a first-class CED Claim (HYPOTHESIS)
-  * each Elenchus that targets it drives a real state transition
-        HYPOTHESIS → CHALLENGED   (every challenged claim, Rule 3)
-        CHALLENGED → REVISED → SUPPORTED   (survived by revising)
-        CHALLENGED → SUPPORTED             (survived intact)
-        CHALLENGED → DISPUTED              (falsified, not revised)
-  * KnowledgeEmergenceEngine then decides promotion (evidence over agreement —
-    dialogue alone, lacking external evidence, does NOT reach KNOWLEDGE)
-  * SynthesisEngine produces the Current Best Explanation
-
-This is the read-model phase of the integration: it derives the epistemic graph
-from a finished dialogue without disturbing the live pipeline. Live, in-loop
-claim management is the next phase.
+The live pipeline now writes directly into ``session.epistemic_graph``. This
+bridge therefore first returns the live graph when it exists, and falls back to
+legacy post-hoc replay for older sessions.
 """
 
 from __future__ import annotations
@@ -47,10 +33,35 @@ def _find_target_claim(claims_by_round, round_num):
     return claims_by_round[max(candidates)]
 
 
+def _live_graph_if_available(session,
+                             thresholds: EmergenceThresholds
+                             ) -> Tuple[EpistemicGraph, CurrentBestExplanation] | None:
+    graph = getattr(session, "epistemic_graph", None)
+    if graph is None or not getattr(graph, "claims", None):
+        return None
+
+    # Re-evaluate emergence on the live graph before returning the read model.
+    KnowledgeEmergenceEngine(thresholds).evaluate_all(graph)
+    cbe = getattr(session, "current_best_explanation", None)
+    if cbe is None:
+        cbe = SynthesisEngine().synthesize(
+            session.config.topic,
+            graph,
+            list(getattr(session, "epistemic_trace", [])),
+        )
+        session.current_best_explanation = cbe
+    return graph, cbe
+
+
 def build_epistemic_graph(session,
                           thresholds: EmergenceThresholds | None = None
                           ) -> Tuple[EpistemicGraph, CurrentBestExplanation]:
     thresholds = thresholds or EmergenceThresholds()
+
+    live = _live_graph_if_available(session, thresholds)
+    if live is not None:
+        return live
+
     graph = EpistemicGraph()
     trace: List[str] = []
     topic = session.config.topic
@@ -69,11 +80,13 @@ def build_epistemic_graph(session,
 
     # 2. Replay every Elenchus as a state transition.
     for report in session.elenchus_history:
-        target = _find_target_claim(claims_by_round, report.round)
+        target_id = getattr(report, "target_claim_id", None)
+        target = graph.claims.get(target_id) if target_id else None
+        if target is None:
+            target = _find_target_claim(claims_by_round, report.round)
         if target is None:
             continue
 
-        # Record the challenge node + edge in the graph.
         chal_node = graph.add_node(
             NodeType.CONTRADICTION,
             f"Elenchus by {report.challenger_model} (round {report.round})",
@@ -81,7 +94,6 @@ def build_epistemic_graph(session,
         )
         graph.link(chal_node, target.claim_id, EdgeType.CONTRADICTS)
 
-        # Every targeted claim is challenged (Rule 3).
         if target.state in (EpistemicState.HYPOTHESIS, EpistemicState.SUPPORTED,
                              EpistemicState.VERIFIED, EpistemicState.REVISED):
             target.transition(EpistemicState.CHALLENGED,
@@ -94,7 +106,6 @@ def build_epistemic_graph(session,
                 actor=f"elenchus:{report.challenger_model}",
                 reason="Falsification arguments reduced confidence.")
             if report.revision_submitted:
-                # Author revised and the position survived in improved form.
                 target.transition(EpistemicState.REVISED, actor="author",
                                   reason="Revised in response to Elenchus.")
                 target.transition(EpistemicState.SUPPORTED, actor="author",
@@ -103,12 +114,10 @@ def build_epistemic_graph(session,
                                          actor="author",
                                          reason="Strengthened via revision.")
             else:
-                # Falsified and left unaddressed → preserved as live disagreement.
                 target.transition(EpistemicState.DISPUTED,
                                   actor="bridge",
                                   reason="Falsified without revision; kept visible.")
         else:
-            # Survived the challenge intact.
             if target.state == EpistemicState.CHALLENGED:
                 target.transition(EpistemicState.SUPPORTED, actor="bridge",
                                   reason="Survived challenge intact.")

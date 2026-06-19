@@ -220,6 +220,30 @@ session_manager = DialogSessionManager()
 # SECTION 9: HELPERS
 # ============================================================================
 
+def is_real_api_key(value: str | None) -> bool:
+    """Return True only for non-empty, non-placeholder API keys.
+
+    This keeps /health and the live pipeline from treating example .env values
+    such as xai-your-grok-key-here as real providers.
+    """
+    if value is None:
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return False
+
+    lowered = stripped.lower()
+    placeholder_markers = (
+        "your-",
+        "placeholder",
+        "changeme",
+        "example",
+        "key-here",
+        "...",
+    )
+    return not any(marker in lowered for marker in placeholder_markers)
+
+
 def get_api_keys() -> dict:
     keys = {
         "claude":  os.getenv("ANTHROPIC_API_KEY", ""),
@@ -227,7 +251,7 @@ def get_api_keys() -> dict:
         "gemini":  os.getenv("GOOGLE_API_KEY", ""),
         "chatgpt": os.getenv("OPENAI_API_KEY", ""),
     }
-    return {k: v for k, v in keys.items() if v}
+    return {k: v.strip() for k, v in keys.items() if is_real_api_key(v)}
 
 
 def speed_to_model(s: DialogSpeedEnum) -> DialogSpeed:
