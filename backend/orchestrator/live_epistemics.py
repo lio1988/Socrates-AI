@@ -1,4 +1,4 @@
-﻿"""Live CED integration helpers for the dialog pipeline.
+"""Live CED integration helpers for the dialog pipeline.
 
 This module makes the running dialog claim-centric. The old dialogue history is
 kept as a trace, but the live source of truth becomes ``session.epistemic_graph``:
@@ -32,6 +32,7 @@ from backend.epistemic.epistemic_graph import EpistemicGraph, EdgeType, NodeType
 from backend.epistemic.epistemic_state import EpistemicState, IllegalTransition
 from backend.epistemic.knowledge_emergence import KnowledgeEmergenceEngine
 from backend.reasoning.synthesis_engine import CurrentBestExplanation, SynthesisEngine
+from backend.orchestrator.meta_socrates import evaluate_session
 
 
 def _sync_claim_node(graph: EpistemicGraph, claim: EpistemicClaim) -> None:
@@ -370,5 +371,14 @@ def produce_current_best_explanation(session) -> CurrentBestExplanation:
 
     cbe.lineage_by_claim = lineage_by_claim
     session.current_best_explanation = cbe
+
+    # v6: Meta-Socrates evaluates the reasoning process itself.
+    # This is additive: it does not create claims and does not alter CBE ranking.
+    process_evaluation = evaluate_session(session)
+    session.process_evaluation = process_evaluation
+    session.epistemic_trace.append(
+        "Meta-Socrates evaluated the reasoning process: "
+        f"{process_evaluation.process_level} ({process_evaluation.process_score:.3f})."
+    )
     return cbe
 
