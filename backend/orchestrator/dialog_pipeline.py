@@ -201,12 +201,15 @@ async def _call_model(
     try:
         if s.manager is None:
             return None
-        # Delegate to existing DialogManager
-        return await s.manager.call_model(
-            model_id=model_id,
-            system_prompt=system_prompt,
-            context=context,
-        )
+        # DialogManager exposes `_call_model(model_id, prompt)` — a single
+        # prompt string. Combine the system instructions with the running
+        # conversation context into one prompt. (The previous code called a
+        # non-existent `call_model(...)`, so every call silently returned None,
+        # which left the Elenchus history empty and tripped Rule 3.)
+        prompt = system_prompt
+        if context:
+            prompt = f"{system_prompt}\n\nConversation so far:\n{context}"
+        return await s.manager._call_model(model_id, prompt)
     except Exception as exc:
         print(f"  ⚠️ {model_id} call failed: {exc}")
         return None
@@ -284,7 +287,22 @@ async def _elenchus_phase(
     import json
     raw = await _call_model(s, challenger_id, system, context)
     if not raw:
-        return None
+        # Defensive (Rule 3): even if the challenger returns nothing, record a
+        # structural Elenchus so every round is challenged and falsification is
+        # never silently skipped.
+        return ElenchusResult(
+            round=round_num,
+            target_claim_summary=context[-200:] if context else "",
+            challenger_model=challenger_id,
+            challenged_assumptions=[
+                "Challenger produced no output; structural challenge recorded."
+            ],
+            logic_gaps=[],
+            evidence_issues=[],
+            conclusion_issues=[],
+            falsification_successful=False,
+            revision_required=False,
+        )
 
     try:
         clean = raw.strip()
