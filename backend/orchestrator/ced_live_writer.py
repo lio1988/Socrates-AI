@@ -1,9 +1,8 @@
-"""CED Graph v1 live writer.
+"""CED Graph v2 live writer.
 
 Turns live debate output into graph-native epistemic objects:
 agent answer -> claim
-evidence markers -> evidence nodes
-missing evidence -> evidence gap node
+structured parser -> evidence / assumptions / objections / uncertainty / revisions
 opposition -> contradiction edge
 """
 
@@ -16,21 +15,16 @@ from typing import Iterable
 from backend.epistemic.claim import Claim, Evidence
 from backend.epistemic.epistemic_graph import EdgeType, EpistemicGraph, NodeType
 from backend.epistemic.epistemic_state import EpistemicState, IllegalTransition
-
-
-EVIDENCE_MARKERS = (
-    "because",
-    "according to",
-    "evidence",
-    "for example",
-    "for instance",
-    "data",
-    "study",
-    "source",
-    "observed",
-    "since ",
-    "therefore",
+from backend.orchestrator.structured_epistemic_parser import (
+    ParsedEpistemicAnswer,
+    StructuredEpistemicParser,
 )
+
+
+PARSER = StructuredEpistemicParser()
+
+
+EVIDENCE_MARKERS = StructuredEpistemicParser.EVIDENCE_MARKERS
 
 OPPOSITION_MARKERS = (
     "not",
@@ -58,12 +52,13 @@ OPPOSITION_PAIRS = (
 
 
 def write_answer_to_graph(session, claim_id: str, model_id: str, text: str, round_num: int) -> dict:
-    """Attach evidence/gaps/contradictions for a freshly recorded live claim."""
+    """Attach structured epistemic objects for a freshly recorded live claim."""
     graph: EpistemicGraph = session.epistemic_graph
     claim = graph.claims[claim_id]
+    parsed = PARSER.parse(text)
 
     evidence_count = 0
-    for snippet in _extract_evidence_snippets(text):
+    for snippet in parsed.supporting_evidence or _extract_evidence_snippets(text):
         _attach_evidence(graph, claim, snippet, source=model_id, round_num=round_num)
         evidence_count += 1
 
@@ -72,16 +67,97 @@ def write_answer_to_graph(session, claim_id: str, model_id: str, text: str, roun
         _record_evidence_gap(graph, claim, model_id, round_num)
         gap_count = 1
 
+    structured_counts = _attach_structured_nodes(graph, claim, parsed, model_id, round_num)
     contradiction_count = _link_live_contradictions(graph, claim, model_id, round_num)
 
-    _refresh_claim_payload(graph, claim)
+    _refresh_claim_payload(graph, claim, parsed)
 
     return {
         "claim_id": claim_id,
         "evidence_count": evidence_count,
         "evidence_gap_count": gap_count,
-        "contradiction_count": contradiction_count,
+        "contradiction_count": contradiction_count + structured_counts["contradictions"],
+        "structured_counts": structured_counts,
+        "uncertainty_level": parsed.uncertainty_level,
     }
+
+
+def _attach_structured_nodes(
+    graph: EpistemicGraph,
+    claim: Claim,
+    parsed: ParsedEpistemicAnswer,
+    model_id: str,
+    round_num: int,
+) -> dict:
+    counts = {
+        "main_claims": len(parsed.main_claims),
+        "assumptions": 0,
+        "objections": 0,
+        "contradictions": 0,
+        "revision_suggestions": 0,
+    }
+
+    for assumption in parsed.assumptions:
+        node_id = graph.add_node(
+            NodeType.HYPOTHESIS,
+            assumption[:320],
+            payload={
+                "category": "assumption",
+                "claim_id": claim.claim_id,
+                "source_model": model_id,
+                "round": round_num,
+                "parser_version": StructuredEpistemicParser.VERSION,
+            },
+        )
+        graph.link(claim.claim_id, node_id, EdgeType.DEPENDS_ON, weight=0.45)
+        counts["assumptions"] += 1
+
+    for objection in parsed.objections:
+        node_id = graph.add_node(
+            NodeType.OPEN_PROBLEM,
+            objection[:320],
+            payload={
+                "category": "objection",
+                "claim_id": claim.claim_id,
+                "source_model": model_id,
+                "round": round_num,
+                "parser_version": StructuredEpistemicParser.VERSION,
+            },
+        )
+        graph.link(node_id, claim.claim_id, EdgeType.CONTRADICTS, weight=0.55)
+        counts["objections"] += 1
+
+    for contradiction in parsed.contradictions:
+        node_id = graph.add_node(
+            NodeType.CONTRADICTION,
+            contradiction[:320],
+            payload={
+                "category": "self_contradiction_or_dispute",
+                "claim_id": claim.claim_id,
+                "source_model": model_id,
+                "round": round_num,
+                "parser_version": StructuredEpistemicParser.VERSION,
+            },
+        )
+        graph.link(node_id, claim.claim_id, EdgeType.CONTRADICTS, weight=0.65)
+        counts["contradictions"] += 1
+
+    for suggestion in parsed.revision_suggestions:
+        node_id = graph.add_node(
+            NodeType.PROCEDURE,
+            suggestion[:320],
+            payload={
+                "category": "revision_suggestion",
+                "claim_id": claim.claim_id,
+                "source_model": model_id,
+                "round": round_num,
+                "parser_version": StructuredEpistemicParser.VERSION,
+            },
+        )
+        graph.link(node_id, claim.claim_id, EdgeType.REFINES, weight=0.5)
+        counts["revision_suggestions"] += 1
+
+    return counts
 
 
 def _extract_evidence_snippets(text: str) -> list[str]:
@@ -129,6 +205,7 @@ def _attach_evidence(graph: EpistemicGraph, claim: Claim, summary: str, source: 
             "quality": ev.quality,
             "supports": True,
             "evidence_id": ev.evidence_id,
+            "parser_version": StructuredEpistemicParser.VERSION,
         },
     )
     graph.link(evidence_node_id, claim.claim_id, EdgeType.SUPPORTS, weight=ev.quality)
@@ -153,6 +230,7 @@ def _record_evidence_gap(graph: EpistemicGraph, claim: Claim, model_id: str, rou
             "source_model": model_id,
             "round": round_num,
             "reason": "No explicit evidence/provenance marker detected in live answer.",
+            "parser_version": StructuredEpistemicParser.VERSION,
         },
     )
     graph.link(claim.claim_id, gap_node_id, EdgeType.DEPENDS_ON, weight=0.5)
@@ -183,6 +261,7 @@ def _link_live_contradictions(graph: EpistemicGraph, latest: Claim, model_id: st
                 "claim_b": latest.claim_id,
                 "round": round_num,
                 "detected_by": "ced_live_writer",
+                "parser_version": StructuredEpistemicParser.VERSION,
             },
         )
         graph.link(contradiction_node_id, latest.claim_id, EdgeType.CONTRADICTS, weight=0.7)
@@ -253,7 +332,11 @@ def _token_overlap(left: str, right: str) -> float:
     return len(left_words & right_words) / max(len(left_words | right_words), 1)
 
 
-def _refresh_claim_payload(graph: EpistemicGraph, claim: Claim) -> None:
+def _refresh_claim_payload(
+    graph: EpistemicGraph,
+    claim: Claim,
+    parsed: ParsedEpistemicAnswer | None = None,
+) -> None:
     node = graph.nodes.get(claim.claim_id)
     if node is None:
         return
@@ -266,5 +349,22 @@ def _refresh_claim_payload(graph: EpistemicGraph, claim: Claim) -> None:
         "contradiction_count": len(claim.contradictions),
         "has_been_challenged": claim.has_been_challenged,
         "revision_count": len(claim.revision_history),
+        "structured_parser_version": StructuredEpistemicParser.VERSION,
     })
+
+    if parsed is not None:
+        payload.update({
+            "uncertainty_level": parsed.uncertainty_level,
+            "uncertainty_score": parsed.uncertainty_score,
+            "structured_counts": {
+                "main_claims": len(parsed.main_claims),
+                "supporting_evidence": len(parsed.supporting_evidence),
+                "assumptions": len(parsed.assumptions),
+                "objections": len(parsed.objections),
+                "contradictions": len(parsed.contradictions),
+                "revision_suggestions": len(parsed.revision_suggestions),
+            },
+            "structured_parser": parsed.to_dict(),
+        })
+
     node.payload = payload
