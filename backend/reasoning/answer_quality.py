@@ -136,6 +136,9 @@ class AnswerQualityEngine:
         selected_texts = [_clean(row.get("text", "")) for row in strongest if isinstance(row, dict)]
         all_text = " ".join(selected_texts)
         top_text = selected_texts[0] if selected_texts else ""
+        # Placeholders keep the practical_answer shape safe for empty graphs, but
+        # they must not satisfy claim-grounded answer requirements by themselves.
+        has_real_answer = bool(top_text)
 
         direct_answer = self._direct_answer(top_text)
         plain_explanation = self._plain_explanation(top_text, strongest)
@@ -148,10 +151,10 @@ class AnswerQualityEngine:
         practicality = self.practicality_score(all_text)
 
         contract = {
-            "has_direct_answer": bool(direct_answer),
-            "has_plain_explanation": bool(plain_explanation),
-            "has_practical_example": bool(practical_example),
-            "has_strongest_objection": bool(strongest_objection),
+            "has_direct_answer": has_real_answer and bool(direct_answer),
+            "has_plain_explanation": has_real_answer and bool(plain_explanation),
+            "has_practical_example": has_real_answer and bool(practical_example),
+            "has_strongest_objection": has_real_answer and bool(strongest_objection),
             "has_uncertainty": bool(uncertainty),
             "has_next_steps": len(next_steps) >= 2,
             "not_over_abstract": abstraction_penalty < 0.30,
