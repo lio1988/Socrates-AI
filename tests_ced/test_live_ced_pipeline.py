@@ -44,6 +44,13 @@ class _RevisionFakeManager:
         return "INITIAL: a\nCRITICISM: b\nREVISION: c\nFINAL: Original draft: knowledge is just a final answer."
 
 
+class _NonObjectElenchusFakeManager:
+    async def _call_model(self, model_id, prompt):
+        if prompt.startswith("You are the Elenchus challenger"):
+            return '["not", "a", "json", "object"]'
+        return "INITIAL: a\nCRITICISM: b\nREVISION: c\nFINAL: Knowledge remains provisional under challenge."
+
+
 def _make_session(sid, rounds=2, manager=None):
     cfg = DialogConfig(
         topic="Is knowledge justified true belief?",
@@ -118,3 +125,12 @@ def test_revision_updates_live_claim_and_cbe_uses_revised_text():
     assert "responsible process" in s.current_best_explanation.strongest_claims[0]["text"]
     node = s.epistemic_graph.nodes[claim.claim_id]
     assert node.payload["state"] == "SUPPORTED"
+
+
+def test_non_object_elenchus_output_does_not_crash_pipeline():
+    s = _make_session("test_live_ced_7", manager=_NonObjectElenchusFakeManager())
+    asyncio.run(dialog_pipeline_ced._run_dialog_pipeline(s.session_id))
+
+    assert s.status == "completed"
+    assert s.elenchus_history
+    assert "not a JSON object" in s.elenchus_history[-1].challenged_assumptions[0]
