@@ -32,6 +32,7 @@ from backend.epistemic.epistemic_graph import EpistemicGraph, EdgeType, NodeType
 from backend.epistemic.epistemic_state import EpistemicState, IllegalTransition
 from backend.epistemic.knowledge_emergence import KnowledgeEmergenceEngine
 from backend.reasoning.synthesis_engine import CurrentBestExplanation, SynthesisEngine
+from backend.reasoning.claim_targeting import extract_epistemic_claim_text, MAX_TARGET_CLAIM_CHARS
 from backend.orchestrator.meta_socrates import evaluate_session
 
 
@@ -94,13 +95,18 @@ def record_epistemic_question(session, model_id: str, text: str, round_num: int)
 
 
 def record_epistemic_claim(session, model_id: str, text: str, round_num: int) -> str:
-    """Store a substantive model response as a first-class CED Claim and enrich it live."""
+    """Store a substantive model response as a first-class CED Claim and enrich it live.
+
+    v10.3.1 stores the cleaned epistemic proposition, not procedural/security
+    wrappers that may appear at the beginning of a live model answer.
+    """
     graph = ensure_live_epistemics(session)
-    claim = EpistemicClaim(text=text[:400], author_model=model_id, confidence=0.5)
+    claim_text = extract_epistemic_claim_text(text)[:MAX_TARGET_CLAIM_CHARS]
+    claim = EpistemicClaim(text=claim_text, author_model=model_id, confidence=0.5)
     graph.add_claim(claim)
     _sync_claim_node(graph, claim)
 
-    write_result = write_answer_to_graph(session, claim.claim_id, model_id, text, round_num)
+    write_result = write_answer_to_graph(session, claim.claim_id, model_id, claim_text, round_num)
     _sync_claim_node(graph, claim)
 
     session.live_claim_ids_by_round[round_num] = claim.claim_id
@@ -252,9 +258,10 @@ def apply_revision_to_claim(session, claim_id: Optional[str], revision_text: str
     claim = graph.claims[claim_id]
     try:
         previous_text = claim.text
+        clean_revision_text = extract_epistemic_claim_text(revision_text)[:MAX_TARGET_CLAIM_CHARS]
         if claim.state == EpistemicState.CHALLENGED:
             claim.transition(EpistemicState.REVISED, actor=actor, reason="Revised after Elenchus.")
-        claim.text = revision_text[:400]
+        claim.text = clean_revision_text
         if claim.state == EpistemicState.REVISED:
             claim.transition(EpistemicState.SUPPORTED, actor=actor, reason="Revision accepted as supported.")
         claim.adjust_confidence(
@@ -264,7 +271,7 @@ def apply_revision_to_claim(session, claim_id: Optional[str], revision_text: str
         )
         revision_node = graph.add_node(
             NodeType.CLAIM,
-            revision_text[:400],
+            clean_revision_text[:400],
             payload={
                 "revises_claim_id": claim_id,
                 "actor": actor,
@@ -381,4 +388,3 @@ def produce_current_best_explanation(session) -> CurrentBestExplanation:
         f"{process_evaluation.process_level} ({process_evaluation.process_score:.3f})."
     )
     return cbe
-
