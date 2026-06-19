@@ -240,7 +240,7 @@ class DialogManager:
         try:
             client = anthropic.Anthropic(api_key=self.api_keys["claude"])
             message = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -258,7 +258,7 @@ class DialogManager:
                     "Authorization": f"Bearer {self.api_keys['grok']}",
                 },
                 json={
-                    "model": "grok-2-latest",
+                    "model": os.getenv("GROK_MODEL", "grok-2-latest"),
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 1024,
                 },
@@ -272,7 +272,7 @@ class DialogManager:
         """Call Google Gemini API"""
         try:
             response = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+                f"https://generativelanguage.googleapis.com/v1beta/models/{os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')}:generateContent",
                 headers={"Content-Type": "application/json"},
                 params={"key": self.api_keys["gemini"]},
                 json={"contents": [{"parts": [{"text": prompt}]}]},
@@ -292,7 +292,7 @@ class DialogManager:
                     "Authorization": f"Bearer {self.api_keys['chatgpt']}",
                 },
                 json={
-                    "model": "gpt-4o-mini",
+                    "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 1024,
                 },
