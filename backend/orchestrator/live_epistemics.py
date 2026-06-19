@@ -22,6 +22,22 @@ from backend.epistemic.knowledge_emergence import KnowledgeEmergenceEngine
 from backend.reasoning.synthesis_engine import CurrentBestExplanation, SynthesisEngine
 
 
+def _sync_claim_node(graph: EpistemicGraph, claim: EpistemicClaim) -> None:
+    """Keep the graph node mirror aligned with the live Claim object."""
+    node = graph.nodes.get(claim.claim_id)
+    if node is None:
+        return
+    node.label = claim.text
+    payload = dict(node.payload or {})
+    payload.update({
+        "state": claim.state.value,
+        "confidence": round(claim.confidence, 3),
+        "has_been_challenged": claim.has_been_challenged,
+        "revision_count": len(claim.revision_history),
+    })
+    node.payload = payload
+
+
 def ensure_live_epistemics(session) -> EpistemicGraph:
     """Attach live CED state to a session if it is not already present."""
     graph = getattr(session, "epistemic_graph", None)
@@ -66,6 +82,7 @@ def record_epistemic_claim(session, model_id: str, text: str, round_num: int) ->
     graph = ensure_live_epistemics(session)
     claim = EpistemicClaim(text=text[:400], author_model=model_id, confidence=0.5)
     graph.add_claim(claim)
+    _sync_claim_node(graph, claim)
     session.live_claim_ids_by_round[round_num] = claim.claim_id
     session.live_claim_ids_by_turn[(round_num, model_id, len(session.history))] = claim.claim_id
     session.epistemic_trace.append(
@@ -92,6 +109,13 @@ def get_claim_text(session, claim_id: Optional[str]) -> str:
     if not claim_id or claim_id not in graph.claims:
         return ""
     return graph.claims[claim_id].text
+
+
+def get_claim_author(session, claim_id: Optional[str]) -> Optional[str]:
+    graph = ensure_live_epistemics(session)
+    if not claim_id or claim_id not in graph.claims:
+        return None
+    return graph.claims[claim_id].author_model
 
 
 def apply_elenchus_to_claim(session, elenchus) -> None:
@@ -148,6 +172,7 @@ def apply_elenchus_to_claim(session, elenchus) -> None:
                     actor="live_epistemics",
                     reason="Claim survived challenge intact.",
                 )
+        _sync_claim_node(graph, claim)
     except IllegalTransition as exc:
         session.constitution_violations.append(
             f"[CED] Illegal transition for {claim_id}: {exc}"
@@ -159,14 +184,20 @@ def apply_elenchus_to_claim(session, elenchus) -> None:
 
 
 def apply_revision_to_claim(session, claim_id: Optional[str], revision_text: str, actor: str) -> None:
-    """Apply a revision to the concrete claim challenged by Elenchus."""
+    """Apply a revision to the concrete claim challenged by Elenchus.
+
+    The revised text becomes the live claim text so the Current Best Explanation
+    points at the best current version, not the pre-challenge draft.
+    """
     graph = ensure_live_epistemics(session)
     if not claim_id or claim_id not in graph.claims:
         return
     claim = graph.claims[claim_id]
     try:
+        previous_text = claim.text
         if claim.state == EpistemicState.CHALLENGED:
             claim.transition(EpistemicState.REVISED, actor=actor, reason="Revised after Elenchus.")
+        claim.text = revision_text[:400]
         if claim.state == EpistemicState.REVISED:
             claim.transition(EpistemicState.SUPPORTED, actor=actor, reason="Revision accepted as supported.")
         claim.adjust_confidence(
@@ -177,9 +208,15 @@ def apply_revision_to_claim(session, claim_id: Optional[str], revision_text: str
         revision_node = graph.add_node(
             NodeType.CLAIM,
             revision_text[:400],
-            payload={"revises_claim_id": claim_id, "actor": actor},
+            payload={
+                "revises_claim_id": claim_id,
+                "actor": actor,
+                "previous_text": previous_text[:400],
+                "role": "revision_snapshot",
+            },
         )
         graph.link(revision_node, claim_id, EdgeType.REFINES)
+        _sync_claim_node(graph, claim)
         session.epistemic_trace.append(f"Revision by {actor} refined claim {claim_id}.")
     except IllegalTransition as exc:
         session.constitution_violations.append(
@@ -190,7 +227,11 @@ def apply_revision_to_claim(session, claim_id: Optional[str], revision_text: str
 def produce_current_best_explanation(session) -> CurrentBestExplanation:
     """Evaluate live knowledge emergence and synthesize the CBE from the graph."""
     graph = ensure_live_epistemics(session)
+    for claim in graph.claims.values():
+        _sync_claim_node(graph, claim)
     KnowledgeEmergenceEngine(EmergenceThresholds()).evaluate_all(graph)
+    for claim in graph.claims.values():
+        _sync_claim_node(graph, claim)
     cbe = SynthesisEngine().synthesize(
         session.config.topic,
         graph,
