@@ -1,10 +1,14 @@
-"""CED Graph v10.3.1: deterministic claim targeting and prompt-injection hardening.
+"""CED Graph v10.3.2: deterministic claim targeting and prompt-injection hardening.
 
 This module decides *which* claim Elenchus should challenge and ensures
 dialogue context is treated as untrusted evidence, not as instructions.
 
-v10.3.1 adds claim-integrity filtering: procedural wrappers, security notes,
+v10.3.1 added claim-integrity filtering: procedural wrappers, security notes,
 and model meta-commentary are stripped before text becomes an Elenchus target.
+
+v10.3.2 adds sentence-level substantive claim selection: English instruction and
+roleplay wrappers (e.g. "Deliver a thoughtful, in-character...") are removed, and
+the best substantive epistemic proposition is selected before targeting.
 """
 
 from __future__ import annotations
