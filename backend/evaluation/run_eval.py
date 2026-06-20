@@ -15,8 +15,6 @@ from backend.evaluation.harness import run_benchmark
 def main() -> None:
     report = run_benchmark()
     print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
-    print()
-    print(report.disclaimer)
 
 
 if __name__ == "__main__":

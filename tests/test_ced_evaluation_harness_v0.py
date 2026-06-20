@@ -128,3 +128,17 @@ def test_run_report_aggregates_per_case_and_overall():
     assert report.aggregate_run_score == expected
     for c in report.cases:
         assert 0.0 <= c["run_score"] <= 1.0
+
+
+def test_cli_output_is_valid_json(capsys):
+    """`python -m backend.evaluation.run_eval` must print parseable JSON to
+    stdout (the disclaimer lives inside the JSON, not as trailing plaintext)."""
+    from backend.evaluation import run_eval
+
+    run_eval.main()
+    out = capsys.readouterr().out
+
+    parsed = json.loads(out)  # must not raise
+    assert parsed["schema_version"] == "ced_eval_v0.1"
+    assert "disclaimer" in parsed and parsed["disclaimer"]
+    assert "aggregate_run_score" in parsed
