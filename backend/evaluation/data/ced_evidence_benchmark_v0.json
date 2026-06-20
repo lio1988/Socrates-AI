@@ -1,0 +1,94 @@
+{
+  "schema_version": "ced_evidence_eval_v0.1",
+  "harness": "ced_evidence_harness_v0.1",
+  "description": "Local, deterministic, fixture-based benchmark for the Evidence Layer v0.1. No live calls. Evidence statuses and the evidence-constrained final answer are regression signals over scripted fixtures, NOT truth guarantees. Each case sets confidence/reviews/challenge identically so that the ONLY variable distinguishing outcomes is the attached evidence.",
+  "cases": [
+    {
+      "id": "evidence_supported",
+      "question": "Does spaced repetition improve long-term retention?",
+      "claim_text": "Spaced repetition improves long-term retention compared with massed study.",
+      "confidence": 0.8,
+      "challenged": true,
+      "independent_reviews": 3,
+      "evidence_fixtures": [
+        {
+          "stance": "supporting",
+          "strength": 0.9,
+          "summary": "Controlled study: spaced groups outperformed massed groups at 30-day recall.",
+          "source_label": "fixture:study_spacing_a",
+          "source_type": "empirical"
+        },
+        {
+          "stance": "supporting",
+          "strength": 0.85,
+          "summary": "Independent replication reports the same direction of effect.",
+          "source_label": "fixture:study_spacing_b",
+          "source_type": "empirical"
+        }
+      ],
+      "gold": {
+        "expected_status": "WELL_SUPPORTED",
+        "eligible_primary": true,
+        "must_appear_in": "supported_claims"
+      }
+    },
+    {
+      "id": "evidence_contradicted",
+      "question": "Do learning styles (visual/auditory/kinesthetic) improve outcomes when matched?",
+      "claim_text": "Matching instruction to a learner's preferred learning style improves outcomes.",
+      "confidence": 0.8,
+      "challenged": true,
+      "independent_reviews": 3,
+      "evidence_fixtures": [
+        {
+          "stance": "contradicting",
+          "strength": 0.85,
+          "summary": "Meta-analysis finds no benefit from matching instruction to learning style.",
+          "source_label": "fixture:meta_learning_styles",
+          "source_type": "statistical"
+        }
+      ],
+      "gold": {
+        "expected_status": "REFUTED",
+        "eligible_primary": false,
+        "must_appear_in": "refuted_claims"
+      }
+    },
+    {
+      "id": "evidence_weak",
+      "question": "Does background instrumental music help studying?",
+      "claim_text": "Listening to background instrumental music helps studying.",
+      "confidence": 0.8,
+      "challenged": true,
+      "independent_reviews": 3,
+      "evidence_fixtures": [
+        {
+          "stance": "weak",
+          "strength": 0.5,
+          "summary": "Small, mixed survey suggests some learners feel more focused; inconclusive.",
+          "source_label": "fixture:survey_music",
+          "source_type": "anecdotal"
+        }
+      ],
+      "gold": {
+        "expected_status": "WEAKLY_SUPPORTED",
+        "eligible_primary": false,
+        "must_appear_in": "speculative_claims"
+      }
+    },
+    {
+      "id": "evidence_missing",
+      "question": "Does a 20-minute nap before studying improve encoding?",
+      "claim_text": "A 20-minute nap immediately before studying improves memory encoding.",
+      "confidence": 0.8,
+      "challenged": true,
+      "independent_reviews": 3,
+      "evidence_fixtures": [],
+      "gold": {
+        "expected_status": "MISSING",
+        "eligible_primary": false,
+        "must_appear_in": "missing_evidence"
+      }
+    }
+  ]
+}

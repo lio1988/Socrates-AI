@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .epistemic_state import (
@@ -35,14 +36,37 @@ def _new_id(prefix: str = "claim") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+class EvidenceStance(str, Enum):
+    """Deterministic stance of a piece of evidence toward a claim.
+
+    SUPPORTING     - backs the claim.
+    CONTRADICTING  - undermines the claim.
+    WEAK           - relevant but insufficient/inconclusive; does NOT strongly
+                     support and does NOT contradict. WEAK evidence must never,
+                     on its own, make a claim WELL_SUPPORTED.
+    """
+
+    SUPPORTING = "supporting"
+    CONTRADICTING = "contradicting"
+    WEAK = "weak"
+
+
 @dataclass
 class Evidence:
     evidence_id: str
     summary: str
     source: Optional[str] = None
-    quality: float = 0.0          # 0..1, set by the verifier
-    supports: bool = True         # supports vs. undermines the claim
+    quality: float = 0.0          # 0..1, set by the verifier (LEGACY field)
+    supports: bool = True         # LEGACY compatibility flag (supports vs. undermines)
     created_at: datetime = field(default_factory=_now)
+    # ---- Evidence Layer v0.1 (all optional; fully backward compatible) -------
+    # `stance` supersedes `supports` when set (see evidence_scoring.effective_stance).
+    stance: Optional[EvidenceStance] = None
+    # `strength` optionally overrides `quality` for the audit layer; defaults to quality.
+    strength: Optional[float] = None
+    source_label: str = "fixture:unspecified"   # provenance label, NOT a verified source
+    source_type: str = "testimonial"            # empirical|testimonial|formal|statistical|anecdotal
+    verifiable: bool = False                    # v0.1 is fixtures-only -> always False
 
 
 @dataclass
