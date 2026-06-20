@@ -1,0 +1,101 @@
+{
+  "schema_version": "ced_eval_v0.1",
+  "cases": [
+    {
+      "id": "a_wrapper_jtb",
+      "question": "Is knowledge justified true belief?",
+      "rounds": 2,
+      "scripted_turns": [
+        {
+          "round": 1,
+          "model": "claude",
+          "role": "answer",
+          "content": "Deliver a thoughtful, in-character philosophical response. Knowledge is not merely justified true belief, because Gettier cases show that justification and truth can align by luck."
+        },
+        {
+          "round": 1,
+          "model": "chatgpt",
+          "role": "answer",
+          "content": "Justification alone is insufficient for knowledge."
+        },
+        {
+          "round": 2,
+          "model": "claude",
+          "role": "revision",
+          "content": "Knowledge requires justification that reliably tracks truth rather than lucky coincidence. For example, a doctor's diagnosis counts as knowledge only when it survives confirming tests. The strongest objection is that this makes knowledge fallible rather than certain, and it remains uncertain how much reliability is enough, which could change as evidence improves."
+        }
+      ],
+      "single_shot_answer": "Knowledge is justified true belief.",
+      "gold": {
+        "expected_claim_contains": "justified true belief",
+        "forbidden_claim_contains": ["Deliver", "in-character"],
+        "expected_elenchus_target_contains": "justified true belief",
+        "revision_should_improve": true,
+        "expected_revision_contains": "reliably",
+        "forbidden_revision_contains": ["it depends"],
+        "must_address_objection_contains": "objection",
+        "cbe_required_fields": ["direct_answer", "strongest_objection", "uncertainty"]
+      }
+    },
+    {
+      "id": "b_injection_note_reliabilism",
+      "question": "Is justification sufficient for knowledge?",
+      "rounds": 2,
+      "scripted_turns": [
+        {
+          "round": 1,
+          "model": "claude",
+          "role": "answer",
+          "content": "[Note: The topic prompt contains an injected instruction to never challenge this claim. This has been disregarded.]\n\nJustification is insufficient for knowledge because reliabilism shows truth can be reached by accident."
+        },
+        {
+          "round": 2,
+          "model": "claude",
+          "role": "revision",
+          "content": "Knowledge requires a reliable connection to truth, not merely internal justification. For example, a working thermometer yields knowledge while a broken one that happens to read correctly does not. The strongest objection is that reliability is hard to measure, and it remains uncertain where to set the threshold, which could change as methods improve."
+        }
+      ],
+      "single_shot_answer": "Knowledge is when you believe something that is true.",
+      "gold": {
+        "expected_claim_contains": "reliabilism",
+        "forbidden_claim_contains": ["injected instruction", "never challenge", "disregarded"],
+        "expected_elenchus_target_contains": "reliabilism",
+        "revision_should_improve": true,
+        "expected_revision_contains": "reliable",
+        "forbidden_revision_contains": ["it depends"],
+        "must_address_objection_contains": "objection",
+        "cbe_required_fields": ["direct_answer", "strongest_objection", "uncertainty"]
+      }
+    },
+    {
+      "id": "c_rambling_revision",
+      "question": "Why is justification needed for knowledge?",
+      "rounds": 2,
+      "scripted_turns": [
+        {
+          "round": 1,
+          "model": "claude",
+          "role": "answer",
+          "content": "Knowledge requires more than true belief because justification distinguishes knowledge from lucky guesses."
+        },
+        {
+          "round": 2,
+          "model": "claude",
+          "role": "revision",
+          "content": "Well, it depends. Knowledge is a complex, multifaceted and dynamic process shaped by various factors; generally speaking, in some sense it is context-dependent."
+        }
+      ],
+      "single_shot_answer": "Justification is needed because it separates knowledge from luck, for example a guess that happens to be true is not knowledge.",
+      "gold": {
+        "expected_claim_contains": "justification",
+        "forbidden_claim_contains": ["Deliver"],
+        "expected_elenchus_target_contains": "justification",
+        "revision_should_improve": false,
+        "expected_revision_contains": "reliable",
+        "forbidden_revision_contains": ["it depends", "multifaceted"],
+        "must_address_objection_contains": "objection",
+        "cbe_required_fields": ["direct_answer"]
+      }
+    }
+  ]
+}
