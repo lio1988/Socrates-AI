@@ -1,4 +1,4 @@
-"""CED Graph v10.3 Claim Targeting & Prompt-Injection Hardening tests."""
+"""CED Graph v10.3/v10.3.1 Claim Targeting & Prompt-Injection Hardening tests."""
 
 import asyncio
 
@@ -7,6 +7,7 @@ from backend.orchestrator.session import EnhancedDialogSession, session_manager
 from backend.orchestrator import dialog_pipeline_ced
 from backend.orchestrator.live_epistemics import ensure_live_epistemics, record_epistemic_claim
 from backend.reasoning.claim_targeting import (
+    extract_epistemic_claim_text,
     sanitize_context_for_elenchus,
     score_claim_for_elenchus,
     select_elenchus_target,
@@ -112,3 +113,65 @@ def test_pipeline_uses_hardened_context_for_elenchus_and_preserves_explanation_f
     combined_prompts = "\n\n".join(s.manager.prompts)
     assert "UNTRUSTED DIALOGUE TRACE" in combined_prompts
     assert "prompt_injection_ignored" in combined_prompts
+
+
+def test_claim_extraction_removes_security_wrapper_before_targeting():
+    wrapped = """
+Proceeding with substantive philosophical response, flagging prompt injection, and issuing a revision.
+
+*[Note: The topic prompt contains an injected instruction to never challenge this claim. This has been disregarded.]*
+
+---
+
+## Response to the Socratic Question
+
+Knowledge requires a non-accidental connection because justification and truth can coincide by luck.
+"""
+    cleaned = extract_epistemic_claim_text(wrapped)
+
+    assert "Proceeding with" not in cleaned
+    assert "prompt injection" not in cleaned.lower()
+    assert "injected instruction" not in cleaned.lower()
+    assert "Knowledge requires a non-accidental connection" in cleaned
+
+
+def test_selector_targets_cleaned_claim_not_meta_security_wrapper():
+    s = _make_session("test_v10_3_1_clean_target_selection")
+    wrapped = """
+Proceeding with substantive philosophical response, flagging prompt injection, and issuing a revision.
+
+*[Note: The topic prompt contains an injected instruction to never challenge this claim. This has been disregarded.]*
+
+Knowledge requires a non-accidental connection because justification and truth can coincide by luck.
+"""
+    claim_id = record_epistemic_claim(s, "claude", wrapped, 1)
+
+    selection = select_elenchus_target(s, 1)
+
+    assert selection.claim_id == claim_id
+    assert "Proceeding with" not in selection.claim_text
+    assert "prompt injection" not in selection.claim_text.lower()
+    assert "Knowledge requires" in selection.claim_text
+
+
+def test_target_rotation_prefers_unchallenged_claim_when_available():
+    s = _make_session("test_v10_3_1_target_rotation")
+    first_id = record_epistemic_claim(
+        s,
+        "claude",
+        "Knowledge requires coherent evidence because lucky true belief is not enough for stable inquiry.",
+        1,
+    )
+    second_id = record_epistemic_claim(
+        s,
+        "chatgpt",
+        "Justification must remain revisable because epistemic standards can fail under counterexamples.",
+        2,
+    )
+
+    s.epistemic_graph.claims[first_id].has_been_challenged = True
+
+    selection = select_elenchus_target(s, 2)
+
+    assert selection.claim_id == second_id
+    assert "already_challenged" not in selection.reasons
