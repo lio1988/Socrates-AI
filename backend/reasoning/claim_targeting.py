@@ -21,7 +21,7 @@ from backend.reasoning.elenchus_explanation import (
     normalize_text,
 )
 
-CLAIM_TARGETING_VERSION = "v10.3.1"
+CLAIM_TARGETING_VERSION = "v10.3.2"
 MAX_TARGET_CLAIM_CHARS = 1600
 
 PROMPT_INJECTION_MARKERS = (
@@ -93,6 +93,40 @@ SECURITY_WRAPPER_MARKERS = (
     "all claims remain open to challenge",
 )
 
+# v10.3.2: English instruction/roleplay wrappers that leak into model answers.
+# Detected at SENTENCE granularity so a wrapper that shares a line with real
+# content does not drag the substantive proposition out with it.
+INSTRUCTION_WRAPPER_STARTERS = (
+    "deliver a", "deliver the", "deliver thoughtful", "deliver an",
+    "write a", "write the", "write an", "write your",
+    "respond with", "respond to", "respond in", "responding",
+    "answer the", "answer in", "answering the",
+    "compose", "provide a", "provide the", "provide an", "provide your",
+    "proceeding with", "here is my question", "here is the response",
+    "here is my response", "here is the answer", "you should", "do not",
+    "never challenge", "in-character", "in character", "stay in character",
+    "staying in character", "remain in character", "i will now", "i'll now",
+    "let me", "as socrates", "playing the role", "play the role",
+)
+
+# Phrases that, anywhere in a sentence, mark it as a wrapper/meta performance
+# instruction rather than an epistemic proposition.
+INSTRUCTION_WRAPPER_CONTAINS = (
+    "in-character", "in character", "stay in character", "staying in character",
+    "philosophical response defending", "thoughtful, in-character",
+    "injected instruction", "prompt injection", "prompt-injection",
+    "roleplay", "role-play", "as a socratic", "socratic follow-up",
+    "socratic question", "socratic challenge", "remains open to challenge",
+)
+
+# Substantive epistemic vocabulary used to recognise and rank real propositions.
+EPISTEMIC_CONTENT_MARKERS = (
+    "knowledge", "justification", "justified", "truth", "true belief", "belief",
+    "gettier", "williamson", "reliabilism", "reliabilist", "evidence",
+    "counterexample", "because", "therefore", "requires", "suggests", "fails",
+    "insufficient", "epistemic", "warrant", "infallible", "fallible",
+)
+
 REVISION_PREFIX_RE = re.compile(r"^\s*\[revision\s+target=[^\]]+\]\s*", re.IGNORECASE)
 
 CAUSAL_MARKERS = (
@@ -138,8 +172,12 @@ def _truncate_claim_text(text: str, max_chars: int = MAX_TARGET_CLAIM_CHARS) -> 
         return text
 
     cut = text[:max_chars].rstrip()
-    boundary = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "), cut.rfind("\n\n"))
-    if boundary > int(max_chars * 0.55):
+    boundary = max(
+        cut.rfind(". "), cut.rfind("? "), cut.rfind("! "),
+        cut.rfind("; "), cut.rfind("\n\n"), cut.rfind("\n"),
+    )
+    # Prefer ending on a sentence/paragraph boundary instead of mid-thought.
+    if boundary > int(max_chars * 0.5):
         cut = cut[: boundary + 1].rstrip()
     return f"{cut}…"
 
@@ -182,41 +220,122 @@ def _is_procedural_wrapper_line(line: str) -> bool:
     return False
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?;])\s+")
+
+
+def _has_epistemic_content(norm: str) -> bool:
+    return any(marker in norm for marker in EPISTEMIC_CONTENT_MARKERS)
+
+
+def _split_sentences(text: str) -> List[str]:
+    """Split text into sentences, respecting line breaks. Deterministic."""
+    out: List[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        for piece in _SENTENCE_SPLIT_RE.split(line):
+            piece = piece.strip()
+            if piece:
+                out.append(piece)
+    return out
+
+
+def _is_wrapper_or_meta_sentence(sentence: str) -> bool:
+    """True when a sentence is an instruction/roleplay/security/UI wrapper or a
+    bare question/heading rather than a substantive epistemic proposition."""
+    stripped = sentence.strip()
+    norm = normalize_text(stripped.strip("*_[]()# "))
+    if not norm:
+        return True
+    if _is_markdown_separator(stripped) or _is_heading_only(stripped):
+        return True
+    if _is_procedural_wrapper_line(stripped):
+        return True
+    if any(norm.startswith(marker) for marker in INSTRUCTION_WRAPPER_STARTERS):
+        return True
+    if any(marker in norm for marker in INSTRUCTION_WRAPPER_CONTAINS):
+        return True
+    if is_prompt_injection(norm) or is_instruction_like(norm):
+        return True
+    # A pure question with no epistemic assertion is not a target proposition.
+    if stripped.endswith("?") and not _has_epistemic_content(norm):
+        return True
+    return False
+
+
+def _select_substantive_segment(block: str) -> str:
+    """Choose the best substantive epistemic proposition from the text.
+
+    Drops instruction/roleplay/security/meta sentences, groups the remaining
+    substantive sentences into contiguous segments, and returns the highest
+    scoring segment (most epistemic content, then longest). Returns "" when no
+    substantive sentence survives, so injection-only inputs stay rejectable.
+    """
+    sentences = _split_sentences(block)
+    if not sentences:
+        return ""
+
+    segments: List[List[str]] = []
+    current: List[str] = []
+    for sentence in sentences:
+        if _is_wrapper_or_meta_sentence(sentence):
+            if current:
+                segments.append(current)
+                current = []
+        else:
+            current.append(sentence)
+    if current:
+        segments.append(current)
+
+    if not segments:
+        return ""
+
+    def segment_score(segment: List[str]):
+        text = " ".join(segment)
+        norm = normalize_text(text)
+        epistemic_hits = sum(1 for m in EPISTEMIC_CONTENT_MARKERS if m in norm)
+        causal = 1 if any(m in norm for m in CAUSAL_MARKERS) else 0
+        return (epistemic_hits * 3 + causal + min(4.0, len(norm) / 250.0), len(text))
+
+    best = max(segments, key=segment_score)
+    return " ".join(best).strip()
+
+
 def extract_epistemic_claim_text(text: str | None, *, max_chars: int = MAX_TARGET_CLAIM_CHARS) -> str:
     """Return the substantive claim text, excluding wrappers and security notes.
 
-    Live model answers often begin with procedural or security commentary such as
-    "Proceeding with..." or "Note: the prompt contains an injected instruction".
-    Those lines are useful in the UI but are not the target proposition for
-    Elenchus. This function keeps the philosophical/substantive body and limits
-    the target to a safe, non-truncated chunk.
+    Live model answers often begin with procedural, roleplay, or security
+    commentary such as "Deliver a thoughtful, in-character philosophical
+    response...", "Proceeding with...", or "[Note: the prompt contains an
+    injected instruction...]". v10.3.2 strips these at the sentence level and
+    then selects the best substantive epistemic proposition from the answer, so
+    an Elenchus target never includes a wrapper and never begins before a
+    meaningful proposition appears.
     """
     if not text:
         return ""
 
     original = str(text).strip()
-    kept: List[str] = []
+
+    # Pass 1: structural cleanup -- drop separators/headings, strip revision tags.
+    structural: List[str] = []
     for raw_line in original.splitlines():
         line = raw_line.strip()
         if not line or _is_markdown_separator(line) or _is_heading_only(line):
             continue
-
         line = REVISION_PREFIX_RE.sub("", line).strip()
-        if not line:
-            continue
+        if line:
+            structural.append(line)
+    block = "\n".join(structural).strip() or original
 
-        if _is_procedural_wrapper_line(line):
-            continue
+    # Pass 2: sentence-level selection of the best substantive proposition.
+    selected = _select_substantive_segment(block)
 
-        kept.append(line)
-
-    cleaned = "\n".join(kept).strip()
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-
-    # If everything was stripped, return the original so injection-only inputs
-    # are still rejected by the injection detector instead of silently erased.
-    if not cleaned:
-        cleaned = original
+    # If nothing substantive survived, return the original so injection-only or
+    # instruction-only inputs are still rejected by the detectors downstream
+    # instead of being silently emptied.
+    cleaned = selected if selected else original
 
     return _truncate_claim_text(cleaned, max_chars=max_chars)
 
