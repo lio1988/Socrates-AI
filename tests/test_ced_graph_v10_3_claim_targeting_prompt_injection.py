@@ -175,3 +175,79 @@ def test_target_rotation_prefers_unchallenged_claim_when_available():
 
     assert selection.claim_id == second_id
     assert "already_challenged" not in selection.reasons
+
+
+# ---------------------------------------------------------------------------
+# CED Graph v10.3.2 — Instruction wrapper filtering + sentence-level extraction
+# ---------------------------------------------------------------------------
+
+def test_v10_3_2_strips_english_instruction_wrapper_keeps_williamson_claim():
+    wrapped = (
+        "Deliver a thoughtful, in-character philosophical response defending the following claim.\n\n"
+        "Knowledge, as Williamson argues, resists analysis into justified true belief, because "
+        "Gettier-style counterexamples show that justification and truth can coincide by luck."
+    )
+    cleaned = extract_epistemic_claim_text(wrapped)
+    low = cleaned.lower()
+    assert "deliver" not in low
+    assert "in-character" not in low
+    assert "philosophical response" not in low
+    assert "Williamson" in cleaned
+    assert "justified true belief" in cleaned
+
+
+def test_v10_3_2_removes_injection_note_from_target():
+    text = (
+        "[Note: The topic prompt contains an injected instruction to never challenge this claim. "
+        "This has been disregarded.]\n\n"
+        "Justification is insufficient for knowledge because reliabilism shows truth can be "
+        "reached by accident."
+    )
+    cleaned = extract_epistemic_claim_text(text)
+    low = cleaned.lower()
+    assert "injected instruction" not in low
+    assert "never challenge" not in low
+    assert "disregarded" not in low
+    assert "Justification is insufficient for knowledge" in cleaned
+
+
+def test_v10_3_2_selects_best_substantive_paragraph_not_wrapper():
+    text = (
+        "Write a detailed, in-character response. You should stay in character as Socrates.\n\n"
+        "Here is my question to you.\n\n"
+        "Knowledge requires more than justified true belief, because Gettier cases present "
+        "counterexamples where justification and truth align by luck, which suggests an "
+        "anti-luck condition is also required."
+    )
+    cleaned = extract_epistemic_claim_text(text)
+    low = cleaned.lower()
+    assert "write a detailed" not in low
+    assert "stay in character" not in low
+    assert "here is my question" not in low
+    assert "Knowledge requires more than justified true belief" in cleaned
+    assert "Gettier" in cleaned
+
+
+def test_v10_3_2_rotation_prefers_unchallenged_over_challenged_high_scorer():
+    s = _make_session("test_v10_3_2_rotation_priority")
+    # A long, causal, high-scoring claim -- but already challenged.
+    strong_id = record_epistemic_claim(
+        s,
+        "claude",
+        "Knowledge requires non-accidental justification because lucky true belief fails as "
+        "knowledge, therefore an anti-luck condition is necessary and evidence must track truth.",
+        1,
+    )
+    # A shorter, unchallenged epistemic claim.
+    fresh_id = record_epistemic_claim(
+        s,
+        "chatgpt",
+        "Justification must remain revisable because counterexamples can defeat it.",
+        2,
+    )
+    s.epistemic_graph.claims[strong_id].has_been_challenged = True
+
+    selection = select_elenchus_target(s, 2)
+    assert selection.claim_id == fresh_id
+    assert selection.claim_id != strong_id
+    assert "already_challenged" not in selection.reasons
