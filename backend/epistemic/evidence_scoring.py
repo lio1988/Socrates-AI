@@ -44,6 +44,43 @@ def effective_stance(ev: Evidence) -> EvidenceStance:
     return EvidenceStance.SUPPORTING if ev.supports else EvidenceStance.CONTRADICTING
 
 
+def normalize_text(value: str) -> str:
+    """Whitespace/case-insensitive normalization for self-assertion matching."""
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def is_internal_self_assertion_evidence(claim, evidence) -> bool:
+    """True iff ``evidence`` is the live pipeline's baseline *self-assertion*.
+
+    A claim restating itself is NOT evidence. The live writer attaches one
+    baseline Evidence per recorded claim whose summary == the claim text, with
+    ``quality <= 0.35``, ``supports=True`` and NO explicit stance. The audit
+    layer must ignore it.
+
+    Real fixtures ALWAYS set ``stance`` explicitly, so the ``stance is None``
+    clause guarantees genuine fixture evidence is never matched here. This helper
+    does NOT remove the evidence from the claim and does NOT change the legacy
+    ``Claim.evidence_quality`` -- it only scopes the *audit* calculations.
+    """
+    return (
+        getattr(evidence, "stance", None) is None
+        and getattr(evidence, "supports", None) is True
+        and float(getattr(evidence, "quality", 0.0) or 0.0) <= 0.35
+        and normalize_text(getattr(evidence, "summary", ""))
+        == normalize_text(getattr(claim, "text", ""))
+    )
+
+
+def audit_relevant_evidence(claim: Claim) -> List[Evidence]:
+    """Audit-relevant evidence: the claim's evidence minus internal
+    self-assertion baseline(s). Read-only; never mutates the claim."""
+    return [
+        e
+        for e in getattr(claim, "evidence", [])
+        if not is_internal_self_assertion_evidence(claim, e)
+    ]
+
+
 def _strength(ev: Evidence) -> float:
     """Per-evidence strength: ``strength`` overrides ``quality`` when set."""
     val = ev.strength if ev.strength is not None else ev.quality
@@ -110,7 +147,7 @@ def evidence_balance(claim: Claim) -> EvidenceBalance:
     support: List[float] = []
     contra: List[float] = []
     weak: List[float] = []
-    for ev in claim.evidence:
+    for ev in audit_relevant_evidence(claim):
         st = effective_stance(ev)
         s = _strength(ev)
         if st == EvidenceStance.SUPPORTING:
@@ -174,6 +211,6 @@ def evidence_summary(claim: Claim) -> Dict:
         "claim_id": claim.claim_id,
         "status": status.value,
         "balance": b.to_dict(),
-        "sources": [ev.source_label for ev in claim.evidence],
+        "sources": [ev.source_label for ev in audit_relevant_evidence(claim)],
         "note": _MASS_NOTE,
     }

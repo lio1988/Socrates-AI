@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from backend.epistemic.claim import Claim
-from backend.epistemic.evidence_scoring import effective_stance
+from backend.epistemic.evidence_scoring import effective_stance, audit_relevant_evidence
 from backend.reasoning.evidence_constrained_cbe import (
     FinalEpistemicAnswer,
     NO_SUPPORTED_ANSWER,
@@ -49,13 +49,17 @@ class EvidenceCaseResult:
 
 
 def _attachment_correct(case, claim: Claim) -> bool:
-    """Each fixture became an Evidence on the claim with a consistent stance."""
-    if len(claim.evidence) != len(case.evidence_fixtures):
+    """Each fixture became an Evidence on the claim with a consistent stance.
+
+    Counts only audit-relevant evidence (the live recorder's baseline
+    self-assertion is excluded, mirroring the audit layer)."""
+    evs = audit_relevant_evidence(claim)
+    if len(evs) != len(case.evidence_fixtures):
         return False
     want = sorted(
         str(fx.get("stance", "supporting")).lower() for fx in case.evidence_fixtures
     )
-    got = sorted(effective_stance(ev).value for ev in claim.evidence)
+    got = sorted(effective_stance(ev).value for ev in evs)
     return want == got
 
 

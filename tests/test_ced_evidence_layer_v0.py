@@ -20,10 +20,12 @@ from backend.epistemic.knowledge_emergence import KnowledgeEmergenceEngine
 from backend.epistemic.epistemic_graph import EpistemicGraph, NodeType, EdgeType
 from backend.epistemic.evidence_scoring import (
     EvidenceStatus,
+    audit_relevant_evidence,
     effective_stance,
     evidence_balance,
     evidence_status,
     evidence_summary,
+    is_internal_self_assertion_evidence,
     saturating_mass,
 )
 from backend.epistemic.evidence_fixtures import evidence_from_fixture, attach_evidence
@@ -384,3 +386,109 @@ def test_knowledge_emergence_engine_behavior_unchanged():
     decision = engine.evaluate(c)
     assert decision.promoted is True
     assert c.state == EpistemicState.KNOWLEDGE
+
+
+# --------------------------------------------------------------------------- #
+# 10. Internal self-assertion baseline is ignored by the AUDIT only
+#     (a claim restating itself is not evidence). Legacy quality is untouched.
+# --------------------------------------------------------------------------- #
+def _self_assertion(text: str, quality: float = 0.35) -> Evidence:
+    """Mirror the live writer's baseline self-evidence: summary == claim text,
+    quality <= 0.35, supports=True, NO explicit stance."""
+    return Evidence("baseline", text, quality=quality, supports=True)
+
+
+def test_self_assertion_evidence_is_detected():
+    c = Claim(text="Napping improves recall.", author_model="m")
+    assert is_internal_self_assertion_evidence(c, _self_assertion(c.text)) is True
+
+
+def test_real_fixture_is_never_self_assertion():
+    # A fixture carries an explicit stance, so it is never mistaken for the
+    # self-assertion baseline -- even at low strength with identical text.
+    c = Claim(text="Napping improves recall.", author_model="m")
+    ev = evidence_from_fixture(
+        {"stance": "supporting", "strength": 0.3, "summary": c.text}, index=0
+    )
+    assert is_internal_self_assertion_evidence(c, ev) is False
+
+
+def test_claim_with_only_self_assertion_is_missing():
+    c = Claim(text="Napping improves recall.", author_model="m")
+    c.add_evidence(_self_assertion(c.text))
+    assert audit_relevant_evidence(c) == []                       # excluded from audit
+    assert evidence_status(c) == EvidenceStatus.MISSING
+
+
+def test_self_assertion_kept_in_legacy_quality_but_ignored_by_audit():
+    # The baseline stays on the claim and STILL counts in legacy evidence_quality,
+    # while the audit ignores it. Proves the two paths are decoupled.
+    c = Claim(text="Napping improves recall.", author_model="m")
+    c.add_evidence(_self_assertion(c.text, quality=0.35))
+    assert c.evidence_quality == 0.35                    # legacy path unchanged
+    assert evidence_status(c) == EvidenceStatus.MISSING  # audit excludes it
+
+
+def test_self_assertion_plus_real_supporting_is_well_supported():
+    c = Claim(text="Spaced repetition aids retention.", author_model="m")
+    c.add_evidence(_self_assertion(c.text))
+    c.add_evidence(evidence_from_fixture({"stance": "supporting", "strength": 0.9, "summary": "study a"}, index=1))
+    c.add_evidence(evidence_from_fixture({"stance": "supporting", "strength": 0.85, "summary": "study b"}, index=2))
+    assert len(audit_relevant_evidence(c)) == 2                   # seed excluded
+    assert evidence_status(c) == EvidenceStatus.WELL_SUPPORTED
+
+
+def test_self_assertion_plus_real_weak_is_weakly_supported():
+    c = Claim(text="Background music helps studying.", author_model="m")
+    c.add_evidence(_self_assertion(c.text))
+    c.add_evidence(evidence_from_fixture({"stance": "weak", "strength": 0.5, "summary": "survey"}, index=1))
+    assert evidence_status(c) == EvidenceStatus.WEAKLY_SUPPORTED
+
+
+def test_self_assertion_plus_real_contradicting_is_refuted():
+    c = Claim(text="Learning styles improve outcomes.", author_model="m")
+    c.add_evidence(_self_assertion(c.text))
+    c.add_evidence(evidence_from_fixture({"stance": "contradicting", "strength": 0.85, "summary": "meta"}, index=1))
+    assert evidence_status(c) == EvidenceStatus.REFUTED
+
+
+def test_evidence_summary_excludes_self_assertion_sources_and_counts():
+    # evidence_summary must not list the baseline as a source nor count it.
+    c = Claim(text="Napping improves recall.", author_model="m")
+    c.add_evidence(_self_assertion(c.text))  # source_label "fixture:unspecified"
+    c.add_evidence(evidence_from_fixture(
+        {"stance": "supporting", "strength": 0.9, "summary": "real study",
+         "source_label": "fixture:study"}, index=1))
+    summ = evidence_summary(c)
+    assert summ["sources"] == ["fixture:study"]          # baseline excluded
+    assert summ["balance"]["counts"]["supporting"] == 1  # baseline not counted
+
+
+# --------------------------------------------------------------------------- #
+# 11. Integration: the REAL live recorder seeds a self-assertion baseline, but
+#     the audit layer still reports MISSING when no external fixture is attached.
+# --------------------------------------------------------------------------- #
+def test_record_epistemic_claim_baseline_is_ignored_returns_missing():
+    from socrates_ai import DialogConfig, DialogMode, DialogSpeed, SummaryMode
+    from backend.orchestrator.session import EnhancedDialogSession
+    from backend.orchestrator.live_epistemics import (
+        ensure_live_epistemics,
+        record_epistemic_claim,
+    )
+
+    cfg = DialogConfig(topic="t", rounds=2, mode=DialogMode.SOCRATIC,
+                       speed=DialogSpeed.NORMAL, summary_mode=SummaryMode.NONE)
+    session = EnhancedDialogSession("integ", cfg, {"claude": "x", "chatgpt": "y"})
+    ensure_live_epistemics(session)
+
+    cid = record_epistemic_claim(
+        session, "claude",
+        "A 20-minute nap before studying improves memory encoding.", 1)
+    claim = session.epistemic_graph.claims[cid]
+
+    # The recorder DID attach a baseline self-assertion evidence...
+    assert len(claim.evidence) >= 1
+    assert any(is_internal_self_assertion_evidence(claim, ev) for ev in claim.evidence)
+    # ...but the audit excludes it, and with no external fixtures -> MISSING.
+    assert audit_relevant_evidence(claim) == []
+    assert evidence_status(claim) == EvidenceStatus.MISSING

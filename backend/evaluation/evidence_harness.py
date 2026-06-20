@@ -20,9 +20,9 @@ from socrates_ai import DialogConfig, DialogMode, DialogSpeed, SummaryMode
 from backend.orchestrator.session import EnhancedDialogSession
 from backend.orchestrator.live_epistemics import (
     ensure_live_epistemics,
+    record_epistemic_claim,
     produce_current_best_explanation,
 )
-from backend.epistemic.claim import Claim
 from backend.epistemic.epistemic_state import EpistemicState
 from backend.epistemic.evidence_scoring import evidence_status
 from backend.epistemic.evidence_fixtures import evidence_from_fixture, attach_evidence
@@ -101,16 +101,13 @@ def run_evidence_case(case: EvidenceCase) -> "EM.EvidenceCaseResult":
     session = _build_session(case)
     graph = session.epistemic_graph
 
-    # Build the claim DIRECTLY (not via the live recorder) so the ONLY evidence
-    # on it comes from the case fixtures. The live recorder seeds a low-quality
-    # self-evidence per claim (a scoring artifact of the live pipeline), which
-    # would make a "no external evidence" case look WEAKLY_SUPPORTED instead of
-    # MISSING. Building directly isolates external evidence as the single
-    # variable under test and leaves the live pipeline untouched. A
-    # directly-added claim still surfaces in the raw CBE strongest_claims.
-    claim = Claim(text=case.claim_text, author_model="claude")
-    graph.add_claim(claim)
-    claim_id = claim.claim_id
+    # Record the claim through the REAL live bridge. The recorder attaches a
+    # baseline self-assertion Evidence (summary == claim text, quality 0.35,
+    # supports=True, no stance). The Evidence Audit Layer deterministically
+    # ignores it (is_internal_self_assertion_evidence), so external fixtures
+    # remain the only audit-relevant variable. The live pipeline is unchanged.
+    claim_id = record_epistemic_claim(session, "claude", case.claim_text, 1)
+    claim = graph.claims[claim_id]
 
     # Isolate evidence as the *presentation* variable: make the claim a solid,
     # active, reviewed claim so it surfaces in the raw CBE. (This is about raw
