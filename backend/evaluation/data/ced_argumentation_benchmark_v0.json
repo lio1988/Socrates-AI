@@ -1,0 +1,57 @@
+{
+  "schema_version": "ced_argumentation_eval_v0.1",
+  "description": "Deterministic Abstract Dung (grounded) argumentation cases over claim-only graphs. Symbolic claim names map to generated claim ids in the harness. attacks: type is 'contradicts' (symmetric) or 'falsifies' (directed src->dst). rejected: claim names excluded from the argument set. gold.labels covers only non-rejected claims.",
+  "cases": [
+    {
+      "id": "unattacked",
+      "description": "A single unattacked claim is accepted.",
+      "claims": ["A"],
+      "attacks": [],
+      "rejected": [],
+      "gold": {"labels": {"A": "IN"}, "grounded_extension": ["A"]}
+    },
+    {
+      "id": "single_attack_falsifies",
+      "description": "A falsifies B: A IN, B OUT (directed).",
+      "claims": ["A", "B"],
+      "attacks": [{"type": "falsifies", "src": "A", "dst": "B"}],
+      "rejected": [],
+      "gold": {"labels": {"A": "IN", "B": "OUT"}, "grounded_extension": ["A"]}
+    },
+    {
+      "id": "mutual_attack_contradicts",
+      "description": "A contradicts B (symmetric): both UNDEC under grounded.",
+      "claims": ["A", "B"],
+      "attacks": [{"type": "contradicts", "src": "A", "dst": "B"}],
+      "rejected": [],
+      "gold": {"labels": {"A": "UNDEC", "B": "UNDEC"}, "grounded_extension": []}
+    },
+    {
+      "id": "chain",
+      "description": "A falsifies B, B falsifies C: A IN, B OUT, C IN.",
+      "claims": ["A", "B", "C"],
+      "attacks": [
+        {"type": "falsifies", "src": "A", "dst": "B"},
+        {"type": "falsifies", "src": "B", "dst": "C"}
+      ],
+      "rejected": [],
+      "gold": {"labels": {"A": "IN", "B": "OUT", "C": "IN"}, "grounded_extension": ["A", "C"]}
+    },
+    {
+      "id": "self_attack",
+      "description": "A falsifies itself: A UNDEC.",
+      "claims": ["A"],
+      "attacks": [{"type": "falsifies", "src": "A", "dst": "A"}],
+      "rejected": [],
+      "gold": {"labels": {"A": "UNDEC"}, "grounded_extension": []}
+    },
+    {
+      "id": "rejected_attacker_excluded",
+      "description": "A is REJECTED and falsifies B; A is not an argument, so B is unattacked and IN.",
+      "claims": ["A", "B"],
+      "attacks": [{"type": "falsifies", "src": "A", "dst": "B"}],
+      "rejected": ["A"],
+      "gold": {"labels": {"B": "IN"}, "grounded_extension": ["B"]}
+    }
+  ]
+}
