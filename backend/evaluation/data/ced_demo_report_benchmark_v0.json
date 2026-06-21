@@ -1,0 +1,24 @@
+{
+  "schema_version": "ced_demo_report_eval_v0.1",
+  "description": "Expected outcomes for the deterministic demo cases produced by backend.demo.ced_demo_report.build_demo_report. Each row asserts the report-level clean-primary outcome, the focus claim's final_handling, and a minimum surfaced-claim count.",
+  "cases": [
+    {
+      "case_id": "default",
+      "expected_has_clean_primary": true,
+      "expected_focus_final_handling": "primary_candidate",
+      "expected_min_claim_count": 1
+    },
+    {
+      "case_id": "supported_but_defeated",
+      "expected_has_clean_primary": false,
+      "expected_focus_final_handling": "well_supported_but_defeated",
+      "expected_min_claim_count": 2
+    },
+    {
+      "case_id": "uncertain",
+      "expected_has_clean_primary": false,
+      "expected_focus_final_handling": "tentative_candidate",
+      "expected_min_claim_count": 2
+    }
+  ]
+}
