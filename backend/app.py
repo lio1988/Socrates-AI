@@ -39,6 +39,7 @@ from backend.api.routes_claims import router as claims_router
 from backend.api.routes_graph import router as graph_router
 from backend.api.routes_export import router as export_router
 from backend.api.routes_epistemic import router as epistemic_router
+from backend.api.routes_ced_demo import router as ced_demo_router
 
 
 @asynccontextmanager
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(graph_router)
     app.include_router(export_router)
     app.include_router(epistemic_router)
+    app.include_router(ced_demo_router)
 
     # Serve the bundled frontend at the site root, same-origin with the API.
     # Opening frontend.html via file:// triggers Chrome's "unique opaque
