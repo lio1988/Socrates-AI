@@ -1,0 +1,129 @@
+{
+  "schema_version": "ced_integration_eval_v0.1",
+  "description": "Deterministic integration cases. Each builds a claim graph: every claim may carry evidence fixtures (stance supporting/contradicting/weak + strength) to drive its evidence_status, and claim-to-claim attacks (contradicts symmetric / falsifies directed) to drive its grounded argumentation label. gold asserts the focus claim's evidence_status, argumentation_label and final_handling, plus the report-level clean-primary outcome. All claims are made solid (confidence/challenged/reviews) by the harness so they surface in raw CBE; evidence and attacks are the only variables.",
+  "cases": [
+    {
+      "id": "ws_in_primary",
+      "focus": "A",
+      "claims": [
+        {"name": "A", "evidence": [
+          {"stance": "supporting", "strength": 0.9, "summary": "meta-analysis", "source_label": "fixture:meta"},
+          {"stance": "supporting", "strength": 0.85, "summary": "replication", "source_label": "fixture:rep"}
+        ]}
+      ],
+      "attacks": [],
+      "gold": {
+        "focus_evidence_status": "WELL_SUPPORTED",
+        "focus_argumentation_label": "IN",
+        "focus_final_handling": "primary_candidate",
+        "has_clean_primary": true,
+        "primary_focus": "A"
+      }
+    },
+    {
+      "id": "ws_out_defeated",
+      "focus": "A",
+      "claims": [
+        {"name": "A", "evidence": [
+          {"stance": "supporting", "strength": 0.9, "summary": "meta-analysis", "source_label": "fixture:meta"},
+          {"stance": "supporting", "strength": 0.85, "summary": "replication", "source_label": "fixture:rep"}
+        ]},
+        {"name": "B", "evidence": []}
+      ],
+      "attacks": [{"type": "falsifies", "src": "B", "dst": "A"}],
+      "gold": {
+        "focus_evidence_status": "WELL_SUPPORTED",
+        "focus_argumentation_label": "OUT",
+        "focus_final_handling": "well_supported_but_defeated",
+        "has_clean_primary": false,
+        "primary_focus": null
+      }
+    },
+    {
+      "id": "weak_in_tentative",
+      "focus": "A",
+      "claims": [
+        {"name": "A", "evidence": [
+          {"stance": "weak", "strength": 0.5, "summary": "small survey", "source_label": "fixture:survey"}
+        ]}
+      ],
+      "attacks": [],
+      "gold": {
+        "focus_evidence_status": "WEAKLY_SUPPORTED",
+        "focus_argumentation_label": "IN",
+        "focus_final_handling": "tentative_candidate",
+        "has_clean_primary": false,
+        "primary_focus": null
+      }
+    },
+    {
+      "id": "missing_in_unsupported",
+      "focus": "A",
+      "claims": [
+        {"name": "A", "evidence": []}
+      ],
+      "attacks": [],
+      "gold": {
+        "focus_evidence_status": "MISSING",
+        "focus_argumentation_label": "IN",
+        "focus_final_handling": "structurally_acceptable_but_unsupported",
+        "has_clean_primary": false,
+        "primary_focus": null
+      }
+    },
+    {
+      "id": "refuted_never_primary",
+      "focus": "A",
+      "claims": [
+        {"name": "A", "evidence": [
+          {"stance": "contradicting", "strength": 0.85, "summary": "refuting study", "source_label": "fixture:refute"}
+        ]}
+      ],
+      "attacks": [],
+      "gold": {
+        "focus_evidence_status": "REFUTED",
+        "focus_argumentation_label": "IN",
+        "focus_final_handling": "refuted",
+        "has_clean_primary": false,
+        "primary_focus": null
+      }
+    },
+    {
+      "id": "contested_undec",
+      "focus": "A",
+      "claims": [
+        {"name": "A", "evidence": [
+          {"stance": "supporting", "strength": 0.7, "summary": "supporting study", "source_label": "fixture:pro"},
+          {"stance": "contradicting", "strength": 0.6, "summary": "opposing study", "source_label": "fixture:con"}
+        ]},
+        {"name": "B", "evidence": []}
+      ],
+      "attacks": [{"type": "contradicts", "src": "B", "dst": "A"}],
+      "gold": {
+        "focus_evidence_status": "CONTESTED",
+        "focus_argumentation_label": "UNDEC",
+        "focus_final_handling": "contested",
+        "has_clean_primary": false,
+        "primary_focus": null
+      }
+    },
+    {
+      "id": "no_clean_answer",
+      "focus": "A",
+      "claims": [
+        {"name": "A", "evidence": [
+          {"stance": "weak", "strength": 0.5, "summary": "weak hint", "source_label": "fixture:weak"}
+        ]},
+        {"name": "B", "evidence": []}
+      ],
+      "attacks": [],
+      "gold": {
+        "focus_evidence_status": "WEAKLY_SUPPORTED",
+        "focus_argumentation_label": "IN",
+        "focus_final_handling": "tentative_candidate",
+        "has_clean_primary": false,
+        "primary_focus": null
+      }
+    }
+  ]
+}
