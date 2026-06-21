@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Socrates AI — CED Demo Panel</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #fbfcfd;
+    --ink: #161a22;
+    --ink-soft: #5b6472;
+    --line: #e4e7ec;
+    --line-strong: #d2d8e1;
+    --accent: #2f3b5c;            /* deep slate-indigo, used with restraint */
+    /* semantic tones — color only where it encodes an epistemic verdict */
+    --ok: #137a4b;   --ok-bg: #e9f7ef;   --ok-line: #abe4c4;
+    --warn: #aa6a09; --warn-bg: #fdf4e3; --warn-line: #f0d294;
+    --bad: #b42318;  --bad-bg: #fdeceb;  --bad-line: #f3bdb7;
+    --mute: #586172; --mute-bg: #edf1f5; --mute-line: #d8dee7;
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  /* masthead + case selector */
+  .masthead { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+  .brand { display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
+  .brand .mark { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  .brand h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; font-weight: 680; }
+  .brand .sub { color: var(--ink-soft); font-size: 13px; }
+
+  .selector { display: flex; flex-direction: column; gap: 8px; }
+  .selector .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); }
+  .segmented { display: inline-flex; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg-btn { appearance: none; border: 0; background: transparent; cursor: pointer; padding: 7px 12px; border-radius: 7px; font-family: var(--sans); font-size: 13px; color: var(--ink-soft); display: flex; flex-direction: column; align-items: flex-start; gap: 2px; transition: background .12s, color .12s; }
+  .seg-btn .cid { font-family: var(--mono); font-size: 10px; opacity: .6; }
+  .seg-btn:hover { color: var(--ink); }
+  .seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .seg-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .seg-btn[aria-pressed="true"] .cid { opacity: .85; }
+
+  /* question */
+  .question { margin: 30px 0 8px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 8px; }
+  .question .q { font-size: 26px; line-height: 1.25; letter-spacing: -0.015em; font-weight: 640; margin: 0; }
+
+  /* verdict — the hero */
+  .verdict { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px 20px 26px; background: var(--surface); position: relative; overflow: hidden; }
+  .verdict::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--mute); }
+  .verdict.clean::before { background: var(--ok); }
+  .verdict.held::before { background: var(--warn); }
+  .verdict .vlabel { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
+  .verdict .vlabel .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mute); }
+  .verdict.clean .vlabel .dot { background: var(--ok); }
+  .verdict.held .vlabel .dot { background: var(--warn); }
+  .verdict .vmain { font-size: 19px; line-height: 1.4; font-weight: 560; margin-top: 10px; }
+  .verdict .vmeta { margin-top: 10px; color: var(--ink-soft); font-size: 13px; }
+  .verdict .vmeta em { font-style: italic; color: var(--ink); }
+
+  /* claims */
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 34px 0 12px; }
+  .section-head h2 { font-size: 13px; font-family: var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin: 0; font-weight: 600; }
+  .section-head .count { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+
+  .claims { display: flex; flex-direction: column; gap: 12px; }
+  .card { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 16px 18px; }
+  .card.focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(47, 59, 92, .08); }
+  .card .ctop { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .card .ctext { font-size: 15px; line-height: 1.45; font-weight: 520; }
+  .card .tags { flex: none; display: flex; align-items: center; gap: 8px; }
+  .card .rank { font-family: var(--mono); font-size: 10px; color: var(--ink-soft); }
+  .card .focus-tag { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px 9px; }
+
+  /* the signature: the per-claim reasoning chain evidence -> argument -> handling */
+  .chain { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .chain .arrow { color: var(--line-strong); font-family: var(--mono); font-size: 13px; }
+  .badge { font-family: var(--mono); font-size: 11px; letter-spacing: .02em; padding: 5px 10px; border-radius: 7px; border: 1px solid; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .badge .k { opacity: .6; text-transform: uppercase; letter-spacing: .08em; font-size: 9px; }
+  .badge.ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
+  .badge.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+  .badge.bad { color: var(--bad); background: var(--bad-bg); border-color: var(--bad-line); }
+  .badge.mute { color: var(--mute); background: var(--mute-bg); border-color: var(--mute-line); }
+
+  /* raw CBE — collapsible */
+  details.raw { margin-top: 30px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+  details.raw > summary { cursor: pointer; padding: 14px 18px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); list-style: none; display: flex; align-items: center; gap: 10px; }
+  details.raw > summary::-webkit-details-marker { display: none; }
+  details.raw > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  details.raw > summary .chev { transition: transform .15s; display: inline-block; }
+  details.raw[open] > summary .chev { transform: rotate(90deg); }
+  details.raw pre { margin: 0; padding: 16px 18px; border-top: 1px solid var(--line); background: var(--surface-2); overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: #2b303b; max-height: 420px; }
+
+  .foot { margin-top: 26px; color: var(--ink-soft); font-size: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .foot .pill { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
+
+  .state-msg { padding: 44px 0; text-align: center; color: var(--ink-soft); font-family: var(--mono); font-size: 13px; }
+  .state-msg.err { color: var(--bad); }
+
+  @media (max-width: 560px) {
+    .question .q { font-size: 21px; }
+    .seg-btn { padding: 6px 9px; }
+    .card .ctop { flex-direction: column; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="masthead">
+      <div class="brand">
+        <span class="mark">Computational Epistemic Dynamics</span>
+        <h1>Socrates AI — CED Demo Panel</h1>
+        <span class="sub">One question, run through the read-only Knowledge OS: evidence audit → grounded argumentation → final handling.</span>
+      </div>
+      <div class="selector">
+        <span class="lbl">Demo case</span>
+        <div class="segmented" id="caseSelector" role="group" aria-label="Demo case selector">
+          <button class="seg-btn" type="button" data-case="default" aria-pressed="true">Clean supported<span class="cid">default</span></button>
+          <button class="seg-btn" type="button" data-case="supported_but_defeated" aria-pressed="false">Supported, defeated<span class="cid">supported_but_defeated</span></button>
+          <button class="seg-btn" type="button" data-case="uncertain" aria-pressed="false">Uncertain<span class="cid">uncertain</span></button>
+        </div>
+      </div>
+    </header>
+
+    <main id="panel" aria-live="polite">
+      <div class="state-msg">Loading…</div>
+    </main>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+  var panel = document.getElementById("panel");
+  var selector = document.getElementById("caseSelector");
+  var current = "default";
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // Map each epistemic value to a semantic tone. Color carries meaning here.
+  function evidenceTone(s) {
+    switch (s) {
+      case "WELL_SUPPORTED": return "ok";
+      case "WEAKLY_SUPPORTED": return "warn";
+      case "CONTESTED": return "warn";
+      case "REFUTED": return "bad";
+      default: return "mute"; // MISSING / unknown
+    }
+  }
+  function labelTone(l) {
+    if (l === "IN") return "ok";
+    if (l === "OUT") return "bad";
+    if (l === "UNDEC") return "warn";
+    return "mute";
+  }
+  function handlingTone(h) {
+    h = String(h || "");
+    if (h === "primary_candidate") return "ok";
+    if (h.indexOf("tentative") !== -1) return "warn";
+    if (h === "refuted") return "bad";
+    if (h.indexOf("defeated") !== -1) return "bad";
+    if (h.indexOf("unsupported") !== -1 || h.indexOf("unresolved") !== -1) return "mute";
+    return "mute";
+  }
+
+  function badge(kind, key, value) {
+    return '<span class="badge ' + kind + '"><span class="k">' + esc(key) + '</span>' + esc(value) + '</span>';
+  }
+
+  function renderClaim(c, focusId) {
+    var isFocus = focusId && c.claim_id === focusId;
+    var hasRank = (c.raw_cbe_rank !== null && c.raw_cbe_rank !== undefined);
+    var chain =
+      badge(evidenceTone(c.evidence_status), "evidence", c.evidence_status) +
+      '<span class="arrow">&rarr;</span>' +
+      badge(labelTone(c.argumentation_label), "argument", c.argumentation_label) +
+      '<span class="arrow">&rarr;</span>' +
+      badge(handlingTone(c.final_handling), "handling", c.final_handling);
+    return '' +
+      '<article class="card' + (isFocus ? ' focus' : '') + '">' +
+        '<div class="ctop">' +
+          '<div class="ctext">' + esc(c.text) + '</div>' +
+          '<div class="tags">' +
+            (hasRank ? '<span class="rank">CBE rank #' + esc(c.raw_cbe_rank) + '</span>' : '') +
+            (isFocus ? '<span class="focus-tag">focus</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="chain">' + chain + '</div>' +
+      '</article>';
+  }
+
+  function renderVerdict(data) {
+    var s = data.summary || {};
+    if (s.has_clean_primary) {
+      var text = s.primary_text || (data.focus && data.focus.text) || "";
+      return '' +
+        '<section class="verdict clean">' +
+          '<div class="vlabel"><span class="dot"></span>Primary answer &middot; clean support</div>' +
+          '<div class="vmain">' + esc(text) + '</div>' +
+          '<div class="vmeta">Well-supported by evidence and undefeated in argumentation.</div>' +
+        '</section>';
+    }
+    var msg = s.no_clean_answer ||
+      "No claim is both well-supported and undefeated, so the system withholds a single answer.";
+    return '' +
+      '<section class="verdict held">' +
+        '<div class="vlabel"><span class="dot"></span>Held &middot; no clean answer</div>' +
+        '<div class="vmain">' + esc(msg) + '</div>' +
+        '<div class="vmeta">Epistemic honesty: the panel only commits when a claim is well-supported <em>and</em> survives every attack.</div>' +
+      '</section>';
+  }
+
+  function render(data) {
+    var claims = (data.integration_report && data.integration_report.claims) || [];
+    var focusId = data.focus && data.focus.claim_id;
+    var cards = claims.map(function (c) { return renderClaim(c, focusId); }).join("");
+    var rawJson = JSON.stringify(data.raw_cbe, null, 2);
+
+    panel.innerHTML = '' +
+      '<div class="question">' +
+        '<div class="eyebrow">Question</div>' +
+        '<p class="q">' + esc(data.question) + '</p>' +
+      '</div>' +
+      renderVerdict(data) +
+      '<div class="section-head"><h2>Claims</h2><span class="count">' + claims.length + ' surfaced</span></div>' +
+      '<div class="claims">' + (cards || '<div class="state-msg">No claims surfaced.</div>') + '</div>' +
+      '<details class="raw">' +
+        '<summary><span class="chev">&#9656;</span> Raw CBE &mdash; current best explanation (pre-integration)</summary>' +
+        '<pre>' + esc(rawJson) + '</pre>' +
+      '</details>' +
+      '<div class="foot"><span class="pill">' + esc(data.case_id) + '</span><span>' + esc(data.note || "") + '</span></div>';
+  }
+
+  function load(caseId) {
+    panel.innerHTML = '<div class="state-msg">Loading ' + esc(caseId) + ' &hellip;</div>';
+    fetch('/ced/demo-report?case_id=' + encodeURIComponent(caseId))
+      .then(function (r) {
+        if (!r.ok) { throw new Error("HTTP " + r.status); }
+        return r.json();
+      })
+      .then(render)
+      .catch(function (e) {
+        panel.innerHTML = '<div class="state-msg err">Could not load case &ldquo;' +
+          esc(caseId) + '&rdquo; (' + esc(e.message) + ').</div>';
+      });
+  }
+
+  selector.addEventListener("click", function (ev) {
+    var btn = ev.target.closest(".seg-btn");
+    if (!btn) { return; }
+    var cid = btn.getAttribute("data-case");
+    if (cid === current) { return; }
+    current = cid;
+    Array.prototype.forEach.call(selector.querySelectorAll(".seg-btn"), function (b) {
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
+    load(cid);
+  });
+
+  load(current);
+})();
+</script>
+</body>
+</html>
