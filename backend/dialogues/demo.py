@@ -247,6 +247,32 @@ def _print_final(state: SessionState) -> None:
             _kv(key, val, indent=4)
 
 
+def _print_leaderboard(state: SessionState) -> None:
+    """CED-owned epistemic analytics — explicitly labelled as hidden from agents."""
+    lb = state.epistemic_leaderboard
+    _section("CED-OWNED EPISTEMIC ANALYTICS — HIDDEN FROM AGENTS")
+    print("  Scores are peer-evaluation signals, not proof of truth.")
+    print()
+    if lb is None:
+        print("  (no leaderboard computed)")
+        return
+
+    _kv("leaderboard_status", lb.leaderboard_status.value)
+    _kv("scores_expected", lb.scores_expected)
+    _kv("scores_collected", lb.scores_collected)
+    _kv("coverage_ratio", f"{lb.coverage_ratio:.2f}")
+    _kv("top_contributors", ", ".join(lb.top_contributors) or "—")
+    print()
+    print("  average score by agent (0–10):")
+    for agent in lb.top_contributors:
+        avg = lb.average_scores_by_agent.get(agent, 0.0)
+        cum = lb.cumulative_scores_by_agent.get(agent, 0.0)
+        print(f"      {agent}: avg {avg:.2f}  (cumulative {cum:.2f})")
+    if lb.notable_events:
+        print()
+        _kv("notable_events", "; ".join(lb.notable_events), indent=2)
+
+
 # ── Orchestration ─────────────────────────────────────────────────────────────
 
 def build_demo_orchestrator(num_agents: int = 4) -> CEDOrchestrator:
@@ -288,6 +314,7 @@ def run_demo(question: str, session_id: str = "demo_session") -> SessionState:
     _print_phase_moves(state, DialogPhase.RATIFICATION,
                        "PHASE 7 — RATIFICATION  (Final Evaluator verdict)")
     _print_final(state)
+    _print_leaderboard(state)
 
     print()
     print(_rule("═"))

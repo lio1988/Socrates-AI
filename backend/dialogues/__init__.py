@@ -19,6 +19,8 @@ from .models import (
     EpistemicStatus,
     PenaltyFlag,
     ProviderStatus,
+    LeaderboardStatus,
+    SyncGateStatus,
     SectionName,
     RatificationDecision,
     ObjectionSeverity,
@@ -30,11 +32,15 @@ from .models import (
     AssembledSection,
     AssembledAnswer,
     RatificationVote,
+    ShadowScoreHarvest,
+    EpistemicLeaderboard,
     FinalResponse,
     SessionState,
     SECTION_ORDER,
     SCORE_WEIGHTS,
     MAX_RATIFICATION_ROUNDS,
+    MAX_LEADERBOARD_HARVEST_TIMEOUT,
+    LEADERBOARD_INTERPRETATION_WARNING,
 )
 from .providers import (
     LLMProvider,
@@ -46,21 +52,25 @@ from .providers import (
 )
 from .agent import SocraticAgent, CORE_AGENT_PROMPT
 from .role_assignment import assign_primary_roles, socrates_for_session
+from .topic import Topic, classify_topic
 from .ced import CEDOrchestrator
 
 __all__ = [
     "AgentRole", "AgentTask", "AgentState", "AgentMove",
     "DialogPhase", "EpistemicMarker", "EpistemicStatus",
-    "PenaltyFlag", "ProviderStatus", "SectionName",
-    "RatificationDecision", "ObjectionSeverity",
+    "PenaltyFlag", "ProviderStatus", "LeaderboardStatus", "SyncGateStatus",
+    "SectionName", "RatificationDecision", "ObjectionSeverity",
     "ScoreBreakdown", "MicroScore", "SectionScore", "DraftScorecard",
     "SectionDraft", "AssembledSection", "AssembledAnswer",
-    "RatificationVote", "FinalResponse", "SessionState",
+    "RatificationVote", "ShadowScoreHarvest", "EpistemicLeaderboard",
+    "FinalResponse", "SessionState",
     "SECTION_ORDER", "SCORE_WEIGHTS", "MAX_RATIFICATION_ROUNDS",
+    "MAX_LEADERBOARD_HARVEST_TIMEOUT", "LEADERBOARD_INTERPRETATION_WARNING",
     "LLMProvider", "FakeProvider", "AnthropicProvider",
     "OpenAIProvider", "LocalProvider", "ProviderRegistry",
     "SocraticAgent", "CORE_AGENT_PROMPT",
     "assign_primary_roles", "socrates_for_session",
+    "Topic", "classify_topic",
     "CEDOrchestrator",
     "run_demo", "build_demo_orchestrator",
 ]

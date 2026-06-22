@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 from .models import AgentRole
+from .topic import Topic, classify_topic
 
 
 class LLMProvider(ABC):
@@ -211,17 +212,253 @@ class FakeProvider(LLMProvider):
             ),
         }
 
-    def _ratification_vote(self, agent_id: str, hint: str) -> Dict[str, Any]:
+    # ── Epistemology / philosophy topic awareness ────────────────────────────
+
+    # Non-empiricist role outputs for Topic.EPISTEMOLOGY (philosophy-flavoured,
+    # no scientific-causality language).
+    _EPISTEMOLOGY_TEMPLATES: Dict[str, Dict[str, Any]] = {
+        AgentRole.SOCRATES.value: {
+            "question": (
+                "What assumption makes justified true belief seem sufficient for "
+                "knowledge, and how do Gettier-style cases challenge that assumption?"
+            ),
+            "exposed_assumption": (
+                "That truth, belief, and justification jointly guarantee knowledge — "
+                "ignoring how a justified true belief can be true only by luck."
+            ),
+            "epistemic_marker": "open_uncertainty",
+        },
+        AgentRole.ELENCHUS_CRITIC.value: {
+            "contradictions": [
+                "Gettier cases show one can hold a justified true belief without knowledge.",
+            ],
+            "weak_assumptions": [
+                "Assumes JTB is sufficient; it may be necessary but not sufficient.",
+            ],
+            "logic_gaps": [
+                "No condition rules out beliefs that are true only by luck "
+                "(no false lemmas / reliability / safety / sensitivity / virtue / anti-luck).",
+            ],
+            "critique_summary": (
+                "The account must distinguish knowledge from accidentally true "
+                "justified belief; bare JTB cannot do that on its own."
+            ),
+            "confidence": 0.74,
+        },
+        AgentRole.EMPIRICIST.value: {
+            "factual_claims": [
+                {
+                    "claim": "Plato-style JTB framing and Gettier's 1963 challenge",
+                    "status": "conceptual",
+                    "notes": (
+                        "This is conceptual analysis, not an empirical claim; "
+                        "evidence here is argument and counterexample, not data."
+                    ),
+                },
+            ],
+            "documentation_gaps": [
+                "Distinguish conceptual analysis from empirical evidence.",
+                "Alternative epistemological theories (reliabilism, virtue, anti-luck) compete.",
+                "Philosophical consensus on the missing condition is limited.",
+            ],
+        },
+        AgentRole.MAIEUTIC_RECONSTRUCTOR.value: {
+            "stronger_position": (
+                "The safest reconstruction is that justified true belief captures "
+                "important necessary components of knowledge, but Gettier-style cases "
+                "show that it is not sufficient without an anti-luck or reliability condition."
+            ),
+            "integrated_critiques": [
+                "Treat truth, belief, and justification as necessary, not sufficient.",
+                "Add an anti-luck / reliability / defeater condition to handle Gettier cases.",
+            ],
+            "remaining_weaknesses": [
+                "Which extra condition (safety, sensitivity, virtue, no-false-lemmas) is best remains open.",
+            ],
+            "confidence": 0.7,
+        },
+    }
+
+    # Four genuinely different synthesizer perspectives (5 sections each).
+    def _epistemology_perspectives(self, q: str) -> List[Dict[str, str]]:
+        return [
+            {  # agent_0 — classical / JTB
+                "core_answer": (
+                    f"On «{q}», the classical analysis treats knowledge as justified true "
+                    f"belief: truth, belief, and justification are the core components of "
+                    f"any credible account."
+                ),
+                "crucial_stress_test": (
+                    "Gettier cases are the decisive test: a justified true belief can be "
+                    "true only by luck, so the classical JTB analysis is not sufficient on its own."
+                ),
+                "blind_spots": (
+                    "The classical view understates how often justification is met by luck "
+                    "and leaves 'justification' itself underspecified."
+                ),
+                "nuance": (
+                    "JTB still captures necessary components — dropping truth, belief, or "
+                    "justification each yields a worse account; the dispute is about sufficiency."
+                ),
+                "final_verdict": (
+                    "Knowledge is not merely justified true belief: JTB captures necessary "
+                    "elements, but Gettier-style cases show it is not sufficient without a "
+                    "no-false-lemmas or anti-luck condition."
+                ),
+            },
+            {  # agent_1 — Gettier / anti-luck
+                "core_answer": (
+                    f"On «{q}», the key point is that justified true belief is not sufficient: "
+                    f"Gettier showed a belief can be true and justified yet true only by luck."
+                ),
+                "crucial_stress_test": (
+                    "The anti-luck intuition is the strongest test: in Gettier and fake-barn "
+                    "cases the believer is right accidentally, which is not knowledge."
+                ),
+                "blind_spots": (
+                    "Anti-luck fixes risk being ad hoc — 'no false lemmas' handles some cases "
+                    "but not all — and may not say what positively converts true belief into knowledge."
+                ),
+                "nuance": (
+                    "The JTB conditions look necessary; the Gettier problem targets sufficiency, "
+                    "demanding an extra anti-luck constraint."
+                ),
+                "final_verdict": (
+                    "Knowledge is not merely justified true belief; justified true belief can be "
+                    "accidentally true, so an anti-luck or safety condition must be added."
+                ),
+            },
+            {  # agent_2 — reliabilist / externalist
+                "core_answer": (
+                    f"On «{q}», a reliabilist account holds that what matters is whether the "
+                    f"belief was produced by a reliable, truth-tracking process, not only that "
+                    f"it is justified and true."
+                ),
+                "crucial_stress_test": (
+                    "Reliabilism is tested by safety and sensitivity: the belief should not "
+                    "easily have been false in nearby cases; Gettier beliefs fail this even when JTB holds."
+                ),
+                "blind_spots": (
+                    "Externalism can ignore the subject's own reasons (the generality problem: "
+                    "which process counts?) and may credit knowledge the agent cannot defend."
+                ),
+                "nuance": (
+                    "Reliability is plausibly necessary for the anti-luck condition; it reframes "
+                    "rather than abandons the role of truth and belief."
+                ),
+                "final_verdict": (
+                    "Knowledge is not merely justified true belief; it requires a reliability, "
+                    "safety, or sensitivity condition so the true belief tracks truth rather than luck."
+                ),
+            },
+            {  # agent_3 — virtue / contextualist
+                "core_answer": (
+                    f"On «{q}», a virtue/contextualist account holds that knowledge is true "
+                    f"belief manifesting intellectual virtue and meeting the epistemic standards "
+                    f"salient in the context."
+                ),
+                "crucial_stress_test": (
+                    "The hard test is credit and stakes: Gettier'd beliefs are not creditable to "
+                    "the agent's competence, and how much justification is 'enough' shifts with stakes."
+                ),
+                "blind_spots": (
+                    "Virtue and contextualist views can be vague about how much virtue, or which "
+                    "context, fixes the standard."
+                ),
+                "nuance": (
+                    "These views keep truth, belief, and justification but add epistemic "
+                    "responsibility and context-sensitivity, separating necessary from sufficient."
+                ),
+                "final_verdict": (
+                    "Knowledge is not merely justified true belief; it is true belief creditable "
+                    "to intellectual virtue and adequate to context, which is why bare JTB plus luck falls short."
+                ),
+            },
+        ]
+
+    def _agent_index(self, agent_id: str, modulus: int = 4) -> int:
+        """Stable 0..modulus-1 index for an agent (uses trailing digits if present)."""
+        digits = "".join(ch for ch in agent_id if ch.isdigit())
+        if digits:
+            return int(digits) % modulus
+        return self._seed(agent_id) % modulus
+
+    def _epistemology_sections(self, question: str, agent_id: str) -> Dict[str, str]:
+        q = question.strip() or "the question"
+        perspectives = self._epistemology_perspectives(q)
+        return dict(perspectives[self._agent_index(agent_id, len(perspectives))])
+
+    # Reward / penalty vocabulary for epistemology-aware section scoring.
+    _EPIST_REWARD = [
+        "gettier", "anti-luck", "anti luck", "reliab", "defeater", "necessary",
+        "sufficient", "safety", "sensitivity", "virtue", "no false lemmas",
+        "truth-track", "truth track", "justified true belief",
+    ]
+    _EPIST_IRRELEVANT = [
+        "correlation", "causation", "effect size", "sample characteristic",
+        "underlying studies", "causal mechanism", "empirical grounding", "scope-limited",
+    ]
+    _EPIST_HEDGES = [
+        "may ", "might", "not sufficient", "uncertain", "provisional",
+        "calibrated", "open", "unless", "contested", "remains",
+    ]
+    _EPIST_OVERCLAIM = [
+        "all philosophers agree", "everyone agrees", "consensus that",
+        "universally accepted", "beyond dispute", "settled fact",
+    ]
+
+    def _epistemology_score_adjust(self, content: str):
+        """Deterministic (base, penalty_flags) from section content for epistemology."""
+        text = (content or "").lower()
+        base = 7.0
+        flags: List[str] = []
+
+        reward_hits = sum(1 for k in self._EPIST_REWARD if k in text)
+        base += min(reward_hits, 5) * 0.35   # up to +1.75 for on-topic depth
+
+        if any(k in text for k in self._EPIST_IRRELEVANT):
+            base -= 1.5
+            flags.append("irrelevant")
+        if len(text.strip()) < 50:
+            base -= 0.8
+            flags.append("vague")
+        if any(k in text for k in self._EPIST_OVERCLAIM):
+            base -= 0.6
+            flags.append("unsupported_claim")
+        if not any(h in text for h in self._EPIST_HEDGES):
+            flags.append("missed_uncertainty")
+
+        base = max(0.0, min(10.0, base))
+        return base, flags
+
+    def _score_payload_aware(self, seed: int, topic: Topic, content: str) -> Dict[str, Any]:
+        """Score payload that, for epistemology, reflects topic relevance + penalties."""
+        if topic == Topic.EPISTEMOLOGY:
+            base, flags = self._epistemology_score_adjust(content)
+            payload = self._score_payload(seed, base=base)
+            payload["penalty_flags"] = flags
+            return payload
+        return self._score_payload(seed)
+
+    def _ratification_vote(self, agent_id: str, hint: str, topic: Topic) -> Dict[str, Any]:
         """Default Final Evaluator verdict: approve (no blocking objection)."""
+        if topic == Topic.EPISTEMOLOGY:
+            reason = (
+                "Approved: the answer engages Gettier-style objections, distinguishes "
+                "necessary from sufficient conditions, avoids treating epistemology as "
+                "empirical causation, and marks uncertainty about which extra condition is best."
+            )
+        else:
+            reason = (
+                "The assembled five-section answer meets the epistemic-discipline "
+                "bar; uncertainty is marked and no section is unsupported."
+            )
         return {
             "voter_agent_id": agent_id,
             "decision": "approve",
             "severity": "none",
             "target_section": None,
-            "reason": (
-                "The assembled five-section answer meets the epistemic-discipline "
-                "bar; uncertainty is marked and no section is unsupported."
-            ),
+            "reason": reason,
             "epistemic_status": hint or "uncertain",
         }
 
@@ -239,31 +476,41 @@ class FakeProvider(LLMProvider):
         question = output_schema.get("_question", "")
         target = str(output_schema.get("_target", ""))
         section = str(output_schema.get("_section", ""))
+        topic = classify_topic(question)
 
-        # ── Move-level shadow scoring ────────────────────────────────────────
+        # ── Move-level shadow scoring (topic-aware, content-aware) ───────────
         if role_key == "__move_score__":
             seed = self._seed(agent_id, role_key, target)
-            return self._score_payload(seed)
+            return self._score_payload_aware(seed, topic, user_prompt)
 
         # ── Section-level draft scoring (varies per draft × section) ─────────
         if role_key == "__section_score__":
             seed = self._seed(agent_id, role_key, target, section)
-            return self._score_payload(seed)
+            return self._score_payload_aware(seed, topic, user_prompt)
 
         seed = self._seed(agent_id, role_key, user_prompt[:80])
 
         # ── Synthesis phase: full 5-section draft ────────────────────────────
         if role_key == AgentRole.SYNTHESIZER.value and output_schema.get("_sections"):
-            sections = self._synth_sections(question, seed)
+            if topic == Topic.EPISTEMOLOGY:
+                sections = self._epistemology_sections(question, agent_id)
+            else:
+                sections = self._synth_sections(question, seed)
             sections["confidence"] = self._vary(0.78, seed, spread=0.10)
             return sections
 
         # ── Final Evaluator: structured ratification vote ────────────────────
         if role_key == AgentRole.FINAL_EVALUATOR.value:
-            return self._ratification_vote(agent_id, output_schema.get("_epistemic_hint", ""))
+            return self._ratification_vote(
+                agent_id, output_schema.get("_epistemic_hint", ""), topic
+            )
 
         # ── Role-keyed response path (Socrates, critics, reflector, etc.) ────
-        template = self._TEMPLATES.get(role_key)
+        template = None
+        if topic == Topic.EPISTEMOLOGY:
+            template = self._EPISTEMOLOGY_TEMPLATES.get(role_key)
+        if template is None:
+            template = self._TEMPLATES.get(role_key)
         if template is None:
             return {"content": f"[FakeProvider|{agent_id}] no template for role={role_key!r}"}
 

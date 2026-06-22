@@ -28,6 +28,12 @@
   button{background:linear-gradient(180deg,#2ea043,#1f6f3a);border:0;color:#fff;font-weight:600;
          padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px}
   button:hover{filter:brightness(1.08)}
+  .examples{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 2px 0}
+  .ex-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .chip{background:var(--chip);border:1px solid var(--border);color:var(--accent2);
+        padding:5px 11px;border-radius:20px;font-size:12px;font-weight:500}
+  .chip:hover{filter:brightness(1.15)}
+  .topic-tag{font-size:11px;background:#2a2050;color:#d6bcff;padding:2px 9px;border-radius:20px;font-weight:700;letter-spacing:.4px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin:18px 0;overflow:hidden}
   .card > h2{margin:0;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--accent2);
              padding:12px 16px;background:var(--panel2);border-bottom:1px solid var(--border);
@@ -81,6 +87,14 @@
       <label>&nbsp;</label>
       <button id="run">▶ Run Council</button>
     </div>
+  </div>
+
+  <div class="examples">
+    <span class="ex-label">Examples:</span>
+    <button class="chip" data-q="Is knowledge merely justified true belief?">Is knowledge merely justified true belief?</button>
+    <button class="chip" data-q="Does the Gettier problem refute JTB?">Gettier problem</button>
+    <button class="chip" data-q="Is mathematics discovered or invented?">Is mathematics discovered or invented?</button>
+    <button class="chip" data-q="What is the nature of time?">What is the nature of time?</button>
   </div>
 
   <div id="out"></div>
@@ -168,9 +182,9 @@ function vary01(base,sBig,spread=0.12){
   v=Math.max(0,Math.min(1,v));
   return Math.round(v*10000)/10000;
 }
-function breakdown(seedBig){                               // FakeProvider._breakdown
+function breakdown(seedBig,base=7.0){                      // FakeProvider._breakdown
   const bd={}; let s=seedBig;
-  for(const dim of DIMS){ s=seed(String(s),dim); bd[dim]=vary10(7.0,s); }
+  for(const dim of DIMS){ s=seed(String(s),dim); bd[dim]=vary10(base,s); }
   return bd;
 }
 function weightedOverall(bd){                              // ScoreBreakdown.weighted_overall
@@ -226,6 +240,82 @@ const TEMPLATES={
 const SECTIONS=['core_answer','crucial_stress_test','blind_spots','nuance','final_verdict'];
 
 /* ============================================================
+   Topic awareness (port of backend/dialogues/topic.py + epistemology)
+   ============================================================ */
+const TOPIC_KEYWORDS={
+  epistemology:["justified true belief","gettier","jtb","epistemology","epistemic","defeater",
+    "reliabilism","reliabilist","virtue epistemology","internalism","externalism","skepticism",
+    "scepticism","knowledge","justification","justified","belief","truth","anti-luck","no false lemmas"],
+  mathematics_philosophy:["mathematics discovered","discovered or invented","platonism","formalism",
+    "intuitionism","mathematical objects","mathematical truth","philosophy of mathematics","is mathematics"],
+  cosmology:["universe","cosmos","big bang","multiverse","cosmological","fine-tuning","spacetime"],
+};
+const TOPIC_PRIORITY=["epistemology","mathematics_philosophy","cosmology"];
+function classifyTopic(q){
+  const t=(q||"").toLowerCase();
+  const wt=k=>(k.includes(" ")||k.includes("-"))?2:1;
+  let scores={},best=0;
+  for(const [topic,kws] of Object.entries(TOPIC_KEYWORDS)){
+    const s=kws.reduce((a,k)=>a+(t.includes(k)?wt(k):0),0);
+    if(s){scores[topic]=s; if(s>best)best=s;}
+  }
+  if(!best) return "general";
+  for(const topic of TOPIC_PRIORITY) if((scores[topic]||0)===best) return topic;
+  return "general";
+}
+
+const EPI_TEMPLATES={
+  socrates:{question:"What assumption makes justified true belief seem sufficient for knowledge, and how do Gettier-style cases challenge that assumption?",
+            exposed_assumption:"That truth, belief, and justification jointly guarantee knowledge — ignoring how a justified true belief can be true only by luck."},
+  elenchus_critic:{critique_summary:"The account must distinguish knowledge from accidentally true justified belief; bare JTB cannot do that on its own.",
+            logic_gaps:["No condition rules out beliefs that are true only by luck (no false lemmas / reliability / safety / sensitivity / virtue / anti-luck)."]},
+  empiricist:{evidence_note:"This is conceptual analysis (Plato-style JTB, Gettier's challenge), not an empirical claim — argument and counterexample, not data.",
+            documentation_gaps:["Distinguish conceptual analysis from empirical evidence.","Alternative theories (reliabilism, virtue, anti-luck) compete; consensus is limited."]},
+  maieutic_reconstructor:{stronger_position:"The safest reconstruction is that justified true belief captures important necessary components of knowledge, but Gettier-style cases show it is not sufficient without an anti-luck or reliability condition."},
+  reflector:{revised_position:"A revised position that treats truth, belief, and justification as necessary but not sufficient, adding an anti-luck condition for Gettier cases."},
+};
+function epiPerspectives(q){
+  return [
+    {core_answer:`On «${q}», the classical analysis treats knowledge as justified true belief: truth, belief, and justification are the core components.`,
+     crucial_stress_test:"Gettier cases are decisive: a justified true belief can be true only by luck, so JTB is not sufficient on its own.",
+     blind_spots:"The classical view understates how often justification is met by luck and leaves 'justification' underspecified.",
+     nuance:"JTB still captures necessary components; the dispute is about sufficiency, not necessity.",
+     final_verdict:"Knowledge is not merely justified true belief: JTB is necessary but not sufficient without a no-false-lemmas or anti-luck condition."},
+    {core_answer:`On «${q}», justified true belief is not sufficient: Gettier showed a belief can be true and justified yet true only by luck.`,
+     crucial_stress_test:"The anti-luck intuition is the strongest test: in Gettier and fake-barn cases the believer is right accidentally.",
+     blind_spots:"Anti-luck fixes risk being ad hoc — 'no false lemmas' handles some cases but not all.",
+     nuance:"The JTB conditions look necessary; the Gettier problem targets sufficiency, demanding an anti-luck constraint.",
+     final_verdict:"Knowledge is not merely justified true belief; an anti-luck or safety condition must be added."},
+    {core_answer:`On «${q}», a reliabilist account asks whether the belief was produced by a reliable, truth-tracking process, not only that it is justified and true.`,
+     crucial_stress_test:"Reliabilism is tested by safety and sensitivity: the belief should not easily have been false; Gettier beliefs fail this.",
+     blind_spots:"Externalism can ignore the subject's own reasons (the generality problem: which process counts?).",
+     nuance:"Reliability is plausibly necessary for the anti-luck condition; it reframes truth and belief rather than abandoning them.",
+     final_verdict:"Knowledge is not merely justified true belief; it needs a reliability, safety, or sensitivity condition that tracks truth."},
+    {core_answer:`On «${q}», a virtue/contextualist account holds that knowledge is true belief manifesting intellectual virtue and meeting the context's standards.`,
+     crucial_stress_test:"The hard test is credit and stakes: Gettier'd beliefs are not creditable to competence, and 'enough' justification shifts with stakes.",
+     blind_spots:"Virtue and contextualist views can be vague about how much virtue, or which context, fixes the standard.",
+     nuance:"These views keep truth, belief, and justification but add epistemic responsibility, separating necessary from sufficient.",
+     final_verdict:"Knowledge is not merely justified true belief; it is true belief creditable to intellectual virtue and adequate to context."},
+  ];
+}
+function agentIndex(agentId,mod){const m=(agentId.match(/\d+/)||[null])[0]; return m!==null?(parseInt(m,10)%mod):0;}
+
+// content-aware base for epistemology scoring (mirrors FakeProvider._epistemology_score_adjust)
+const EPI_REWARD=["gettier","anti-luck","anti luck","reliab","defeater","necessary","sufficient",
+  "safety","sensitivity","virtue","no false lemmas","truth-track","justified true belief"];
+const EPI_IRRELEVANT=["correlation","causation","effect size","sample characteristic","underlying studies","causal mechanism","empirical grounding","scope-limited"];
+function scoreBase(topic,content){
+  if(topic!=="epistemology") return 7.0;
+  const t=(content||"").toLowerCase();
+  let base=7.0;
+  const hits=EPI_REWARD.reduce((a,k)=>a+(t.includes(k)?1:0),0);
+  base+=Math.min(hits,5)*0.35;
+  if(EPI_IRRELEVANT.some(k=>t.includes(k))) base-=1.5;
+  if(t.trim().length<50) base-=0.8;
+  return Math.max(0,Math.min(10,base));
+}
+
+/* ============================================================
    Run the whole council deterministically
    ============================================================ */
 function runCouncil(question,sid){
@@ -246,16 +336,25 @@ function runCouncil(question,sid){
   const socrates=Object.keys(rotation[0].roles)[0];
   const evaluator=Object.keys(rotation[6].roles)[0];
 
-  // --- synthesis: every agent emits a 5-section draft ---
-  const sections=synthSections(question);
-  const drafts=ids.map(a=>({author:a,draftId:`draft_${a}`,moveId:`move_${a}`,sections}));
+  // --- topic awareness ---
+  const topic=classifyTopic(question);
+  const tmpl=(topic==="epistemology")?{...TEMPLATES,...EPI_TEMPLATES}:TEMPLATES;
 
-  // --- move-level shadow scoring (7-dim, 0–10) ---
+  // --- synthesis: every agent emits a 5-section draft (per-perspective if epistemology) ---
+  const generic=synthSections(question);
+  const perspectives=epiPerspectives(question);
+  const drafts=ids.map(a=>{
+    const sections=(topic==="epistemology")?perspectives[agentIndex(a,perspectives.length)]:generic;
+    return {author:a,draftId:`draft_${a}`,moveId:`move_${a}`,sections};
+  });
+
+  // --- move-level shadow scoring (7-dim, 0–10, content-aware) ---
   const shadow=drafts.map(d=>{
+    const base=scoreBase(topic,SECTIONS.map(s=>d.sections[s]).join(' '));
     const voters=ids.filter(v=>v!==d.author);
     const per=voters.map(v=>{
       const sd=seed(v,'__move_score__',d.moveId);
-      const bd=breakdown(sd);
+      const bd=breakdown(sd,base);
       return {voter:v,bd,overall:weightedOverall(bd),confidence:vary01(0.78,sd)};
     });
     const overall=per.reduce((a,p)=>a+p.overall,0)/per.length;
@@ -264,24 +363,34 @@ function runCouncil(question,sid){
   }).sort((a,b)=>b.overall-a.overall);
 
   // --- section-level scoring + blind assembly (per section, tie-breakers) ---
+  const draftById=Object.fromEntries(drafts.map(d=>[d.draftId,d]));
   const assembly=SECTIONS.map(sec=>{
     const stats=drafts.map(d=>{
+      const base=scoreBase(topic,d.sections[sec]);
       const vals=ids.filter(v=>v!==d.author).map(v=>{
         const sd=seed(v,'__section_score__',d.draftId,sec);
-        return weightedOverall(breakdown(sd));
+        return weightedOverall(breakdown(sd,base));
       });
       const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
       return {draftId:d.draftId,author:d.author,avg,count:vals.length,variance:variance(vals)};
     }).sort((a,b)=>(b.avg-a.avg)|| (a.variance-b.variance)|| (b.count-a.count)|| (a.draftId<b.draftId?-1:1));
     const w=stats[0];
-    return {section:sec,winner:w,content:sections[sec]};
+    return {section:sec,winner:w,content:draftById[w.draftId].sections[sec]};
   });
 
   // --- ratification (default approve) + epistemic status ---
   const avgOverall=shadow.reduce((a,s)=>a+s.overall,0)/shadow.length;
   const epistemic=avgOverall>=7.5?'well_supported':avgOverall>=5.5?'contested':'speculative';
 
-  return {ids,socrates,evaluator,rotation,drafts,shadow,assembly,
+  // --- CED-owned epistemic leaderboard (aggregate, hidden from agents) ---
+  const expected=drafts.length*(ids.length-1), collected=expected;
+  const avg={}, cum={};
+  shadow.forEach(s=>{ avg[s.author]=s.overall; cum[s.author]=s.overall*s.voters.length; });
+  const top=Object.keys(avg).sort((a,b)=>(avg[b]-avg[a])||(a<b?-1:1));
+  const leaderboard={status:collected>=expected?'complete':(collected>0?'partial':'unavailable'),
+                     expected,collected,coverage:expected?collected/expected:0,avg,cum,top};
+
+  return {ids,socrates,evaluator,rotation,drafts,shadow,assembly,topic,tmpl,leaderboard,
           ratified:true,epistemic,avgOverall,question};
 }
 
@@ -296,7 +405,7 @@ function render(d){
   let h='';
 
   /* 1. role rotation */
-  h+=`<div class="card"><h2>Deterministic Role Rotation</h2><div class="body">`;
+  h+=`<div class="card"><h2>Deterministic Role Rotation <span class="topic-tag">TOPIC: ${d.topic.replace(/_/g,' ').toUpperCase()}</span></h2><div class="body">`;
   h+=`<div class="muted" style="font-size:12px;margin-bottom:8px">CED assigns roles per phase from <span class="kv">SHA-256(session_id) + phase + round</span>. Agents never choose their own role; the provider never influences it.</div>`;
   for(const p of d.rotation){
     h+=`<div class="phase"><div class="pname">Phase: ${p.phase}</div>`;
@@ -309,15 +418,16 @@ function render(d){
 
   /* 2. dialogue (key phases, scripted content) */
   h+=`<div class="card"><h2>Council Dialogue</h2><div class="body">`;
+  const T=d.tmpl;
   h+=`<div class="phase"><div class="pname">opening — ${d.socrates} as Socrates</div>
-      <div class="content">❝ ${esc(TEMPLATES.socrates.question)} ❞</div>
-      <div class="content muted">exposed assumption: ${esc(TEMPLATES.socrates.exposed_assumption)}</div></div>`;
+      <div class="content">❝ ${esc(T.socrates.question)} ❞</div>
+      <div class="content muted">exposed assumption: ${esc(T.socrates.exposed_assumption)}</div></div>`;
   h+=`<div class="phase"><div class="pname">elenchus — critics expose gaps</div>
-      <div class="content">${esc(TEMPLATES.elenchus_critic.critique_summary)}</div>
-      <div class="content muted">• ${esc(TEMPLATES.elenchus_critic.logic_gaps[0])}</div>
-      <div class="content muted">• ${esc(TEMPLATES.empiricist.documentation_gaps[0])}</div></div>`;
+      <div class="content">${esc(T.elenchus_critic.critique_summary)}</div>
+      <div class="content muted">• ${esc(T.elenchus_critic.logic_gaps[0])}</div>
+      <div class="content muted">• ${esc(T.empiricist.documentation_gaps[0])}</div></div>`;
   h+=`<div class="phase"><div class="pname">reconstruction — maieutic rebuild</div>
-      <div class="content">${esc(TEMPLATES.maieutic_reconstructor.stronger_position)}</div></div>`;
+      <div class="content">${esc(T.maieutic_reconstructor.stronger_position)}</div></div>`;
   h+=`<details style="margin-top:8px"><summary>synthesis — show all 4 competing 5-section drafts</summary>`;
   for(const dr of d.drafts){
     h+=`<div class="phase"><div class="pname">${dr.author} — synthesizer draft (${dr.draftId})</div>`;
@@ -365,6 +475,18 @@ function render(d){
   }
   h+=`</div></div></div>`;
 
+  /* 6. CED-owned epistemic analytics (hidden from agents) */
+  const lb=d.leaderboard;
+  h+=`<div class="card"><h2>CED-Owned Epistemic Analytics <span class="hidden-badge">HIDDEN FROM AGENTS</span></h2><div class="body">`;
+  h+=`<div class="muted" style="font-size:12px;margin-bottom:8px">Scores are peer-evaluation signals, not proof of truth.</div>`;
+  h+=`<div class="kv" style="margin-bottom:8px">leaderboard_status: <span class="role">${lb.status}</span> ·
+      scores_expected: ${lb.expected} · scores_collected: ${lb.collected} · coverage_ratio: ${lb.coverage.toFixed(2)}</div>`;
+  h+=`<table class="asm"><thead><tr><th>Agent</th><th>Avg /10</th><th>Cumulative</th></tr></thead><tbody>`;
+  for(const a of lb.top){
+    h+=`<tr><td class="agent">${a}</td><td class="ov">${f2(lb.avg[a])}</td><td class="muted">${f2(lb.cum[a])}</td></tr>`;
+  }
+  h+=`</tbody></table><div class="muted kv" style="margin-top:8px">top_contributors: ${lb.top.join(', ')}</div></div></div>`;
+
   out.innerHTML=h;
 }
 
@@ -375,6 +497,9 @@ function go(){
 }
 document.getElementById('run').addEventListener('click',go);
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  document.getElementById('q').value=c.getAttribute('data-q'); go();
+}));
 go(); // run once on load
 </script>
 </body>

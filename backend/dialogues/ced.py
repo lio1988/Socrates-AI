@@ -14,6 +14,7 @@ Pipeline:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Dict, List, Optional, Tuple
 
 from .models import (
@@ -25,8 +26,12 @@ from .models import (
     AssembledSection,
     DialogPhase,
     DraftScorecard,
+    EpistemicLeaderboard,
     EpistemicStatus,
     FinalResponse,
+    LeaderboardStatus,
+    LEADERBOARD_INTERPRETATION_WARNING,
+    MAX_LEADERBOARD_HARVEST_TIMEOUT,
     MAX_RATIFICATION_ROUNDS,
     MicroScore,
     ObjectionSeverity,
@@ -40,6 +45,8 @@ from .models import (
     SectionName,
     SectionScore,
     SessionState,
+    ShadowScoreHarvest,
+    SyncGateStatus,
 )
 from .providers import LLMProvider
 from .agent import SocraticAgent
@@ -506,49 +513,246 @@ class CEDOrchestrator:
 
     # ── Shadow Scoring (move-level, 0–10, CED-owned, hidden) ──────────────────
 
+    def _score_one_move(
+        self, state: SessionState, move: AgentMove, scorer: SocraticAgent,
+        phase: DialogPhase,
+    ) -> MicroScore:
+        """Produce one voter's MicroScore for one move (no self-scoring upstream)."""
+        raw = scorer.provider.complete(
+            system_prompt=(
+                "You are scoring a council output. "
+                "Evaluate only what is in front of you."
+            ),
+            user_prompt=f"Output: {move.content}",
+            output_schema={
+                "_role": "__move_score__",
+                "_target": move.move_id,
+                "_question": state.question,
+            },
+            agent_id=scorer.agent_id,
+        )
+        breakdown, status, flags = self._parse_breakdown(raw)
+        return MicroScore(
+            session_id=state.session_id,
+            output_id=move.move_id,
+            phase=phase,
+            author_agent_id=move.agent_id,
+            voter_agent_id=scorer.agent_id,
+            score_breakdown=breakdown,
+            confidence=self._clamp01(raw.get("confidence", 0.7)),
+            justification=str(raw.get("justification", "")),
+            penalty_flags=flags,
+            provider_status=status,
+        )
+
+    def _move_score_pairs(self, state: SessionState, phase: DialogPhase):
+        """(move, scorer) pairs that must be scored — every non-author pair."""
+        return [
+            (move, scorer)
+            for move in state.moves_for_phase(phase)
+            for scorer in self.agents
+            if scorer.agent_id != move.agent_id   # no self-scoring
+        ]
+
     def compute_shadow_scores(
         self,
         session_id: str,
         phase: DialogPhase = DialogPhase.SYNTHESIS,
     ) -> List[MicroScore]:
         """
-        For every move in the phase, each *other* agent produces a multi-
-        dimensional MicroScore. No agent scores its own output. Stored only on
-        SessionState (never on AgentState, never inserted into AgentTask.context).
+        Synchronous shadow scoring. For every move in the phase, each *other*
+        agent produces a multi-dimensional MicroScore. No agent scores its own
+        output. Stored only on SessionState (never on AgentState, never inserted
+        into AgentTask.context).
         """
         state = self.get_session(session_id)
-        micro: List[MicroScore] = []
-
-        for move in state.moves_for_phase(phase):
-            for scorer in self.agents:
-                if scorer.agent_id == move.agent_id:
-                    continue  # no self-scoring — hard constraint
-
-                raw = scorer.provider.complete(
-                    system_prompt=(
-                        "You are scoring a council output. "
-                        "Evaluate only what is in front of you."
-                    ),
-                    user_prompt=f"Output: {move.content}",
-                    output_schema={"_role": "__move_score__", "_target": move.move_id},
-                    agent_id=scorer.agent_id,
-                )
-                breakdown, status, flags = self._parse_breakdown(raw)
-                micro.append(MicroScore(
-                    session_id=session_id,
-                    output_id=move.move_id,
-                    phase=phase,
-                    author_agent_id=move.agent_id,
-                    voter_agent_id=scorer.agent_id,
-                    score_breakdown=breakdown,
-                    confidence=self._clamp01(raw.get("confidence", 0.7)),
-                    justification=str(raw.get("justification", "")),
-                    penalty_flags=flags,
-                    provider_status=status,
-                ))
-
+        micro = [
+            self._score_one_move(state, move, scorer, phase)
+            for (move, scorer) in self._move_score_pairs(state, phase)
+        ]
         state.micro_scores = micro
         return micro
+
+    # ── Epistemic Sync Gate (bounded final harvest of shadow scores) ──────────
+
+    async def _score_move_async(
+        self, state: SessionState, move: AgentMove, scorer: SocraticAgent,
+        phase: DialogPhase,
+    ) -> MicroScore:
+        """
+        Async wrapper around one scoring call. FakeProvider is synchronous and
+        fast, so this resolves immediately; the seam exists so real, slow
+        providers can be awaited (and timed out) without changing callers.
+        Patchable in tests to simulate slow/timed-out scoring.
+        """
+        return self._score_one_move(state, move, scorer, phase)
+
+    async def harvest_shadow_scores(
+        self,
+        session_state: SessionState,
+        timeout_seconds: float = MAX_LEADERBOARD_HARVEST_TIMEOUT,
+        phase: DialogPhase = DialogPhase.SYNTHESIS,
+    ) -> ShadowScoreHarvest:
+        """
+        Bounded final harvest of shadow-scoring tasks (the Epistemic Sync Gate).
+
+        Scoring tasks run in parallel and are awaited only up to timeout_seconds.
+        Completed scores are collected onto SessionState; outstanding tasks are
+        recorded as timed out and cancelled; failures are recorded. The final
+        response can always proceed — a partial (or empty) leaderboard never
+        blocks it, and a scoring failure never crashes the CED.
+        """
+        pairs = self._move_score_pairs(session_state, phase)
+        expected = len(pairs)
+
+        harvest = ShadowScoreHarvest(
+            session_id=session_state.session_id, scores_expected=expected,
+        )
+        if expected == 0:
+            harvest.status = SyncGateStatus.UNAVAILABLE
+            session_state.micro_scores = []
+            session_state.shadow_harvest = harvest
+            return harvest
+
+        # Launch every scoring task, tagged with a stable id for audit records.
+        task_meta: Dict[asyncio.Future, str] = {}
+        for move, scorer in pairs:
+            task_id = f"{move.move_id}:{scorer.agent_id}"
+            fut = asyncio.ensure_future(
+                self._score_move_async(session_state, move, scorer, phase)
+            )
+            task_meta[fut] = task_id
+
+        done, pending = await asyncio.wait(
+            list(task_meta.keys()), timeout=timeout_seconds
+        )
+
+        collected: List[MicroScore] = []
+        for fut in done:
+            try:
+                collected.append(fut.result())
+            except Exception:
+                harvest.failed_tasks.append(task_meta[fut])  # provider failed — no fake score
+
+        for fut in pending:
+            harvest.timed_out_tasks.append(task_meta[fut])    # timed out — provider_status TIMEOUT
+            fut.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        collected_count = len(collected)
+        harvest.scores_collected = collected_count
+        harvest.coverage_ratio = (collected_count / expected) if expected else 0.0
+
+        if collected_count == 0:
+            harvest.status = (
+                SyncGateStatus.TIMEOUT if harvest.timed_out_tasks
+                else SyncGateStatus.UNAVAILABLE
+            )
+        elif collected_count >= expected:
+            harvest.status = SyncGateStatus.COMPLETE
+        else:
+            harvest.status = SyncGateStatus.PARTIAL
+
+        session_state.micro_scores = collected   # CED-owned; agents never see this
+        session_state.shadow_harvest = harvest
+        return harvest
+
+    def _sync_harvest(self, state: SessionState,
+                      phase: DialogPhase = DialogPhase.SYNTHESIS) -> ShadowScoreHarvest:
+        """
+        Build a harvest record from already-collected (synchronous) micro_scores.
+        Used by the default run_session pipeline. If an async harvest already ran
+        and stored a record, that record is reused.
+        """
+        if state.shadow_harvest is not None:
+            return state.shadow_harvest
+
+        expected = len(self._move_score_pairs(state, phase))
+        collected = len(state.micro_scores)
+        coverage = (collected / expected) if expected else 0.0
+        if expected == 0 or collected == 0:
+            status = SyncGateStatus.UNAVAILABLE
+        elif collected >= expected:
+            status = SyncGateStatus.COMPLETE
+        else:
+            status = SyncGateStatus.PARTIAL
+        harvest = ShadowScoreHarvest(
+            session_id=state.session_id, scores_expected=expected,
+            scores_collected=collected, coverage_ratio=coverage, status=status,
+        )
+        state.shadow_harvest = harvest
+        return harvest
+
+    # ── CED-owned Epistemic Leaderboard (aggregate analytics, hidden) ─────────
+
+    def build_epistemic_leaderboard(
+        self,
+        session_state: SessionState,
+        harvest: ShadowScoreHarvest,
+    ) -> EpistemicLeaderboard:
+        """
+        Aggregate the (CED-owned) MicroScores into a leaderboard. Uses aggregate
+        data only — no raw MicroScore objects, no raw justifications. Never
+        inserted into AgentState and never shown to agents.
+        """
+        micro = session_state.micro_scores
+        expected = harvest.scores_expected
+        collected = harvest.scores_collected
+        coverage = harvest.coverage_ratio
+
+        # Aggregate overall_score per AUTHOR agent (whose output was scored).
+        sums: Dict[str, float] = {}
+        counts: Dict[str, int] = {}
+        by_phase: Dict[str, Dict[str, List[float]]] = {}
+        for ms in micro:
+            a = ms.author_agent_id
+            ov = float(ms.overall_score or 0.0)
+            sums[a] = sums.get(a, 0.0) + ov
+            counts[a] = counts.get(a, 0) + 1
+            ph = ms.phase.value
+            by_phase.setdefault(ph, {}).setdefault(a, []).append(ov)
+
+        averages = {a: round(sums[a] / counts[a], 4) for a in sums}
+        cumulative = {a: round(sums[a], 4) for a in sums}
+        scores_by_phase = {
+            ph: {a: round(sum(v) / len(v), 4) for a, v in agents.items()}
+            for ph, agents in by_phase.items()
+        }
+        top_contributors = sorted(averages, key=lambda a: (-averages[a], a))
+
+        if expected == 0 or collected == 0:
+            status = LeaderboardStatus.UNAVAILABLE
+        elif coverage >= 1.0:
+            status = LeaderboardStatus.COMPLETE
+        else:
+            status = LeaderboardStatus.PARTIAL
+
+        notable: List[str] = []
+        if status == LeaderboardStatus.PARTIAL:
+            notable.append(
+                f"Partial coverage: {collected}/{expected} shadow scores collected."
+            )
+        if harvest.timed_out_tasks:
+            notable.append(f"{len(harvest.timed_out_tasks)} scoring task(s) timed out.")
+        if harvest.failed_tasks:
+            notable.append(f"{len(harvest.failed_tasks)} scoring task(s) failed.")
+
+        leaderboard = EpistemicLeaderboard(
+            session_id=session_state.session_id,
+            leaderboard_status=status,
+            scores_expected=expected,
+            scores_collected=collected,
+            coverage_ratio=round(coverage, 4),
+            average_scores_by_agent=averages,
+            cumulative_scores_by_agent=cumulative,
+            scores_by_phase=scores_by_phase,
+            top_contributors=top_contributors,
+            notable_events=notable,
+            interpretation_warning=LEADERBOARD_INTERPRETATION_WARNING,
+        )
+        session_state.epistemic_leaderboard = leaderboard
+        return leaderboard
 
     # ── Section-level Scoring (per draft × section, 0–10) ─────────────────────
 
@@ -580,6 +784,7 @@ class CEDOrchestrator:
                             "_role": "__section_score__",
                             "_target": draft.draft_id,
                             "_section": section.value,
+                            "_question": state.question,
                         },
                         agent_id=scorer.agent_id,
                     )
@@ -854,9 +1059,48 @@ class CEDOrchestrator:
         # Advance to COMPLETE so RATIFICATION appears in phase_history.
         state.advance_phase(DialogPhase.COMPLETE)
 
+        # Epistemic sync gate (final harvest) + CED-owned leaderboard.
+        harvest = self._sync_harvest(state)
+        leaderboard = self.build_epistemic_leaderboard(state, harvest)
+
+        ratification_status = (
+            "blocked" if hard_blocked
+            else "unresolved" if unresolved
+            else "ratified"
+        )
+
+        # CED-owned audit summary (no raw scores, no raw voter-level objects).
+        audit_summary = {
+            "phases_completed": [p.value for p in state.phase_history],
+            "num_agents": len(self.agents),
+            "total_moves": len(state.moves),
+            "final_evaluator": evaluator.agent_id,
+            "ratification_status": ratification_status,
+            "ratification_rounds": rounds,
+            "unresolved_sections": [s.value for s in unresolved],
+            "hard_blocked": hard_blocked,
+            "role_history_summary": self._role_history_summary(state),
+            "score_coverage": {
+                "scores_expected": harvest.scores_expected,
+                "scores_collected": harvest.scores_collected,
+                "coverage_ratio": harvest.coverage_ratio,
+                "sync_gate_status": harvest.status.value,
+                "timed_out": len(harvest.timed_out_tasks),
+                "failed": len(harvest.failed_tasks),
+            },
+            "leaderboard_status": leaderboard.leaderboard_status.value,
+            "aggregate_scores_by_agent": leaderboard.average_scores_by_agent,
+        }
+
         final = FinalResponse(
             session_id=session_id,
             question=state.question,
+            # Phase 7 separated contract
+            synthesis=assembled,
+            ratification_status=ratification_status,
+            audit_summary=audit_summary,
+            socratic_leaderboard=leaderboard,
+            # Retained backward-compatible fields
             answer="" if hard_blocked else assembled.full_text(),
             ratified=ratified,
             blocking_objections=blocking_objections,
@@ -876,6 +1120,16 @@ class CEDOrchestrator:
         )
         state.final_response = final
         return final
+
+    @staticmethod
+    def _role_history_summary(state: SessionState) -> Dict[str, List[str]]:
+        """Compact {phase: [agent→role, ...]} view of role_history (audit/debug)."""
+        summary: Dict[str, List[str]] = {}
+        for rec in state.role_history:
+            summary.setdefault(rec["phase"], []).append(
+                f"{rec['agent_id']}→{rec['role']}"
+            )
+        return summary
 
     # ── Full pipeline runner ──────────────────────────────────────────────────
 

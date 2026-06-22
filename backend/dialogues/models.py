@@ -77,6 +77,22 @@ class ProviderStatus(str, Enum):
     DEGRADED    = "degraded"
     FALLBACK    = "fallback"
     ERROR       = "error"
+    TIMEOUT     = "timeout"
+    UNAVAILABLE = "unavailable"
+
+
+# ── Phase 7: epistemic sync gate / leaderboard status ─────────────────────────
+
+class LeaderboardStatus(str, Enum):
+    COMPLETE    = "complete"
+    PARTIAL     = "partial"
+    UNAVAILABLE = "unavailable"
+
+
+class SyncGateStatus(str, Enum):
+    COMPLETE    = "complete"
+    PARTIAL     = "partial"
+    TIMEOUT     = "timeout"
     UNAVAILABLE = "unavailable"
 
 
@@ -111,6 +127,10 @@ SECTION_ORDER: List[SectionName] = [
 
 # Phase 4 ratification policy.
 MAX_RATIFICATION_ROUNDS = 2
+
+# Phase 7 epistemic sync gate policy.
+MAX_LEADERBOARD_HARVEST_TIMEOUT = 4.0
+LEADERBOARD_INTERPRETATION_WARNING = "Scores are peer-evaluation signals, not proof of truth."
 
 
 # ── Task / Move ───────────────────────────────────────────────────────────────
@@ -363,15 +383,65 @@ class RatificationVote(BaseModel):
         )
 
 
+# ── Phase 7: epistemic sync gate + CED-owned leaderboard ──────────────────────
+
+class ShadowScoreHarvest(BaseModel):
+    """
+    Result of the bounded final harvest of shadow-scoring tasks (the sync gate).
+    CED-owned audit record — never shown to agents.
+    """
+    session_id:      str
+    scores_expected: int = 0
+    scores_collected: int = 0
+    coverage_ratio:  float = 0.0
+    status:          SyncGateStatus = SyncGateStatus.UNAVAILABLE
+    timed_out_tasks: List[str] = Field(default_factory=list)
+    failed_tasks:    List[str] = Field(default_factory=list)
+
+
+class EpistemicLeaderboard(BaseModel):
+    """
+    CED-owned aggregate analytics over shadow scores. Must NOT be inserted into
+    AgentState and must NOT be shown to agents. Aggregates only — no raw
+    MicroScore / SectionScore objects, no raw justifications (unless debug).
+    """
+    session_id:                str
+    leaderboard_status:        LeaderboardStatus = LeaderboardStatus.UNAVAILABLE
+    scores_expected:           int = 0
+    scores_collected:          int = 0
+    coverage_ratio:            float = 0.0
+    average_scores_by_agent:   Dict[str, float] = Field(default_factory=dict)
+    cumulative_scores_by_agent: Dict[str, float] = Field(default_factory=dict)
+    scores_by_phase:           Dict[str, Dict[str, float]] = Field(default_factory=dict)
+    top_contributors:          List[str] = Field(default_factory=list)
+    notable_events:            List[str] = Field(default_factory=list)
+    interpretation_warning:    str = LEADERBOARD_INTERPRETATION_WARNING
+
+
 # ── Final Response ────────────────────────────────────────────────────────────
 
 class FinalResponse(BaseModel):
-    """What the end-user receives after the Council completes ratification."""
+    """
+    What the end-user / developer receives after the Council completes.
+
+    Phase 7 separates the assembled synthesis, the ratification outcome, the
+    CED-owned audit summary, and the CED-owned leaderboard. The pre-Phase-7
+    fields (answer/ratified/...) are retained for backward compatibility.
+    Raw MicroScore / SectionScore objects are never exposed here.
+    """
     response_id:         str = Field(default_factory=lambda: _uid("resp_"))
     session_id:          str
     question:            str
-    answer:              str
-    ratified:            bool
+
+    # Phase 7 contract — clearly separated parts.
+    synthesis:           Optional[AssembledAnswer] = None
+    ratification_status: str = ""           # "ratified" | "blocked" | "unresolved"
+    audit_summary:       Dict[str, Any] = Field(default_factory=dict)
+    socratic_leaderboard: Optional[EpistemicLeaderboard] = None
+
+    # Retained (backward compatible) fields.
+    answer:              str = ""
+    ratified:            bool = False
     blocking_objections: List[str] = Field(default_factory=list)
     unresolved_sections: List[SectionName] = Field(default_factory=list)
     ratification_votes:  List[RatificationVote] = Field(default_factory=list)
@@ -397,6 +467,9 @@ class SessionState(BaseModel):
     micro_scores:     List[MicroScore] = Field(default_factory=list)      # move-level
     section_drafts:   List[SectionDraft] = Field(default_factory=list)    # 5-section drafts
     draft_scorecards: List[DraftScorecard] = Field(default_factory=list)  # section-level
+    # Phase 7 CED-owned audit analytics (never on AgentState, never to agents).
+    shadow_harvest:      Optional[ShadowScoreHarvest] = None
+    epistemic_leaderboard: Optional[EpistemicLeaderboard] = None
     assembled_answer: Optional[AssembledAnswer] = None
     final_response:   Optional[FinalResponse] = None
     phase_history:    List[DialogPhase] = Field(default_factory=list)
