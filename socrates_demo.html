@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Socrates AI — Socratic Council Demo (V1, in-browser clone)</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#2b3340;
+    --ink:#e6edf3; --muted:#9aa7b4; --accent:#7ee787; --accent2:#79c0ff;
+    --warn:#f0b400; --bad:#ff7b72; --chip:#21304a; --good:#1f6f43;
+    --mono:'Cascadia Code','Consolas',ui-monospace,Menlo,monospace;
+    --sans:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#15233b,var(--bg));
+       color:var(--ink);font-family:var(--sans);line-height:1.5}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+            background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .controls label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+  .controls input{background:#0b0f16;border:1px solid var(--border);color:var(--ink);
+                  border-radius:8px;padding:9px 11px;font-family:var(--sans);font-size:14px}
+  #q{flex:1;min-width:260px}
+  #sid{width:150px}
+  button{background:linear-gradient(180deg,#2ea043,#1f6f3a);border:0;color:#fff;font-weight:600;
+         padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px}
+  button:hover{filter:brightness(1.08)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin:18px 0;overflow:hidden}
+  .card > h2{margin:0;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--accent2);
+             padding:12px 16px;background:var(--panel2);border-bottom:1px solid var(--border);
+             display:flex;justify-content:space-between;align-items:center}
+  .card .body{padding:14px 16px}
+  .hidden-badge{font-size:10px;color:#0d1117;background:var(--warn);padding:2px 8px;border-radius:20px;font-weight:700;letter-spacing:.4px}
+  .phase{margin:6px 0;padding:10px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px}
+  .phase .pname{font-family:var(--mono);font-size:12px;color:var(--accent);text-transform:lowercase;margin-bottom:6px}
+  .role-line{font-family:var(--mono);font-size:13px;margin:2px 0}
+  .arrow{color:var(--muted)}
+  .role{color:var(--accent2);font-weight:600}
+  .agent{color:#ffd479}
+  .muted{color:var(--muted)}
+  .content{color:var(--ink);font-size:13.5px;margin:4px 0}
+  .scorecard-move{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:8px 0;background:var(--panel2)}
+  .ov{font-family:var(--mono);font-size:15px;color:var(--accent);font-weight:700}
+  .dims{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px 14px;margin:8px 0 4px;font-family:var(--mono);font-size:12px}
+  .dim{display:flex;justify-content:space-between;border-bottom:1px dotted #283041;padding:1px 0}
+  .dim .v{color:var(--accent2)}
+  .bar{height:5px;background:#0b0f16;border-radius:4px;overflow:hidden;margin-top:2px;grid-column:1/-1}
+  table.asm{width:100%;border-collapse:collapse;font-size:13px}
+  table.asm td,table.asm th{padding:7px 8px;border-bottom:1px solid var(--border);text-align:left}
+  table.asm th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .sec-name{font-family:var(--mono);color:var(--accent2)}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--chip);color:var(--accent2)}
+  .ratbadge{font-weight:700;padding:4px 12px;border-radius:20px}
+  .ok{background:var(--good);color:#d8ffe6}
+  .no{background:#5c1f1f;color:#ffd8d4}
+  .answer h3{font-family:var(--mono);font-size:13px;color:var(--accent);margin:14px 0 4px;text-transform:capitalize}
+  .answer p{margin:0 0 6px;color:#cfe3d4}
+  .foot{color:var(--muted);font-size:12px;margin-top:24px;text-align:center}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px;outline:none}
+  .kv{font-family:var(--mono);font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SOCRATES AI — Socratic Council Demo</h1>
+  <div class="sub">V1 · in-browser clone of <span class="kv">python -m backend.dialogues.demo</span> · deterministic FakeProvider · no server, no Python</div>
+
+  <div class="controls">
+    <div style="flex:1;min-width:260px">
+      <label for="q">Question</label>
+      <input id="q" value="Is knowledge merely justified true belief?" />
+    </div>
+    <div>
+      <label for="sid">Session id</label>
+      <input id="sid" value="demo_session" />
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button id="run">▶ Run Council</button>
+    </div>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="foot">Mirrors the Python pipeline: deterministic role rotation · 7-dimension 0–10 shadow scoring (hidden from agents) · 5-section blind assembly · structured ratification.</div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Self-contained SHA-256 (sync) — needed because crypto.subtle
+   is unavailable on file:// in many browsers.
+   ============================================================ */
+const SHA256 = (() => {
+  const K = new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+  const rotr=(x,n)=>(x>>>n)|(x<<(32-n));
+  function hex(bytes){
+    // bytes: Uint8Array -> hex string of sha256
+    let l = bytes.length;
+    const withOne = new Uint8Array((((l+8)>>6)+1)<<6);
+    withOne.set(bytes); withOne[l]=0x80;
+    const bits = l*8;
+    const dv = new DataView(withOne.buffer);
+    dv.setUint32(withOne.length-4, bits>>>0);
+    dv.setUint32(withOne.length-8, Math.floor(bits/0x100000000));
+    let h0=0x6a09e667,h1=0xbb67ae85,h2=0x3c6ef372,h3=0xa54ff53a,
+        h4=0x510e527f,h5=0x9b05688c,h6=0x1f83d9ab,h7=0x5be0cd19;
+    const w=new Uint32Array(64);
+    for(let i=0;i<withOne.length;i+=64){
+      for(let t=0;t<16;t++) w[t]=dv.getUint32(i+t*4);
+      for(let t=16;t<64;t++){
+        const s0=rotr(w[t-15],7)^rotr(w[t-15],18)^(w[t-15]>>>3);
+        const s1=rotr(w[t-2],17)^rotr(w[t-2],19)^(w[t-2]>>>10);
+        w[t]=(w[t-16]+s0+w[t-7]+s1)|0;
+      }
+      let a=h0,b=h1,c=h2,d=h3,e=h4,f=h5,g=h6,h=h7;
+      for(let t=0;t<64;t++){
+        const S1=rotr(e,6)^rotr(e,11)^rotr(e,25);
+        const ch=(e&f)^(~e&g);
+        const t1=(h+S1+ch+K[t]+w[t])|0;
+        const S0=rotr(a,2)^rotr(a,13)^rotr(a,22);
+        const maj=(a&b)^(a&c)^(b&c);
+        const t2=(S0+maj)|0;
+        h=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;
+      }
+      h0=(h0+a)|0;h1=(h1+b)|0;h2=(h2+c)|0;h3=(h3+d)|0;
+      h4=(h4+e)|0;h5=(h5+f)|0;h6=(h6+g)|0;h7=(h7+h)|0;
+    }
+    const toHex=x=>('00000000'+(x>>>0).toString(16)).slice(-8);
+    return toHex(h0)+toHex(h1)+toHex(h2)+toHex(h3)+toHex(h4)+toHex(h5)+toHex(h6)+toHex(h7);
+  }
+  const enc=new TextEncoder();
+  return (str)=>hex(enc.encode(str));
+})();
+
+/* ============================================================
+   Deterministic helpers — ports of backend/dialogues internals
+   ============================================================ */
+const stableHash = (s)=>BigInt('0x'+SHA256(s));            // role_assignment.stable_hash
+const seed = (...parts)=>stableHash(parts.join('|'));      // FakeProvider._seed
+
+const DIMS=['epistemic_value','logical_rigor','factual_grounding','constructive_impact',
+            'intellectual_honesty','clarity_precision','grounded_creativity'];
+const WEIGHTS={epistemic_value:.30,logical_rigor:.20,factual_grounding:.15,
+               constructive_impact:.10,intellectual_honesty:.10,clarity_precision:.10,grounded_creativity:.05};
+
+function vary10(base,sBig,spread=1.5){
+  const m=Number(((sBig%1000n)+1000n)%1000n);
+  let v=base+(m/1000-0.5)*spread*2;
+  v=Math.max(0,Math.min(10,v));
+  return Math.round(v*100)/100;
+}
+function vary01(base,sBig,spread=0.12){
+  const m=Number(((sBig%1000n)+1000n)%1000n);
+  let v=base+(m/1000-0.5)*spread*2;
+  v=Math.max(0,Math.min(1,v));
+  return Math.round(v*10000)/10000;
+}
+function breakdown(seedBig){                               // FakeProvider._breakdown
+  const bd={}; let s=seedBig;
+  for(const dim of DIMS){ s=seed(String(s),dim); bd[dim]=vary10(7.0,s); }
+  return bd;
+}
+function weightedOverall(bd){                              // ScoreBreakdown.weighted_overall
+  let t=0; for(const d of DIMS) t+=bd[d]*WEIGHTS[d]; return t;
+}
+function variance(vals){
+  const n=vals.length; if(n<2)return 0;
+  const m=vals.reduce((a,b)=>a+b,0)/n;
+  return vals.reduce((a,v)=>a+(v-m)*(v-m),0)/n;
+}
+
+/* ---- role scheduler (ced.assign_roles_for_phase) ---- */
+const PHASE_INDEX={opening:0,initial_response:1,elenchus:2,reflection:3,reconstruction:4,synthesis:5,ratification:6};
+const PHASE_SLOTS={
+  opening:['socrates'],
+  initial_response:['elenchus_critic','empiricist','synthesizer'],
+  elenchus:['elenchus_critic','empiricist'],
+  reconstruction:['maieutic_reconstructor'],
+  ratification:['final_evaluator'],
+};
+function assignRoles(sid,phase,ids,round=0){
+  const n=ids.length;
+  if(phase==='synthesis'){const a={};ids.forEach(i=>a[i]='synthesizer');return a;}
+  const offset=Number(stableHash(sid)%BigInt(n));
+  const rotated=ids.slice(offset).concat(ids.slice(0,offset));
+  const pOff=(PHASE_INDEX[phase]||0)+round;
+  const a={}; (PHASE_SLOTS[phase]||[]).forEach((role,ri)=>{ a[rotated[(ri+pOff)%n]]=role; });
+  return a;
+}
+const roleLabel=r=>r.toUpperCase().replace(/_/g,' ');
+
+/* ---- scripted FakeProvider content (topic-aware) ---- */
+function synthSections(q){
+  return {
+    core_answer:`On «${q}», the council's most defensible position is a qualified one: the claim holds in contexts with direct supporting evidence, but its scope must be narrowed rather than asserted universally.`,
+    crucial_stress_test:`The strongest challenge to any answer on «${q}» is the gap between correlation and causation: the evidence cited supports association, not the stronger causal reading the question invites.`,
+    blind_spots:`This treatment of «${q}» risks overlooking domain-transfer limits and selection effects in the underlying studies, which could inflate apparent support.`,
+    nuance:`The answer to «${q}» shifts with context: it is stronger for well-studied cases and weaker where data is sparse or contested.`,
+    final_verdict:`Provisional verdict on «${q}»: a scope-limited 'yes, with conditions', held with calibrated uncertainty pending stronger causal evidence.`,
+  };
+}
+const TEMPLATES={
+  socrates:{question:"What underlying assumption are we taking for granted here?",
+            exposed_assumption:"That the premise is universally applicable regardless of context."},
+  elenchus_critic:{critique_summary:"The core claim requires stronger empirical grounding before it can be accepted.",
+            contradictions:["The scope claim is inconsistent with the evidence cited."],
+            logic_gaps:["The causal mechanism is asserted but not demonstrated."]},
+  empiricist:{evidence_note:"Central assertion is unverified — requires peer-reviewed empirical support.",
+            documentation_gaps:["No primary source cited for the main causal claim.","Effect size and sample characteristics absent."]},
+  maieutic_reconstructor:{stronger_position:"A refined version that narrows scope to well-evidenced cases, qualifies the causal claim, and acknowledges known counter-evidence."},
+  reflector:{revised_position:"A more cautious, evidence-constrained version that acknowledges the valid inferential gaps identified by the Elenchus Critic."},
+};
+const SECTIONS=['core_answer','crucial_stress_test','blind_spots','nuance','final_verdict'];
+
+/* ============================================================
+   Run the whole council deterministically
+   ============================================================ */
+function runCouncil(question,sid){
+  const ids=['agent_0','agent_1','agent_2','agent_3'];
+
+  // --- role rotation per phase (mirrors CED) ---
+  const initial=assignRoles(sid,'initial_response',ids);
+  const responders=Object.keys(initial);           // reflectors = initial responders
+  const rotation=[
+    {phase:'opening',roles:assignRoles(sid,'opening',ids)},
+    {phase:'initial_response',roles:initial},
+    {phase:'elenchus',roles:assignRoles(sid,'elenchus',ids)},
+    {phase:'reflection',roles:Object.fromEntries(responders.map(a=>[a,'reflector'])),collective:'all responders → Reflector revision'},
+    {phase:'reconstruction',roles:assignRoles(sid,'reconstruction',ids)},
+    {phase:'synthesis',roles:assignRoles(sid,'synthesis',ids),collective:'all agents → Synthesizer draft generation'},
+    {phase:'ratification',roles:assignRoles(sid,'ratification',ids)},
+  ];
+  const socrates=Object.keys(rotation[0].roles)[0];
+  const evaluator=Object.keys(rotation[6].roles)[0];
+
+  // --- synthesis: every agent emits a 5-section draft ---
+  const sections=synthSections(question);
+  const drafts=ids.map(a=>({author:a,draftId:`draft_${a}`,moveId:`move_${a}`,sections}));
+
+  // --- move-level shadow scoring (7-dim, 0–10) ---
+  const shadow=drafts.map(d=>{
+    const voters=ids.filter(v=>v!==d.author);
+    const per=voters.map(v=>{
+      const sd=seed(v,'__move_score__',d.moveId);
+      const bd=breakdown(sd);
+      return {voter:v,bd,overall:weightedOverall(bd),confidence:vary01(0.78,sd)};
+    });
+    const overall=per.reduce((a,p)=>a+p.overall,0)/per.length;
+    const dimAvg={}; DIMS.forEach(dm=>dimAvg[dm]=per.reduce((a,p)=>a+p.bd[dm],0)/per.length);
+    return {author:d.author,moveId:d.moveId,overall,dimAvg,voters};
+  }).sort((a,b)=>b.overall-a.overall);
+
+  // --- section-level scoring + blind assembly (per section, tie-breakers) ---
+  const assembly=SECTIONS.map(sec=>{
+    const stats=drafts.map(d=>{
+      const vals=ids.filter(v=>v!==d.author).map(v=>{
+        const sd=seed(v,'__section_score__',d.draftId,sec);
+        return weightedOverall(breakdown(sd));
+      });
+      const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+      return {draftId:d.draftId,author:d.author,avg,count:vals.length,variance:variance(vals)};
+    }).sort((a,b)=>(b.avg-a.avg)|| (a.variance-b.variance)|| (b.count-a.count)|| (a.draftId<b.draftId?-1:1));
+    const w=stats[0];
+    return {section:sec,winner:w,content:sections[sec]};
+  });
+
+  // --- ratification (default approve) + epistemic status ---
+  const avgOverall=shadow.reduce((a,s)=>a+s.overall,0)/shadow.length;
+  const epistemic=avgOverall>=7.5?'well_supported':avgOverall>=5.5?'contested':'speculative';
+
+  return {ids,socrates,evaluator,rotation,drafts,shadow,assembly,
+          ratified:true,epistemic,avgOverall,question};
+}
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const f2=x=>x.toFixed(2), f1=x=>x.toFixed(1), f3=x=>x.toFixed(3);
+
+function render(d){
+  const out=document.getElementById('out');
+  let h='';
+
+  /* 1. role rotation */
+  h+=`<div class="card"><h2>Deterministic Role Rotation</h2><div class="body">`;
+  h+=`<div class="muted" style="font-size:12px;margin-bottom:8px">CED assigns roles per phase from <span class="kv">SHA-256(session_id) + phase + round</span>. Agents never choose their own role; the provider never influences it.</div>`;
+  for(const p of d.rotation){
+    h+=`<div class="phase"><div class="pname">Phase: ${p.phase}</div>`;
+    if(p.collective){ h+=`<div class="role-line muted">${esc(p.collective)}</div>`; }
+    else { for(const [a,r] of Object.entries(p.roles))
+      h+=`<div class="role-line"><span class="agent">${a}</span> <span class="arrow">→</span> <span class="role">${roleLabel(r)}</span></div>`; }
+    h+=`</div>`;
+  }
+  h+=`</div></div>`;
+
+  /* 2. dialogue (key phases, scripted content) */
+  h+=`<div class="card"><h2>Council Dialogue</h2><div class="body">`;
+  h+=`<div class="phase"><div class="pname">opening — ${d.socrates} as Socrates</div>
+      <div class="content">❝ ${esc(TEMPLATES.socrates.question)} ❞</div>
+      <div class="content muted">exposed assumption: ${esc(TEMPLATES.socrates.exposed_assumption)}</div></div>`;
+  h+=`<div class="phase"><div class="pname">elenchus — critics expose gaps</div>
+      <div class="content">${esc(TEMPLATES.elenchus_critic.critique_summary)}</div>
+      <div class="content muted">• ${esc(TEMPLATES.elenchus_critic.logic_gaps[0])}</div>
+      <div class="content muted">• ${esc(TEMPLATES.empiricist.documentation_gaps[0])}</div></div>`;
+  h+=`<div class="phase"><div class="pname">reconstruction — maieutic rebuild</div>
+      <div class="content">${esc(TEMPLATES.maieutic_reconstructor.stronger_position)}</div></div>`;
+  h+=`<details style="margin-top:8px"><summary>synthesis — show all 4 competing 5-section drafts</summary>`;
+  for(const dr of d.drafts){
+    h+=`<div class="phase"><div class="pname">${dr.author} — synthesizer draft (${dr.draftId})</div>`;
+    for(const s of SECTIONS) h+=`<div class="content"><span class="sec-name">${s}:</span> ${esc(dr.sections[s])}</div>`;
+    h+=`</div>`;
+  }
+  h+=`</details></div></div>`;
+
+  /* 3. shadow scorecard */
+  h+=`<div class="card"><h2>Shadow Scorecard <span class="hidden-badge">CED-OWNED · HIDDEN FROM AGENTS</span></h2><div class="body">`;
+  h+=`<div class="muted" style="font-size:12px;margin-bottom:6px">No agent scores its own output. Seven dimensions on a 0–10 scale; only <span class="kv">confidence</span> is 0–1.</div>`;
+  for(const m of d.shadow){
+    h+=`<div class="scorecard-move"><div style="display:flex;justify-content:space-between;align-items:center">
+        <div><span class="agent">${m.moveId}</span> <span class="muted">by ${m.author}</span></div>
+        <div class="ov">${f2(m.overall)} / 10</div></div><div class="dims">`;
+    for(const dm of DIMS){
+      const v=m.dimAvg[dm];
+      h+=`<div class="dim"><span>${dm}</span><span class="v">${f1(v)}</span>
+          <div class="bar"><div style="height:100%;width:${v*10}%;background:linear-gradient(90deg,#1f6f3a,#2ea043)"></div></div></div>`;
+    }
+    h+=`</div><div class="muted kv">penalty_flags: none · scored by ${m.voters.join(', ')}</div></div>`;
+  }
+  h+=`</div></div>`;
+
+  /* 4. blind assembly */
+  h+=`<div class="card"><h2>Blind Section Assembly <span class="pill">mechanical · highest avg per section</span></h2><div class="body">`;
+  h+=`<table class="asm"><thead><tr><th>Section</th><th>Winner draft</th><th>By</th><th>Avg /10</th><th>n</th><th>Variance</th></tr></thead><tbody>`;
+  for(const a of d.assembly){
+    h+=`<tr><td class="sec-name">${a.section}</td><td class="kv">${a.winner.draftId}</td>
+        <td class="agent">${a.winner.author}</td><td class="ov">${f2(a.winner.avg)}</td>
+        <td>${a.winner.count}</td><td class="muted">${f3(a.winner.variance)}</td></tr>`;
+  }
+  h+=`</tbody></table><div class="muted kv" style="margin-top:8px">Tie-breakers: avg → lower variance → higher count → draft_id order.</div></div></div>`;
+
+  /* 5. final response */
+  h+=`<div class="card"><h2>Final Response</h2><div class="body">`;
+  h+=`<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span class="ratbadge ${d.ratified?'ok':'no'}">${d.ratified?'✓ RATIFIED':'✗ NOT RATIFIED'}</span>
+      <span class="muted">epistemic status:</span> <span class="role">${d.epistemic}</span>
+      <span class="muted">· final evaluator:</span> <span class="agent">${d.evaluator}</span>
+      <span class="muted">· avg score:</span> <span class="ov">${f2(d.avgOverall)} / 10</span></div>`;
+  h+=`<div class="answer">`;
+  for(const a of d.assembly){
+    h+=`<h3>${a.section.replace(/_/g,' ')}</h3><p>${esc(a.content)}</p>`;
+  }
+  h+=`</div></div></div>`;
+
+  out.innerHTML=h;
+}
+
+function go(){
+  const q=document.getElementById('q').value.trim()||'the question';
+  const sid=document.getElementById('sid').value.trim()||'demo_session';
+  render(runCouncil(q,sid));
+}
+document.getElementById('run').addEventListener('click',go);
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+go(); // run once on load
+</script>
+</body>
+</html>
