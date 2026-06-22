@@ -284,41 +284,54 @@ class CouncilProviderRegistry:
             return False, COUNCIL_UNAVAILABLE_WARNING.format(n=self.minimum_providers)
         return True, None
 
-    # -- one council round (gather provider responses, enforce quorum) --
-    async def gather_council_round(
-        self, task: AgentTask, agent_state: AgentState,
+    # -- per-adapter execution (timeout / failure safe; never crashes) --
+    async def run_adapter(
+        self, adapter: LLMProviderAdapter, task: AgentTask, agent_state: AgentState,
         timeout_seconds: Optional[float] = None,
-    ) -> CouncilRoundResult:
+    ) -> ProviderResponse:
         timeout = self.provider_timeout_seconds if timeout_seconds is None else timeout_seconds
-        adapters = self.available_adapters()
+        try:
+            return await asyncio.wait_for(
+                adapter.generate_agent_move(task, agent_state), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            return ProviderResponse(
+                provider_id=adapter.provider_id, agent_id=task.agent_id,
+                status=ProviderStatus.TIMEOUT, error_message="adapter exceeded timeout",
+            )
+        except Exception as exc:  # provider failure must never crash the CED
+            return ProviderResponse(
+                provider_id=adapter.provider_id, agent_id=task.agent_id,
+                status=ProviderStatus.ERROR, error_message=str(exc),
+            )
 
-        async def _run(a: LLMProviderAdapter) -> ProviderResponse:
-            try:
-                return await asyncio.wait_for(
-                    a.generate_agent_move(task, agent_state), timeout=timeout
-                )
-            except asyncio.TimeoutError:
-                return ProviderResponse(
-                    provider_id=a.provider_id, agent_id=task.agent_id,
-                    status=ProviderStatus.TIMEOUT, error_message="adapter exceeded timeout",
-                )
-            except Exception as exc:  # provider failure must never crash the CED
-                return ProviderResponse(
-                    provider_id=a.provider_id, agent_id=task.agent_id,
-                    status=ProviderStatus.ERROR, error_message=str(exc),
-                )
-
-        responses = list(await asyncio.gather(*(_run(a) for a in adapters))) if adapters else []
+    def finalize_round(
+        self, responses: List[ProviderResponse], quorum: Optional[int] = None,
+    ) -> CouncilRoundResult:
+        """Apply quorum/fallback rules to a set of responses (records failures)."""
+        q = self.quorum_for_assembly if quorum is None else quorum
         ok_ids = [r.provider_id for r in responses if r.ok]
         failed_ids = [r.provider_id for r in responses if not r.ok]
         self._last_failed = list(failed_ids)
-
-        proceed = len(ok_ids) >= self.quorum_for_assembly
-        warning = None if proceed else COUNCIL_UNAVAILABLE_WARNING.format(n=self.quorum_for_assembly)
+        proceed = len(ok_ids) >= q
+        warning = None if proceed else COUNCIL_UNAVAILABLE_WARNING.format(n=q)
         return CouncilRoundResult(
             responses=responses, ok_provider_ids=ok_ids,
             failed_provider_ids=failed_ids, proceed=proceed, warning=warning,
         )
+
+    # -- one council round: every available provider answers ONE task --
+    async def gather_council_round(
+        self, task: AgentTask, agent_state: AgentState,
+        timeout_seconds: Optional[float] = None,
+    ) -> CouncilRoundResult:
+        adapters = self.available_adapters()
+        responses = (
+            list(await asyncio.gather(
+                *(self.run_adapter(a, task, agent_state, timeout_seconds) for a in adapters)
+            )) if adapters else []
+        )
+        return self.finalize_round(responses)
 
     # -- audit metadata (developer/user visible; never inserted into AgentState) --
     def status_summary(self) -> Dict[str, Any]:

@@ -507,6 +507,8 @@ class SessionState(BaseModel):
     # Phase 7 CED-owned audit analytics (never on AgentState, never to agents).
     shadow_harvest:      Optional[ShadowScoreHarvest] = None
     epistemic_leaderboard: Optional[EpistemicLeaderboard] = None
+    # Phase 8B registry-backed council rounds (CED-owned audit; never to agents).
+    registry_rounds:  List[CouncilRoundResult] = Field(default_factory=list)
     assembled_answer: Optional[AssembledAnswer] = None
     final_response:   Optional[FinalResponse] = None
     phase_history:    List[DialogPhase] = Field(default_factory=list)

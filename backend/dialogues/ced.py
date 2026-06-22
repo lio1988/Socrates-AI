@@ -24,6 +24,7 @@ from .models import (
     AgentTask,
     AssembledAnswer,
     AssembledSection,
+    CouncilRoundResult,
     DialogPhase,
     DraftScorecard,
     EpistemicLeaderboard,
@@ -36,6 +37,7 @@ from .models import (
     MicroScore,
     ObjectionSeverity,
     PenaltyFlag,
+    ProviderResponse,
     ProviderStatus,
     RatificationDecision,
     RatificationVote,
@@ -245,6 +247,151 @@ class CEDOrchestrator:
             (phase, self.assign_roles_for_phase(state, phase))
             for phase in _PLAN_PHASES
         ]
+
+    # ── Phase 8B: registry-backed council round (additive, parallel path) ─────
+
+    def _build_round_task(
+        self, state: SessionState, agent_id: str,
+        role: AgentRole, phase: DialogPhase,
+    ) -> AgentTask:
+        """Build the AgentTask that all available providers will answer this round."""
+        return AgentTask(
+            session_id=state.session_id,
+            agent_id=agent_id,
+            role=role,
+            phase=phase,
+            question=state.question,
+            output_schema={"_role": role.value, "_question": state.question},
+            round_number=state.round_number,
+        )
+
+    async def run_registry_council_round(
+        self,
+        session_id: str,
+        agent_id: str,
+        role: AgentRole,
+        phase: DialogPhase,
+        timeout_seconds: Optional[float] = None,
+    ) -> CouncilRoundResult:
+        """
+        Drive ONE multi-provider council round through the CouncilProviderRegistry.
+
+        This is an additive, parallel execution path — it does NOT replace
+        run_session() or the FakeProvider pipeline. It proves the registry can
+        gather validated structured outputs from several providers with quorum,
+        timeout, and error handling, and records audit metadata on the session.
+
+        - Readiness (minimum providers) is checked first; if not met, returns a
+          non-proceeding result with the registry warning and NO fabricated moves.
+        - Provider timeouts / failures are recorded, never crash, never faked.
+        - The result is stored on SessionState.registry_rounds (CED-owned audit).
+        """
+        if self.registry is None:
+            raise RuntimeError(
+                "run_registry_council_round requires a CouncilProviderRegistry "
+                "(pass registry=... to CEDOrchestrator)."
+            )
+        state = self.get_session(session_id)
+
+        ready, warning = self.registry.assess_readiness()
+        if not ready:
+            result = CouncilRoundResult(proceed=False, warning=warning)
+            state.registry_rounds.append(result)
+            return result
+
+        agent_state = state.agent_states.get(
+            agent_id,
+            AgentState(agent_id=agent_id, primary_role=role, assigned_role=role),
+        )
+        task = self._build_round_task(state, agent_id, role, phase)
+        result = await self.registry.gather_council_round(
+            task, agent_state, timeout_seconds=timeout_seconds
+        )
+        state.registry_rounds.append(result)
+        return result
+
+    async def gather_registry_phase_round(
+        self,
+        session_state: SessionState,
+        phase: DialogPhase,
+        round_index: int = 0,
+        timeout_seconds: Optional[float] = None,
+    ) -> CouncilRoundResult:
+        """
+        Drive a FULL registry-backed council round for a phase: one move per
+        deterministically-assigned agent/role.
+
+        Contract:
+          1. Roles come from the deterministic role plan (assign_roles_for_phase)
+             — providers cannot choose or change role assignment.
+          2. One AgentTask is built per assigned (agent, role); each is sent to a
+             provider (deterministic round-robin over available adapters).
+          3. ProviderResponses are collected; quorum/fallback decides `proceed`
+             (effective quorum = min(configured quorum, #assigned agents)).
+          4. Failures/timeouts are recorded as ProviderResponse metadata only —
+             no fake AgentMove is ever fabricated for a failed provider.
+          5. The result is recorded on SessionState.registry_rounds (CED-owned).
+
+        Additive/parallel: does NOT touch run_session() or the FakeProvider path.
+        """
+        if self.registry is None:
+            raise RuntimeError(
+                "gather_registry_phase_round requires a CouncilProviderRegistry "
+                "(pass registry=... to CEDOrchestrator)."
+            )
+
+        ready, warning = self.registry.assess_readiness()
+        if not ready:
+            result = CouncilRoundResult(proceed=False, warning=warning)
+            session_state.registry_rounds.append(result)
+            return result
+
+        # Deterministic role plan for the phase — independent of any provider.
+        assignment = self.assign_roles_for_phase(session_state, phase, round_index)
+        items = sorted(assignment.items())   # deterministic order
+        adapters = self.registry.available_adapters()
+
+        async def _one(index: int, agent_id: str, role: AgentRole) -> "ProviderResponse":
+            adapter = adapters[index % len(adapters)]   # round-robin provider mapping
+            task = self._build_round_task(session_state, agent_id, role, phase)
+            agent_state = session_state.agent_states.get(
+                agent_id,
+                AgentState(agent_id=agent_id, primary_role=role, assigned_role=role),
+            )
+            return await self.registry.run_adapter(
+                adapter, task, agent_state, timeout_seconds
+            )
+
+        responses = list(await asyncio.gather(
+            *(_one(i, aid, role) for i, (aid, role) in enumerate(items))
+        ))
+
+        # Effective quorum cannot exceed the number of assigned agents this phase.
+        effective_quorum = min(self.registry.quorum_for_assembly, len(items)) if items else 0
+        result = self.registry.finalize_round(responses, quorum=effective_quorum)
+        session_state.registry_rounds.append(result)
+        return result
+
+    def registry_round_audit(self, result: CouncilRoundResult) -> Dict[str, Any]:
+        """
+        Developer/user-visible audit metadata for a registry round. Aggregate
+        provider status only — never inserted into AgentState, never shown to
+        agents, never contains raw keys.
+        """
+        status_counts: Dict[str, int] = {}
+        for r in result.responses:
+            status_counts[r.status.value] = status_counts.get(r.status.value, 0) + 1
+        audit = {
+            "proceed": result.proceed,
+            "warning": result.warning,
+            "ok_providers": list(result.ok_provider_ids),
+            "failed_providers": list(result.failed_provider_ids),
+            "validated_moves": sum(1 for r in result.responses if r.ok),
+            "provider_status_counts": status_counts,
+        }
+        if self.registry is not None:
+            audit["provider_status_summary"] = self.registry.status_summary()
+        return audit
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
