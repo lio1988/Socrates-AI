@@ -73,12 +73,18 @@ class PenaltyFlag(str, Enum):
 
 
 class ProviderStatus(str, Enum):
-    OK          = "ok"
-    DEGRADED    = "degraded"
-    FALLBACK    = "fallback"
-    ERROR       = "error"
-    TIMEOUT     = "timeout"
-    UNAVAILABLE = "unavailable"
+    OK           = "ok"
+    DEGRADED     = "degraded"
+    FALLBACK     = "fallback"
+    ERROR        = "error"
+    TIMEOUT      = "timeout"
+    UNAVAILABLE  = "unavailable"
+    # Phase 8A provider-adapter statuses
+    MISSING_KEY  = "missing_key"
+    INVALID_JSON = "invalid_json"
+    SCHEMA_ERROR = "schema_error"
+    RATE_LIMITED = "rate_limited"
+    DISABLED     = "disabled"
 
 
 # ── Phase 7: epistemic sync gate / leaderboard status ─────────────────────────
@@ -175,6 +181,37 @@ class AgentMove(BaseModel):
     confidence:       float = Field(ge=0.0, le=1.0, default=0.7)
     epistemic_markers: List[EpistemicMarker] = Field(default_factory=list)
     timestamp:        datetime = Field(default_factory=datetime.utcnow)
+
+
+# ── Phase 8A: provider adapter contract (no real API calls yet) ───────────────
+
+class ProviderResponse(BaseModel):
+    """
+    One provider adapter's response to a single agent task. CED-owned routing
+    record — provider internals here are never inserted into AgentState or shown
+    to agents. A failed provider carries status + error metadata, NOT a fake move.
+    """
+    provider_id:   str
+    agent_id:      Optional[str] = None
+    status:        ProviderStatus
+    raw_text:      Optional[str] = None
+    parsed_move:   Optional[AgentMove] = None
+    error_message: Optional[str] = None
+    latency_ms:    Optional[float] = None
+    retry_count:   int = 0
+
+    @property
+    def ok(self) -> bool:
+        return self.status == ProviderStatus.OK and self.parsed_move is not None
+
+
+class CouncilRoundResult(BaseModel):
+    """Outcome of gathering provider responses for one council round (CED-owned)."""
+    responses:            List[ProviderResponse] = Field(default_factory=list)
+    ok_provider_ids:      List[str] = Field(default_factory=list)
+    failed_provider_ids:  List[str] = Field(default_factory=list)
+    proceed:              bool = False
+    warning:              Optional[str] = None
 
 
 # ── Scoring (shadow — never shown to agents) ──────────────────────────────────

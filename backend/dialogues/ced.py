@@ -50,6 +50,7 @@ from .models import (
 )
 from .providers import LLMProvider
 from .agent import SocraticAgent
+from .provider_registry import CouncilProviderRegistry
 from .role_assignment import assign_primary_roles, stable_hash
 
 
@@ -112,11 +113,15 @@ class CEDOrchestrator:
         self,
         agents: List[SocraticAgent],
         provider: LLMProvider,
+        registry: Optional["CouncilProviderRegistry"] = None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
         self.agents = agents
         self.provider = provider
+        # Optional Phase 8A provider-adapter registry. When present, its
+        # availability/failure summary is surfaced in the audit (never to agents).
+        self.registry = registry
         self._sessions: Dict[str, SessionState] = {}
 
     # ── Session management ────────────────────────────────────────────────────
@@ -1091,6 +1096,11 @@ class CEDOrchestrator:
             "leaderboard_status": leaderboard.leaderboard_status.value,
             "aggregate_scores_by_agent": leaderboard.average_scores_by_agent,
         }
+
+        # Phase 8A: surface provider availability/failure to the developer-visible
+        # audit only (never inserted into AgentState, never shown to agents).
+        if self.registry is not None:
+            audit_summary["provider_status_summary"] = self.registry.status_summary()
 
         final = FinalResponse(
             session_id=session_id,

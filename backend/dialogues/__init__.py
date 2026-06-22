@@ -34,6 +34,8 @@ from .models import (
     RatificationVote,
     ShadowScoreHarvest,
     EpistemicLeaderboard,
+    ProviderResponse,
+    CouncilRoundResult,
     FinalResponse,
     SessionState,
     SECTION_ORDER,
@@ -53,6 +55,22 @@ from .providers import (
 from .agent import SocraticAgent, CORE_AGENT_PROMPT
 from .role_assignment import assign_primary_roles, socrates_for_session
 from .topic import Topic, classify_topic
+from .provider_registry import (
+    CouncilProviderRegistry,
+    LLMProviderAdapter,
+    BaseProviderAdapter,
+    parse_and_validate_move,
+    is_placeholder_key,
+    AlwaysOKProvider,
+    TimeoutProvider,
+    InvalidJSONProvider,
+    SchemaErrorProvider,
+    RateLimitedProvider,
+    MissingKeyProvider,
+    MINIMUM_PROVIDERS,
+    QUORUM_FOR_ASSEMBLY,
+    PROVIDER_TIMEOUT_SECONDS,
+)
 from .ced import CEDOrchestrator
 
 __all__ = [
@@ -63,6 +81,12 @@ __all__ = [
     "ScoreBreakdown", "MicroScore", "SectionScore", "DraftScorecard",
     "SectionDraft", "AssembledSection", "AssembledAnswer",
     "RatificationVote", "ShadowScoreHarvest", "EpistemicLeaderboard",
+    "ProviderResponse", "CouncilRoundResult",
+    "CouncilProviderRegistry", "LLMProviderAdapter", "BaseProviderAdapter",
+    "parse_and_validate_move", "is_placeholder_key",
+    "AlwaysOKProvider", "TimeoutProvider", "InvalidJSONProvider",
+    "SchemaErrorProvider", "RateLimitedProvider", "MissingKeyProvider",
+    "MINIMUM_PROVIDERS", "QUORUM_FOR_ASSEMBLY", "PROVIDER_TIMEOUT_SECONDS",
     "FinalResponse", "SessionState",
     "SECTION_ORDER", "SCORE_WEIGHTS", "MAX_RATIFICATION_ROUNDS",
     "MAX_LEADERBOARD_HARVEST_TIMEOUT", "LEADERBOARD_INTERPRETATION_WARNING",
