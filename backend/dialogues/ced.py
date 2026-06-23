@@ -25,9 +25,15 @@ from .models import (
     AgentTask,
     AssembledAnswer,
     AssembledSection,
+    CouncilRatification,
+    CouncilRatificationStatus,
     CouncilRoundResult,
+    CouncilVerdict,
     DialogPhase,
     DraftScorecard,
+    FinalSynthesisMode,
+    ObjectionSeverity,
+    RatificationVerdict,
     EpistemicLeaderboard,
     EpistemicStatus,
     FinalResponse,
@@ -185,11 +191,18 @@ class CEDOrchestrator:
         provider: LLMProvider,
         registry: Optional["CouncilProviderRegistry"] = None,
         shadow_scoring_mode: ShadowScoringMode = ShadowScoringMode.ALL_PHASES,
+        final_synthesis_mode: FinalSynthesisMode = FinalSynthesisMode.COUNCIL_RATIFICATION,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
+        if final_synthesis_mode != FinalSynthesisMode.COUNCIL_RATIFICATION:
+            raise NotImplementedError(
+                f"final_synthesis_mode '{final_synthesis_mode.value}' is reserved "
+                "for V2/V3; only 'council_ratification' is implemented in V1."
+            )
         self.agents = agents
         self.provider = provider
+        self.final_synthesis_mode = final_synthesis_mode
         # Optional Phase 8A provider-adapter registry. When present, its
         # availability/failure summary is surfaced in the audit (never to agents).
         self.registry = registry
@@ -637,7 +650,11 @@ class CEDOrchestrator:
         self.compute_shadow_scores(sid)        # honours shadow_scoring_mode
         self.score_section_drafts(sid)
         self.assemble_sections(sid)
-        final = self.run_ratification_phase(sid)
+
+        # Phase 8C.1 — COUNCIL ratification through the registry (no single
+        # Final Evaluator monopoly). Deliberation already used the registry above.
+        ratification = await self.run_council_ratification(state, timeout_seconds)
+        final = self._build_council_final(state, ratification)
 
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
@@ -709,6 +726,235 @@ class CEDOrchestrator:
         )
         state.final_response = final
         return final
+
+    # ── Phase 8C.1: Socratic Council Ratification (council-level, registry) ────
+
+    def _parse_verdict(
+        self, response: "ProviderResponse", task: AgentTask,
+    ) -> Optional[RatificationVerdict]:
+        """
+        Parse one provider's verdict from a validated response. STRUCTURAL only:
+        an unrecognised/absent verdict → None (invalid, never fabricated as ACCEPT).
+        CED does not judge whether the verdict is philosophically correct.
+        """
+        if response.parsed_move is None:
+            return None
+        c = response.parsed_move.content if isinstance(response.parsed_move.content, dict) else {}
+        try:
+            verdict = CouncilVerdict(c.get("verdict"))
+        except (ValueError, TypeError):
+            return None   # invalid verdict — not counted, not fabricated
+        try:
+            severity = ObjectionSeverity(c.get("severity", "none"))
+        except (ValueError, TypeError):
+            severity = ObjectionSeverity.NONE
+        target = c.get("target_section")
+        section = None
+        if target:
+            try:
+                section = SectionName(target)
+            except (ValueError, TypeError):
+                section = None
+        return RatificationVerdict(
+            session_id=task.session_id,
+            agent_id=task.agent_id,
+            provider_id=response.provider_id,
+            verdict=verdict,
+            rationale=str(c.get("rationale", "")),
+            confidence=self._clamp01(c.get("confidence", 0.7)),
+            caveat=(str(c["caveat"]) if c.get("caveat") else None),
+            blocking_objection=(str(c["blocking_objection"]) if c.get("blocking_objection") else None),
+            target_section=section,
+            severity=severity,
+            required_fix=(str(c["required_fix"]) if c.get("required_fix") else None),
+            provider_status=response.status,
+            task_id=task.task_id,
+            move_id=response.parsed_move.move_id,
+        )
+
+    async def run_council_ratification(
+        self, state: SessionState, timeout_seconds: Optional[float] = None,
+        round_index: int = 0,
+    ) -> CouncilRatification:
+        """
+        Send a ratification task to EVERY available provider; each returns one
+        independent verdict (ACCEPT / ACCEPT_WITH_CAVEAT / BLOCKING_OBJECTION).
+        CED applies deterministic protocol rules — NOT majority voting, NOT
+        semantic judgement, NEVER a fabricated ACCEPT.
+        """
+        assembled = state.assembled_answer
+        synthesis_text = assembled.full_text() if assembled else ""
+        adapters = self.registry.available_adapters()
+        quorum = self.registry.quorum_for_assembly
+
+        def _build_task(slot: int, adapter) -> AgentTask:
+            return AgentTask(
+                session_id=state.session_id,
+                agent_id=adapter.provider_id,          # the provider IS this council member
+                role=AgentRole.FINAL_EVALUATOR,
+                phase=DialogPhase.RATIFICATION,
+                question=state.question,
+                # Minimal-awareness context: only the answer + rubric. No scores.
+                context={
+                    "final_synthesis": synthesis_text,
+                    "ratification_rubric": (
+                        "Return one verdict: accept | accept_with_caveat | "
+                        "blocking_objection. A blocking objection must be critical "
+                        "and name target_section, rationale and required_fix."),
+                },
+                output_schema={"_role": AgentRole.FINAL_EVALUATOR.value,
+                               "_question": state.question, "_ratification": True},
+                task_kind=TaskKind.COUNCIL_RATIFICATION,
+                slot_index=slot, attempt_index=round_index,
+            )
+
+        async def _one(slot: int, adapter):
+            task = _build_task(slot, adapter)
+            agent_state = AgentState(agent_id=adapter.provider_id,
+                                     primary_role=AgentRole.FINAL_EVALUATOR,
+                                     assigned_role=AgentRole.FINAL_EVALUATOR)
+            resp = await self.registry.run_adapter(adapter, task, agent_state, timeout_seconds)
+            return task, resp
+
+        pairs = list(await asyncio.gather(
+            *(_one(i, a) for i, a in enumerate(adapters)))) if adapters else []
+
+        verdicts: List[RatificationVerdict] = []
+        invalid = 0
+        failed_providers: List[str] = []
+        timed_out_providers: List[str] = []
+        for task, resp in pairs:
+            if resp.ok:
+                v = self._parse_verdict(resp, task)
+                if v is not None:
+                    verdicts.append(v)
+                    self._record_task_log(state, task, resp.parsed_move.move_id,
+                                          provider_id=resp.provider_id, provider_status=resp.status)
+                    continue
+                invalid += 1   # schema-valid move but not a valid verdict
+            # failure / invalid verdict → audited, no fabricated ACCEPT
+            self._record_task_log(state, task, None,
+                                  provider_id=resp.provider_id, provider_status=resp.status)
+            if resp.status == ProviderStatus.TIMEOUT:
+                timed_out_providers.append(resp.provider_id)
+            else:
+                failed_providers.append(resp.provider_id)
+
+        criticals = [v for v in verdicts if v.is_schema_valid_critical_block()]
+        caveats = [v for v in verdicts if v.is_caveat()]
+        target_sections: List[SectionName] = []
+        for v in criticals:
+            if v.target_section and v.target_section not in target_sections:
+                target_sections.append(v.target_section)
+
+        # Deterministic protocol rules (NOT majority voting).
+        if len(verdicts) == 0:
+            status = CouncilRatificationStatus.RATIFICATION_FAILED
+        elif len(verdicts) < quorum:
+            status = CouncilRatificationStatus.RATIFICATION_QUORUM_FAILED
+        elif criticals:                       # one valid critical block is enough
+            status = CouncilRatificationStatus.REPAIR_REQUIRED
+        elif caveats:
+            status = CouncilRatificationStatus.RATIFIED_WITH_CAVEATS
+        else:
+            status = CouncilRatificationStatus.RATIFIED
+
+        ratification = CouncilRatification(
+            session_id=state.session_id, status=status, verdicts=verdicts,
+            valid_verdicts=len(verdicts), invalid_verdicts=invalid, quorum=quorum,
+            caveat_count=len(caveats), critical_block_count=len(criticals),
+            target_sections=target_sections, failed_providers=failed_providers,
+            timed_out_providers=timed_out_providers, rounds=round_index + 1,
+        )
+        state.council_ratification = ratification
+        return ratification
+
+    def _build_council_final(
+        self, state: SessionState, ratification: CouncilRatification,
+    ) -> FinalResponse:
+        """Assemble the FinalResponse from a council ratification outcome."""
+        state.advance_phase(DialogPhase.RATIFICATION)
+        state.advance_phase(DialogPhase.COMPLETE)
+        assembled = state.assembled_answer
+        harvest = self._sync_harvest(state)
+        leaderboard = self.build_epistemic_leaderboard(state, harvest)
+
+        ratified = ratification.is_ratified()
+        # Never present a non-ratified answer as the released answer.
+        answer = assembled.full_text() if (ratified and assembled) else ""
+        epistemic = self._epistemic_status_from_hint(self._epistemic_hint(state))
+
+        # Attributed objection metadata (who raised what) — CED-owned audit only.
+        objections = [
+            {"provider_id": v.provider_id, "agent_id": v.agent_id,
+             "target_section": v.target_section.value if v.target_section else None,
+             "severity": v.severity.value, "rationale": v.rationale,
+             "required_fix": v.required_fix}
+            for v in ratification.verdicts if v.is_schema_valid_critical_block()
+        ]
+        caveat_meta = [
+            {"provider_id": v.provider_id, "agent_id": v.agent_id, "caveat": v.caveat}
+            for v in ratification.verdicts if v.is_caveat()
+        ]
+        audit = {
+            "execution_mode": "registry",
+            "final_synthesis_mode": self.final_synthesis_mode.value,
+            "num_agents": len(self.agents),
+            "total_moves": len(state.moves),
+            "score_coverage": {
+                "scores_expected": harvest.scores_expected,
+                "scores_collected": harvest.scores_collected,
+                "coverage_ratio": harvest.coverage_ratio,
+                "sync_gate_status": harvest.status.value,
+            },
+            "council_ratification": {
+                "status": ratification.status.value,
+                "valid_verdicts": ratification.valid_verdicts,
+                "invalid_verdicts": ratification.invalid_verdicts,
+                "quorum": ratification.quorum,
+                "caveat_count": ratification.caveat_count,
+                "critical_block_count": ratification.critical_block_count,
+                "target_sections": [s.value for s in ratification.target_sections],
+                "failed_providers": ratification.failed_providers,
+                "timed_out_providers": ratification.timed_out_providers,
+                "verdicts": [
+                    {"provider_id": v.provider_id, "agent_id": v.agent_id,
+                     "verdict": v.verdict.value, "provider_status": v.provider_status.value}
+                    for v in ratification.verdicts
+                ],
+                "attributed_critical_objections": objections,
+                "caveats": caveat_meta,
+            },
+            "leaderboard_status": leaderboard.leaderboard_status.value,
+        }
+
+        final = FinalResponse(
+            session_id=state.session_id, question=state.question,
+            synthesis=assembled,
+            ratification_status=ratification.status.value,
+            audit_summary=audit,
+            socratic_leaderboard=leaderboard,
+            answer=answer,
+            ratified=ratified,
+            blocking_objections=[o["rationale"] for o in objections],
+            unresolved_sections=list(ratification.target_sections),
+            epistemic_status=epistemic,
+            council_summary={
+                "execution_mode": "registry",
+                "final_synthesis_mode": self.final_synthesis_mode.value,
+                "ratification_status": ratification.status.value,
+                "valid_verdicts": ratification.valid_verdicts,
+            },
+        )
+        state.final_response = final
+        return final
+
+    @staticmethod
+    def _epistemic_status_from_hint(hint: str) -> EpistemicStatus:
+        try:
+            return EpistemicStatus(hint)
+        except (ValueError, TypeError):
+            return EpistemicStatus.UNCERTAIN
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 

@@ -72,6 +72,16 @@ def render_scenario(name: str) -> str:
     out.append(f"  question          : {final.question}")
     out.append(f"  execution mode    : {au.get('execution_mode')}")
     out.append(f"  ratification      : {final.ratification_status}  (ratified={final.ratified})")
+    cr = au.get("council_ratification")
+    if cr:
+        out.append("  council ratification (per-provider verdicts — not majority voting):")
+        for v in cr.get("verdicts", []):
+            out.append(f"      {v['provider_id']:20} {v['verdict']:20} [{v['provider_status']}]")
+        out.append(f"      valid={cr['valid_verdicts']}/{cr['quorum']}(quorum)  "
+                   f"caveats={cr['caveat_count']}  critical_blocks={cr['critical_block_count']}")
+        for o in cr.get("attributed_critical_objections", []):
+            out.append(f"      ⛔ BLOCK by {o['provider_id']} → {o['target_section']} "
+                       f"(severity={o['severity']}); fix: {o['required_fix']}")
     out.append("")
 
     pss = au.get("provider_status_summary", {})

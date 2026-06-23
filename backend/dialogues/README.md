@@ -403,6 +403,50 @@ private errors. All of that lives only in CED-owned state and audit output.
 
 ---
 
+## Phase 8C.1 — Socratic Council Ratification
+
+`final_synthesis_mode = "council_ratification"` (default). After the synthesis is
+assembled, the registry session sends a ratification task to **every available
+provider**; each independently returns one verdict — `accept`,
+`accept_with_caveat`, or `blocking_objection`. There is **no single Final
+Evaluator monarchy** in registry-backed mode.
+
+> **Council ratification is not majority voting.** CED does not count ACCEPT
+> votes to decide truth. CED checks quorum, validates verdict schemas, detects
+> **structurally valid** critical blocking objections, and applies deterministic
+> protocol rules. **Agents judge epistemic quality. CED governs the protocol.**
+
+A *schema-valid critical blocking objection* is checked **structurally only**
+(verdict = blocking_objection · severity = critical · a `target_section` · a
+`rationale` · a `required_fix`). CED never assesses whether the objection is
+philosophically strong.
+
+Deterministic status rules (`CouncilRatificationStatus`):
+
+| condition | status |
+|---|---|
+| ratification quorum not met (`0 < valid < quorum`) | `ratification_quorum_failed` |
+| no valid verdicts returned | `ratification_failed` |
+| ≥ 1 schema-valid **critical** blocking objection | `repair_required` (answer withheld; objection attributed in audit) |
+| caveats (or non-critical objections) but no critical block | `ratified_with_caveats` |
+| quorum met, no caveats, no critical block | `ratified` |
+
+Key guarantees (proven in `tests_dialogues/test_council_ratification.py`):
+an ACCEPT majority **cannot** override one schema-valid critical block; CED
+**never fabricates an ACCEPT**; provider timeouts / invalid JSON / schema errors
+/ rate-limits / missing keys are **audited honestly** and never silently
+accepted; every objection is **attributed** to the exact provider that raised it;
+the ratification task is minimal (only the final synthesis + rubric + schema — no
+scores/leaderboard/audit internals). `repair_required` uses the safe Option A
+(mark blocked/unresolved with attributed metadata; no automatic semantic repair).
+
+**Reserved for V2/V3 (not implemented):** `final_synthesis_mode =
+"candidate_tournament" | "hybrid"` (Final Candidate Tournament / Hybrid round
+table). Constructing the CED with these raises `NotImplementedError` — no unused
+tournament logic is added now.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

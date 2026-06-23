@@ -294,9 +294,22 @@ class ScriptedMockProvider(BaseProviderAdapter):
         self._fake = FakeProvider()
         self.delay_seconds = delay_seconds
 
+    def _ratification_verdict(self, task: AgentTask) -> Dict[str, Any]:
+        """Default council verdict: ACCEPT (subclasses override for caveat/block)."""
+        return {
+            "verdict": "accept",
+            "rationale": "The assembled synthesis meets the epistemic-discipline bar.",
+            "confidence": 0.85,
+        }
+
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
         if self.delay_seconds:
             await asyncio.sleep(self.delay_seconds)
+        # Phase 8C.1 council ratification → return a strict verdict, not a draft.
+        if task.task_kind == TaskKind.COUNCIL_RATIFICATION:
+            verdict = self._ratification_verdict(task)
+            conf = verdict.pop("confidence", 0.8) if isinstance(verdict, dict) else 0.8
+            return json.dumps({"content": verdict, "confidence": conf})
         schema: Dict[str, Any] = {"_role": task.role.value, "_question": task.question}
         if task.task_kind == TaskKind.SYNTHESIS_DRAFT:
             schema["_sections"] = True
@@ -306,6 +319,45 @@ class ScriptedMockProvider(BaseProviderAdapter):
             conf = out.get("confidence", 0.7)
             out = {k: v for k, v in out.items() if k != "confidence"}
         return json.dumps({"content": out, "confidence": conf})
+
+
+class CaveatRatifierProvider(ScriptedMockProvider):
+    """Scripted provider that ratifies with a caveat (deterministic)."""
+    provider_id = "mock_caveat"
+    provider_name = "Mock Caveat Ratifier"
+
+    def __init__(self, provider_id: Optional[str] = None, **kw) -> None:
+        super().__init__(provider_id or "mock_caveat", **kw)
+
+    def _ratification_verdict(self, task):
+        return {
+            "verdict": "accept_with_caveat",
+            "rationale": "Acceptable, with a noted limitation.",
+            "caveat": "The answer's scope is narrower than its phrasing implies.",
+            "confidence": 0.7,
+        }
+
+
+class BlockingObjectionProvider(ScriptedMockProvider):
+    """Scripted provider that raises a schema-valid CRITICAL blocking objection."""
+    provider_id = "mock_blocker"
+    provider_name = "Mock Blocking Objection"
+
+    def __init__(self, provider_id: Optional[str] = None,
+                 target_section: str = "core_answer", **kw) -> None:
+        super().__init__(provider_id or "mock_blocker", **kw)
+        self.target_section = target_section
+
+    def _ratification_verdict(self, task):
+        return {
+            "verdict": "blocking_objection",
+            "severity": "critical",
+            "target_section": self.target_section,
+            "rationale": "The core answer asserts a claim it has not established.",
+            "blocking_objection": "Unsupported central claim.",
+            "required_fix": "Qualify the claim or add the missing justification.",
+            "confidence": 0.8,
+        }
 
 
 class TimeoutScriptedProvider(ScriptedMockProvider):
