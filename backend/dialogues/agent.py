@@ -185,12 +185,17 @@ class SocraticAgent:
             except ValueError:
                 pass
 
+        # `confidence` is move metadata, not content — keep it on move.confidence
+        # only, so content stays clean (e.g. a synthesis move holds exactly its
+        # 5 sections, with no stray confidence key).
+        content = {k: v for k, v in raw.items() if k != "confidence"}
+
         return AgentMove(
             task_id=task.task_id,
             agent_id=self.agent_id,
             role=task.role,
             phase=task.phase,
-            content=raw,
+            content=content,
             confidence=confidence,
             epistemic_markers=markers,
         )

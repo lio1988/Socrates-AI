@@ -101,6 +101,18 @@ _PLAN_PHASES: List[DialogPhase] = [
     DialogPhase.RATIFICATION,
 ]
 
+# Phases whose agent moves are shadow-scored (every deliberation phase — incl.
+# the Socratic opening question). RATIFICATION is the evaluator's verdict, not a
+# peer-scored contribution, so it is excluded.
+SCORED_PHASES: List[DialogPhase] = [
+    DialogPhase.OPENING,
+    DialogPhase.INITIAL_RESPONSE,
+    DialogPhase.ELENCHUS,
+    DialogPhase.REFLECTION,
+    DialogPhase.RECONSTRUCTION,
+    DialogPhase.SYNTHESIS,
+]
+
 
 class CEDOrchestrator:
     """
@@ -401,6 +413,23 @@ class CEDOrchestrator:
         except StopIteration:
             raise ValueError(f"Agent '{agent_id}' not registered with this orchestrator.")
 
+    def _deterministic_move_id(
+        self, state: SessionState, agent_id: str, phase: DialogPhase,
+    ) -> str:
+        """
+        Deterministic, unique move id derived from
+        (session_id, phase, agent_id, round_number, occurrence-in-phase).
+
+        Replaces the random UUID so the WHOLE pipeline — not just role rotation —
+        is reproducible for a given (question, session_id). The occurrence
+        disambiguates an agent who acts twice in a phase (e.g. ratification rounds).
+        """
+        occurrence = sum(
+            1 for m in state.moves if m.phase == phase and m.agent_id == agent_id
+        )
+        key = f"{state.session_id}|{phase.value}|{agent_id}|{state.round_number}|{occurrence}"
+        return "move_" + format(stable_hash(key), "x")[:12]
+
     def _dispatch(self, state: SessionState, agent: SocraticAgent,
                   role: AgentRole, phase: DialogPhase,
                   context: dict, extra_schema: dict) -> AgentMove:
@@ -417,6 +446,8 @@ class CEDOrchestrator:
             round_number=state.round_number,
         )
         move = agent.execute(task)
+        # Deterministic move id (drives reproducible shadow-scoring seeds).
+        move.move_id = self._deterministic_move_id(state, agent.agent_id, phase)
         state.moves.append(move)
         return move
 
@@ -706,21 +737,42 @@ class CEDOrchestrator:
             if scorer.agent_id != move.agent_id   # no self-scoring
         ]
 
+    @staticmethod
+    def _normalize_phases(phases) -> List[DialogPhase]:
+        """Accept None (→ all scored phases), a single phase, or a list."""
+        if phases is None:
+            return list(SCORED_PHASES)
+        if isinstance(phases, DialogPhase):
+            return [phases]
+        return list(phases)
+
+    def _phase_pairs(self, state: SessionState, phases: List[DialogPhase]):
+        """Flat list of (move, scorer, phase) across the given phases."""
+        return [
+            (move, scorer, phase)
+            for phase in phases
+            for (move, scorer) in self._move_score_pairs(state, phase)
+        ]
+
     def compute_shadow_scores(
         self,
         session_id: str,
-        phase: DialogPhase = DialogPhase.SYNTHESIS,
+        phases=None,
     ) -> List[MicroScore]:
         """
-        Synchronous shadow scoring. For every move in the phase, each *other*
-        agent produces a multi-dimensional MicroScore. No agent scores its own
-        output. Stored only on SessionState (never on AgentState, never inserted
-        into AgentTask.context).
+        Synchronous shadow scoring across every scored phase (default = all
+        deliberation phases, incl. the Socratic opening). For every move, each
+        *other* agent produces a multi-dimensional MicroScore. No agent scores
+        its own output. Stored only on SessionState (never on AgentState, never
+        inserted into AgentTask.context).
+
+        `phases` accepts None (all scored phases), a single DialogPhase, or a list.
         """
         state = self.get_session(session_id)
+        phase_list = self._normalize_phases(phases)
         micro = [
             self._score_one_move(state, move, scorer, phase)
-            for (move, scorer) in self._move_score_pairs(state, phase)
+            for (move, scorer, phase) in self._phase_pairs(state, phase_list)
         ]
         state.micro_scores = micro
         return micro
@@ -743,10 +795,11 @@ class CEDOrchestrator:
         self,
         session_state: SessionState,
         timeout_seconds: float = MAX_LEADERBOARD_HARVEST_TIMEOUT,
-        phase: DialogPhase = DialogPhase.SYNTHESIS,
+        phases=None,
     ) -> ShadowScoreHarvest:
         """
-        Bounded final harvest of shadow-scoring tasks (the Epistemic Sync Gate).
+        Bounded final harvest of shadow-scoring tasks (the Epistemic Sync Gate),
+        across every scored phase by default (incl. the Socratic opening).
 
         Scoring tasks run in parallel and are awaited only up to timeout_seconds.
         Completed scores are collected onto SessionState; outstanding tasks are
@@ -754,7 +807,8 @@ class CEDOrchestrator:
         response can always proceed — a partial (or empty) leaderboard never
         blocks it, and a scoring failure never crashes the CED.
         """
-        pairs = self._move_score_pairs(session_state, phase)
+        phase_list = self._normalize_phases(phases)
+        pairs = self._phase_pairs(session_state, phase_list)
         expected = len(pairs)
 
         harvest = ShadowScoreHarvest(
@@ -768,7 +822,7 @@ class CEDOrchestrator:
 
         # Launch every scoring task, tagged with a stable id for audit records.
         task_meta: Dict[asyncio.Future, str] = {}
-        for move, scorer in pairs:
+        for move, scorer, phase in pairs:
             task_id = f"{move.move_id}:{scorer.agent_id}"
             fut = asyncio.ensure_future(
                 self._score_move_async(session_state, move, scorer, phase)
@@ -810,17 +864,17 @@ class CEDOrchestrator:
         session_state.shadow_harvest = harvest
         return harvest
 
-    def _sync_harvest(self, state: SessionState,
-                      phase: DialogPhase = DialogPhase.SYNTHESIS) -> ShadowScoreHarvest:
+    def _sync_harvest(self, state: SessionState, phases=None) -> ShadowScoreHarvest:
         """
-        Build a harvest record from already-collected (synchronous) micro_scores.
-        Used by the default run_session pipeline. If an async harvest already ran
-        and stored a record, that record is reused.
+        Build a harvest record from already-collected (synchronous) micro_scores,
+        across every scored phase by default. Used by the default run_session
+        pipeline. If an async harvest already ran and stored a record, it is reused.
         """
         if state.shadow_harvest is not None:
             return state.shadow_harvest
 
-        expected = len(self._move_score_pairs(state, phase))
+        phase_list = self._normalize_phases(phases)
+        expected = sum(len(self._move_score_pairs(state, p)) for p in phase_list)
         collected = len(state.micro_scores)
         coverage = (collected / expected) if expected else 0.0
         if expected == 0 or collected == 0:

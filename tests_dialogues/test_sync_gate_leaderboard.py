@@ -52,12 +52,16 @@ def _bd(v: float) -> ScoreBreakdown:
 # ── Sync gate: complete ───────────────────────────────────────────────────────
 
 def test_harvest_complete_when_all_finish():
+    from backend.dialogues.ced import SCORED_PHASES
     ced = _make_ced(4)
     state = _run_to_synthesis(ced, "sg-complete")
     harvest = asyncio.run(ced.harvest_shadow_scores(state, timeout_seconds=4.0))
 
+    # Every scored phase is harvested (incl. the Socratic opening), not just synthesis.
+    expected = sum(len(ced._move_score_pairs(state, p)) for p in SCORED_PHASES)
     assert harvest.status == SyncGateStatus.COMPLETE
-    assert harvest.scores_expected == 4 * 3   # 4 synthesis moves × 3 voters
+    assert harvest.scores_expected == expected
+    assert expected > 4 * 3   # strictly more than synthesis-only
     assert harvest.scores_collected == harvest.scores_expected
     assert harvest.coverage_ratio == pytest.approx(1.0)
     assert harvest.timed_out_tasks == []
@@ -155,9 +159,13 @@ def test_no_fake_microscore_created_for_timeout_or_failure():
     assert harvest.timed_out_tasks and harvest.failed_tasks
     # No placeholder/fake score was fabricated for them.
     assert all(ms.provider_status != ProviderStatus.TIMEOUT for ms in state.micro_scores)
-    # Collected == successes only (voters agent_0 + agent_3); timed-out/failed excluded.
+    # Collected == successes only (voters agent_0 + agent_3), across ALL scored
+    # phases; timed-out (agent_1) / failed (agent_2) pairs excluded.
+    from backend.dialogues.ced import SCORED_PHASES
     successes = sum(
-        1 for _move, scorer in ced._move_score_pairs(state, DialogPhase.SYNTHESIS)
+        1
+        for p in SCORED_PHASES
+        for _move, scorer in ced._move_score_pairs(state, p)
         if scorer.agent_id in ("agent_0", "agent_3")
     )
     assert harvest.scores_collected == len(state.micro_scores) == successes
