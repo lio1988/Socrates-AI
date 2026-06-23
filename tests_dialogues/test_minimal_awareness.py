@@ -99,7 +99,12 @@ class _BrokenSectionProvider(FakeProvider):
                                 agent_id, temperature)
 
 
-def test_malformed_section_scores_recorded_not_crashing():
+def test_malformed_section_scores_recorded_as_missing_not_fabricated():
+    """
+    INVARIANT: CED is not a scorer. When a peer's section score is malformed, the
+    score stays MISSING (recorded as a failure) — CED never fabricates a stand-in
+    qualitative score (e.g. zeros). Orchestration still completes.
+    """
     ced = _make_ced(provider=_BrokenSectionProvider())
     final = ced.run_session("What is truth?", session_id="broken")
 
@@ -111,8 +116,10 @@ def test_malformed_section_scores_recorded_not_crashing():
     all_section_scores = [
         ss for card in state.draft_scorecards for ss in card.section_scores
     ]
-    assert all_section_scores, "Malformed scores should still be recorded."
-    # Each malformed score was flagged cleanly rather than dropped.
-    assert any(s.provider_status == ProviderStatus.ERROR for s in all_section_scores)
-    assert any(PenaltyFlag.SCHEMA_VIOLATION in s.penalty_flags
-               for s in all_section_scores)
+    # No fabricated section scores were created for the malformed peer output.
+    assert all_section_scores == []
+    # The failures are recorded as MISSING (per draftcard) + in the failed list.
+    assert all(card.missing_sections for card in state.draft_scorecards)
+    assert state.section_scores_failed, "failed peer section-scores must be recorded"
+    # And the move-level leaderboard is unaffected (move scores were valid here).
+    assert final.socratic_leaderboard is not None

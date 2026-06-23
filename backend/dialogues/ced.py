@@ -15,6 +15,7 @@ Pipeline:
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Dict, List, Optional, Tuple
 
 from .models import (
@@ -48,7 +49,10 @@ from .models import (
     SectionScore,
     SessionState,
     ShadowScoreHarvest,
+    ShadowScoringMode,
     SyncGateStatus,
+    TaskKind,
+    TaskLogEntry,
 )
 from .providers import LLMProvider
 from .agent import SocraticAgent
@@ -113,6 +117,58 @@ SCORED_PHASES: List[DialogPhase] = [
     DialogPhase.SYNTHESIS,
 ]
 
+# Phase-specific scoring rubric (V1, deterministic). A Socratic question is not
+# judged by the same yardstick as a final synthesis. The seven score dimensions
+# stay the same; the rubric identity is recorded on each MicroScore (CED-owned)
+# and passed to the provider as a hint (never exposes scoring machinery to agents).
+PHASE_RUBRICS: Dict[DialogPhase, Tuple[str, str]] = {
+    DialogPhase.OPENING: (
+        "question_quality",
+        "assumption exposure, clarity forcing, productive uncertainty, usefulness to later reasoning"),
+    DialogPhase.INITIAL_RESPONSE: (
+        "initial_answer_quality",
+        "relevance, clarity, epistemic honesty, useful starting claims"),
+    DialogPhase.ELENCHUS: (
+        "objection_quality",
+        "strongest criticism, hidden assumptions, contradictions, falsifiability"),
+    DialogPhase.REFLECTION: (
+        "revision_quality",
+        "valid revision, intellectual honesty, response to criticism"),
+    DialogPhase.RECONSTRUCTION: (
+        "repair_quality",
+        "improved model/claim, integration of objections, better explanatory structure"),
+    DialogPhase.SYNTHESIS: (
+        "synthesis_quality",
+        "final usefulness, coherence, accuracy, nuance, epistemic honesty"),
+}
+
+
+def rubric_for(phase: DialogPhase) -> Tuple[str, str]:
+    """(rubric_name, focus) for a phase; a generic default for unmapped phases."""
+    return PHASE_RUBRICS.get(phase, ("general_quality", "overall contribution quality"))
+
+
+# Deterministic task_kind per deliberation phase (Phase 8C registry session).
+PHASE_TASK_KIND: Dict[DialogPhase, TaskKind] = {
+    DialogPhase.OPENING:          TaskKind.SOCRATIC_QUESTION,
+    DialogPhase.INITIAL_RESPONSE: TaskKind.INITIAL_RESPONSE,
+    DialogPhase.ELENCHUS:         TaskKind.ELENCHUS_OBJECTION,
+    DialogPhase.REFLECTION:       TaskKind.REFLECTION_REVISION,
+    DialogPhase.RECONSTRUCTION:   TaskKind.RECONSTRUCTION_PROPOSAL,
+    DialogPhase.SYNTHESIS:        TaskKind.SYNTHESIS_DRAFT,
+}
+
+# Deliberation phases driven through the provider registry in Phase 8C (the
+# RATIFICATION verdict still runs through the council's own evaluator).
+REGISTRY_SESSION_PHASES: List[DialogPhase] = [
+    DialogPhase.OPENING,
+    DialogPhase.INITIAL_RESPONSE,
+    DialogPhase.ELENCHUS,
+    DialogPhase.REFLECTION,
+    DialogPhase.RECONSTRUCTION,
+    DialogPhase.SYNTHESIS,
+]
+
 
 class CEDOrchestrator:
     """
@@ -128,6 +184,7 @@ class CEDOrchestrator:
         agents: List[SocraticAgent],
         provider: LLMProvider,
         registry: Optional["CouncilProviderRegistry"] = None,
+        shadow_scoring_mode: ShadowScoringMode = ShadowScoringMode.ALL_PHASES,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -136,7 +193,22 @@ class CEDOrchestrator:
         # Optional Phase 8A provider-adapter registry. When present, its
         # availability/failure summary is surfaced in the audit (never to agents).
         self.registry = registry
+        # How much shadow scoring to run (cost control; default = all phases).
+        self.shadow_scoring_mode = shadow_scoring_mode
+        # Debug-only: store sanitized task context in the task_log (off by default).
+        self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
+
+    def _phases_for_mode(self) -> List[DialogPhase]:
+        """Phases to shadow-score given the configured mode ([] when OFF)."""
+        mode = self.shadow_scoring_mode
+        if mode == ShadowScoringMode.OFF:
+            return []
+        if mode == ShadowScoringMode.SYNTHESIS_ONLY:
+            return [DialogPhase.SYNTHESIS]
+        if mode == ShadowScoringMode.SAMPLED:
+            return [DialogPhase.OPENING, DialogPhase.SYNTHESIS]
+        return list(SCORED_PHASES)   # ALL_PHASES
 
     # ── Session management ────────────────────────────────────────────────────
 
@@ -405,6 +477,239 @@ class CEDOrchestrator:
             audit["provider_status_summary"] = self.registry.status_summary()
         return audit
 
+    # ── Phase 8C: full registry-backed mock session ───────────────────────────
+
+    def _registry_phase_context(
+        self, state: SessionState, phase: DialogPhase, agent_id: str,
+    ) -> Dict[str, Any]:
+        """Build the per-phase context for a registry-driven task (mirrors the
+        FakeProvider pipeline; minimal-awareness safe — no scores/leaderboard)."""
+        if phase == DialogPhase.OPENING:
+            return {}
+        if phase == DialogPhase.INITIAL_RESPONSE:
+            opening = state.moves_for_phase(DialogPhase.OPENING)
+            socratic_q = (opening[0].content.get("question", state.question)
+                          if opening else state.question)
+            return {"original_question": state.question,
+                    "socratic_opening_question": socratic_q}
+        if phase == DialogPhase.ELENCHUS:
+            return {"initial_responses": [
+                {"role": m.role.value, "content": m.content}
+                for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)]}
+        if phase == DialogPhase.REFLECTION:
+            mine = next((m for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
+                         if m.agent_id == agent_id), None)
+            return {
+                "my_initial_response": mine.content if mine else {},
+                "critiques_from_council": [
+                    m.content for m in state.moves_for_phase(DialogPhase.ELENCHUS)],
+            }
+        if phase == DialogPhase.RECONSTRUCTION:
+            return {
+                "reflected_positions": [m.content for m in state.moves_for_phase(DialogPhase.REFLECTION)],
+                "critiques": [m.content for m in state.moves_for_phase(DialogPhase.ELENCHUS)],
+            }
+        if phase == DialogPhase.SYNTHESIS:
+            return {
+                "reconstructed_positions": [m.content for m in state.moves_for_phase(DialogPhase.RECONSTRUCTION)],
+                "reflected_positions": [m.content for m in state.moves_for_phase(DialogPhase.REFLECTION)],
+            }
+        return {}
+
+    def _registry_phase_assignment(
+        self, state: SessionState, phase: DialogPhase,
+    ) -> Dict[str, AgentRole]:
+        """Deterministic role assignment for a registry-driven phase."""
+        if phase == DialogPhase.SYNTHESIS:
+            return {a.agent_id: AgentRole.SYNTHESIZER for a in self.agents}
+        if phase == DialogPhase.REFLECTION:
+            responders = [m.agent_id for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)]
+            return {aid: AgentRole.REFLECTOR for aid in responders}
+        return self.assign_roles_for_phase(state, phase)
+
+    async def _run_registry_phase(
+        self, state: SessionState, phase: DialogPhase,
+        timeout_seconds: Optional[float],
+    ) -> CouncilRoundResult:
+        """
+        Drive ONE deliberation phase through the registry: one task per
+        deterministically-assigned agent/role, validated into moves, with
+        per-phase quorum. Move ids come from task identity (NOT completion order).
+        """
+        state.advance_phase(phase)
+        assignment = self._registry_phase_assignment(state, phase)
+        self._apply_phase_roles(state, phase, assignment)
+        items = sorted(assignment.items())
+        adapters = self.registry.available_adapters()
+        task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
+        want_sections = (phase == DialogPhase.SYNTHESIS)
+
+        def _build_task(agent_id: str, role: AgentRole, slot: int) -> AgentTask:
+            schema: Dict[str, Any] = {"_role": role.value, "_question": state.question}
+            if want_sections:
+                schema["_sections"] = True
+            return AgentTask(
+                session_id=state.session_id, agent_id=agent_id, role=role, phase=phase,
+                question=state.question,
+                context=self._registry_phase_context(state, phase, agent_id),
+                output_schema=schema, round_number=state.round_number,
+                task_kind=task_kind, slot_index=slot,
+            )
+
+        async def _one(slot: int, agent_id: str, role: AgentRole):
+            task = _build_task(agent_id, role, slot)
+            agent_state = state.agent_states.get(
+                agent_id, AgentState(agent_id=agent_id, primary_role=role, assigned_role=role))
+            adapter = adapters[slot % len(adapters)]   # round-robin provider mapping
+            resp = await self.registry.run_adapter(adapter, task, agent_state, timeout_seconds)
+            return task, resp
+
+        pairs = list(await asyncio.gather(
+            *(_one(i, aid, role) for i, (aid, role) in enumerate(items))))
+
+        responses: List[ProviderResponse] = []
+        for task, resp in pairs:
+            responses.append(resp)
+            if resp.ok:
+                move = resp.parsed_move
+                # Deterministic identity — independent of which provider/when.
+                move.move_id = self._deterministic_move_id(
+                    state, task.agent_id, phase, task.role,
+                    task.task_kind, task.slot_index, task.attempt_index)
+                move.task_kind = task.task_kind
+                move.slot_index = task.slot_index
+                state.moves.append(move)
+                self._record_task_log(state, task, move.move_id,
+                                      provider_id=resp.provider_id,
+                                      provider_status=resp.status)
+            else:
+                # Failed provider → task trace only, NO fabricated move.
+                self._record_task_log(state, task, None,
+                                      provider_id=resp.provider_id,
+                                      provider_status=resp.status)
+
+        effective_quorum = min(self.registry.quorum_for_assembly, len(items)) if items else 0
+        result = self.registry.finalize_round(responses, quorum=effective_quorum)
+        state.registry_rounds.append(result)
+        return result
+
+    async def run_registry_session(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> FinalResponse:
+        """
+        Phase 8C — full registry-backed mock session (NO real API calls).
+
+        Drives every deliberation phase through CouncilProviderRegistry mock
+        providers (deterministic roles, per-phase quorum, JSON/schema validation,
+        failure/timeout recording), then runs the existing scoring → blind
+        assembly → ratification machinery. Additive: does not replace run_session.
+
+        Returns a FinalResponse whose audit_summary separates provider status,
+        registry phase rounds, task_log summary and shadow-scoring mode. If the
+        registry is not ready (or a phase fails quorum) a safe non-proceeding
+        FinalResponse is returned — never a crash, never a fake answer.
+        """
+        if self.registry is None:
+            raise RuntimeError(
+                "run_registry_session requires a CouncilProviderRegistry "
+                "(pass registry=... to CEDOrchestrator)."
+            )
+        state = self.create_session(question, session_id=session_id)
+        sid = state.session_id
+
+        ready, warning = self.registry.assess_readiness()
+        if not ready:
+            return self._registry_fallback_final(state, warning, blocked_phase=None)
+
+        phase_results: List[Tuple[DialogPhase, CouncilRoundResult]] = []
+        for phase in REGISTRY_SESSION_PHASES:
+            result = await self._run_registry_phase(state, phase, timeout_seconds)
+            phase_results.append((phase, result))
+            if not result.proceed:
+                return self._registry_fallback_final(state, result.warning, blocked_phase=phase,
+                                                     phase_results=phase_results)
+
+        # Downstream council machinery (reads CED-owned state.moves).
+        self.build_section_drafts(sid)
+        self.compute_shadow_scores(sid)        # honours shadow_scoring_mode
+        self.score_section_drafts(sid)
+        self.assemble_sections(sid)
+        final = self.run_ratification_phase(sid)
+
+        # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
+        final.audit_summary.update(self._registry_session_audit(state, phase_results))
+        return final
+
+    def _registry_session_audit(
+        self, state: SessionState,
+        phase_results: List[Tuple[DialogPhase, CouncilRoundResult]],
+    ) -> Dict[str, Any]:
+        """CED-owned audit add-ons for a registry session (hidden from agents)."""
+        return {
+            "execution_mode": "registry",
+            "shadow_scoring_mode": self.shadow_scoring_mode.value,
+            "provider_status_summary": self.registry.status_summary(),
+            "registry_phase_rounds": [
+                {
+                    "phase": ph.value,
+                    "proceed": res.proceed,
+                    "ok_providers": list(res.ok_provider_ids),
+                    "failed_providers": list(res.failed_provider_ids),
+                    "validated_moves": sum(1 for r in res.responses if r.ok),
+                    "repairs": sum(1 for r in res.responses if r.repair_attempted),
+                }
+                for ph, res in phase_results
+            ],
+            "task_log_count": len(state.task_log),
+            "task_log_summary": self._task_log_summary(state),
+        }
+
+    @staticmethod
+    def _task_log_summary(state: SessionState) -> Dict[str, Any]:
+        by_phase: Dict[str, int] = {}
+        linked = 0
+        for e in state.task_log:
+            by_phase[e.phase.value] = by_phase.get(e.phase.value, 0) + 1
+            if e.move_id is not None:
+                linked += 1
+        return {"entries": len(state.task_log), "with_move": linked, "by_phase": by_phase}
+
+    def _registry_fallback_final(
+        self, state: SessionState, warning: Optional[str],
+        blocked_phase: Optional[DialogPhase],
+        phase_results: Optional[List[Tuple[DialogPhase, CouncilRoundResult]]] = None,
+    ) -> FinalResponse:
+        """Safe non-proceeding FinalResponse when readiness/quorum is not met."""
+        audit = {
+            "execution_mode": "registry",
+            "proceeded": False,
+            "quorum_failed": True,
+            "blocked_phase": blocked_phase.value if blocked_phase else None,
+            "warning": warning,
+            "shadow_scoring_mode": self.shadow_scoring_mode.value,
+            "provider_status_summary": self.registry.status_summary(),
+            "task_log_count": len(state.task_log),
+        }
+        if phase_results is not None:
+            audit["registry_phase_rounds"] = [
+                {"phase": ph.value, "proceed": res.proceed,
+                 "ok_providers": list(res.ok_provider_ids),
+                 "failed_providers": list(res.failed_provider_ids)}
+                for ph, res in phase_results
+            ]
+        final = FinalResponse(
+            session_id=state.session_id, question=state.question,
+            synthesis=None, ratification_status="quorum_failed",
+            audit_summary=audit, answer="", ratified=False,
+            blocking_objections=[warning] if warning else [],
+            council_summary={"execution_mode": "registry", "quorum_failed": True},
+        )
+        state.final_response = final
+        return final
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _agent_by_id(self, agent_id: str) -> SocraticAgent:
@@ -415,26 +720,34 @@ class CEDOrchestrator:
 
     def _deterministic_move_id(
         self, state: SessionState, agent_id: str, phase: DialogPhase,
+        role: AgentRole, task_kind: TaskKind, slot_index: int, attempt_index: int,
     ) -> str:
         """
-        Deterministic, unique move id derived from
-        (session_id, phase, agent_id, round_number, occurrence-in-phase).
+        Deterministic, unique move id derived ONLY from stable task identity —
+        never from runtime completion/append order. With real async providers the
+        return order may differ; this keeps move ids (and therefore scoring seeds,
+        winners, leaderboard) identical regardless.
 
-        Replaces the random UUID so the WHOLE pipeline — not just role rotation —
-        is reproducible for a given (question, session_id). The occurrence
-        disambiguates an agent who acts twice in a phase (e.g. ratification rounds).
+        Identity = session_id | phase | round_number | agent_id | assigned_role |
+                   task_kind | slot_index | attempt_index.
         """
-        occurrence = sum(
-            1 for m in state.moves if m.phase == phase and m.agent_id == agent_id
-        )
-        key = f"{state.session_id}|{phase.value}|{agent_id}|{state.round_number}|{occurrence}"
+        key = "|".join([
+            state.session_id, phase.value, str(state.round_number),
+            agent_id, role.value, task_kind.value,
+            str(slot_index), str(attempt_index),
+        ])
         return "move_" + format(stable_hash(key), "x")[:12]
 
     def _dispatch(self, state: SessionState, agent: SocraticAgent,
                   role: AgentRole, phase: DialogPhase,
-                  context: dict, extra_schema: dict) -> AgentMove:
+                  context: dict, extra_schema: dict,
+                  task_kind: TaskKind, slot_index: int = 0,
+                  attempt_index: int = 0) -> AgentMove:
         """Build an AgentTask, dispatch to the agent, record the move."""
         schema = {"_role": role.value, **extra_schema}
+        move_id = self._deterministic_move_id(
+            state, agent.agent_id, phase, role, task_kind, slot_index, attempt_index
+        )
         task = AgentTask(
             session_id=state.session_id,
             agent_id=agent.agent_id,
@@ -444,12 +757,54 @@ class CEDOrchestrator:
             context=context,
             output_schema=schema,
             round_number=state.round_number,
+            task_kind=task_kind,
+            slot_index=slot_index,
+            attempt_index=attempt_index,
         )
         move = agent.execute(task)
-        # Deterministic move id (drives reproducible shadow-scoring seeds).
-        move.move_id = self._deterministic_move_id(state, agent.agent_id, phase)
+        # Deterministic identity (drives reproducible shadow-scoring seeds).
+        move.move_id = move_id
+        move.task_kind = task_kind
+        move.slot_index = slot_index
+        move.attempt_index = attempt_index
         state.moves.append(move)
+        # CED-owned task trace (hidden from agents); linked to this move.
+        self._record_task_log(state, task, move_id)
         return move
+
+    @staticmethod
+    def _context_hash(context: dict) -> str:
+        """Stable hash of the sanitized task context (no raw prompt is stored)."""
+        try:
+            canonical = json.dumps(context, sort_keys=True, default=str, ensure_ascii=False)
+        except (TypeError, ValueError):
+            canonical = str(context)
+        return format(stable_hash(canonical), "x")[:16]
+
+    def _record_task_log(
+        self, state: SessionState, task: AgentTask, move_id: Optional[str],
+        provider_id: Optional[str] = None,
+        provider_status: Optional[ProviderStatus] = None,
+    ) -> None:
+        """Append a CED-owned TaskLogEntry for one dispatched task (never to agents)."""
+        entry = TaskLogEntry(
+            task_id=task.task_id,
+            move_id=move_id,
+            session_id=state.session_id,
+            phase=task.phase,
+            round_index=task.round_number,
+            agent_id=task.agent_id,
+            assigned_role=task.role,
+            task_kind=task.task_kind,
+            slot_index=task.slot_index,
+            attempt_index=task.attempt_index,
+            schema_name=str(task.output_schema.get("_role", task.role.value)),
+            context_hash=self._context_hash(task.context),
+            provider_id=provider_id,
+            provider_status=provider_status,
+            debug_context=(dict(task.context) if self.debug_task_log else None),
+        )
+        state.task_log.append(entry)
 
     # ── Phase methods ─────────────────────────────────────────────────────────
 
@@ -474,6 +829,7 @@ class CEDOrchestrator:
             phase=DialogPhase.OPENING,
             context={},
             extra_schema={},
+            task_kind=TaskKind.SOCRATIC_QUESTION,
         )
 
     def run_initial_response_phase(self, session_id: str) -> List[AgentMove]:
@@ -495,10 +851,11 @@ class CEDOrchestrator:
         self._apply_phase_roles(state, DialogPhase.INITIAL_RESPONSE, assignment)
 
         moves: List[AgentMove] = []
-        for agent_id, role in sorted(assignment.items()):
+        for slot, (agent_id, role) in enumerate(sorted(assignment.items())):
             agent = self._agent_by_id(agent_id)
             m = self._dispatch(state, agent, role,
-                               DialogPhase.INITIAL_RESPONSE, ctx, {})
+                               DialogPhase.INITIAL_RESPONSE, ctx, {},
+                               task_kind=TaskKind.INITIAL_RESPONSE, slot_index=slot)
             moves.append(m)
         return moves
 
@@ -520,10 +877,11 @@ class CEDOrchestrator:
         self._apply_phase_roles(state, DialogPhase.ELENCHUS, assignment)
 
         moves: List[AgentMove] = []
-        for agent_id, role in sorted(assignment.items()):
+        for slot, (agent_id, role) in enumerate(sorted(assignment.items())):
             agent = self._agent_by_id(agent_id)
             m = self._dispatch(state, agent, role,
-                               DialogPhase.ELENCHUS, ctx, {})
+                               DialogPhase.ELENCHUS, ctx, {},
+                               task_kind=TaskKind.ELENCHUS_OBJECTION, slot_index=slot)
             moves.append(m)
         return moves
 
@@ -548,14 +906,16 @@ class CEDOrchestrator:
         self._apply_phase_roles(state, DialogPhase.REFLECTION, reflection_assignment)
 
         moves: List[AgentMove] = []
-        for m_initial in initial_moves:
+        # Sort by agent_id so slot_index is stable regardless of move append order.
+        for slot, m_initial in enumerate(sorted(initial_moves, key=lambda mm: mm.agent_id)):
             agent = self._agent_by_id(m_initial.agent_id)
             ctx = {
                 "my_initial_response": m_initial.content,
                 "critiques_from_council": critiques,
             }
             m = self._dispatch(state, agent, AgentRole.REFLECTOR,
-                               DialogPhase.REFLECTION, ctx, {})
+                               DialogPhase.REFLECTION, ctx, {},
+                               task_kind=TaskKind.REFLECTION_REVISION, slot_index=slot)
             moves.append(m)
         return moves
 
@@ -579,10 +939,11 @@ class CEDOrchestrator:
         }
 
         moves: List[AgentMove] = []
-        for agent_id, role in sorted(assignment.items()):
+        for slot, (agent_id, role) in enumerate(sorted(assignment.items())):
             agent = self._agent_by_id(agent_id)
             m = self._dispatch(state, agent, role,
-                               DialogPhase.RECONSTRUCTION, ctx, {})
+                               DialogPhase.RECONSTRUCTION, ctx, {},
+                               task_kind=TaskKind.RECONSTRUCTION_PROPOSAL, slot_index=slot)
             moves.append(m)
         return moves
 
@@ -606,11 +967,12 @@ class CEDOrchestrator:
         }
 
         moves: List[AgentMove] = []
-        for agent in self.agents:
+        for slot, agent in enumerate(sorted(self.agents, key=lambda a: a.agent_id)):
             role = assignment.get(agent.agent_id, AgentRole.SYNTHESIZER)
             # _sections tells the provider to emit the locked 5-section draft.
             m = self._dispatch(state, agent, role,
-                               DialogPhase.SYNTHESIS, ctx, {"_sections": True})
+                               DialogPhase.SYNTHESIS, ctx, {"_sections": True},
+                               task_kind=TaskKind.SYNTHESIS_DRAFT, slot_index=slot)
             moves.append(m)
 
         # Convert each synthesis move into a structured 5-section SectionDraft.
@@ -678,8 +1040,10 @@ class CEDOrchestrator:
     def _parse_breakdown(self, raw: Dict[str, Any]):
         """
         Return (ScoreBreakdown, ProviderStatus, penalty_flags).
-        Malformed/missing breakdowns are recorded cleanly (zeros + ERROR +
-        SCHEMA_VIOLATION) rather than crashing orchestration.
+        INVARIANT: CED is not a scorer. A malformed/missing breakdown returns
+        (None, ...) — CED NEVER fabricates a qualitative score (e.g. zeros) to
+        stand in for a peer voter. The caller records the failure as metadata and
+        the score stays MISSING.
         """
         flags = self._parse_flags(raw.get("penalty_flags", []))
         status = self._parse_status(raw.get("provider_status", "ok"))
@@ -688,19 +1052,23 @@ class CEDOrchestrator:
         try:
             breakdown = ScoreBreakdown(**{k: float(bd[k]) for k in dims})
         except (TypeError, ValueError, KeyError):
-            breakdown = ScoreBreakdown(**{k: 0.0 for k in dims})
-            status = ProviderStatus.ERROR
-            if PenaltyFlag.SCHEMA_VIOLATION not in flags:
-                flags = flags + [PenaltyFlag.SCHEMA_VIOLATION]
+            return None, ProviderStatus.SCHEMA_ERROR, flags  # no fabricated score
         return breakdown, status, flags
 
-    # ── Shadow Scoring (move-level, 0–10, CED-owned, hidden) ──────────────────
+    # ── Shadow Scoring (move-level, 0–10, peer-attributed, CED-owned, hidden) ──
 
     def _score_one_move(
         self, state: SessionState, move: AgentMove, scorer: SocraticAgent,
         phase: DialogPhase,
-    ) -> MicroScore:
-        """Produce one voter's MicroScore for one move (no self-scoring upstream)."""
+    ) -> Optional[MicroScore]:
+        """
+        Ask ONE peer voter to score ONE move. Returns the peer's MicroScore, or
+        None if the peer's score is invalid/missing (no self-scoring upstream).
+
+        CED never invents the score: the breakdown/justification/flags all come
+        from the voter's provider; CED only routes the task and validates.
+        """
+        rubric_name, rubric_focus = rubric_for(phase)
         raw = scorer.provider.complete(
             system_prompt=(
                 "You are scoring a council output. "
@@ -711,14 +1079,21 @@ class CEDOrchestrator:
                 "_role": "__move_score__",
                 "_target": move.move_id,
                 "_question": state.question,
+                # Phase-specific rubric hint (deterministic; not scoring machinery).
+                "_rubric": rubric_name,
+                "_rubric_focus": rubric_focus,
+                "_phase": phase.value,
             },
             agent_id=scorer.agent_id,
         )
         breakdown, status, flags = self._parse_breakdown(raw)
+        if breakdown is None:
+            return None   # peer score failed/invalid — CED does NOT fabricate one
         return MicroScore(
             session_id=state.session_id,
             output_id=move.move_id,
             phase=phase,
+            rubric_name=rubric_name,
             author_agent_id=move.agent_id,
             voter_agent_id=scorer.agent_id,
             score_breakdown=breakdown,
@@ -737,11 +1112,10 @@ class CEDOrchestrator:
             if scorer.agent_id != move.agent_id   # no self-scoring
         ]
 
-    @staticmethod
-    def _normalize_phases(phases) -> List[DialogPhase]:
-        """Accept None (→ all scored phases), a single phase, or a list."""
+    def _normalize_phases(self, phases) -> List[DialogPhase]:
+        """Accept None (→ phases for the configured mode), a single phase, or a list."""
         if phases is None:
-            return list(SCORED_PHASES)
+            return self._phases_for_mode()
         if isinstance(phases, DialogPhase):
             return [phases]
         return list(phases)
@@ -770,11 +1144,16 @@ class CEDOrchestrator:
         """
         state = self.get_session(session_id)
         phase_list = self._normalize_phases(phases)
-        micro = [
-            self._score_one_move(state, move, scorer, phase)
-            for (move, scorer, phase) in self._phase_pairs(state, phase_list)
-        ]
+        micro: List[MicroScore] = []
+        failed: List[str] = []
+        for (move, scorer, phase) in self._phase_pairs(state, phase_list):
+            ms = self._score_one_move(state, move, scorer, phase)
+            if ms is not None:
+                micro.append(ms)               # valid peer score
+            else:
+                failed.append(f"{move.move_id}:{scorer.agent_id}")  # missing — not fabricated
         state.micro_scores = micro
+        state.failed_score_tasks = failed
         return micro
 
     # ── Epistemic Sync Gate (bounded final harvest of shadow scores) ──────────
@@ -807,6 +1186,15 @@ class CEDOrchestrator:
         response can always proceed — a partial (or empty) leaderboard never
         blocks it, and a scoring failure never crashes the CED.
         """
+        # Shadow scoring explicitly disabled → report cleanly (not a failure).
+        if phases is None and self.shadow_scoring_mode == ShadowScoringMode.OFF:
+            harvest = ShadowScoreHarvest(
+                session_id=session_state.session_id, status=SyncGateStatus.DISABLED,
+            )
+            session_state.micro_scores = []
+            session_state.shadow_harvest = harvest
+            return harvest
+
         phase_list = self._normalize_phases(phases)
         pairs = self._phase_pairs(session_state, phase_list)
         expected = len(pairs)
@@ -836,9 +1224,14 @@ class CEDOrchestrator:
         collected: List[MicroScore] = []
         for fut in done:
             try:
-                collected.append(fut.result())
+                ms = fut.result()
             except Exception:
                 harvest.failed_tasks.append(task_meta[fut])  # provider failed — no fake score
+                continue
+            if ms is not None:
+                collected.append(ms)                          # valid peer score
+            else:
+                harvest.failed_tasks.append(task_meta[fut])   # invalid score — NOT fabricated
 
         for fut in pending:
             harvest.timed_out_tasks.append(task_meta[fut])    # timed out — provider_status TIMEOUT
@@ -851,10 +1244,12 @@ class CEDOrchestrator:
         harvest.coverage_ratio = (collected_count / expected) if expected else 0.0
 
         if collected_count == 0:
-            harvest.status = (
-                SyncGateStatus.TIMEOUT if harvest.timed_out_tasks
-                else SyncGateStatus.UNAVAILABLE
-            )
+            if harvest.timed_out_tasks:
+                harvest.status = SyncGateStatus.TIMEOUT
+            elif harvest.failed_tasks:
+                harvest.status = SyncGateStatus.FAILED   # peers failed; no fabricated scores
+            else:
+                harvest.status = SyncGateStatus.UNAVAILABLE
         elif collected_count >= expected:
             harvest.status = SyncGateStatus.COMPLETE
         else:
@@ -873,19 +1268,30 @@ class CEDOrchestrator:
         if state.shadow_harvest is not None:
             return state.shadow_harvest
 
+        if phases is None and self.shadow_scoring_mode == ShadowScoringMode.OFF:
+            harvest = ShadowScoreHarvest(
+                session_id=state.session_id, status=SyncGateStatus.DISABLED,
+            )
+            state.shadow_harvest = harvest
+            return harvest
+
         phase_list = self._normalize_phases(phases)
         expected = sum(len(self._move_score_pairs(state, p)) for p in phase_list)
         collected = len(state.micro_scores)
+        failed = list(state.failed_score_tasks)
         coverage = (collected / expected) if expected else 0.0
-        if expected == 0 or collected == 0:
-            status = SyncGateStatus.UNAVAILABLE
+        if expected == 0:
+            status = SyncGateStatus.UNAVAILABLE          # nothing to score
+        elif collected == 0:
+            status = SyncGateStatus.FAILED if failed else SyncGateStatus.UNAVAILABLE
         elif collected >= expected:
             status = SyncGateStatus.COMPLETE
         else:
-            status = SyncGateStatus.PARTIAL
+            status = SyncGateStatus.PARTIAL              # some peer scores missing
         harvest = ShadowScoreHarvest(
             session_id=state.session_id, scores_expected=expected,
             scores_collected=collected, coverage_ratio=coverage, status=status,
+            failed_tasks=failed,
         )
         state.shadow_harvest = harvest
         return harvest
@@ -927,14 +1333,25 @@ class CEDOrchestrator:
         }
         top_contributors = sorted(averages, key=lambda a: (-averages[a], a))
 
-        if expected == 0 or collected == 0:
+        if harvest.status == SyncGateStatus.DISABLED:
+            status = LeaderboardStatus.DISABLED
+        elif harvest.status == SyncGateStatus.FAILED:
+            status = LeaderboardStatus.FAILED        # peers produced no valid scores
+        elif expected == 0:
             status = LeaderboardStatus.UNAVAILABLE
+        elif collected == 0:
+            status = (LeaderboardStatus.FAILED if harvest.failed_tasks
+                      else LeaderboardStatus.UNAVAILABLE)
         elif coverage >= 1.0:
             status = LeaderboardStatus.COMPLETE
         else:
             status = LeaderboardStatus.PARTIAL
 
         notable: List[str] = []
+        if status == LeaderboardStatus.DISABLED:
+            notable.append("Shadow scoring is disabled (shadow_scoring_mode=off).")
+        if status == LeaderboardStatus.FAILED:
+            notable.append("Peer scoring produced no valid scores; no scores were fabricated.")
         if status == LeaderboardStatus.PARTIAL:
             notable.append(
                 f"Partial coverage: {collected}/{expected} shadow scores collected."
@@ -995,6 +1412,12 @@ class CEDOrchestrator:
                         agent_id=scorer.agent_id,
                     )
                     breakdown, status, flags = self._parse_breakdown(raw)
+                    if breakdown is None:
+                        # Invalid peer score → MISSING. CED never fabricates one.
+                        missing.append(section)
+                        state.section_scores_failed.append(
+                            f"{draft.draft_id}:{section.value}:{scorer.agent_id}")
+                        continue
                     try:
                         section_scores.append(SectionScore(
                             session_id=session_id,
@@ -1210,12 +1633,16 @@ class CEDOrchestrator:
         rounds = 0
         while rounds < MAX_RATIFICATION_ROUNDS:
             rounds += 1
+            # Distinct deterministic task_kind per evaluator round (not occurrence).
+            rat_kind = (TaskKind.RATIFICATION_INITIAL if rounds == 1
+                        else TaskKind.RATIFICATION_REVISION)
             move = self._dispatch(
                 state, evaluator,
                 role=AgentRole.FINAL_EVALUATOR,
                 phase=DialogPhase.RATIFICATION,
                 context={"assembled_draft": assembled.full_text()},
                 extra_schema={"_epistemic_hint": epistemic_hint},
+                task_kind=rat_kind, attempt_index=rounds - 1,
             )
             ep_status_raw = move.content.get("epistemic_status", ep_status_raw)
             vote = self._parse_vote(move.content, evaluator_id)

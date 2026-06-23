@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
@@ -32,7 +33,9 @@ from .models import (
     CouncilRoundResult,
     ProviderResponse,
     ProviderStatus,
+    TaskKind,
 )
+from .providers import FakeProvider
 
 
 # ── Council configuration (Phase 8A defaults) ─────────────────────────────────
@@ -64,21 +67,58 @@ def is_placeholder_key(api_key: Optional[str]) -> bool:
 
 # ── Structured-output validation (raw text → AgentMove) ───────────────────────
 
-def parse_and_validate_move(raw_text: Optional[str], task: AgentTask):
+def _safe_json_repair(text: str) -> str:
+    """
+    Minimal, safe JSON repair (no new dependencies):
+      - strip surrounding whitespace and markdown code fences
+      - remove trailing commas before } or ]
+    Never invents data; if it can't help, the reparse simply fails again.
+    """
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z0-9]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t).strip()
+    # drop trailing commas:  {"a":1,}  → {"a":1}   ;  [1,2,]  → [1,2]
+    t = re.sub(r",\s*([}\]])", r"\1", t)
+    return t
+
+
+def parse_and_validate_move(
+    raw_text: Optional[str], task: AgentTask,
+    repair_attempts: int = JSON_REPAIR_ATTEMPTS, meta: Optional[Dict[str, Any]] = None,
+):
     """
     Validate a provider's raw output into an AgentMove.
 
     Returns (move | None, status, error_message):
       - OK            : valid JSON that validates into an AgentMove
-      - INVALID_JSON  : raw text is not parseable JSON
+      - INVALID_JSON  : raw text is not parseable JSON (even after safe repair)
       - SCHEMA_ERROR  : JSON parsed but fails AgentMove schema validation
+
+    If `meta` is provided it records repair_attempted / repair_succeeded. A
+    repaired payload still MUST pass schema validation — repair never bypasses it.
     """
+    if meta is not None:
+        meta.setdefault("repair_attempted", False)
+        meta.setdefault("repair_succeeded", False)
+
     if raw_text is None:
         return None, ProviderStatus.INVALID_JSON, "empty response"
+
     try:
         data = json.loads(raw_text)
-    except (json.JSONDecodeError, TypeError) as exc:
-        return None, ProviderStatus.INVALID_JSON, f"json parse failed: {exc}"
+    except (json.JSONDecodeError, TypeError):
+        if repair_attempts <= 0:
+            return None, ProviderStatus.INVALID_JSON, "json parse failed"
+        if meta is not None:
+            meta["repair_attempted"] = True
+        try:
+            data = json.loads(_safe_json_repair(raw_text))
+        except (json.JSONDecodeError, TypeError) as exc2:
+            return None, ProviderStatus.INVALID_JSON, f"json parse failed after repair: {exc2}"
+        if meta is not None:
+            meta["repair_succeeded"] = True
+
     if not isinstance(data, dict):
         return None, ProviderStatus.SCHEMA_ERROR, "top-level JSON is not an object"
     try:
@@ -140,11 +180,14 @@ class BaseProviderAdapter:
                 error_message="provider unavailable (missing/placeholder key or disabled)",
             )
         raw = await self._produce_raw_text(task, agent_state)
-        move, status, err = parse_and_validate_move(raw, task)
+        meta: Dict[str, Any] = {}
+        move, status, err = parse_and_validate_move(raw, task, meta=meta)
         return ProviderResponse(
             provider_id=self.provider_id, agent_id=task.agent_id,
             status=status, raw_text=raw, parsed_move=move, error_message=err,
             latency_ms=round((time.perf_counter() - start) * 1000, 3),
+            repair_attempted=meta.get("repair_attempted", False),
+            repair_succeeded=meta.get("repair_succeeded", False),
         )
 
 
@@ -228,6 +271,53 @@ class MissingKeyProvider(BaseProviderAdapter):
 
     def __init__(self, api_key: Optional[str] = "your_key_here", enabled: bool = True) -> None:
         super().__init__(api_key, enabled)   # placeholder key → unavailable
+
+
+class ScriptedMockProvider(BaseProviderAdapter):
+    """
+    Rich deterministic mock: produces the scripted council content (via the
+    in-process FakeProvider — NO real API) so the registry path can yield real
+    5-section drafts, Socratic questions, critiques, etc. `delay_seconds` adds a
+    controlled async latency for reproducibility tests.
+    """
+    provider_id = "mock_scripted"
+    provider_name = "Mock Scripted"
+    is_fake = True
+
+    def __init__(self, provider_id: Optional[str] = None,
+                 api_key: Optional[str] = "sk-fake-scripted",
+                 enabled: bool = True, delay_seconds: float = 0.0) -> None:
+        super().__init__(api_key, enabled)
+        if provider_id:
+            self.provider_id = provider_id
+            self.provider_name = f"Mock Scripted ({provider_id})"
+        self._fake = FakeProvider()
+        self.delay_seconds = delay_seconds
+
+    async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
+        if self.delay_seconds:
+            await asyncio.sleep(self.delay_seconds)
+        schema: Dict[str, Any] = {"_role": task.role.value, "_question": task.question}
+        if task.task_kind == TaskKind.SYNTHESIS_DRAFT:
+            schema["_sections"] = True
+        out = self._fake.complete("", "", schema, agent_id=task.agent_id)
+        conf = 0.7
+        if isinstance(out, dict) and "confidence" in out:
+            conf = out.get("confidence", 0.7)
+            out = {k: v for k, v in out.items() if k != "confidence"}
+        return json.dumps({"content": out, "confidence": conf})
+
+
+class TimeoutScriptedProvider(ScriptedMockProvider):
+    """Scripted provider that always exceeds the round timeout (deterministic)."""
+    provider_id = "mock_scripted_timeout"
+    provider_name = "Mock Scripted Timeout"
+
+    async def generate_agent_move(self, task, agent_state) -> ProviderResponse:
+        return ProviderResponse(
+            provider_id=self.provider_id, agent_id=task.agent_id,
+            status=ProviderStatus.TIMEOUT, error_message="simulated timeout",
+        )
 
 
 # ── Council provider registry ─────────────────────────────────────────────────

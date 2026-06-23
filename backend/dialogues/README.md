@@ -10,6 +10,43 @@ wired in.
 
 ---
 
+## Permanent invariant — peer scoring, not CED scoring
+
+> **Agents judge epistemic quality. CED governs the protocol.**
+
+CED does **not** act as a semantic authority. It coordinates peer evaluation,
+validates the process, and mechanically aggregates the results. Every
+qualitative score comes from a **peer voter** (an agent/provider evaluating
+another agent's output under a phase-specific rubric).
+
+**CED may only:** assign roles · create tasks · route scoring tasks to peer
+voters · validate score schemas · prevent self-scoring (`voter_id != author_id`)
+· collect `MicroScore`s · aggregate mechanically (averages, cumulative,
+rankings, coverage, deterministic tie-breakers) · record audit metadata · report
+`complete / partial / timeout / disabled / quorum_failed / failed`.
+
+**CED must never:** decide by itself that an answer/question/objection is better ·
+create a qualitative score without a voter · **fabricate a stand-in score (e.g.
+zeros) for a failed/invalid/timed-out peer score** · act as an autonomous judge.
+
+If peer scoring fails, times out, returns invalid JSON, or lacks quorum, the
+**missing peer scores stay missing** — the leaderboard/sync-gate status becomes
+`partial` / `timeout` / `failed` / `quorum_failed` / `disabled`, and the audit
+explains it mechanically. There is **no fake fallback semantic score**.
+
+> Wording: not *"CED judged this answer better"* — rather *"peer agents scored
+> this output higher under the `<rubric>` rubric, and CED mechanically aggregated
+> the valid scores."*
+
+Each `MicroScore` carries `phase`, `rubric_name`, `author_agent_id`,
+`voter_agent_id`, `score_breakdown`, `confidence`, `penalty_flags`,
+`provider_status`. Peer scoring applies to every configured `SCORED_PHASE`
+(including the Socratic opening question), each with its own rubric
+(`question_quality`, `objection_quality`, `synthesis_quality`, …). Tests in
+`tests_dialogues/test_ced_peer_scoring_invariant.py` prove this invariant holds.
+
+---
+
 ## Quick start
 
 From the repository root:
@@ -274,9 +311,95 @@ and tested without any model. **Real LLM providers come later**: subclass
 via `ProviderRegistry.register(...)`, and hand the provider to the agents. The
 CED and agents are provider-agnostic.
 
-> Note: because `move_id` is a random UUID, the role rotation is deterministic by
-> `session_id`, but which draft wins each section can differ between separate
-> `run_session` calls. The provider itself is deterministic.
+> Note: `move_id` is **deterministic** — derived from stable task identity
+> (`session_id | phase | round | agent_id | role | task_kind | slot | attempt`),
+> never from runtime/async completion order. So for a given `(question,
+> session_id)` the **whole** pipeline is reproducible: move ids, shadow scores,
+> section winners, leaderboard, and audit counters are identical across runs and
+> independent of provider latency.
+
+---
+
+## Provider layer (Phase 8)
+
+The CED is ready for real providers but **V1 uses mock/fake providers only** —
+no real Claude/OpenAI/Gemini/Grok calls, no network, no keys.
+
+### CouncilProviderRegistry
+`provider_registry.py` holds an availability-aware registry of provider
+*adapters* (`LLMProviderAdapter`: `async generate_agent_move(task, agent_state)
+-> ProviderResponse`). It:
+
+- filters out adapters whose key is missing or a placeholder (`""`,
+  `your_key_here`, `changeme`, `test`, …) via `is_placeholder_key` — it **never
+  reads `.env`**; callers pass already-configured adapters in;
+- enforces `minimum_providers = 2` (readiness) and `quorum_for_assembly = 2`;
+- runs one council round (`gather_council_round` / `gather_registry_phase_round`)
+  with per-provider `provider_timeout_seconds = 30.0`, exception safety, and
+  structured-output validation;
+- exposes a CED-owned `status_summary()` (available / unavailable / failed
+  providers) for the audit — never for agents.
+
+### Mock providers (dev/CI only)
+`AlwaysOKProvider`, `TimeoutProvider`, `InvalidJSONProvider`,
+`SchemaErrorProvider`, `RateLimitedProvider`, `MissingKeyProvider`, and the rich
+`ScriptedMockProvider` / `TimeoutScriptedProvider` (which produce real scripted
+council content via the in-process `FakeProvider`). All deterministic.
+
+### Provider statuses (`ProviderStatus`)
+`ok`, `missing_key`, `timeout`, `invalid_json`, `schema_error`, `rate_limited`,
+`error`, `disabled`. Failed/timed-out providers are recorded as **metadata only**
+— no fake `AgentMove` is ever fabricated for them.
+
+### Full registry session (Phase 8C)
+`await ced.run_registry_session(question, session_id)` drives every deliberation
+phase through the registry (deterministic roles, per-phase quorum, validation,
+failure recording), then runs the existing scoring → blind assembly →
+ratification. It returns a `FinalResponse` whose `audit_summary` separates
+`provider_status_summary`, `registry_phase_rounds`, `task_log_summary`, and
+`shadow_scoring_mode`. If the registry is not ready (or a phase fails quorum) it
+returns a **safe non-proceeding** result (`ratification_status="quorum_failed"`,
+no synthesis) — never a crash, never a fake answer. Demo:
+`python -m backend.dialogues.demo_registry_session`.
+
+### `shadow_scoring_mode`
+Cost control for real providers (`CEDOrchestrator(..., shadow_scoring_mode=…)`):
+
+| mode | scored phases | leaderboard |
+|---|---|---|
+| `all_phases` (default) | every deliberation phase (incl. the Socratic question) | `complete` |
+| `synthesis_only` | synthesis drafts only | `complete` |
+| `sampled` | opening + synthesis | `complete` |
+| `off` | none | `disabled` (clean, not a failure) |
+
+Each `MicroScore` records a **phase-specific rubric** (`question_quality`,
+`objection_quality`, `synthesis_quality`, …) — a Socratic question is not judged
+by the same yardstick as a final answer.
+
+### `json_repair_attempts`
+`parse_and_validate_move` tries a normal parse; on failure (and if
+`json_repair_attempts > 0`) it applies one minimal, dependency-free repair (strip
+code fences, drop trailing commas) and reparses. A repaired payload **still must
+pass schema validation** — repair never bypasses it. `repair_attempted` /
+`repair_succeeded` are recorded on the `ProviderResponse`.
+
+### task_log / context_hash
+Every dispatched task is traced in a CED-owned `SessionState.task_log`
+(`TaskLogEntry`: identity + a stable `context_hash`, plus `provider_id/status`).
+Full prompt text is **debug-only** (`ced.debug_task_log = True`, off by default).
+The task_log is **never** inserted into `AgentState` or sent to agents.
+
+### Adding real adapters later
+Subclass `BaseProviderAdapter`, implement `_produce_raw_text(task, agent_state)`
+to make the real network call and return raw text, set `provider_id` /
+`provider_name`, hold the key locally, and `registry.register(...)`. The CED and
+validation path are unchanged. **Keys stay local in `.env` and are never
+committed; no real API is used in Phase 8C.**
+
+### Minimal awareness (hard rule)
+Agents never see scores, breakdowns, leaderboard, `provider_status_summary`,
+`task_log`, coverage ratios, hidden provider mappings, or other providers'
+private errors. All of that lives only in CED-owned state and audit output.
 
 ---
 

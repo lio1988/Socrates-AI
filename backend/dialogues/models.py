@@ -93,6 +93,8 @@ class LeaderboardStatus(str, Enum):
     COMPLETE    = "complete"
     PARTIAL     = "partial"
     UNAVAILABLE = "unavailable"
+    DISABLED    = "disabled"
+    FAILED      = "failed"        # peer scoring ran but produced no valid scores
 
 
 class SyncGateStatus(str, Enum):
@@ -100,6 +102,16 @@ class SyncGateStatus(str, Enum):
     PARTIAL     = "partial"
     TIMEOUT     = "timeout"
     UNAVAILABLE = "unavailable"
+    DISABLED    = "disabled"
+    FAILED      = "failed"        # peer scoring failed (no valid peer scores)
+
+
+class ShadowScoringMode(str, Enum):
+    """How much shadow scoring to run (cost control for real providers later)."""
+    ALL_PHASES     = "all_phases"      # score every phase in SCORED_PHASES (default)
+    SYNTHESIS_ONLY = "synthesis_only"  # score only the synthesis drafts
+    SAMPLED        = "sampled"         # deterministic reduced: opening + synthesis
+    OFF            = "off"             # no shadow scoring; leaderboard = disabled
 
 
 class SectionName(str, Enum):
@@ -141,6 +153,23 @@ LEADERBOARD_INTERPRETATION_WARNING = "Scores are peer-evaluation signals, not pr
 
 # ── Task / Move ───────────────────────────────────────────────────────────────
 
+class TaskKind(str, Enum):
+    """
+    Explicit, deterministic identity of an agent task within a phase. Used (with
+    slot_index / attempt_index) to derive reproducible move ids that do NOT
+    depend on runtime completion order.
+    """
+    SOCRATIC_QUESTION       = "socratic_question"
+    INITIAL_RESPONSE        = "initial_response"
+    ELENCHUS_OBJECTION      = "elenchus_objection"
+    REFLECTION_REVISION     = "reflection_revision"
+    RECONSTRUCTION_PROPOSAL = "reconstruction_proposal"
+    SYNTHESIS_DRAFT         = "synthesis_draft"
+    RATIFICATION_INITIAL    = "ratification_initial"
+    RATIFICATION_REVISION   = "ratification_revision"
+    RATIFICATION_FINAL      = "ratification_final"
+
+
 class AgentTask(BaseModel):
     """
     Instruction packet sent from CED to an agent.
@@ -155,6 +184,10 @@ class AgentTask(BaseModel):
     context:       Dict[str, Any] = Field(default_factory=dict)
     output_schema: Dict[str, Any] = Field(default_factory=dict)
     round_number:  int = 0
+    # Deterministic task identity (CED-owned routing; not scoring/leaderboard data).
+    task_kind:     Optional[TaskKind] = None
+    slot_index:    int = 0
+    attempt_index: int = 0
 
 
 class AgentState(BaseModel):
@@ -180,6 +213,10 @@ class AgentMove(BaseModel):
     content:          Dict[str, Any]
     confidence:       float = Field(ge=0.0, le=1.0, default=0.7)
     epistemic_markers: List[EpistemicMarker] = Field(default_factory=list)
+    # Deterministic task identity copied from the AgentTask (CED-owned audit).
+    task_kind:        Optional[TaskKind] = None
+    slot_index:       int = 0
+    attempt_index:    int = 0
     timestamp:        datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -191,14 +228,16 @@ class ProviderResponse(BaseModel):
     record — provider internals here are never inserted into AgentState or shown
     to agents. A failed provider carries status + error metadata, NOT a fake move.
     """
-    provider_id:   str
-    agent_id:      Optional[str] = None
-    status:        ProviderStatus
-    raw_text:      Optional[str] = None
-    parsed_move:   Optional[AgentMove] = None
-    error_message: Optional[str] = None
-    latency_ms:    Optional[float] = None
-    retry_count:   int = 0
+    provider_id:      str
+    agent_id:         Optional[str] = None
+    status:           ProviderStatus
+    raw_text:         Optional[str] = None
+    parsed_move:      Optional[AgentMove] = None
+    error_message:    Optional[str] = None
+    latency_ms:       Optional[float] = None
+    retry_count:      int = 0
+    repair_attempted: bool = False
+    repair_succeeded: bool = False
 
     @property
     def ok(self) -> bool:
@@ -212,6 +251,31 @@ class CouncilRoundResult(BaseModel):
     failed_provider_ids:  List[str] = Field(default_factory=list)
     proceed:              bool = False
     warning:              Optional[str] = None
+
+
+class TaskLogEntry(BaseModel):
+    """
+    CED-owned trace of a dispatched agent task (Phase 8C). Never inserted into
+    AgentState and never sent to agents. Contains identity + a stable
+    context_hash — NOT raw prompts/keys/secrets (full text is debug-only, off by
+    default).
+    """
+    task_id:         str
+    move_id:         Optional[str] = None
+    session_id:      str
+    phase:           DialogPhase
+    round_index:     int = 0
+    agent_id:        str
+    assigned_role:   AgentRole
+    task_kind:       Optional[TaskKind] = None
+    slot_index:      int = 0
+    attempt_index:   int = 0
+    schema_name:     str = ""
+    context_hash:    str = ""
+    provider_id:     Optional[str] = None
+    provider_status: Optional[ProviderStatus] = None
+    debug_context:   Optional[Dict[str, Any]] = None   # debug-only; off by default
+    created_at:      datetime = Field(default_factory=datetime.utcnow)
 
 
 # ── Scoring (shadow — never shown to agents) ──────────────────────────────────
@@ -262,6 +326,7 @@ class MicroScore(BaseModel):
     session_id:       str
     output_id:        str                 # the scored AgentMove.move_id
     phase:            DialogPhase
+    rubric_name:      Optional[str] = None  # phase-specific rubric (CED-owned)
     author_agent_id:  str
     voter_agent_id:   str
     score_breakdown:  ScoreBreakdown
@@ -501,7 +566,10 @@ class SessionState(BaseModel):
     agent_states:     Dict[str, AgentState] = Field(default_factory=dict)
     moves:            List[AgentMove] = Field(default_factory=list)
     # Phase 4 scoring is CED-owned and lives only here, never on AgentState.
-    micro_scores:     List[MicroScore] = Field(default_factory=list)      # move-level
+    micro_scores:     List[MicroScore] = Field(default_factory=list)      # move-level (VALID peer scores only)
+    # Peer scoring tasks that failed/were invalid — recorded, NEVER fabricated as scores.
+    failed_score_tasks: List[str] = Field(default_factory=list)
+    section_scores_failed: List[str] = Field(default_factory=list)
     section_drafts:   List[SectionDraft] = Field(default_factory=list)    # 5-section drafts
     draft_scorecards: List[DraftScorecard] = Field(default_factory=list)  # section-level
     # Phase 7 CED-owned audit analytics (never on AgentState, never to agents).
@@ -509,6 +577,8 @@ class SessionState(BaseModel):
     epistemic_leaderboard: Optional[EpistemicLeaderboard] = None
     # Phase 8B registry-backed council rounds (CED-owned audit; never to agents).
     registry_rounds:  List[CouncilRoundResult] = Field(default_factory=list)
+    # Phase 8C CED-owned task trace (never on AgentState, never to agents).
+    task_log:         List[TaskLogEntry] = Field(default_factory=list)
     assembled_answer: Optional[AssembledAnswer] = None
     final_response:   Optional[FinalResponse] = None
     phase_history:    List[DialogPhase] = Field(default_factory=list)
