@@ -557,12 +557,69 @@ mixed with the existing scripted mocks.
 > scores, ratifies, or aggregates.
 
 ### Still deferred (future)
-- **Live network calls** — implement a `LiveTransport.send` and supply a real key
-  (the `ProviderRequest` is already shaped for it). **Disabled until explicitly approved.**
+- **Live single-provider smoke** — see **Phase 9B** below: a manual, doubly-gated,
+  opt-in one-provider live call now exists (`scripts/live_smoke_provider.py`).
+- **Live council** — driving a full `run_registry_session` over live providers is
+  **not** done yet (Phase 9B is one provider, one task only).
 - **Retry / rate-limit policy** — Phase 9A records `rate_limited` / `timeout` /
   `error` cleanly and exposes `is_retryable_status`; no backoff loop yet.
 - **Repair Option B** for ratification (runner-up + re-ratify, max 2 rounds) — currently safe Option A (blocked/unresolved).
 - **Final Candidate Tournament / Hybrid** `final_synthesis_mode` — reserved for V2/V3.
+
+---
+
+## Phase 9B — Live smoke test (manual, opt-in)
+
+`scripts/live_smoke_provider.py` is a **manual, opt-in, one-provider** live smoke
+test — the only code path that can make a real network call. It is **doubly gated
+and off by default**:
+
+1. `CED_ENABLE_LIVE_PROVIDERS` must equal `1`, **and**
+2. `ANTHROPIC_API_KEY` must be a real (non-placeholder) key.
+
+If either gate is unmet, **no network call is made and the `anthropic` SDK is not
+even imported** — the SDK is imported lazily, inside the live call only. The
+script loads all config from environment variables, builds **one**
+`LiveAnthropicAdapter` (reusing Phase 9A's request-build / envelope-extract /
+`parse_and_validate_move` via the `_produce_raw_text` seam), sends **one** task,
+and prints a **secret-free** summary: `provider_status`, `schema_valid`,
+`response_length`, model + provider name. It is **one provider, one task — not a
+council.**
+
+Exit codes: `0` = ran (or disabled-by-default, the safe no-op); `2` = enabled but
+key missing/placeholder (refused, no call); `3` = live call raised (message
+redacted).
+
+### Run it manually
+
+The flag and key come from your **local shell environment only** — never from a
+committed file, never from HTML/frontend.
+
+**PowerShell:**
+```powershell
+$env:CED_ENABLE_LIVE_PROVIDERS = "1"
+$env:ANTHROPIC_API_KEY = "sk-ant-..."      # your local key; never commit it
+.\run_live_smoke_provider.ps1
+# or: .\.venv\Scripts\python.exe scripts\live_smoke_provider.py
+# optional: $env:CED_LIVE_MODEL = "claude-opus-4-8"  (default); $env:CED_LIVE_MAX_TOKENS = "1024"
+```
+
+**cmd / BAT (double-click or run):**
+```bat
+set CED_ENABLE_LIVE_PROVIDERS=1
+set ANTHROPIC_API_KEY=sk-ant-...
+run_live_smoke_provider.bat
+```
+
+Both launchers check the flag and key first, **never echo the key**, and never
+write it to disk. With no flag set, they print a disabled notice and exit.
+
+> ⚠️ **Never put API keys in HTML or any frontend code.** A future dashboard must
+> call the backend only; it must never hold or transmit a raw key. There is no
+> HTML UI for keys, by design.
+>
+> ⚠️ **`.env` stays local and gitignored.** Never commit `.env` or a key. This
+> script reads keys from the environment, not from any tracked file.
 
 ---
 
@@ -573,4 +630,8 @@ Do **not** commit secrets or local artifacts:
 - never commit `.env` or API keys
 - never commit `__pycache__/` directories or `.pyc` files
 
-Keep these in `.gitignore`. V1 makes no real API calls and does not read `.env`.
+Keep these in `.gitignore`. The default pipeline makes **no** real API calls and
+does not read `.env`. The **only** exception is the manual, doubly-gated Phase 9B
+live smoke test (`scripts/live_smoke_provider.py`), which is opt-in via
+`CED_ENABLE_LIVE_PROVIDERS=1` + a locally-set `ANTHROPIC_API_KEY`, and which never
+prints or persists the key.
