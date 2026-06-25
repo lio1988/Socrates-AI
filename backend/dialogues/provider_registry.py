@@ -310,6 +310,21 @@ class ScriptedMockProvider(BaseProviderAdapter):
             verdict = self._ratification_verdict(task)
             conf = verdict.pop("confidence", 0.8) if isinstance(verdict, dict) else 0.8
             return json.dumps({"content": verdict, "confidence": conf})
+        # Phase 8C.2 peer scoring → return a structured score payload (the scored
+        # content is the move/section text; the FakeProvider produces the breakdown).
+        if task.task_kind in (TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE):
+            score_role = ("__move_score__" if task.task_kind == TaskKind.MOVE_SCORE
+                          else "__section_score__")
+            score_schema: Dict[str, Any] = {
+                "_role": score_role,
+                "_question": task.question,
+                "_target": str(task.output_schema.get("_target", "")),
+                "_section": str(task.output_schema.get("_section", "")),
+            }
+            payload = self._fake.complete("", str(task.context.get("output_to_score", "")),
+                                          score_schema, agent_id=task.agent_id)
+            return json.dumps({"content": payload, "confidence": payload.get("confidence", 0.7)
+                               if isinstance(payload, dict) else 0.7})
         schema: Dict[str, Any] = {"_role": task.role.value, "_question": task.question}
         if task.task_kind == TaskKind.SYNTHESIS_DRAFT:
             schema["_sections"] = True

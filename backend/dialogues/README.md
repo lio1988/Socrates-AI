@@ -447,6 +447,54 @@ tournament logic is added now.
 
 ---
 
+## Phase 8C.2 — Registry-backed peer scoring
+
+In a registry session **all three peer protocols now run through
+`CouncilProviderRegistry`**: deliberation, council ratification, **and shadow
+scoring** (move-level *and* section-level). The legacy `run_session` keeps using
+the in-process `self.agents` voters (`scoring_backend = "legacy_agents"`);
+`run_registry_session` uses `scoring_backend = "registry"`.
+
+Production-shaped path: *author move → CED creates a scoring task → routed to a
+peer voter provider through the registry → provider returns a structured score →
+CED validates the schema → CED enforces no self-scoring → CED records missing/
+failed votes honestly → CED aggregates mechanically.* **CED never generates a
+semantic score itself.**
+
+- **Voters are providers.** Each move is scored by every *available peer
+  provider* except the one that **produced** it (`move.provider_id`), so no
+  provider scores its own output. Each `MicroScore` / `SectionScore` carries
+  `author_agent_id`, `voter_agent_id`, `provider_id`, `phase`, `rubric_name`.
+- **No fabrication.** A scorer that times out, returns invalid JSON, or fails
+  schema validation leaves the score **missing** (recorded in
+  `failed_score_tasks` / `section_scores_failed`) — never a zero.
+- **Statuses** (`sync_gate` / leaderboard): `complete` (all valid) · `partial`
+  (some valid) · `failed` (none valid) · `timeout` (all timed out) · `disabled`
+  (`shadow_scoring_mode = off`). Section winners use only valid peer
+  `SectionScore`s; a section with no valid scores stays unresolved, not invented.
+- **Deterministic.** Score tasks have stable ids
+  (`stask_<hash(session|kind|target|voter|section|slot)>`); same session + same
+  mock setup → identical move ids, score-task ids, valid scores, `scores_by_phase`,
+  leaderboard ranking, section winners and audit counters — **independent of
+  async provider latency**.
+- **Minimal awareness.** A scoring task carries only the output to score + the
+  rubric; never leaderboard/scores/coverage/task_log/audit internals.
+- Audit (`audit_summary["scoring"]`): `scoring_backend`, `scoring_mode`,
+  `scores_expected/collected/failed`, `failed_score_tasks`, `scores_by_phase`,
+  `section_scores_collected/failed`, `self_scoring_violations`,
+  `scoring_provider_status_summary`, `leaderboard_status`.
+
+This **completes the registry-backed mock council path** — deliberation,
+ratification and scoring are all peer-driven through the registry — before any
+real provider adapter is wired in.
+
+### Still deferred (future)
+- **Real network adapters** (the `BaseProviderAdapter._produce_raw_text` seam is ready).
+- **Repair Option B** for ratification (runner-up + re-ratify, max 2 rounds) — currently safe Option A (blocked/unresolved).
+- **Final Candidate Tournament / Hybrid** `final_synthesis_mode` — reserved for V2/V3.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

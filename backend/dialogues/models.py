@@ -169,6 +169,8 @@ class TaskKind(str, Enum):
     RATIFICATION_REVISION   = "ratification_revision"
     RATIFICATION_FINAL      = "ratification_final"
     COUNCIL_RATIFICATION    = "council_ratification"   # Phase 8C.1 per-provider verdict
+    MOVE_SCORE              = "move_score"              # Phase 8C.2 registry peer move scoring
+    SECTION_SCORE           = "section_score"           # Phase 8C.2 registry peer section scoring
 
 
 class AgentTask(BaseModel):
@@ -218,6 +220,9 @@ class AgentMove(BaseModel):
     task_kind:        Optional[TaskKind] = None
     slot_index:       int = 0
     attempt_index:    int = 0
+    # Registry mode: which provider PRODUCED this move (for provider-level
+    # no-self-scoring). None in the legacy self.agents path.
+    provider_id:      Optional[str] = None
     timestamp:        datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -330,6 +335,7 @@ class MicroScore(BaseModel):
     rubric_name:      Optional[str] = None  # phase-specific rubric (CED-owned)
     author_agent_id:  str
     voter_agent_id:   str
+    provider_id:      Optional[str] = None  # registry provider that produced this score
     score_breakdown:  ScoreBreakdown
     overall_score:    Optional[float] = Field(default=None, ge=0.0, le=10.0)
     confidence:       float = Field(ge=0.0, le=1.0, default=0.7)
@@ -361,6 +367,7 @@ class SectionScore(BaseModel):
     draft_id:         str
     author_agent_id:  str
     voter_agent_id:   str
+    provider_id:      Optional[str] = None  # registry provider that produced this score
     score_breakdown:  ScoreBreakdown
     overall_score:    Optional[float] = Field(default=None, ge=0.0, le=10.0)
     confidence:       float = Field(ge=0.0, le=1.0, default=0.7)
@@ -420,6 +427,7 @@ class SectionDraft(BaseModel):
     session_id:         str
     author_agent_id:    str
     move_id:            str
+    provider_id:        Optional[str] = None   # registry provider that produced the draft
     core_answer:         str
     crucial_stress_test: str
     blind_spots:         str

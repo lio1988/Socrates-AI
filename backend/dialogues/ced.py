@@ -591,6 +591,7 @@ class CEDOrchestrator:
                     task.task_kind, task.slot_index, task.attempt_index)
                 move.task_kind = task.task_kind
                 move.slot_index = task.slot_index
+                move.provider_id = resp.provider_id   # producer (for no-self-scoring)
                 state.moves.append(move)
                 self._record_task_log(state, task, move.move_id,
                                       provider_id=resp.provider_id,
@@ -647,8 +648,9 @@ class CEDOrchestrator:
 
         # Downstream council machinery (reads CED-owned state.moves).
         self.build_section_drafts(sid)
-        self.compute_shadow_scores(sid)        # honours shadow_scoring_mode
-        self.score_section_drafts(sid)
+        # Phase 8C.2 — peer scoring ALSO goes through the registry (not self.agents).
+        await self.run_registry_shadow_scores(state, timeout_seconds)   # move-level
+        await self.score_section_drafts_with_registry(state, timeout_seconds)  # section-level
         self.assemble_sections(sid)
 
         # Phase 8C.1 — COUNCIL ratification through the registry (no single
@@ -682,6 +684,34 @@ class CEDOrchestrator:
             ],
             "task_log_count": len(state.task_log),
             "task_log_summary": self._task_log_summary(state),
+            "scoring": self._registry_scoring_audit(state),
+        }
+
+    def _registry_scoring_audit(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 8C.2 registry-scoring audit (hidden from agents)."""
+        h = state.shadow_harvest
+        section_scores = [s for c in state.draft_scorecards for s in c.section_scores]
+        scores_by_phase: Dict[str, int] = {}
+        self_violations = 0
+        for ms in state.micro_scores:
+            scores_by_phase[ms.phase.value] = scores_by_phase.get(ms.phase.value, 0) + 1
+            if ms.voter_agent_id == ms.author_agent_id:
+                self_violations += 1
+        return {
+            "scoring_backend": "registry",
+            "scoring_mode": self.shadow_scoring_mode.value,
+            "scores_expected": h.scores_expected if h else 0,
+            "scores_collected": h.scores_collected if h else 0,
+            "scores_failed": len(state.failed_score_tasks),
+            "failed_score_tasks": list(state.failed_score_tasks),
+            "scores_by_phase": scores_by_phase,
+            "sync_gate_status": h.status.value if h else "unavailable",
+            "leaderboard_status": (state.epistemic_leaderboard.leaderboard_status.value
+                                   if state.epistemic_leaderboard else "unavailable"),
+            "section_scores_collected": len(section_scores),
+            "section_scores_failed": len(state.section_scores_failed),
+            "self_scoring_violations": self_violations,
+            "scoring_provider_status_summary": self.registry.status_summary(),
         }
 
     @staticmethod
@@ -1238,6 +1268,7 @@ class CEDOrchestrator:
                 session_id=session_id,
                 author_agent_id=m.agent_id,
                 move_id=m.move_id,
+                provider_id=m.provider_id,       # producer (for no-self-scoring)
                 core_answer=str(c.get("core_answer", "")),
                 crucial_stress_test=str(c.get("crucial_stress_test", "")),
                 blind_spots=str(c.get("blind_spots", "")),
@@ -1400,6 +1431,136 @@ class CEDOrchestrator:
                 failed.append(f"{move.move_id}:{scorer.agent_id}")  # missing — not fabricated
         state.micro_scores = micro
         state.failed_score_tasks = failed
+        return micro
+
+    # ── Phase 8C.2: registry-backed peer scoring (move-level) ─────────────────
+
+    def _deterministic_score_task_id(
+        self, state: SessionState, target_id: str, voter_id: str,
+        kind: TaskKind, slot_index: int, section: str = "",
+    ) -> str:
+        """Stable score-task id (independent of async completion order)."""
+        key = "|".join([state.session_id, kind.value, target_id, voter_id,
+                        section, str(slot_index)])
+        return "stask_" + format(stable_hash(key), "x")[:12]
+
+    def _build_move_score_task(
+        self, state: SessionState, move: AgentMove, voter_id: str,
+        phase: DialogPhase, slot_index: int,
+    ) -> AgentTask:
+        rubric_name, rubric_focus = rubric_for(phase)
+        return AgentTask(
+            task_id=self._deterministic_score_task_id(
+                state, move.move_id, voter_id, TaskKind.MOVE_SCORE, slot_index),
+            session_id=state.session_id,
+            agent_id=voter_id,                      # the VOTER (registry provider)
+            role=AgentRole.FINAL_EVALUATOR,
+            phase=phase,
+            question=state.question,
+            # Minimal-awareness context: only the output to score + rubric.
+            context={"output_to_score": move.content, "rubric_name": rubric_name,
+                     "rubric_focus": rubric_focus},
+            output_schema={"_role": "__move_score__", "_target": move.move_id,
+                           "_question": state.question, "_rubric": rubric_name,
+                           "_phase": phase.value},
+            task_kind=TaskKind.MOVE_SCORE, slot_index=slot_index,
+        )
+
+    def _microscore_from_response(
+        self, state: SessionState, move: AgentMove, voter_id: str,
+        phase: DialogPhase, resp: "ProviderResponse",
+    ) -> Optional[MicroScore]:
+        """Validate a peer provider's score response → MicroScore, or None (missing)."""
+        if not resp.ok or resp.parsed_move is None:
+            return None
+        content = resp.parsed_move.content if isinstance(resp.parsed_move.content, dict) else {}
+        breakdown, status, flags = self._parse_breakdown(content)
+        if breakdown is None:
+            return None   # invalid peer score — CED does NOT fabricate one
+        rubric_name = rubric_for(phase)[0]
+        return MicroScore(
+            session_id=state.session_id, output_id=move.move_id, phase=phase,
+            rubric_name=rubric_name, author_agent_id=move.agent_id,
+            voter_agent_id=voter_id, provider_id=voter_id,
+            score_breakdown=breakdown,
+            confidence=self._clamp01(content.get("confidence", 0.7)),
+            justification=str(content.get("justification", "")),
+            penalty_flags=flags, provider_status=resp.status,
+        )
+
+    def _eligible_score_voters(self, move: AgentMove):
+        """Available registry providers that may score this move (peers, not the author/producer)."""
+        return [a for a in self.registry.available_adapters()
+                if a.provider_id != move.provider_id]
+
+    async def run_registry_shadow_scores(
+        self, state: SessionState, timeout_seconds: Optional[float] = None,
+    ) -> List[MicroScore]:
+        """
+        Move-level peer scoring routed through CouncilProviderRegistry. Each move
+        is scored by every available PEER provider (excluding its producer). Failed
+        / invalid / timed-out scores stay MISSING — never fabricated. Honours
+        shadow_scoring_mode; builds the harvest + status the leaderboard reads.
+        """
+        phase_list = self._phases_for_mode()
+        if not phase_list:   # shadow_scoring_mode == off
+            state.micro_scores = []
+            state.failed_score_tasks = []
+            state.shadow_harvest = ShadowScoreHarvest(
+                session_id=state.session_id, status=SyncGateStatus.DISABLED)
+            return []
+
+        # Build every (move, voter) scoring task deterministically.
+        plan = []   # (phase, move, voter_adapter, slot)
+        for phase in phase_list:
+            for move in state.moves_for_phase(phase):
+                for slot, voter in enumerate(self._eligible_score_voters(move)):
+                    plan.append((phase, move, voter, slot))
+        expected = len(plan)
+
+        async def _one(phase, move, voter, slot):
+            task = self._build_move_score_task(state, move, voter.provider_id, phase, slot)
+            astate = AgentState(agent_id=voter.provider_id,
+                                primary_role=AgentRole.FINAL_EVALUATOR,
+                                assigned_role=AgentRole.FINAL_EVALUATOR)
+            resp = await self.registry.run_adapter(voter, task, astate, timeout_seconds)
+            return phase, move, voter, task, resp
+
+        results = list(await asyncio.gather(*(_one(*p) for p in plan))) if plan else []
+
+        micro: List[MicroScore] = []
+        failed: List[str] = []
+        timed_out = False
+        for phase, move, voter, task, resp in results:
+            ms = self._microscore_from_response(state, move, voter.provider_id, phase, resp)
+            if ms is not None:
+                micro.append(ms)
+                self._record_task_log(state, task, resp.parsed_move.move_id,
+                                      provider_id=voter.provider_id, provider_status=resp.status)
+            else:
+                failed.append(f"{move.move_id}:{voter.provider_id}")
+                if resp.status == ProviderStatus.TIMEOUT:
+                    timed_out = True
+                self._record_task_log(state, task, None,
+                                      provider_id=voter.provider_id, provider_status=resp.status)
+
+        collected = len(micro)
+        coverage = (collected / expected) if expected else 0.0
+        if expected == 0:
+            status = SyncGateStatus.UNAVAILABLE
+        elif collected == 0:
+            status = SyncGateStatus.TIMEOUT if timed_out else SyncGateStatus.FAILED
+        elif collected >= expected:
+            status = SyncGateStatus.COMPLETE
+        else:
+            status = SyncGateStatus.PARTIAL
+
+        state.micro_scores = micro
+        state.failed_score_tasks = failed
+        state.shadow_harvest = ShadowScoreHarvest(
+            session_id=state.session_id, scores_expected=expected,
+            scores_collected=collected, coverage_ratio=coverage, status=status,
+            failed_tasks=failed)
         return micro
 
     # ── Epistemic Sync Gate (bounded final harvest of shadow scores) ──────────
@@ -1688,6 +1849,95 @@ class CEDOrchestrator:
                     section_scores=section_scores,
                     missing_sections=missing,
                 ))
+
+        state.draft_scorecards = cards
+        return cards
+
+    # ── Phase 8C.2: registry-backed peer scoring (section-level) ──────────────
+
+    def _build_section_score_task(
+        self, state: SessionState, draft: SectionDraft, section: SectionName,
+        voter_id: str, content: str, slot_index: int,
+    ) -> AgentTask:
+        return AgentTask(
+            task_id=self._deterministic_score_task_id(
+                state, draft.draft_id, voter_id, TaskKind.SECTION_SCORE,
+                slot_index, section.value),
+            session_id=state.session_id,
+            agent_id=voter_id,                       # the VOTER (registry provider)
+            role=AgentRole.FINAL_EVALUATOR,
+            phase=DialogPhase.SYNTHESIS,
+            question=state.question,
+            context={"output_to_score": content, "section": section.value},
+            output_schema={"_role": "__section_score__", "_target": draft.draft_id,
+                           "_section": section.value, "_question": state.question},
+            task_kind=TaskKind.SECTION_SCORE, slot_index=slot_index,
+        )
+
+    async def score_section_drafts_with_registry(
+        self, state: SessionState, timeout_seconds: Optional[float] = None,
+    ) -> List[DraftScorecard]:
+        """
+        Section-level peer scoring routed through CouncilProviderRegistry. Each
+        draft section is scored by every available PEER provider (excluding the
+        draft's producer). Invalid/failed scores stay MISSING (recorded in
+        missing_sections + section_scores_failed), never fabricated as zeros.
+        """
+        cards: List[DraftScorecard] = []
+        plan = []   # (draft, voter, section, content, slot)
+        for draft in state.section_drafts:
+            voters = [a for a in self.registry.available_adapters()
+                      if a.provider_id != draft.provider_id]
+            for vslot, voter in enumerate(voters):
+                for section in SECTION_ORDER:
+                    content = draft.section_text(section)
+                    if content.strip():
+                        plan.append((draft, voter, section, content, vslot))
+
+        async def _one(draft, voter, section, content, vslot):
+            task = self._build_section_score_task(
+                state, draft, section, voter.provider_id, content, vslot)
+            astate = AgentState(agent_id=voter.provider_id,
+                                primary_role=AgentRole.FINAL_EVALUATOR,
+                                assigned_role=AgentRole.FINAL_EVALUATOR)
+            resp = await self.registry.run_adapter(voter, task, astate, timeout_seconds)
+            return draft, voter, section, task, resp
+
+        results = list(await asyncio.gather(*(_one(*p) for p in plan))) if plan else []
+
+        # Group results into per-(draft, voter) scorecards.
+        grouped: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for draft, voter, section, task, resp in results:
+            key = (draft.draft_id, voter.provider_id)
+            g = grouped.setdefault(key, {"draft": draft, "voter": voter.provider_id,
+                                         "scores": [], "missing": []})
+            content_dict = (resp.parsed_move.content if resp.ok and resp.parsed_move
+                            and isinstance(resp.parsed_move.content, dict) else {})
+            breakdown, status, flags = (self._parse_breakdown(content_dict)
+                                        if resp.ok else (None, resp.status, []))
+            if breakdown is None:
+                g["missing"].append(section)
+                state.section_scores_failed.append(
+                    f"{draft.draft_id}:{section.value}:{voter.provider_id}")
+                self._record_task_log(state, task, None, provider_id=voter.provider_id,
+                                      provider_status=resp.status)
+                continue
+            g["scores"].append(SectionScore(
+                session_id=state.session_id, section_name=section, draft_id=draft.draft_id,
+                author_agent_id=draft.author_agent_id, voter_agent_id=voter.provider_id,
+                provider_id=voter.provider_id, score_breakdown=breakdown,
+                confidence=self._clamp01(content_dict.get("confidence", 0.7)),
+                justification=str(content_dict.get("justification", "")),
+                penalty_flags=flags, provider_status=status))
+            self._record_task_log(state, task, resp.parsed_move.move_id,
+                                  provider_id=voter.provider_id, provider_status=resp.status)
+
+        for key in sorted(grouped):
+            g = grouped[key]
+            cards.append(DraftScorecard(
+                session_id=state.session_id, draft_id=g["draft"].draft_id,
+                author_agent_id=g["draft"].author_agent_id, voter_agent_id=g["voter"],
+                section_scores=g["scores"], missing_sections=g["missing"]))
 
         state.draft_scorecards = cards
         return cards
