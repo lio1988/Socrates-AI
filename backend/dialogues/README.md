@@ -390,11 +390,14 @@ Full prompt text is **debug-only** (`ced.debug_task_log = True`, off by default)
 The task_log is **never** inserted into `AgentState` or sent to agents.
 
 ### Adding real adapters later
-Subclass `BaseProviderAdapter`, implement `_produce_raw_text(task, agent_state)`
-to make the real network call and return raw text, set `provider_id` /
-`provider_name`, hold the key locally, and `registry.register(...)`. The CED and
+The reference shape now exists offline — see **Phase 9A** below
+(`offline_provider_adapter.py`). A real adapter subclasses `BaseProviderAdapter`
+(or reuses `OfflineProviderAdapter`'s build/extract logic), implements the one
+network seam (`_produce_raw_text` / a live transport `send`) to call
+`client.messages.create(...)` and return raw text, sets `provider_id` /
+`provider_name`, holds the key locally, and `registry.register(...)`. The CED and
 validation path are unchanged. **Keys stay local in `.env` and are never
-committed; no real API is used in Phase 8C.**
+committed; no real API is used through Phase 9A (offline-first).**
 
 ### Minimal awareness (hard rule)
 Agents never see scores, breakdowns, leaderboard, `provider_status_summary`,
@@ -488,8 +491,76 @@ This **completes the registry-backed mock council path** — deliberation,
 ratification and scoring are all peer-driven through the registry — before any
 real provider adapter is wired in.
 
+---
+
+## Phase 9A — Offline-first real provider adapter
+
+`offline_provider_adapter.py` proves that a **real-shaped** provider adapter —
+built exactly like a live Anthropic / OpenAI / Gemini adapter would be — plugs
+into `CouncilProviderRegistry` and a full `run_registry_session` **without
+changing the CED protocol**. It runs **entirely offline**: no real API call, no
+real API key, no `.env` read/write — the provider's "response" comes from a
+fixture / canned-response transport.
+
+The adapter has the real-adapter shape, with **one swappable seam** (the
+transport's `send`) that becomes the live network call later:
+
+```
+_build_request(task, agent_state)  →  ProviderRequest      # Messages-API request
+transport.send(request, ...)        →  provider envelope    # the ONE live/offline seam
+_extract_text(envelope)             →  str                  # content[0].text
+            ↓
+provider_registry.parse_and_validate_move(...)              # EXISTING validation, unchanged
+```
+
+The extracted text flows through the **existing** `parse_and_validate_move`, so
+JSON repair, schema validation, the no-fabrication rule, and the universal
+`{"content": ..., "confidence": ...}` move envelope are all preserved. The
+adapter **never** interprets scores or verdicts — it returns provider output;
+**CED governs**.
+
+- **Same task types as registry mode.** Deliberation moves, move-level scoring,
+  section-level scoring, and council ratification verdicts all work, because the
+  adapter is task-kind-agnostic (the scripted offline transport reuses the
+  in-process content engine for full-session determinism; canned envelopes cover
+  the focused contract tests).
+- **Honest failures, no fabrication.** Offline analogues of live exceptions map
+  to honest statuses: timeout → `timeout`, 429 → `rate_limited`, refusal
+  (`stop_reason: "refusal"`) → `error`, malformed/missing fixture → `error`,
+  disabled/placeholder key → `missing_key`. A failed task yields **no move** —
+  never a fabricated score or verdict.
+- **Invalid JSON is rejected, not accepted.** A fixture whose text is not JSON →
+  `invalid_json`; valid JSON whose `content` is not an object → `schema_error`.
+- **Faithful request.** `ProviderRequest.to_messages_kwargs()` is exactly the
+  payload a live `client.messages.create(...)` expects — `model =
+  claude-opus-4-8`, adaptive thinking, **no** `temperature` / `top_p` /
+  `budget_tokens` (the opus-4-8 surface). Minimal awareness: the request is built
+  only from the task (question + CED-scoped context + schema), never from agent
+  internals or any scoreboard.
+- **No real key, ever.** The adapter reads as available via a clearly-fake
+  sentinel (`OFFLINE_FIXTURE_KEY`); it never touches `.env` and never prints a
+  key.
+- **Live calls remain disabled.** Going live is a one-line transport swap
+  (implement `send` → `client.messages.create(**request.to_messages_kwargs())`)
+  and is **deferred until explicitly approved**. Phase 9A ships offline only.
+
+Proven in `tests_dialogues/test_offline_provider_adapter.py` (25 tests):
+registry registration, valid `ProviderResponse` from fixtures, every task kind,
+invalid-JSON / schema-error handling, honest failure statuses, no fabricated
+scores, a full `run_registry_session` driven by offline adapters
+(`execution_mode = registry`, `scoring_backend = registry`,
+`self_scoring_violations = 0`, leaderboard `complete`), and offline adapters
+mixed with the existing scripted mocks.
+
+> **Agents judge epistemic quality. CED governs the protocol.** The offline
+> adapter changes *where the provider text comes from*, nothing about how CED
+> scores, ratifies, or aggregates.
+
 ### Still deferred (future)
-- **Real network adapters** (the `BaseProviderAdapter._produce_raw_text` seam is ready).
+- **Live network calls** — implement a `LiveTransport.send` and supply a real key
+  (the `ProviderRequest` is already shaped for it). **Disabled until explicitly approved.**
+- **Retry / rate-limit policy** — Phase 9A records `rate_limited` / `timeout` /
+  `error` cleanly and exposes `is_retryable_status`; no backoff loop yet.
 - **Repair Option B** for ratification (runner-up + re-ratify, max 2 rounds) — currently safe Option A (blocked/unresolved).
 - **Final Candidate Tournament / Hybrid** `final_synthesis_mode` — reserved for V2/V3.
 
