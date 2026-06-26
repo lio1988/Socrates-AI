@@ -55,10 +55,12 @@ FLAG_ENV = "CED_ENABLE_LIVE_PROVIDERS"     # must be "1" to enable any live call
 KEY_ENV = "ANTHROPIC_API_KEY"              # provider key, loaded locally, never printed
 MODEL_ENV = "CED_LIVE_MODEL"               # optional override (default opus-4-8)
 MAXTOK_ENV = "CED_LIVE_MAX_TOKENS"         # optional override
+TIMEOUT_ENV = "CED_LIVE_TIMEOUT"           # optional per-request timeout (seconds)
 
 LIVE_PROVIDER_ID = "anthropic_live"
 DEFAULT_LIVE_MODEL = DEFAULT_OFFLINE_MODEL  # "claude-opus-4-8"
 DEFAULT_LIVE_MAX_TOKENS = 1024
+DEFAULT_LIVE_TIMEOUT = 120.0               # generous, explicit, tunable (was: SDK default)
 
 # Exit codes (every "didn't run" path is a SAFE exit, no network touched).
 EXIT_OK = 0          # live smoke ran (status reported honestly)
@@ -117,18 +119,22 @@ class LiveAnthropicAdapter(OfflineProviderAdapter):
 
     def __init__(self, provider_id: str, api_key: str, *,
                  model: str = DEFAULT_LIVE_MODEL,
-                 max_tokens: int = DEFAULT_LIVE_MAX_TOKENS) -> None:
+                 max_tokens: int = DEFAULT_LIVE_MAX_TOKENS,
+                 timeout: float = DEFAULT_LIVE_TIMEOUT) -> None:
         super().__init__(
             provider_id, _GuardTransport(),
             provider_name=f"Anthropic Live ({model})",
             model=model, max_tokens=max_tokens, api_key=api_key,
         )
+        self.timeout = timeout
 
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
         request = self._build_request(task, agent_state)
         self.last_request = request
         import anthropic  # lazy — ONLY here, ONLY on a real live call
-        async with anthropic.AsyncAnthropic(api_key=self.api_key) as client:
+        # Explicit, tunable timeout so a slow request fails predictably (and the
+        # user can raise it) instead of relying on the SDK default.
+        async with anthropic.AsyncAnthropic(api_key=self.api_key, timeout=self.timeout) as client:
             message = await client.messages.create(**request.to_messages_kwargs())
         envelope = message.to_dict()
         self.last_envelope = envelope
@@ -162,8 +168,13 @@ class LiveAnthropicAdapter(OfflineProviderAdapter):
             name = type(exc).__name__
             if name == "RateLimitError":
                 return _fail(ProviderStatus.RATE_LIMITED, "rate limited (429)")
-            if name in ("APITimeoutError", "APIConnectionError"):
-                return _fail(ProviderStatus.TIMEOUT, "request timeout / connection error")
+            if name == "APITimeoutError":
+                return _fail(ProviderStatus.TIMEOUT,
+                             f"request timed out after {self.timeout:g}s — "
+                             f"raise {TIMEOUT_ENV} or use a faster {MODEL_ENV}")
+            if name == "APIConnectionError":
+                return _fail(ProviderStatus.ERROR,
+                             "connection error reaching the API — check network / proxy / firewall")
             if name == "AuthenticationError":
                 return _fail(ProviderStatus.ERROR, "authentication failed (check key)")
             return _fail(ProviderStatus.ERROR, _redact(str(exc), self.api_key))
@@ -195,10 +206,12 @@ def build_smoke_task():
     return task, state
 
 
-def _run_live_smoke(key: str, *, model: str, max_tokens: int) -> SmokeResult:
+def _run_live_smoke(key: str, *, model: str, max_tokens: int,
+                    timeout: float = DEFAULT_LIVE_TIMEOUT) -> SmokeResult:
     """Build ONE live adapter, send ONE task, return the result. (The seam tests
     monkeypatch to assert it is never called when a gate fails.)"""
-    adapter = LiveAnthropicAdapter(LIVE_PROVIDER_ID, key, model=model, max_tokens=max_tokens)
+    adapter = LiveAnthropicAdapter(LIVE_PROVIDER_ID, key, model=model,
+                                   max_tokens=max_tokens, timeout=timeout)
     task, state = build_smoke_task()
     response = asyncio.run(adapter.generate_agent_move(task, state))
     return SmokeResult(adapter.provider_id, adapter.provider_name, adapter.model, response)
@@ -242,12 +255,16 @@ def main(argv=None, env=None) -> int:
         max_tokens = int(env.get(MAXTOK_ENV) or DEFAULT_LIVE_MAX_TOKENS)
     except (TypeError, ValueError):
         max_tokens = DEFAULT_LIVE_MAX_TOKENS
+    try:
+        timeout = float(env.get(TIMEOUT_ENV) or DEFAULT_LIVE_TIMEOUT)
+    except (TypeError, ValueError):
+        timeout = DEFAULT_LIVE_TIMEOUT
 
-    print(f"  LIVE CALL ENABLED — one provider, one task (model={model}).")
+    print(f"  LIVE CALL ENABLED — one provider, one task (model={model}, timeout={timeout:g}s).")
     print(f"  (key loaded from {KEY_ENV}; it is never printed.)")
     print("-" * 70)
     try:
-        result = _run_live_smoke(key, model=model, max_tokens=max_tokens)
+        result = _run_live_smoke(key, model=model, max_tokens=max_tokens, timeout=timeout)
     except Exception as exc:  # never leak; redact any key-shaped content
         print("  LIVE SMOKE FAILED:", _redact(str(exc), key))
         print("-" * 70)

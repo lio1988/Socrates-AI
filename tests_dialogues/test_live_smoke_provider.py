@@ -161,3 +161,34 @@ def test_unavailable_live_adapter_reports_missing_key():
     resp = asyncio.run(adapter.generate_agent_move(task, state))
     assert resp.status == ProviderStatus.MISSING_KEY
     assert resp.parsed_move is None
+
+
+def test_timeout_and_connection_errors_are_disambiguated(monkeypatch):
+    # No network: raise fake-named anthropic exceptions from the seam and assert the
+    # adapter maps them to DISTINCT, actionable statuses/messages.
+    import asyncio
+    fake_timeout = type("APITimeoutError", (Exception,), {})
+    fake_conn = type("APIConnectionError", (Exception,), {})
+    task, state = mod.build_smoke_task()
+    adapter = mod.LiveAnthropicAdapter("p", FAKE_KEY, timeout=99)
+
+    async def raise_timeout(self, t, s):
+        raise fake_timeout("slow")
+    monkeypatch.setattr(mod.LiveAnthropicAdapter, "_produce_raw_text", raise_timeout)
+    r1 = asyncio.run(adapter.generate_agent_move(task, state))
+    assert r1.status == ProviderStatus.TIMEOUT
+    assert "99s" in r1.error_message and "CED_LIVE_TIMEOUT" in r1.error_message
+    assert FAKE_KEY not in (r1.error_message or "")
+
+    async def raise_conn(self, t, s):
+        raise fake_conn("net")
+    monkeypatch.setattr(mod.LiveAnthropicAdapter, "_produce_raw_text", raise_conn)
+    r2 = asyncio.run(adapter.generate_agent_move(task, state))
+    assert r2.status == ProviderStatus.ERROR             # NOT timeout — distinct
+    assert "network" in r2.error_message.lower()
+
+
+def test_default_timeout_is_explicit_and_tunable():
+    assert mod.DEFAULT_LIVE_TIMEOUT == 120.0
+    a = mod.LiveAnthropicAdapter("p", FAKE_KEY, timeout=5.0)
+    assert a.timeout == 5.0
