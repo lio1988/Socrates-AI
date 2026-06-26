@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -43,7 +43,7 @@ from .ced import CEDOrchestrator
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 def _new_conversation_id() -> str:

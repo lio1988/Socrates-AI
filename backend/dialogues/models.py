@@ -9,7 +9,7 @@ is the full extent of their I/O contract.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +18,11 @@ from pydantic import BaseModel, Field, model_validator
 
 def _uid(prefix: str = "") -> str:
     return f"{prefix}{uuid.uuid4().hex[:12]}"
+
+
+def _utcnow() -> datetime:
+    """Timezone-aware UTC now (replaces the deprecated naive utcnow)."""
+    return datetime.now(timezone.utc)
 
 
 # ── Enumerations ──────────────────────────────────────────────────────────────
@@ -223,7 +228,7 @@ class AgentMove(BaseModel):
     # Registry mode: which provider PRODUCED this move (for provider-level
     # no-self-scoring). None in the legacy self.agents path.
     provider_id:      Optional[str] = None
-    timestamp:        datetime = Field(default_factory=datetime.utcnow)
+    timestamp:        datetime = Field(default_factory=_utcnow)
 
 
 # ── Phase 8A: provider adapter contract (no real API calls yet) ───────────────
@@ -281,7 +286,7 @@ class TaskLogEntry(BaseModel):
     provider_id:     Optional[str] = None
     provider_status: Optional[ProviderStatus] = None
     debug_context:   Optional[Dict[str, Any]] = None   # debug-only; off by default
-    created_at:      datetime = Field(default_factory=datetime.utcnow)
+    created_at:      datetime = Field(default_factory=_utcnow)
 
 
 # ── Scoring (shadow — never shown to agents) ──────────────────────────────────
@@ -342,7 +347,7 @@ class MicroScore(BaseModel):
     justification:    str = ""
     penalty_flags:    List[PenaltyFlag] = Field(default_factory=list)
     provider_status:  ProviderStatus = ProviderStatus.OK
-    created_at:       datetime = Field(default_factory=datetime.utcnow)
+    created_at:       datetime = Field(default_factory=_utcnow)
 
     @model_validator(mode="after")
     def _check_and_fill(self) -> "MicroScore":
@@ -460,7 +465,7 @@ class AssembledAnswer(BaseModel):
     sections:            List[AssembledSection] = Field(default_factory=list)
     assembly_method:     str = "blind_section_highest_average"
     unresolved_sections: List[SectionName] = Field(default_factory=list)
-    assembled_at:        datetime = Field(default_factory=datetime.utcnow)
+    assembled_at:        datetime = Field(default_factory=_utcnow)
 
     def section(self, name: SectionName) -> Optional[AssembledSection]:
         return next((s for s in self.sections if s.section_name == name), None)
@@ -649,7 +654,7 @@ class FinalResponse(BaseModel):
     ratification_votes:  List[RatificationVote] = Field(default_factory=list)
     epistemic_status:    EpistemicStatus = EpistemicStatus.UNCERTAIN
     council_summary:     Dict[str, Any] = Field(default_factory=dict)
-    created_at:          datetime = Field(default_factory=datetime.utcnow)
+    created_at:          datetime = Field(default_factory=_utcnow)
 
 
 # ── Session State (CED-owned) ─────────────────────────────────────────────────
@@ -687,8 +692,8 @@ class SessionState(BaseModel):
     # Per-phase deterministic role assignments, recorded by the CED as each phase
     # runs. Each entry: {"phase", "round_index", "agent_id", "role"}.
     role_history:     List[Dict[str, Any]] = Field(default_factory=list)
-    created_at:       datetime = Field(default_factory=datetime.utcnow)
-    updated_at:       datetime = Field(default_factory=datetime.utcnow)
+    created_at:       datetime = Field(default_factory=_utcnow)
+    updated_at:       datetime = Field(default_factory=_utcnow)
 
     def moves_for_phase(self, phase: DialogPhase) -> List[AgentMove]:
         return [m for m in self.moves if m.phase == phase]
@@ -719,7 +724,7 @@ class SessionState(BaseModel):
                 "agent_id": agent_id,
                 "role": role.value if isinstance(role, AgentRole) else str(role),
             })
-        self.updated_at = datetime.utcnow()
+        self.updated_at = _utcnow()
 
     def roles_for_phase_history(self, phase: DialogPhase) -> List[Dict[str, Any]]:
         """All role_history records for a given phase, in recorded order."""
@@ -731,4 +736,4 @@ class SessionState(BaseModel):
         if self.phase != new_phase:
             self.phase_history.append(self.phase)
         self.phase = new_phase
-        self.updated_at = datetime.utcnow()
+        self.updated_at = _utcnow()
