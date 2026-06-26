@@ -95,6 +95,11 @@ from .conversation import (
     save_conversation_json,
     load_conversation_json,
 )
+from .live_providers import (
+    LiveAnthropicAdapter,
+    build_council,
+    build_council_registry,
+)
 
 __all__ = [
     "AgentRole", "AgentTask", "AgentState", "AgentMove",
@@ -128,6 +133,7 @@ __all__ = [
     "ConversationManager", "ConversationSession", "ConversationTurn",
     "PublicEpistemicMemory", "HiddenCedTrace", "ChatResponse",
     "build_full_brief", "save_conversation_json", "load_conversation_json",
+    "LiveAnthropicAdapter", "build_council", "build_council_registry",
     "run_demo", "build_demo_orchestrator",
 ]
 

@@ -722,6 +722,58 @@ fabrication. Proven in `tests_dialogues/test_reasoning_prompts.py`.
 
 ---
 
+## Phase 11 — Real-agent (live council) readiness
+
+`live_providers.py` is the single switch that lets the **whole council**
+(deliberation + ratification + peer scoring) run on **real LLM agents** — or stay
+fully offline/mock. Same production-shaped path either way:
+
+```python
+from backend.dialogues import build_council
+ced, mode = build_council()          # mode == "mock"  (offline default)
+final = asyncio.run(ced.run_registry_session(question, session_id="..."))
+```
+
+Real agents engage **only when doubly gated** (exactly like the Phase 9B smoke):
+
+1. `CED_ENABLE_LIVE_PROVIDERS == "1"`, **and**
+2. `ANTHROPIC_API_KEY` is a real (non-placeholder) key.
+
+```powershell
+$env:CED_ENABLE_LIVE_PROVIDERS = "1"
+$env:ANTHROPIC_API_KEY = "sk-ant-..."          # local only; never commit
+$env:CED_LIVE_MODELS = "claude-opus-4-8,claude-sonnet-4-6"  # optional: per-seat models
+# now build_council(...) returns mode == "live"
+```
+
+Otherwise `build_council` returns a deterministic **mock** council — the default.
+Each real seat is a `LiveAnthropicAdapter` registered in the same
+`CouncilProviderRegistry` the council already uses, so deliberation, council
+ratification, and peer scoring all run on real models, each agent driven by the
+**Phase 10 full-reasoning prompt**.
+
+**Guarantees** (proven in `tests_dialogues/test_live_providers.py`):
+
+- **No network call at build time** — live seats are *constructed but never
+  invoked*; the `anthropic` SDK is imported lazily, only on a real call.
+- Config comes from **environment variables only** — never reads/writes `.env`,
+  never hardcodes or prints a key.
+- The default is offline mock; **nothing live happens until you set the flag and a
+  real key**, and even then only when you actually run a session.
+- All invariants hold unchanged: full-reasoning prompt, minimal awareness, peer
+  scoring (judge-not-author), no fabrication, quorum.
+
+> **Diversity.** With one model, seats differ by the role each is assigned per
+> phase; for genuinely diverse agents set `CED_LIVE_MODELS` to multiple models.
+> `scripts/live_smoke_provider.py` remains the separate single-provider smoke.
+
+When you connect real agents, validate them **offline-first** (record real
+responses once, replay deterministically) before any live council run — see
+`RESEARCH.md` (R2) for the matched-compute study that tells you whether the
+council actually beats a strong single model.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
