@@ -683,6 +683,45 @@ orchestration; mock answers remain template-like by design.
 
 ---
 
+## Phase 10 — Full-reasoning prompt layer
+
+> **Where reasoning power comes from.** An agent's reasoning strength is **not**
+> produced by orchestration code — it comes from (1) a real LLM and (2) the system
+> prompt + reasoning protocol that drives it. The deterministic `FakeProvider`
+> **cannot reason**; no prompt makes a template think. `reasoning_prompts.py` is the
+> scaffolding that makes a **real** model reason at full power at every level of the
+> dialogue, delivered through the Phase 9A/9B adapter seam.
+
+Previously the rich v1.9 council identity (`CORE_AGENT_PROMPT`) fed only the legacy
+`run_session`/`FakeProvider` path, while the registry/real path sent a one-line
+system prompt. `build_reasoning_system_prompt(role, phase, task_kind)` closes that
+gap. For every task it composes:
+
+- the **v1.9 council identity** (epistemic discipline, anti-sycophancy, roles);
+- a **universal reasoning protocol** — *decompose → consider multiple angles →
+  ground every claim (fact / inference / hypothesis / uncertainty) → steelman →
+  calibrate → be specific* — tuned to exploit **adaptive thinking** (the model
+  reasons in its thinking blocks; the visible answer stays clean structured JSON);
+- a **role-specific** rigor directive (Socrates targets the load-bearing
+  assumption; Elenchus finds the single decisive defect; Synthesizer commits where
+  evidence allows; …);
+- a **phase-specific** depth directive, so *every* dialogue level is demanding;
+- for **evaluative** tasks (move/section scoring, ratification) a
+  **judge-the-output-not-the-author** anti-sycophancy / anti-herding directive —
+  reinforcing the peer-scoring invariant.
+
+`OfflineProviderAdapter._build_request` now sends this prompt, so the **live
+adapter inherits it** — when a real key is connected (gated, opt-in), the council
+reasons at full power. Invariants are untouched: minimal awareness (the prompt is
+static role/phase guidance, no scores/leaderboard/task_log), peer scoring, no
+fabrication. Proven in `tests_dialogues/test_reasoning_prompts.py`.
+
+> **Honest caveat.** With mock providers this changes nothing observable — the
+> mock ignores the system prompt. The reasoning gain is real **only with real
+> models**, and no capability claim may be drawn from mock runs (see `RESEARCH.md`).
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

@@ -239,7 +239,7 @@ def test_request_is_shaped_for_a_live_messages_call():
     # adaptive thinking, no temperature/top_p/budget_tokens (opus-4-8 surface)
     assert kwargs["thinking"] == {"type": "adaptive"}
     assert set(kwargs) == {"model", "max_tokens", "system", "messages", "thinking"}
-    assert "socrates" in kwargs["system"]
+    assert "socrates" in kwargs["system"].lower()        # rich role prompt present
     # minimal awareness: the user turn only carries task-provided fields
     user = json.loads(kwargs["messages"][0]["content"])
     assert set(user) == {"question", "context", "output_schema", "task_kind"}

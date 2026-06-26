@@ -52,6 +52,7 @@ from .provider_registry import (
     ScriptedMockProvider,
     parse_and_validate_move,
 )
+from .reasoning_prompts import build_reasoning_system_prompt
 
 # ── Offline configuration ─────────────────────────────────────────────────────
 
@@ -312,11 +313,9 @@ class OfflineProviderAdapter(BaseProviderAdapter):
         never from agent internals or any scoreboard.
         """
         role_label = task.role.value if task.role else "council_member"
-        system = (
-            f"You are a council member acting in the role '{role_label}'. "
-            "Respond with EXACTLY one JSON object of the form "
-            '{"content": <object>, "confidence": <number 0..1>} and nothing else.'
-        )
+        # Full-reasoning system prompt (council identity + reasoning protocol + role
+        # + phase + evaluation discipline) so a REAL model reasons at full power.
+        system = build_reasoning_system_prompt(task.role, task.phase, task.task_kind)
         # The user turn carries only what the task provides (question + scoped context
         # + output schema). This is the same content a live model would receive.
         user_payload = {
