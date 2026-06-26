@@ -86,7 +86,7 @@ def main(argv=None) -> int:
         for resp in failed[:8]:
             print(f"    {resp.provider_id}")
             print(f"      status : {resp.status.value} | repair: {resp.repair_attempted}/{resp.repair_succeeded}")
-            print(f"      error  : {_clip(resp.error_message, _W - 12)}")
+            print(f"      error  : {resp.error_message}")          # full (not truncated)
             print(f"      raw    : {_clip(resp.raw_text, _W - 12)}")
     print("-" * _W)
 
