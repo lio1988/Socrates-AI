@@ -192,6 +192,7 @@ class CEDOrchestrator:
         registry: Optional["CouncilProviderRegistry"] = None,
         shadow_scoring_mode: ShadowScoringMode = ShadowScoringMode.ALL_PHASES,
         final_synthesis_mode: FinalSynthesisMode = FinalSynthesisMode.COUNCIL_RATIFICATION,
+        assembly_fallback: bool = False,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -208,6 +209,11 @@ class CEDOrchestrator:
         self.registry = registry
         # How much shadow scoring to run (cost control; default = all phases).
         self.shadow_scoring_mode = shadow_scoring_mode
+        # When True, a section with NO valid peer scores falls back to a real
+        # synthesis draft (deterministic) instead of staying empty/unresolved.
+        # Off by default (preserves the strict no-score=unresolved behavior);
+        # the live council enables it so real-model runs still produce an answer.
+        self.assembly_fallback = assembly_fallback
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -1989,6 +1995,22 @@ class CEDOrchestrator:
             variance=round(entry["variance"], 6),
         )
 
+    def _fallback_section(self, state: SessionState, section: SectionName) -> AssembledSection:
+        """Deterministically pick a real synthesis draft for a section that has no
+        peer scores (fallback mode only). Content comes from an agent draft; CED
+        only selects it mechanically (by stable draft_id), never fabricates it."""
+        candidates = [d for d in state.section_drafts if d.section_text(section).strip()]
+        if not candidates:
+            return AssembledSection(
+                section_name=section, selected_draft_id="", selected_author_agent_id="",
+                content="", average_score=0.0, score_count=0, variance=0.0, unresolved=True)
+        chosen = sorted(candidates, key=lambda d: d.draft_id)[0]
+        return AssembledSection(
+            section_name=section, selected_draft_id=chosen.draft_id,
+            selected_author_agent_id=chosen.author_agent_id,
+            content=chosen.section_text(section),
+            average_score=0.0, score_count=0, variance=0.0, unresolved=False)
+
     def assemble_sections(self, session_id: str) -> AssembledAnswer:
         """
         Section-by-section blind assembly: independently for each of the five
@@ -2005,6 +2027,11 @@ class CEDOrchestrator:
                 assembled_sections.append(
                     self._section_assembled(section, ranking[0], drafts_by_id)
                 )
+            elif self.assembly_fallback:
+                # No valid peer scores, but fallback enabled: use a real synthesis
+                # draft's content (deterministic) so the answer is not empty. CED
+                # still only mechanically selects an unscored draft — no fabrication.
+                assembled_sections.append(self._fallback_section(state, section))
             else:
                 # No valid scores for this section → unresolved placeholder.
                 assembled_sections.append(AssembledSection(

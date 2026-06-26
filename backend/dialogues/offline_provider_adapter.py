@@ -64,6 +64,14 @@ DEFAULT_MAX_TOKENS = 4096
 # WITHOUT ever touching .env or a real secret. Never printed.
 OFFLINE_FIXTURE_KEY = "sk-ant-offline-fixture-not-a-real-key"
 
+
+def supports_adaptive_thinking(model: str) -> bool:
+    """
+    Adaptive thinking is an Opus-4.x capability. Other models (Haiku/Sonnet) reject
+    `thinking: {"type": "adaptive"}` with a 400, so we omit it for them.
+    """
+    return model.startswith("claude-opus-4")
+
 # Retry/rate-limit scaffolding (Phase 9A, step 3): which statuses a future retry
 # policy MAY retry. This is metadata only — NO backoff loop is implemented here.
 RETRYABLE_STATUSES = frozenset(
@@ -180,18 +188,23 @@ class ProviderRequest:
     max_tokens: int
     system: str
     messages: List[Dict[str, Any]]
-    thinking: Dict[str, Any] = field(default_factory=lambda: {"type": "adaptive"})
+    # Adaptive thinking is an Opus-4.x capability; other models reject it (400).
+    # None => the parameter is omitted from the live call entirely.
+    thinking: Optional[Dict[str, Any]] = None
     routing: RoutingMeta = field(default_factory=RoutingMeta)
 
     def to_messages_kwargs(self) -> Dict[str, Any]:
-        """The live-call payload (routing metadata is intentionally excluded)."""
-        return {
+        """The live-call payload (routing metadata is intentionally excluded;
+        `thinking` is included only when set, so unsupported models aren't sent it)."""
+        kwargs: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.max_tokens,
             "system": self.system,
             "messages": list(self.messages),
-            "thinking": dict(self.thinking),
         }
+        if self.thinking:
+            kwargs["thinking"] = dict(self.thinking)
+        return kwargs
 
 
 # ── Offline transport contract ────────────────────────────────────────────────
@@ -333,9 +346,10 @@ class OfflineProviderAdapter(BaseProviderAdapter):
             role=role_label,
             phase=task.phase.value if isinstance(task.phase, DialogPhase) else str(task.phase),
         )
+        thinking = {"type": "adaptive"} if supports_adaptive_thinking(self.model) else None
         return ProviderRequest(
             model=self.model, max_tokens=self.max_tokens,
-            system=system, messages=messages, routing=routing,
+            system=system, messages=messages, thinking=thinking, routing=routing,
         )
 
     # -- provider-native envelope parsing (shared with the future live adapter) --

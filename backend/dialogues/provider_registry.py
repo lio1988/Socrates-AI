@@ -113,7 +113,9 @@ def parse_and_validate_move(
         if meta is not None:
             meta["repair_attempted"] = True
         try:
-            data = json.loads(_safe_json_repair(raw_text))
+            # raw_decode parses the FIRST JSON value and ignores any trailing text
+            # (real models often append prose / a second block after the object).
+            data, _ = json.JSONDecoder().raw_decode(_safe_json_repair(raw_text))
         except (json.JSONDecodeError, TypeError) as exc2:
             return None, ProviderStatus.INVALID_JSON, f"json parse failed after repair: {exc2}"
         if meta is not None:

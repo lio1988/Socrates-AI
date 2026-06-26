@@ -248,6 +248,19 @@ def test_request_is_shaped_for_a_live_messages_call():
     assert "routing" not in kwargs
 
 
+def test_adaptive_thinking_only_for_opus_models():
+    from backend.dialogues.offline_provider_adapter import supports_adaptive_thinking
+    assert supports_adaptive_thinking("claude-opus-4-8")
+    assert not supports_adaptive_thinking("claude-haiku-4-5-20251001")
+    assert not supports_adaptive_thinking("claude-sonnet-4-6")
+    # opus request carries thinking; non-opus omits it (else the API 400s)
+    t = _task(TaskKind.INITIAL_RESPONSE, phase=DialogPhase.INITIAL_RESPONSE)
+    opus = offline_scripted_adapter("p", model="claude-opus-4-8")._build_request(t, _state())
+    haiku = offline_scripted_adapter("p", model="claude-haiku-4-5-20251001")._build_request(t, _state())
+    assert opus.to_messages_kwargs().get("thinking") == {"type": "adaptive"}
+    assert "thinking" not in haiku.to_messages_kwargs()
+
+
 def test_no_real_key_and_no_env_read():
     adapter = offline_scripted_adapter("p")
     assert adapter.api_key == OFFLINE_FIXTURE_KEY

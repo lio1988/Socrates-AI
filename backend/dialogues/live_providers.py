@@ -52,9 +52,11 @@ FLAG_ENV = "CED_ENABLE_LIVE_PROVIDERS"     # must be "1" to engage real agents
 KEY_ENV = "ANTHROPIC_API_KEY"              # provider key, loaded locally, never printed
 MODELS_ENV = "CED_LIVE_MODELS"             # optional comma-separated per-seat models
 MAXTOK_ENV = "CED_LIVE_MAX_TOKENS"         # optional
+TIMEOUT_ENV = "CED_LIVE_TIMEOUT"           # optional per-provider call timeout (seconds)
 
 DEFAULT_LIVE_MODEL = DEFAULT_OFFLINE_MODEL  # "claude-opus-4-8"
-DEFAULT_MAX_TOKENS = 2048
+DEFAULT_MAX_TOKENS = 8192   # generous: rich (esp. Greek) reasoning JSON must not truncate
+DEFAULT_REGISTRY_TIMEOUT = 180.0   # long: real reasoning responses can take a while
 DEFAULT_COUNCIL_SIZE = 4
 
 
@@ -92,6 +94,13 @@ def resolve_max_tokens(env) -> int:
         return int(env.get(MAXTOK_ENV) or DEFAULT_MAX_TOKENS)
     except (TypeError, ValueError):
         return DEFAULT_MAX_TOKENS
+
+
+def resolve_timeout(env) -> float:
+    try:
+        return float(env.get(TIMEOUT_ENV) or DEFAULT_REGISTRY_TIMEOUT)
+    except (TypeError, ValueError):
+        return DEFAULT_REGISTRY_TIMEOUT
 
 
 # ── the live Anthropic adapter (real agent behind the _produce_raw_text seam) ─
@@ -196,7 +205,7 @@ def build_council_registry(
     (the offline default). Env-only; never reads `.env`; makes NO network call.
     """
     env = os.environ if env is None else env
-    registry = CouncilProviderRegistry()
+    registry = CouncilProviderRegistry(provider_timeout_seconds=resolve_timeout(env))
 
     key = resolve_key(env)
     if live_enabled(env) and key is not None:
@@ -231,5 +240,7 @@ def build_council(
     provider = FakeProvider()  # legacy self.agents slot — unused on the registry path
     agents = [SocraticAgent(f"agent_{i}", provider) for i in range(council_size)]
     kwargs = {} if shadow_scoring_mode is None else {"shadow_scoring_mode": shadow_scoring_mode}
-    ced = CEDOrchestrator(agents, provider, registry=registry, **kwargs)
+    # Enable the assembly fallback so a live run still produces an answer even if
+    # finicky real-model peer-scoring yields no valid section scores.
+    ced = CEDOrchestrator(agents, provider, registry=registry, assembly_fallback=True, **kwargs)
     return ced, mode

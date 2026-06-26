@@ -192,3 +192,17 @@ def test_default_timeout_is_explicit_and_tunable():
     assert mod.DEFAULT_LIVE_TIMEOUT == 120.0
     a = mod.LiveAnthropicAdapter("p", FAKE_KEY, timeout=5.0)
     assert a.timeout == 5.0
+
+
+def test_non_ascii_key_is_refused_before_any_call(monkeypatch, capsys):
+    # a copy/paste-corrupted (non-ASCII) key must be caught with a clear message,
+    # NOT sent to httpx (which would raise a cryptic UnicodeEncodeError), and the
+    # key content must never be printed.
+    monkeypatch.setattr(mod, "_run_live_smoke",
+                        lambda *a, **k: pytest.fail("must not call live with a non-ASCII key"))
+    greek = "Ελληνικά"
+    rc = mod.main(env={mod.FLAG_ENV: "1", mod.KEY_ENV: "sk-" + greek + "-rest"})
+    out = capsys.readouterr().out
+    assert rc == mod.EXIT_NO_KEY
+    assert "non-ASCII" in out
+    assert greek not in out                              # key content never printed

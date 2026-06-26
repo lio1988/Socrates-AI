@@ -29,6 +29,7 @@ import pathlib
 import re
 import sys
 import time
+import traceback
 from collections import namedtuple
 from typing import Optional
 
@@ -56,6 +57,7 @@ KEY_ENV = "ANTHROPIC_API_KEY"              # provider key, loaded locally, never
 MODEL_ENV = "CED_LIVE_MODEL"               # optional override (default opus-4-8)
 MAXTOK_ENV = "CED_LIVE_MAX_TOKENS"         # optional override
 TIMEOUT_ENV = "CED_LIVE_TIMEOUT"           # optional per-request timeout (seconds)
+DEBUG_ENV = "CED_LIVE_DEBUG"               # "1" -> print full key-redacted traceback
 
 LIVE_PROVIDER_ID = "anthropic_live"
 DEFAULT_LIVE_MODEL = DEFAULT_OFFLINE_MODEL  # "claude-opus-4-8"
@@ -198,7 +200,9 @@ def build_smoke_task():
     task = AgentTask(
         session_id="live_smoke", agent_id="agent_0",
         role=AgentRole.SYNTHESIZER, phase=DialogPhase.INITIAL_RESPONSE,
-        question="Reply with one short sentence stating that water is wet.",
+        question=("Is water wet? Put your answer in `content` as a JSON OBJECT — for "
+                  'example {"content": {"answer": "yes, water is wet"}, "confidence": 0.95}. '
+                  "`content` must be an object, not a bare string."),
         task_kind=TaskKind.INITIAL_RESPONSE, output_schema={"_role": "synthesizer"},
     )
     state = AgentState(agent_id="agent_0", primary_role=AgentRole.SYNTHESIZER,
@@ -215,6 +219,24 @@ def _run_live_smoke(key: str, *, model: str, max_tokens: int,
     task, state = build_smoke_task()
     response = asyncio.run(adapter.generate_agent_move(task, state))
     return SmokeResult(adapter.provider_id, adapter.provider_name, adapter.model, response)
+
+
+def _debug_live_traceback(key: str, *, model: str, max_tokens: int, timeout: float) -> None:
+    """
+    Diagnostic ONLY (CED_LIVE_DEBUG=1): call the live seam directly so the raw
+    exception's FULL traceback surfaces (the normal path catches it and reports a
+    one-line status). The traceback is printed with the key redacted; it contains
+    code frames + the underlying error, never the key.
+    """
+    adapter = LiveAnthropicAdapter(LIVE_PROVIDER_ID, key, model=model,
+                                   max_tokens=max_tokens, timeout=timeout)
+    task, state = build_smoke_task()
+    try:
+        asyncio.run(adapter._produce_raw_text(task, state))
+        print("  DEBUG: live call returned with NO exception.")
+    except BaseException:  # noqa: BLE001 — diagnostic: surface whatever was raised
+        print("  DEBUG TRACEBACK (key redacted):")
+        print(_redact(traceback.format_exc(), key))
 
 
 # ── Safe summary (no secrets, ever) ───────────────────────────────────────────
@@ -249,6 +271,12 @@ def main(argv=None, env=None) -> int:
         print(f"  {FLAG_ENV}=1 but {KEY_ENV} is missing/placeholder — refusing to run.")
         print(f"  No network call made. Set {KEY_ENV} locally (never commit it).")
         return EXIT_NO_KEY
+    if not key.isascii():
+        n = sum(1 for c in key if ord(c) > 127)
+        print(f"  {KEY_ENV} contains {n} non-ASCII character(s) — almost certainly a")
+        print(f"  copy/paste artifact (a real key is plain ASCII, sk-ant-...). Re-copy it")
+        print(f"  cleanly and retry. No network call made. (Key never printed.)")
+        return EXIT_NO_KEY
 
     model = env.get(MODEL_ENV) or DEFAULT_LIVE_MODEL
     try:
@@ -263,6 +291,10 @@ def main(argv=None, env=None) -> int:
     print(f"  LIVE CALL ENABLED — one provider, one task (model={model}, timeout={timeout:g}s).")
     print(f"  (key loaded from {KEY_ENV}; it is never printed.)")
     print("-" * 70)
+    if env.get(DEBUG_ENV) == "1":
+        _debug_live_traceback(key, model=model, max_tokens=max_tokens, timeout=timeout)
+        print("-" * 70)
+        return EXIT_OK
     try:
         result = _run_live_smoke(key, model=model, max_tokens=max_tokens, timeout=timeout)
     except Exception as exc:  # never leak; redact any key-shaped content

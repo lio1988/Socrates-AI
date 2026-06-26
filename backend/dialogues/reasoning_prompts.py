@@ -145,6 +145,41 @@ rigor, calibration, and honesty. Do not herd toward an apparent consensus; an
 output is not better because others seem to agree. Justify each judgement against
 the specific rubric criteria."""
 
+SYNTHESIS_CONTENT_DIRECTIVE = """\
+**Synthesis output — REQUIRED structure (exact field names)**
+Your `content` MUST be a JSON object with EXACTLY these five string fields — use
+these exact names, do not rename, nest, translate, or add other top-level fields:
+  "core_answer"         — the council's most defensible direct answer
+  "crucial_stress_test" — the strongest honest counterargument to it
+  "blind_spots"         — what this answer risks overlooking
+  "nuance"              — how the answer shifts with context
+  "final_verdict"       — the calibrated bottom line
+Each field is a substantive paragraph. Example:
+{"content": {"core_answer": "…", "crucial_stress_test": "…", "blind_spots": "…",
+"nuance": "…", "final_verdict": "…"}, "confidence": 0.8}"""
+
+SCORE_CONTENT_DIRECTIVE = """\
+**Scoring output — REQUIRED structure (exact field names)**
+Your `content` MUST be a JSON object with EXACTLY these seven numeric fields, each
+a number from 0 to 10 (use these exact names; do not rename, nest, or add others):
+  "epistemic_value", "logical_rigor", "factual_grounding", "constructive_impact",
+  "intellectual_honesty", "clarity_precision", "grounded_creativity"
+Example: {"content": {"epistemic_value": 7, "logical_rigor": 6, "factual_grounding": 5,
+"constructive_impact": 7, "intellectual_honesty": 8, "clarity_precision": 7,
+"grounded_creativity": 6}, "confidence": 0.8}"""
+
+RATIFICATION_CONTENT_DIRECTIVE = """\
+**Ratification output — REQUIRED structure (exact field names)**
+Your `content` MUST be a JSON object with a "verdict" field that is EXACTLY one of:
+"accept", "accept_with_caveat", or "blocking_objection", plus a "rationale" string.
+  - if "accept_with_caveat": also add "caveat": "<the limitation>"
+  - if "blocking_objection": also add "severity": "critical",
+    "target_section": "<core_answer|crucial_stress_test|blind_spots|nuance|final_verdict>",
+    and "required_fix": "<what must change>"
+Example: {"content": {"verdict": "accept", "rationale": "Meets the bar."}, "confidence": 0.85}"""
+
+_SCORE_KINDS = {TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE}
+
 _EVALUATIVE_KINDS = {
     TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE,
     TaskKind.COUNCIL_RATIFICATION,
@@ -182,6 +217,13 @@ def build_reasoning_system_prompt(
 
     if task_kind in _EVALUATIVE_KINDS:
         parts.append(EVALUATION_DIRECTIVE)
+
+    if task_kind == TaskKind.SYNTHESIS_DRAFT:
+        parts.append(SYNTHESIS_CONTENT_DIRECTIVE)
+    if task_kind in _SCORE_KINDS:
+        parts.append(SCORE_CONTENT_DIRECTIVE)
+    if task_kind == TaskKind.COUNCIL_RATIFICATION:
+        parts.append(RATIFICATION_CONTENT_DIRECTIVE)
 
     parts.append("**Output**\n" + response_contract)
     return "\n\n".join(parts)
