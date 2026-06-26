@@ -1,0 +1,390 @@
+{
+  "schema_version": "baseline_eval_v0",
+  "note": "INSTRUMENT-VALIDATION set (synthetic, verifiable). NOT a benchmark claim. Real studies must use licensed external datasets per RESEARCH.md.",
+  "tasks": [
+    {
+      "task_id": "arith_000",
+      "question": "What is 2 + 1? Give only the number.",
+      "gold": "3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_001",
+      "question": "What is 9 - 6? Give only the number.",
+      "gold": "3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_002",
+      "question": "What is 16 * 11? Give only the number.",
+      "gold": "176",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_003",
+      "question": "What is 4 + 3? Give only the number.",
+      "gold": "7",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_004",
+      "question": "What is 11 - 8? Give only the number.",
+      "gold": "3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_005",
+      "question": "What is 18 * 13? Give only the number.",
+      "gold": "234",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_006",
+      "question": "What is 6 + 5? Give only the number.",
+      "gold": "11",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_007",
+      "question": "What is 13 - 10? Give only the number.",
+      "gold": "3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_008",
+      "question": "What is 20 * 2? Give only the number.",
+      "gold": "40",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_009",
+      "question": "What is 8 + 7? Give only the number.",
+      "gold": "15",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_010",
+      "question": "What is 15 - 12? Give only the number.",
+      "gold": "3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_011",
+      "question": "What is 3 * 4? Give only the number.",
+      "gold": "12",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_012",
+      "question": "What is 10 + 9? Give only the number.",
+      "gold": "19",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_013",
+      "question": "What is 17 - 1? Give only the number.",
+      "gold": "16",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_014",
+      "question": "What is 5 * 6? Give only the number.",
+      "gold": "30",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_015",
+      "question": "What is 12 + 11? Give only the number.",
+      "gold": "23",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_016",
+      "question": "What is 19 - 3? Give only the number.",
+      "gold": "16",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_017",
+      "question": "What is 7 * 8? Give only the number.",
+      "gold": "56",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_018",
+      "question": "What is 14 + 13? Give only the number.",
+      "gold": "27",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_019",
+      "question": "What is 2 - 5? Give only the number.",
+      "gold": "-3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_020",
+      "question": "What is 9 * 10? Give only the number.",
+      "gold": "90",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_021",
+      "question": "What is 16 + 2? Give only the number.",
+      "gold": "18",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_022",
+      "question": "What is 4 - 7? Give only the number.",
+      "gold": "-3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_023",
+      "question": "What is 11 * 12? Give only the number.",
+      "gold": "132",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_024",
+      "question": "What is 18 + 4? Give only the number.",
+      "gold": "22",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_025",
+      "question": "What is 6 - 9? Give only the number.",
+      "gold": "-3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_026",
+      "question": "What is 13 * 1? Give only the number.",
+      "gold": "13",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_027",
+      "question": "What is 20 + 6? Give only the number.",
+      "gold": "26",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_028",
+      "question": "What is 8 - 11? Give only the number.",
+      "gold": "-3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_029",
+      "question": "What is 15 * 3? Give only the number.",
+      "gold": "45",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_030",
+      "question": "What is 3 + 8? Give only the number.",
+      "gold": "11",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_031",
+      "question": "What is 10 - 13? Give only the number.",
+      "gold": "-3",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_032",
+      "question": "What is 17 * 5? Give only the number.",
+      "gold": "85",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_033",
+      "question": "What is 5 + 10? Give only the number.",
+      "gold": "15",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_034",
+      "question": "What is 12 - 2? Give only the number.",
+      "gold": "10",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_035",
+      "question": "What is 19 * 7? Give only the number.",
+      "gold": "133",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_036",
+      "question": "What is 7 + 12? Give only the number.",
+      "gold": "19",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_037",
+      "question": "What is 14 - 4? Give only the number.",
+      "gold": "10",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_038",
+      "question": "What is 2 * 9? Give only the number.",
+      "gold": "18",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_039",
+      "question": "What is 9 + 1? Give only the number.",
+      "gold": "10",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_040",
+      "question": "What is 16 - 6? Give only the number.",
+      "gold": "10",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_041",
+      "question": "What is 4 * 11? Give only the number.",
+      "gold": "44",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_042",
+      "question": "What is 11 + 3? Give only the number.",
+      "gold": "14",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_043",
+      "question": "What is 18 - 8? Give only the number.",
+      "gold": "10",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_044",
+      "question": "What is 6 * 13? Give only the number.",
+      "gold": "78",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_045",
+      "question": "What is 13 + 5? Give only the number.",
+      "gold": "18",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "easy"
+    },
+    {
+      "task_id": "arith_046",
+      "question": "What is 20 - 10? Give only the number.",
+      "gold": "10",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    },
+    {
+      "task_id": "arith_047",
+      "question": "What is 8 * 2? Give only the number.",
+      "gold": "16",
+      "verifier": "numeric",
+      "domain": "synthetic",
+      "difficulty": "medium"
+    }
+  ]
+}
