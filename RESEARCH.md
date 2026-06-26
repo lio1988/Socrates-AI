@@ -214,12 +214,16 @@ Reuse `backend/evaluation/` (`harness.py`, `metrics.py`, `benchmark_cases.py`) a
 the Phase 9A/9B real‑provider seam (`offline_provider_adapter.py` →
 `live_smoke_provider.py`).
 
-- **R1 — Break circularity.** Add Tier‑A datasets + a **verifier‑based** metric
-  (exact match / numeric check, *no* LLM judge) and a **single‑model baseline**
-  harness (B0–B3). Externalize ground truth in `backend/evaluation/data/`.
-- **R2 — Real providers, matched compute.** Drive B0–B5 through the adapter seam:
-  offline fixtures → **recorded** real responses (cache) → gated live. Measure the
-  quality‑vs‑compute Pareto on a small hard‑A set first.
+- **R1 — Break circularity. ✅ DONE** (`baseline_harness.py`): external verifiers
+  (no LLM judge), oracle/self‑consistency baselines, the council wired in, instrument
+  validated offline. Ground truth in `backend/evaluation/data/verifiable_v0.json`.
+- **R2 — Record once, replay deterministically. ✅ DONE (offline‑first)**
+  (`record_replay.py`): `RecordingAnswerer` captures each answerer's outputs once
+  (live only when YOU run it gated); `ReplayAnswerer` re‑scores offline forever,
+  reproducing the matched‑compute comparison with no network/cost. Phase 11
+  (`live_providers.build_council`) supplies the real council when gated. **Next:**
+  record a real run (gated) and replay the council vs single‑model vs self‑consistency
+  Pareto on a small hard‑A set — no live conclusions until that recording exists.
 - **R3 — Ablations.** Add the missing toggles (`enable_elenchus`, quorum knobs);
   run B6. Attribute every gain to a mechanism (M1–M5).
 - **R4 — Calibration study.** ECE + risk‑coverage across baselines. *Test the core
