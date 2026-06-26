@@ -84,6 +84,17 @@ from .provider_registry import (
     PROVIDER_TIMEOUT_SECONDS,
 )
 from .ced import CEDOrchestrator
+from .conversation import (
+    ConversationManager,
+    ConversationSession,
+    ConversationTurn,
+    PublicEpistemicMemory,
+    HiddenCedTrace,
+    ChatResponse,
+    build_full_brief,
+    save_conversation_json,
+    load_conversation_json,
+)
 
 __all__ = [
     "AgentRole", "AgentTask", "AgentState", "AgentMove",
@@ -114,6 +125,9 @@ __all__ = [
     "assign_primary_roles", "socrates_for_session",
     "Topic", "classify_topic",
     "CEDOrchestrator",
+    "ConversationManager", "ConversationSession", "ConversationTurn",
+    "PublicEpistemicMemory", "HiddenCedTrace", "ChatResponse",
+    "build_full_brief", "save_conversation_json", "load_conversation_json",
     "run_demo", "build_demo_orchestrator",
 ]
 

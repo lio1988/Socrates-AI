@@ -623,6 +623,66 @@ write it to disk. With no flag set, they print a disabled notice and exit.
 
 ---
 
+## Phase 8D — Chat Dialogue Continuity Layer
+
+> **Socrates AI is no longer limited to one-shot questions. A user can continue a
+> dialogue across turns using `conversation_id`. Each turn is still governed by
+> CED, but agents receive only a sanitized public conversation brief, not hidden
+> scoring or audit internals.**
+>
+> **The user experience is a normal chat. The internal process is a CED-governed
+> multi-agent council.**
+
+`conversation.py` adds a chat layer **above** `run_registry_session` (additive —
+`run_session` and `run_registry_session` are untouched). A user starts a chat,
+gets a `conversation_id`, and continues naturally turn by turn ("continue from
+before", "why did you say that?", "what's the strongest counterargument?", "now
+look at it legally", "what remains unresolved?", "give me the balanced position").
+
+Per turn:
+
+1. CED builds a **sanitized public conversation brief** that preserves the *full*
+   dialogue flow so far — original question, prior council answer, established
+   claims, caveats, objections, unresolved questions, the turn-by-turn flow, and
+   the current user message — plus an instruction to **continue, not restart**.
+2. The turn runs a full **registry-backed council**: role assignment → provider
+   calls → peer + section scoring → council ratification → one assembled answer.
+3. CED stores the **public** result and the **hidden** audit trace *separately*.
+4. The user receives one clean, readable assistant response (markdown, never raw
+   JSON). Statuses (`ratification_status`, `leaderboard_status`) and `caveats` /
+   `unresolved_questions` come along as public fields.
+
+**What agents receive** (public): dialogue history, sanitized brief, prior
+council answer, accepted/caveated claims, prior objections, unresolved questions,
+the current follow-up, the conversational direction. **What agents never
+receive** (hidden): raw peer scores, leaderboard internals, provider mappings,
+`task_log`, audit internals, scoring weights, private scorer identities. The
+`HiddenCedTrace` is debug-only — never sent to agents and never in a normal
+user-facing response (surfaced only when `debug=True`).
+
+**Entry points** (`ConversationManager`): `start_chat(initial_message)` ·
+`continue_chat(conversation_id, user_message)` · `get_chat(id)` ·
+`list_chat_turns(id)` · `build_conversation_brief(id, new_user_message)`. Storage
+is in-memory by default; optional JSON persistence
+(`save_conversation_json` / `load_conversation_json`) is provided separately — no
+database.
+
+> **Continuity invariant.** Continuity lives in the *public* brief, never in
+> hidden CED session reuse: each turn is a fresh council run whose prompt carries
+> a compressed public continuation context. If a turn cannot reach quorum, the
+> answer is withheld honestly and the open point is carried into the next brief —
+> CED never fabricates a continuation.
+
+**Demo** (offline/mock): `python -m backend.dialogues.demo_chat_conversation`
+runs a 4-turn Greek conversation and prints, per turn, the user message, the
+assistant response, the brief used, `ratification_status`, `leaderboard_status`,
+caveats, unresolved questions, that the turn was registry-backed, and a
+confirmation that hidden internals were never exposed. Mock providers only — **no
+real API calls, no keys, no `.env`.** This phase is about continuity and
+orchestration; mock answers remain template-like by design.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
