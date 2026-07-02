@@ -256,6 +256,45 @@ async def consolidate_lessons(ced, min_cluster: int = MIN_CLUSTER) -> Dict[str, 
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 2b. Autonomous inquiry — the system studies its own open questions
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def run_inquiry_cycle(ced, max_inquiries: int = 2,
+                            session_prefix: str = "inquiry") -> Dict[str, Any]:
+    """
+    The self-study loop: take the TOP open questions from the system's own
+    ledger and run a full council dialogue on each. Resolution marking happens
+    automatically inside the session ingest (a ratified answer to an open
+    question closes it), new gaps become new open questions, lessons accumulate
+    — curiosity feeding inquiry feeding memory.
+
+    Runs on whatever council `ced` wraps (mock by default; live only if the
+    caller built a gated live council — each inquiry costs a full session).
+    Session ids are made collision-safe with a rolling counter.
+    """
+    ledger = ced.open_questions
+    if ledger is None:
+        return {"inquiries_run": 0, "results": [],
+                "note": "no OpenQuestionLedger attached"}
+    agenda = ledger.propose_inquiries(max_inquiries)
+    results: List[Dict[str, Any]] = []
+    for item in agenda:
+        sid = f"{session_prefix}_{len(ced._session_outcomes)}_{len(results)}"
+        final = await ced.run_registry_session(item["question"], session_id=sid)
+        results.append({
+            "question": item["question"], "source": item["source"],
+            "session_id": sid, "ratified": bool(final.ratified),
+            "ratification_status": final.ratification_status,
+        })
+    return {
+        "inquiries_run": len(results),
+        "results": results,
+        "open_questions_after": len(ledger.open_questions()),
+        "resolved_total": sum(1 for q in ledger._questions if q.status == "resolved"),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 3. Homeostasis — the system's vital signs
 # ══════════════════════════════════════════════════════════════════════════════
 

@@ -527,7 +527,7 @@ class CEDOrchestrator:
         deliberation-context info only — judging tasks never receive it."""
         from .reasoning_prompts import model_company
         roster = []
-        for a in (self.registry.available_adapters() if self.registry else []):
+        for a in (self._healthy_adapters() if self.registry else []):
             model = getattr(a, "model", None) or "mock"
             roster.append({"seat": a.provider_id, "model": model,
                            "company": model_company(model)})
@@ -622,6 +622,13 @@ class CEDOrchestrator:
                     "verdict this round: your mandate is to MAP the uncertainty — "
                     "identify exactly what is unknown, what evidence would settle it, "
                     "and which sub-questions are answerable now.")
+            elif adaptive["low_diversity_triggered"]:
+                ctx["low_diversity_alert"] = (
+                    "DIVERSITY ALERT: the initial responses are nearly IDENTICAL in "
+                    f"content (diversity {adaptive['response_diversity']}). Agreement "
+                    "between similar answers is not independent evidence — it may be "
+                    "herding. Your mandate: find the angle every response missed, and "
+                    "press the shared assumption they all took for granted.")
             return ctx
         if phase == DialogPhase.REFLECTION:
             mine = next((m for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
@@ -667,6 +674,30 @@ class CEDOrchestrator:
             return {aid: AgentRole.REFLECTOR for aid in responders}
         return self.assign_roles_for_phase(state, phase)
 
+    def _healthy_adapters(self) -> List["LLMProviderAdapter"]:
+        """Phase 16 self-healing: quarantined seats (chronic, evidence-gated
+        failures per SeatHealthTracker) are actually EXCLUDED from deliberation —
+        but only while the council still meets its minimum. Better a shaky seat
+        than no quorum; the exclusion is mechanical and audited."""
+        adapters = self.registry.available_adapters()
+        if self.seat_health is None:
+            return adapters
+        quarantined = set(self.seat_health.quarantined())
+        if not quarantined:
+            return adapters
+        healthy = [a for a in adapters if a.provider_id not in quarantined]
+        if len(healthy) >= self.registry.minimum_providers:
+            return healthy
+        return adapters
+
+    def _quarantine_exclusions(self) -> List[str]:
+        """Seat ids actually excluded right now (for the audit)."""
+        if self.seat_health is None or self.registry is None:
+            return []
+        all_ids = [a.provider_id for a in self.registry.available_adapters()]
+        healthy_ids = {a.provider_id for a in self._healthy_adapters()}
+        return sorted(s for s in all_ids if s not in healthy_ids)
+
     async def _run_registry_phase(
         self, state: SessionState, phase: DialogPhase,
         timeout_seconds: Optional[float],
@@ -680,7 +711,7 @@ class CEDOrchestrator:
         assignment = self._registry_phase_assignment(state, phase)
         self._apply_phase_roles(state, phase, assignment)
         items = sorted(assignment.items())
-        adapters = self.registry.available_adapters()
+        adapters = self._healthy_adapters()
         task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
         want_sections = (phase == DialogPhase.SYNTHESIS)
 
@@ -828,18 +859,44 @@ class CEDOrchestrator:
     # of the INITIAL responses (CED-owned metadata; a purely mechanical trigger).
     HIGH_CONSENSUS_CONFIDENCE = 0.80    # everyone confident → herding risk → escalate
     LOW_CONFIDENCE_FLOOR = 0.45         # everyone unsure → map uncertainty honestly
+    # Diversity guard (Phase 16): a SECOND, independent herding signal — content
+    # similarity of the initial responses (keyword Jaccard; purely mechanical).
+    LOW_DIVERSITY_FLOOR = 0.35          # 1.0 = fully diverse, 0.0 = identical
+
+    def _response_diversity(self, state: SessionState) -> Optional[float]:
+        """Mean pairwise keyword DIVERSITY (1 − Jaccard) of the initial responses.
+        Near-identical answers from 'independent' seats are not independent
+        evidence — they are the signature of herding."""
+        from .self_improvement import _keywords
+        initial = state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
+        if len(initial) < 2:
+            return None
+        kw = [_keywords(str(m.content)) for m in initial]
+        sims, pairs = 0.0, 0
+        for i in range(len(kw)):
+            for j in range(i + 1, len(kw)):
+                union = kw[i] | kw[j]
+                sims += (len(kw[i] & kw[j]) / len(union)) if union else 1.0
+                pairs += 1
+        return round(1.0 - sims / pairs, 4)
 
     def _adaptive_dialectic(self, state: SessionState) -> Dict[str, Any]:
         initial = state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
+        diversity = self._response_diversity(state)
         if not initial:
             return {"initial_mean_confidence": None,
                     "devils_advocate_triggered": False,
-                    "uncertainty_mode_triggered": False}
+                    "uncertainty_mode_triggered": False,
+                    "response_diversity": diversity,
+                    "low_diversity_triggered": False}
         mean_conf = round(sum(m.confidence for m in initial) / len(initial), 4)
         return {
             "initial_mean_confidence": mean_conf,
             "devils_advocate_triggered": mean_conf >= self.HIGH_CONSENSUS_CONFIDENCE,
             "uncertainty_mode_triggered": mean_conf <= self.LOW_CONFIDENCE_FLOOR,
+            "response_diversity": diversity,
+            "low_diversity_triggered": (diversity is not None
+                                        and diversity <= self.LOW_DIVERSITY_FLOOR),
         }
 
     async def _self_improvement_ingest(self, state: SessionState, final: FinalResponse) -> None:
@@ -889,6 +946,7 @@ class CEDOrchestrator:
         return {
             "execution_mode": "registry",
             "adaptive_dialectic": self._adaptive_dialectic(state),
+            "quarantine_excluded": self._quarantine_exclusions(),
             "lesson_retrieval": (cached[1] if cached else None),
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
             "provider_status_summary": self.registry.status_summary(),
@@ -1049,7 +1107,7 @@ class CEDOrchestrator:
         """
         assembled = state.assembled_answer
         synthesis_text = assembled.full_text() if assembled else ""
-        adapters = self.registry.available_adapters()
+        adapters = self._healthy_adapters()
         quorum = self.registry.quorum_for_assembly
 
         def _build_task(slot: int, adapter) -> AgentTask:
@@ -1724,8 +1782,8 @@ class CEDOrchestrator:
         )
 
     def _eligible_score_voters(self, move: AgentMove):
-        """Available registry providers that may score this move (peers, not the author/producer)."""
-        return [a for a in self.registry.available_adapters()
+        """Healthy registry providers that may score this move (peers, not the author/producer)."""
+        return [a for a in self._healthy_adapters()
                 if a.provider_id != move.provider_id]
 
     async def run_registry_shadow_scores(
@@ -2121,7 +2179,7 @@ class CEDOrchestrator:
         cards: List[DraftScorecard] = []
         plan = []   # (draft, voter, section, content, slot)
         for draft in state.section_drafts:
-            voters = [a for a in self.registry.available_adapters()
+            voters = [a for a in self._healthy_adapters()
                       if a.provider_id != draft.provider_id]
             for vslot, voter in enumerate(voters):
                 for section in SECTION_ORDER:

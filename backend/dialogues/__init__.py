@@ -116,6 +116,7 @@ from .living_system import (
     OpenQuestion,
     consolidate_lessons,
     compute_vitals,
+    run_inquiry_cycle,
 )
 
 __all__ = [
@@ -156,6 +157,7 @@ __all__ = [
     "extract_lesson", "distill_lesson_with_council", "review_process_with_council",
     "rank_lessons_with_council",
     "OpenQuestionLedger", "OpenQuestion", "consolidate_lessons", "compute_vitals",
+    "run_inquiry_cycle",
     "run_demo", "build_demo_orchestrator",
 ]
 

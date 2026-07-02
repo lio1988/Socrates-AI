@@ -924,6 +924,31 @@ fallbacks, failure-isolated hooks) and fully offline-tested.
 
 ---
 
+## Phase 16 — Autonomy & self-healing
+
+**Autonomous inquiry — `run_inquiry_cycle(ced, max_inquiries)`.** The system no
+longer waits to be asked: it takes the top open questions from its OWN ledger
+and runs a full council dialogue on each. Resolutions are marked automatically,
+new gaps become new open questions, lessons accumulate — curiosity feeding
+inquiry feeding memory. (Costs one full session per inquiry; live only if the
+caller built a gated live council.)
+
+**Real self-healing.** Quarantine is no longer just a recommendation: seats the
+`SeatHealthTracker` has quarantined are **actually excluded** from every
+registry path — deliberation, peer scoring, section scoring, council
+ratification, and the roster shown to agents — but **only while the council
+still meets its minimum** (better a shaky seat than no quorum). Exclusions are
+audited (`quarantine_excluded`).
+
+**Diversity guard.** A second, independent herding detector: mean pairwise
+keyword diversity (1 − Jaccard) of the initial responses. Near-identical answers
+from "independent" seats are not independent evidence — at ≤ 0.35 diversity the
+elenchus receives a `low_diversity_alert` ("find the angle every response
+missed; press the shared assumption they all took for granted"). The confidence
+trigger takes precedence; both signals are audited in `adaptive_dialectic`.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

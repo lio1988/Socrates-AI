@@ -79,8 +79,8 @@ def test_adaptive_state_is_audited():
     ced = _ced()
     final = asyncio.run(ced.run_registry_session(Q, session_id="aud"))
     ad = final.audit_summary["adaptive_dialectic"]
-    assert set(ad) == {"initial_mean_confidence", "devils_advocate_triggered",
-                       "uncertainty_mode_triggered"}
+    assert {"initial_mean_confidence", "devils_advocate_triggered",
+            "uncertainty_mode_triggered"} <= set(ad)   # Phase 16 adds diversity keys
     assert isinstance(ad["initial_mean_confidence"], float)
 
 
