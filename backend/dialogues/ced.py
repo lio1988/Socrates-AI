@@ -506,15 +506,17 @@ class CEDOrchestrator:
         if phase == DialogPhase.OPENING:
             return {}
         if phase == DialogPhase.INITIAL_RESPONSE:
-            opening = state.moves_for_phase(DialogPhase.OPENING)
-            socratic_q = (opening[0].content.get("question", state.question)
-                          if opening else state.question)
             return {"original_question": state.question,
-                    "socratic_opening_question": socratic_q}
+                    "socratic_opening_question": self._socratic_opening(state)}
         if phase == DialogPhase.ELENCHUS:
-            return {"initial_responses": [
-                {"role": m.role.value, "content": m.content}
-                for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)]}
+            # The critic must know what hidden assumption Socrates targeted —
+            # otherwise the elenchus cannot press where the dialogue is pointed.
+            return {
+                "socratic_opening_question": self._socratic_opening(state),
+                "initial_responses": [
+                    {"role": m.role.value, "content": m.content}
+                    for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)],
+            }
         if phase == DialogPhase.REFLECTION:
             mine = next((m for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
                          if m.agent_id == agent_id), None)
@@ -529,11 +531,24 @@ class CEDOrchestrator:
                 "critiques": [m.content for m in state.moves_for_phase(DialogPhase.ELENCHUS)],
             }
         if phase == DialogPhase.SYNTHESIS:
+            # The synthesis writes crucial_stress_test / blind_spots — it MUST see
+            # the actual objections raised (else the dialectic's work is discarded
+            # at the last mile and the stress test is invented, not earned).
             return {
+                "socratic_opening_question": self._socratic_opening(state),
                 "reconstructed_positions": [m.content for m in state.moves_for_phase(DialogPhase.RECONSTRUCTION)],
                 "reflected_positions": [m.content for m in state.moves_for_phase(DialogPhase.REFLECTION)],
+                "critiques_raised": [m.content for m in state.moves_for_phase(DialogPhase.ELENCHUS)],
             }
         return {}
+
+    @staticmethod
+    def _socratic_opening(state: SessionState) -> str:
+        opening = state.moves_for_phase(DialogPhase.OPENING)
+        if not opening:
+            return state.question
+        c = opening[0].content
+        return str(c.get("question") or c.get("socratic_question") or state.question)
 
     def _registry_phase_assignment(
         self, state: SessionState, phase: DialogPhase,

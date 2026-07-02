@@ -150,8 +150,12 @@ SYNTHESIS_CONTENT_DIRECTIVE = """\
 Your `content` MUST be a JSON object with EXACTLY these five string fields — use
 these exact names, do not rename, nest, translate, or add other top-level fields:
   "core_answer"         — the council's most defensible direct answer
-  "crucial_stress_test" — the strongest honest counterargument to it
-  "blind_spots"         — what this answer risks overlooking
+  "crucial_stress_test" — the strongest honest counterargument to it. Ground it in
+                          the strongest objection ACTUALLY RAISED in the dialogue
+                          (see `critiques_raised` in your context) — do not invent
+                          a weaker substitute if a stronger one was already made
+  "blind_spots"         — what this answer risks overlooking (draw on the critiques
+                          and the Socratic opening question where they apply)
   "nuance"              — how the answer shifts with context
   "final_verdict"       — the calibrated bottom line
 Each field is a substantive paragraph. Example:

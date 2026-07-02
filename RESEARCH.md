@@ -224,6 +224,13 @@ the Phase 9A/9B real‑provider seam (`offline_provider_adapter.py` →
   (`live_providers.build_council`) supplies the real council when gated. **Next:**
   record a real run (gated) and replay the council vs single‑model vs self‑consistency
   Pareto on a small hard‑A set — no live conclusions until that recording exists.
+- **R3a — Dialectic Delta instrument. ✅ DONE (offline‑first)**
+  (`dialectic_delta.py`): measures whether the dialogue ITSELF improves answers —
+  initial responses vs final synthesis on external truth, with the §8
+  error‑correction dynamics (corrected / degraded / net_gain) and a conservative
+  ANY‑correct initial convention. The context‑flow fix (critiques now reach the
+  synthesis; the Socratic question reaches every phase) is what this instrument
+  will test on real models.
 - **R3 — Ablations.** Add the missing toggles (`enable_elenchus`, quorum knobs);
   run B6. Attribute every gain to a mechanism (M1–M5).
 - **R4 — Calibration study.** ECE + risk‑coverage across baselines. *Test the core
