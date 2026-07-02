@@ -321,6 +321,15 @@ class ScriptedMockProvider(BaseProviderAdapter):
                                           "uncertainty over universal assertions.",
                 "pitfalls": ["overclaiming beyond the cited evidence"],
             }, "confidence": 0.8})
+        if task.task_kind == TaskKind.LESSON_CONSOLIDATION:
+            n = len(task.context.get("lessons_to_consolidate", []) or [])
+            return json.dumps({"content": {
+                "consolidated_insight": f"Across {n} related dialogues, the durable "
+                                        "position is scope-limited and evidence-conditional.",
+                "transferable_principle": "Generalize only to the domains the evidence "
+                                          "actually covers.",
+                "pitfalls": ["treating repeated agreement as independent confirmation"],
+            }, "confidence": 0.8})
         if task.task_kind == TaskKind.LESSON_RELEVANCE:
             n = len(task.context.get("candidate_lessons", []) or [])
             return json.dumps({"content": {"relevant_indices": list(range(min(2, n)))},

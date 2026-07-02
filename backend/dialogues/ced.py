@@ -197,6 +197,7 @@ class CEDOrchestrator:
         seat_health=None,
         ai_learning: bool = False,
         topic_skill=None,
+        open_questions=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -233,6 +234,10 @@ class CEDOrchestrator:
         # from agents) + per-session lesson-retrieval cache (lessons, mode).
         self.topic_skill = topic_skill
         self._session_lessons: Dict[str, Tuple[List[Dict[str, Any]], str]] = {}
+        # Phase 15 (living system): OpenQuestionLedger — the system's own research
+        # agenda — plus a rolling record of session outcomes for compute_vitals.
+        self.open_questions = open_questions
+        self._session_outcomes: List[Dict[str, Any]] = []
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -790,6 +795,24 @@ class CEDOrchestrator:
         await self._self_improvement_ingest(state, final)
         return final
 
+    def _record_outcome(self, state: SessionState, final: FinalResponse) -> None:
+        """Rolling vital-signs record (bounded; CED-owned; hidden from agents)."""
+        adaptive = self._adaptive_dialectic(state)
+        self._session_outcomes.append({
+            "session_id": state.session_id,
+            "ratified": bool(final.ratified),
+            "ratification_status": final.ratification_status,
+            "quorum_failed": bool((final.audit_summary or {}).get("quorum_failed")),
+            "initial_mean_confidence": adaptive.get("initial_mean_confidence"),
+        })
+        del self._session_outcomes[:-100]        # keep the last 100
+
+    def vitals(self) -> Dict[str, Any]:
+        """Phase 15: one honest snapshot of the system's health (homeostasis)."""
+        from .living_system import compute_vitals
+        return compute_vitals(self._session_outcomes, seat_health=self.seat_health,
+                              lesson_store=self.lesson_store, ledger=self.open_questions)
+
     async def _resolve_session_lessons(self, state: SessionState) -> Tuple[List[Dict[str, Any]], str]:
         """Phase 14: pick the lessons this session should see — a council seat
         selects genuine transfer when ai_learning (honest keyword fallback)."""
@@ -826,10 +849,13 @@ class CEDOrchestrator:
         reviews its own process — any AI failure falls back to the mechanical
         extractor. Failures here must never break a session result."""
         try:
+            self._record_outcome(state, final)
             if self.seat_health is not None:
                 self.seat_health.ingest_session(state)
             if self.topic_skill is not None:
                 self.topic_skill.ingest_session(state)
+            if self.open_questions is not None:
+                self.open_questions.ingest_session(state, final)
             if self.lesson_store is None:
                 return
             lesson = None
@@ -957,6 +983,13 @@ class CEDOrchestrator:
             council_summary={"execution_mode": "registry", "quorum_failed": True},
         )
         state.final_response = final
+        # Phase 15: a failed dialogue is the loudest open question + a vital sign.
+        try:
+            self._record_outcome(state, final)
+            if self.open_questions is not None:
+                self.open_questions.ingest_session(state, final)
+        except Exception:
+            pass   # the living-system layer must never take down even a fallback
         return final
 
     # ── Phase 8C.1: Socratic Council Ratification (council-level, registry) ────

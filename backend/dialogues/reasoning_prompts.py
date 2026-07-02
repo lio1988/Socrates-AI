@@ -259,6 +259,18 @@ transfer. Your `content` MUST be a JSON object with EXACTLY this field:
                        empty list if nothing genuinely transfers)
 Example: {"content": {"relevant_indices": [0, 2]}, "confidence": 0.8}"""
 
+LESSON_CONSOLIDATION_DIRECTIVE = """\
+**Memory consolidation — REQUIRED structure (exact field names)**
+You are given several lessons from related past dialogues (`lessons_to_consolidate`).
+Consolidate them into ONE deeper lesson: not a summary, but the GENERALIZATION the
+individual dialogues were each partially seeing. Your `content` MUST be a JSON
+object with EXACTLY these fields:
+  "consolidated_insight"   — the deeper insight the cluster converges on
+  "transferable_principle" — the general principle it implies
+  "pitfalls"               — list of 1-3 traps the cluster collectively exposed
+Example: {"content": {"consolidated_insight": "…", "transferable_principle": "…",
+"pitfalls": ["…"]}, "confidence": 0.8}"""
+
 _SCORE_KINDS = {TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE}
 
 _EVALUATIVE_KINDS = {
@@ -321,6 +333,8 @@ def build_reasoning_system_prompt(
         parts.append(PROCESS_REVIEW_DIRECTIVE)
     if task_kind == TaskKind.LESSON_RELEVANCE:
         parts.append(LESSON_RELEVANCE_DIRECTIVE)
+    if task_kind == TaskKind.LESSON_CONSOLIDATION:
+        parts.append(LESSON_CONSOLIDATION_DIRECTIVE)
 
     parts.append("**Output**\n" + response_contract)
     return "\n\n".join(parts)

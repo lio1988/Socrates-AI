@@ -256,6 +256,16 @@ class EpistemicLessonStore:
     def add(self, lesson: Lesson) -> None:
         self._lessons.append(lesson)
 
+    def lessons(self) -> List[Lesson]:
+        return list(self._lessons)
+
+    def replace_many(self, indices: List[int], replacement: Lesson) -> None:
+        """Phase 15 consolidation: replace the lessons at `indices` with ONE
+        consolidated lesson (deterministic; preserves the order of the rest)."""
+        drop = set(indices)
+        self._lessons = [l for i, l in enumerate(self._lessons) if i not in drop]
+        self._lessons.append(replacement)
+
     def add_process(self, lesson: ProcessLesson) -> None:
         self._process.append(lesson)
 

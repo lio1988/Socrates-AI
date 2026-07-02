@@ -892,6 +892,38 @@ JSON persistence with the standard interpretation warning.
 
 ---
 
+## Phase 15 — The Living System
+
+What makes the system *alive* rather than merely reactive:
+
+**1. Curiosity — `OpenQuestionLedger`.** The system knows what it does NOT know.
+Every gap a dialogue exposes becomes an **open question**: a quorum-failed
+question stays open (the loudest gap), a uniform-uncertainty session flags
+itself, ratified sessions contribute their `blind_spots` and caveats.
+`propose_inquiries(k)` returns the system's **self-generated research agenda**
+(deterministic priority: quorum failure > uncertainty > blind spot > caveat),
+and when a later ratified dialogue answers an open question the ledger marks it
+**resolved** with the resolving session id.
+
+**2. Memory consolidation ("sleep") — `consolidate_lessons`.** Lessons are not
+hoarded; clusters of related lessons (deterministic keyword clustering, ≥3
+members) are merged into ONE deeper lesson — authored by a council seat when
+`ai_learning` (`LESSON_CONSOLIDATION`: the *generalization* the individual
+dialogues were each partially seeing), with an honest mechanical merge as
+fallback. The store shrinks while the knowledge deepens; provenance is kept
+(`[consolidated ×N]`, `distilled_by`).
+
+**3. Homeostasis — `ced.vitals()`.** One honest snapshot of system health from a
+rolling record of session outcomes: ratification rate, quorum-failure rate,
+confidence trend, memory size, open questions, quarantined seats → a mechanical
+`health_status` (**thriving | stable | degrading**) with actionable
+recommendations. Failed sessions are recorded too — that is where the signal is.
+
+All of it is CED-governed (mechanical triggers, PUBLIC artifacts only, honest
+fallbacks, failure-isolated hooks) and fully offline-tested.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

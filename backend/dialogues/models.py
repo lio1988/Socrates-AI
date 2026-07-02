@@ -179,6 +179,7 @@ class TaskKind(str, Enum):
     LESSON_DISTILLATION     = "lesson_distillation"     # Phase 13D AI-authored lesson
     PROCESS_REVIEW          = "process_review"          # Phase 13D AI meta-reflection on the dialogue
     LESSON_RELEVANCE        = "lesson_relevance"        # Phase 14 AI lesson retrieval
+    LESSON_CONSOLIDATION    = "lesson_consolidation"    # Phase 15 memory consolidation ("sleep")
 
 
 class AgentTask(BaseModel):

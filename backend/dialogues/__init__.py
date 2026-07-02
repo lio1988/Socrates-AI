@@ -111,6 +111,12 @@ from .self_improvement import (
     review_process_with_council,
     rank_lessons_with_council,
 )
+from .living_system import (
+    OpenQuestionLedger,
+    OpenQuestion,
+    consolidate_lessons,
+    compute_vitals,
+)
 
 __all__ = [
     "AgentRole", "AgentTask", "AgentState", "AgentMove",
@@ -149,6 +155,7 @@ __all__ = [
     "TopicSkillTracker",
     "extract_lesson", "distill_lesson_with_council", "review_process_with_council",
     "rank_lessons_with_council",
+    "OpenQuestionLedger", "OpenQuestion", "consolidate_lessons", "compute_vitals",
     "run_demo", "build_demo_orchestrator",
 ]
 
