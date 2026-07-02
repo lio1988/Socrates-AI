@@ -69,8 +69,9 @@ decoration — each carries an obligation:
     future self. Follow `advice_for_next_dialogue` unless it clearly does not
     apply — then say why.
   - `devils_advocate_mandate` / `uncertainty_mapping_mandate` /
-    `low_diversity_alert` — an escalation mandate for THIS round. It overrides
-    your default emphasis; honor it, but never fabricate to satisfy it.
+    `confidence_disagreement_mandate` / `low_diversity_alert` — an escalation
+    mandate for THIS round. It overrides your default emphasis; honor it, but
+    never fabricate to satisfy it.
   - `socratic_opening_question` — the assumption the dialogue is aimed at.
     Every move should be traceable to it or explicitly widen it.
   - `critiques_raised` / `critiques_from_council` / `critiques` — objections
@@ -326,6 +327,26 @@ object with EXACTLY these fields:
 Example: {"content": {"consolidated_insight": "…", "transferable_principle": "…",
 "pitfalls": ["…"]}, "confidence": 0.8}"""
 
+BAYESIAN_UPDATE_DIRECTIVE = """\
+**Bayesian revision protocol (this is a belief-update task, not a rewrite task)**
+Treat your revision as a probability update, and show the arithmetic of belief:
+1. PRIOR — state the confidence you actually held in your initial position
+   (`prior_confidence`, 0..1; be honest, not diplomatic).
+2. EVIDENCE — classify the force of the criticism you received
+   (`evidence_force`): "decisive" (your position cannot survive it),
+   "strong" (a load-bearing part must change), "weak" (peripheral, position
+   stands with a caveat), or "none" (the objection fails — say exactly why).
+3. POSTERIOR — state `posterior_confidence` (0..1) CONSISTENT with the update:
+   decisive ⇒ posterior far below prior; strong ⇒ clearly below; weak ⇒
+   slightly below or unchanged with a caveat; none ⇒ unchanged or higher.
+   Your move's `confidence` field MUST equal the posterior.
+An update that ignores the evidence force (unchanged confidence after a decisive
+hit, or a collapse after a weak one) is a calibration failure. Include all three
+fields in your content alongside your revised position.
+Example: {"content": {"revised_position": "…", "prior_confidence": 0.8,
+"evidence_force": "strong", "posterior_confidence": 0.55,
+"what_changed": "…"}, "confidence": 0.55}"""
+
 _SCORE_KINDS = {TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE}
 
 _EVALUATIVE_KINDS = {
@@ -394,6 +415,8 @@ def build_reasoning_system_prompt(
         parts.append(LESSON_RELEVANCE_DIRECTIVE)
     if task_kind == TaskKind.LESSON_CONSOLIDATION:
         parts.append(LESSON_CONSOLIDATION_DIRECTIVE)
+    if task_kind == TaskKind.REFLECTION_REVISION:
+        parts.append(BAYESIAN_UPDATE_DIRECTIVE)
 
     parts.append("**Output**\n" + response_contract)
     return "\n\n".join(parts)

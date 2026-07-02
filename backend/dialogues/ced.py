@@ -198,6 +198,7 @@ class CEDOrchestrator:
         ai_learning: bool = False,
         topic_skill=None,
         open_questions=None,
+        calibration=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -238,6 +239,9 @@ class CEDOrchestrator:
         # agenda — plus a rolling record of session outcomes for compute_vitals.
         self.open_questions = open_questions
         self._session_outcomes: List[Dict[str, Any]] = []
+        # Phase 17: CalibrationLedger — Brier-scored confidence calibration per
+        # seat (CED-owned analytics, hidden from agents like the leaderboard).
+        self.calibration = calibration
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -622,6 +626,14 @@ class CEDOrchestrator:
                     "verdict this round: your mandate is to MAP the uncertainty — "
                     "identify exactly what is unknown, what evidence would settle it, "
                     "and which sub-questions are answerable now.")
+            elif adaptive["confidence_disagreement_triggered"]:
+                ctx["confidence_disagreement_mandate"] = (
+                    "CALIBRATION DISAGREEMENT: the council disagrees about how certain "
+                    f"to BE (confidence std {adaptive['initial_confidence_std']}). Some "
+                    "seats are confident where others are not — that gap IS the "
+                    "epistemic signal. Your mandate: locate exactly which premise the "
+                    "confident and unconfident responses treat differently, and test "
+                    "that premise directly.")
             elif adaptive["low_diversity_triggered"]:
                 ctx["low_diversity_alert"] = (
                     "DIVERSITY ALERT: the initial responses are nearly IDENTICAL in "
@@ -862,6 +874,10 @@ class CEDOrchestrator:
     # Diversity guard (Phase 16): a SECOND, independent herding signal — content
     # similarity of the initial responses (keyword Jaccard; purely mechanical).
     LOW_DIVERSITY_FLOOR = 0.35          # 1.0 = fully diverse, 0.0 = identical
+    # Confidence-disagreement signal (Phase 17): high VARIANCE of the initial
+    # confidences means the council disagrees about how certain to BE — an
+    # epistemic signal distinct from both the mean and the content similarity.
+    CONFIDENCE_DISAGREEMENT_STD = 0.20  # population std of confidences
 
     def _response_diversity(self, state: SessionState) -> Optional[float]:
         """Mean pairwise keyword DIVERSITY (1 − Jaccard) of the initial responses.
@@ -885,15 +901,22 @@ class CEDOrchestrator:
         diversity = self._response_diversity(state)
         if not initial:
             return {"initial_mean_confidence": None,
+                    "initial_confidence_std": None,
                     "devils_advocate_triggered": False,
                     "uncertainty_mode_triggered": False,
+                    "confidence_disagreement_triggered": False,
                     "response_diversity": diversity,
                     "low_diversity_triggered": False}
-        mean_conf = round(sum(m.confidence for m in initial) / len(initial), 4)
+        confs = [m.confidence for m in initial]
+        mean_conf = round(sum(confs) / len(confs), 4)
+        std = round((sum((c - mean_conf) ** 2 for c in confs) / len(confs)) ** 0.5, 4)
         return {
             "initial_mean_confidence": mean_conf,
+            "initial_confidence_std": std,
             "devils_advocate_triggered": mean_conf >= self.HIGH_CONSENSUS_CONFIDENCE,
             "uncertainty_mode_triggered": mean_conf <= self.LOW_CONFIDENCE_FLOOR,
+            "confidence_disagreement_triggered": (len(confs) >= 2
+                                                  and std >= self.CONFIDENCE_DISAGREEMENT_STD),
             "response_diversity": diversity,
             "low_diversity_triggered": (diversity is not None
                                         and diversity <= self.LOW_DIVERSITY_FLOOR),
@@ -911,6 +934,8 @@ class CEDOrchestrator:
                 self.seat_health.ingest_session(state)
             if self.topic_skill is not None:
                 self.topic_skill.ingest_session(state)
+            if self.calibration is not None:
+                self.calibration.ingest_session(state)
             if self.open_questions is not None:
                 self.open_questions.ingest_session(state, final)
             if self.lesson_store is None:

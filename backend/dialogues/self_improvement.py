@@ -448,6 +448,119 @@ async def rank_lessons_with_council(ced, question: str, k: int = 3):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# F. CalibrationLedger — Brier-scored confidence calibration per seat (CED-owned)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Confidence must MEAN something. A proper scoring rule (Brier) makes honest
+# confidence the optimal report: for each SYNTHESIS draft, the seat's stated
+# confidence is scored against the mechanical outcome "share of the 5 sections
+# its draft actually won at blind assembly". From this we get, per seat:
+#   brier  = mean (confidence − outcome)²   (lower is better-calibrated)
+#   bias   = mean confidence − mean outcome (>0 overconfident, <0 underconfident)
+# CED-owned, HIDDEN from agents (like the leaderboard) — used for operator
+# reports and seat selection, never in a prompt.
+
+CALIBRATION_SCHEMA = "calibration_v0"
+CALIBRATION_BIAS_THRESHOLD = 0.20   # |bias| beyond this (with evidence) → recalibrate
+CALIBRATION_MIN_SAMPLES = 3
+
+
+@dataclass
+class CalibrationStats:
+    seat: str
+    n: int = 0
+    conf_sum: float = 0.0
+    outcome_sum: float = 0.0
+    brier_sum: float = 0.0
+
+    @property
+    def mean_confidence(self) -> float:
+        return round(self.conf_sum / self.n, 4) if self.n else 0.0
+
+    @property
+    def mean_outcome(self) -> float:
+        return round(self.outcome_sum / self.n, 4) if self.n else 0.0
+
+    @property
+    def brier(self) -> float:
+        return round(self.brier_sum / self.n, 4) if self.n else 0.0
+
+    @property
+    def bias(self) -> float:
+        return round(self.mean_confidence - self.mean_outcome, 4) if self.n else 0.0
+
+
+class CalibrationLedger:
+    """Per-seat confidence calibration from mechanical assembly outcomes."""
+
+    def __init__(self, stats: Optional[Dict[str, CalibrationStats]] = None) -> None:
+        self._stats: Dict[str, CalibrationStats] = stats or {}
+
+    def ingest_session(self, state: SessionState) -> None:
+        assembled = state.assembled_answer
+        if assembled is None or not assembled.sections or not state.section_drafts:
+            return
+        total = len(assembled.sections)
+        wins: Dict[str, int] = {}
+        for s in assembled.sections:
+            if s.selected_draft_id:
+                wins[s.selected_draft_id] = wins.get(s.selected_draft_id, 0) + 1
+        move_conf = {m.move_id: m.confidence for m in state.moves}
+        for draft in state.section_drafts:
+            seat = draft.provider_id
+            conf = move_conf.get(draft.move_id)
+            if seat is None or conf is None:
+                continue
+            outcome = wins.get(draft.draft_id, 0) / total
+            st = self._stats.setdefault(seat, CalibrationStats(seat=seat))
+            st.n += 1
+            st.conf_sum += float(conf)
+            st.outcome_sum += outcome
+            st.brier_sum += (float(conf) - outcome) ** 2
+
+    def stats(self) -> Dict[str, CalibrationStats]:
+        return dict(self._stats)
+
+    def recommendations(self) -> List[str]:
+        recs: List[str] = []
+        for st in sorted(self._stats.values(), key=lambda s: s.seat):
+            if st.n < CALIBRATION_MIN_SAMPLES:
+                continue
+            if st.bias >= CALIBRATION_BIAS_THRESHOLD:
+                recs.append(f"{st.seat}: OVERCONFIDENT by {st.bias:+.2f} "
+                            f"(brier {st.brier}, n={st.n}) — discount its confidence")
+            elif st.bias <= -CALIBRATION_BIAS_THRESHOLD:
+                recs.append(f"{st.seat}: UNDERCONFIDENT by {st.bias:+.2f} "
+                            f"(brier {st.brier}, n={st.n}) — its hedged claims tend to win")
+        return recs
+
+    def report(self) -> Dict[str, Any]:
+        return {
+            "schema_version": CALIBRATION_SCHEMA,
+            "seats": {k: {"seat": v.seat, "n": v.n,
+                          "mean_confidence": v.mean_confidence,
+                          "mean_outcome": v.mean_outcome,
+                          "brier": v.brier, "bias": v.bias}
+                      for k, v in sorted(self._stats.items())},
+            "recommendations": self.recommendations(),
+            "interpretation_warning": SKILL_INTERPRETATION_WARNING,
+        }
+
+    def save(self, path: str) -> None:
+        doc = {"schema_version": CALIBRATION_SCHEMA,
+               "stats": {k: asdict(v) for k, v in sorted(self._stats.items())}}
+        Path(path).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
+                              encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str) -> "CalibrationLedger":
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        if doc.get("schema_version") != CALIBRATION_SCHEMA:
+            raise ValueError(f"schema_version mismatch: expected {CALIBRATION_SCHEMA!r}")
+        return cls({k: CalibrationStats(**v) for k, v in doc.get("stats", {}).items()})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # E. TopicSkillTracker — per-topic skill profile per seat (CED-owned analytics)
 # ══════════════════════════════════════════════════════════════════════════════
 #

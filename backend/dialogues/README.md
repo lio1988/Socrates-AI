@@ -949,6 +949,36 @@ trigger takes precedence; both signals are audited in `adaptive_dialectic`.
 
 ---
 
+## Phase 17 — The mathematics of epistemic discipline
+
+**Bayesian revision protocol (Reflector).** Revision is now a probability
+update, not a rewrite: the reflector must state its `prior_confidence`, classify
+the criticism's `evidence_force` (decisive | strong | weak | none — each with
+required update semantics), and emit a `posterior_confidence` the move's
+`confidence` MUST equal. An update inconsistent with the evidence force
+(unchanged confidence after a decisive hit, collapse after a weak one) is named
+a calibration failure.
+
+**Confidence-disagreement signal.** The adaptive dialectic now reads a third
+mechanical signal: the **variance** of initial confidences (population std).
+High std (≥ 0.20) means the council disagrees about how certain to *be* — a
+different thing from the mean (Phase 14) or content similarity (Phase 16). The
+elenchus receives a `confidence_disagreement_mandate`: locate exactly which
+premise the confident and unconfident responses treat differently, and test it.
+Signal matrix now: mean (high/low) × variance × content diversity, with
+deterministic precedence and one mandate per round.
+
+**CalibrationLedger (Brier proper scoring).** Confidence must mean something:
+for every synthesis draft, the seat's stated confidence is scored against the
+mechanical outcome "share of the 5 sections its draft won at blind assembly" —
+`brier = mean (conf − outcome)²`, `bias = mean conf − mean outcome`
+(overconfident > 0). Proper scoring makes honest confidence the optimal report.
+Evidence-gated recommendations ("seat X OVERCONFIDENT by +0.35 — discount its
+confidence"); CED-owned and **hidden from agents** like the leaderboard; JSON
+persistence (`calibration_v0`).
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
