@@ -804,6 +804,51 @@ verbatim.
 
 ---
 
+## Phase 13 — Self-Improvement Layer
+
+> **The system gets better the more it is used** — mechanically, measurably, and
+> without violating a single invariant. CED *governs* its own improvement; it
+> never judges content, and nothing changes semantically without external proof.
+
+Three subsystems (all optional — `None` = behavior unchanged; all offline):
+
+**A. Seat health (operational)** — `SeatHealthTracker` learns each provider
+seat's reliability from the CED-owned `task_log` (content-blind): schema
+failures, timeouts, rate limits. It mechanically **quarantines** chronically
+failing seats (evidence-gated: ≥6 tasks and ≥50% failures), **ranks** seats for
+selection (unknown first, then most reliable), and emits **config
+recommendations** tied to the observed failure mode ("frequent timeouts → raise
+`CED_LIVE_TIMEOUT`"). JSON persistence; deterministic.
+
+**B. Epistemic lessons (knowledge)** — `EpistemicLessonStore` distills each
+**ratified** session's PUBLIC outcome (core answer, final verdict, caveats,
+decisive objections — the same material the chat brief exposes; never scores or
+identities) into a `Lesson`. New dialogues on related questions receive the
+top-k relevant lessons as `lessons_from_prior_dialogues` in deliberation
+context, so the council **builds on its own past work** instead of restarting.
+Unratified sessions teach nothing, by design.
+
+**C. Protocol evolution (measured)** — `backend/evaluation/protocol_evolution.py`
+makes protocol change *earn its way in*: a variant (config/prompt/council shape)
+is evaluated on **external-truth** tasks via the Dialectic Delta and **promoted
+only if it beats the incumbent by a pre-registered margin** (default +2%
+absolute accuracy). Anything less retains the status quo. Mock noise can never
+promote anything; a real promotion decision requires live/recorded runs (gated).
+
+```python
+from backend.dialogues import build_council, EpistemicLessonStore, SeatHealthTracker
+store, health = EpistemicLessonStore(), SeatHealthTracker()
+ced, mode = build_council(lesson_store=store, seat_health=health)
+# ... run sessions; ratified outcomes feed future dialogues; telemetry accrues
+store.save("lessons.json"); health.save("seat_health.json")
+```
+
+Hooks are failure-isolated: a broken store can never take down a dialogue
+(`self_improvement_error` is recorded in the audit instead). Judging tasks
+remain untouched — lessons appear only in deliberation context.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

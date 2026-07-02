@@ -193,6 +193,8 @@ class CEDOrchestrator:
         shadow_scoring_mode: ShadowScoringMode = ShadowScoringMode.ALL_PHASES,
         final_synthesis_mode: FinalSynthesisMode = FinalSynthesisMode.COUNCIL_RATIFICATION,
         assembly_fallback: bool = False,
+        lesson_store=None,
+        seat_health=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -214,6 +216,12 @@ class CEDOrchestrator:
         # Off by default (preserves the strict no-score=unresolved behavior);
         # the live council enables it so real-model runs still produce an answer.
         self.assembly_fallback = assembly_fallback
+        # Phase 13 self-improvement (both optional; None = behavior unchanged):
+        # lesson_store: EpistemicLessonStore — ratified outcomes feed future
+        #   dialogues as PUBLIC lessons; seat_health: SeatHealthTracker — CED-owned
+        #   operational telemetry per provider seat (content-blind).
+        self.lesson_store = lesson_store
+        self.seat_health = seat_health
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -541,6 +549,12 @@ class CEDOrchestrator:
             "council_roster": self._council_roster(),
             "dialogue_so_far": self._dialogue_transcript(state),
         }
+        # Phase 13: PUBLIC lessons from prior ratified dialogues on related
+        # questions (never scores/identities) — the council builds on its past.
+        if self.lesson_store is not None:
+            lessons = self.lesson_store.relevant(state.question, k=3)
+            if lessons:
+                base["lessons_from_prior_dialogues"] = lessons
         specific = self._phase_specific_context(state, phase, agent_id)
         base.update(specific)
         return base
@@ -728,7 +742,22 @@ class CEDOrchestrator:
 
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
+        self._self_improvement_ingest(state, final)
         return final
+
+    def _self_improvement_ingest(self, state: SessionState, final: FinalResponse) -> None:
+        """Phase 13 hooks (no-ops when the stores are absent). Mechanical only:
+        seat telemetry from the task_log; a PUBLIC lesson only from a RATIFIED
+        outcome. Failures here must never break a session result."""
+        try:
+            if self.seat_health is not None:
+                self.seat_health.ingest_session(state)
+            if self.lesson_store is not None:
+                lesson = self.lesson_store.ingest(state, final)
+                if lesson is not None:
+                    final.audit_summary["lesson_recorded"] = True
+        except Exception:   # telemetry must never take down a dialogue
+            final.audit_summary["self_improvement_error"] = True
 
     def _registry_session_audit(
         self, state: SessionState,

@@ -270,6 +270,7 @@ def build_council_registry(
 
 def build_council(
     env=None, *, council_size: int = DEFAULT_COUNCIL_SIZE, shadow_scoring_mode=None,
+    lesson_store=None, seat_health=None,
 ) -> Tuple[Any, str]:
     """
     A ready-to-run council orchestrator. Same code path real or mock — mock by
@@ -289,5 +290,6 @@ def build_council(
     kwargs = {} if shadow_scoring_mode is None else {"shadow_scoring_mode": shadow_scoring_mode}
     # Enable the assembly fallback so a live run still produces an answer even if
     # finicky real-model peer-scoring yields no valid section scores.
-    ced = CEDOrchestrator(agents, provider, registry=registry, assembly_fallback=True, **kwargs)
+    ced = CEDOrchestrator(agents, provider, registry=registry, assembly_fallback=True,
+                          lesson_store=lesson_store, seat_health=seat_health, **kwargs)
     return ced, mode

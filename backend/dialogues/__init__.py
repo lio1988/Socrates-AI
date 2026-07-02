@@ -100,6 +100,12 @@ from .live_providers import (
     build_council,
     build_council_registry,
 )
+from .self_improvement import (
+    SeatHealthTracker,
+    EpistemicLessonStore,
+    Lesson,
+    extract_lesson,
+)
 
 __all__ = [
     "AgentRole", "AgentTask", "AgentState", "AgentMove",
@@ -134,6 +140,7 @@ __all__ = [
     "PublicEpistemicMemory", "HiddenCedTrace", "ChatResponse",
     "build_full_brief", "save_conversation_json", "load_conversation_json",
     "LiveAnthropicAdapter", "build_council", "build_council_registry",
+    "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "extract_lesson",
     "run_demo", "build_demo_orchestrator",
 ]
 
