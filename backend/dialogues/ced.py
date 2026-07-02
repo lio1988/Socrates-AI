@@ -498,11 +498,58 @@ class CEDOrchestrator:
 
     # ── Phase 8C: full registry-backed mock session ───────────────────────────
 
+    def _council_roster(self) -> List[Dict[str, str]]:
+        """PUBLIC panel composition: which model/company holds each seat. This is
+        deliberation-context info only — judging tasks never receive it."""
+        from .reasoning_prompts import model_company
+        roster = []
+        for a in (self.registry.available_adapters() if self.registry else []):
+            model = getattr(a, "model", None) or "mock"
+            roster.append({"seat": a.provider_id, "model": model,
+                           "company": model_company(model)})
+        return roster
+
+    def _provider_label(self, provider_id: Optional[str]) -> str:
+        """'model (company)' label for the seat that produced a move."""
+        from .reasoning_prompts import model_company
+        if not provider_id or not self.registry:
+            return "unattributed"
+        for a in self.registry.all_adapters():
+            if a.provider_id == provider_id:
+                model = getattr(a, "model", None) or "mock"
+                return f"{model} ({model_company(model)})"
+        return "unattributed"
+
+    def _dialogue_transcript(self, state: SessionState) -> List[Dict[str, Any]]:
+        """The WHOLE dialogue so far, in order, with speaker attribution — so each
+        agent reasons over the full flow before its next move. Public moves only;
+        never scores/leaderboard/audit."""
+        return [{
+            "phase": m.phase.value,
+            "role": m.role.value,
+            "by": self._provider_label(m.provider_id),
+            "content": m.content,
+        } for m in state.moves]
+
     def _registry_phase_context(
         self, state: SessionState, phase: DialogPhase, agent_id: str,
     ) -> Dict[str, Any]:
-        """Build the per-phase context for a registry-driven task (mirrors the
-        FakeProvider pipeline; minimal-awareness safe — no scores/leaderboard)."""
+        """Build the per-phase context for a registry-driven task (minimal-awareness
+        safe — no scores/leaderboard). Every deliberation phase carries the council
+        roster (who is in the room) and the full dialogue_so_far transcript."""
+        base: Dict[str, Any] = {
+            "council_roster": self._council_roster(),
+            "dialogue_so_far": self._dialogue_transcript(state),
+        }
+        specific = self._phase_specific_context(state, phase, agent_id)
+        base.update(specific)
+        return base
+
+    def _phase_specific_context(
+        self, state: SessionState, phase: DialogPhase, agent_id: str,
+    ) -> Dict[str, Any]:
+        """Phase-targeted extracts (kept alongside the full transcript so each role
+        sees BOTH the whole flow and the material it must directly engage)."""
         if phase == DialogPhase.OPENING:
             return {}
         if phase == DialogPhase.INITIAL_RESPONSE:

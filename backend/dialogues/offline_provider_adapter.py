@@ -326,9 +326,11 @@ class OfflineProviderAdapter(BaseProviderAdapter):
         never from agent internals or any scoreboard.
         """
         role_label = task.role.value if task.role else "council_member"
-        # Full-reasoning system prompt (council identity + reasoning protocol + role
-        # + phase + evaluation discipline) so a REAL model reasons at full power.
-        system = build_reasoning_system_prompt(task.role, task.phase, task.task_kind)
+        # Full-reasoning system prompt (council identity + WHO THIS MODEL IS +
+        # reasoning protocol + role + phase + whole-dialogue review for
+        # deliberation / evaluation discipline for judging) at full power.
+        system = build_reasoning_system_prompt(task.role, task.phase, task.task_kind,
+                                               model=self.model)
         # The user turn carries only what the task provides (question + scoped context
         # + output schema). This is the same content a live model would receive.
         user_payload = {

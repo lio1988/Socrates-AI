@@ -145,6 +145,50 @@ rigor, calibration, and honesty. Do not herd toward an apparent consensus; an
 output is not better because others seem to agree. Justify each judgement against
 the specific rubric criteria."""
 
+# ── agent identity (who built me / who is in the room) ────────────────────────
+
+_COMPANY_PREFIXES = (
+    ("claude", "Anthropic"), ("gpt", "OpenAI"), ("o1", "OpenAI"), ("o3", "OpenAI"),
+    ("gemini", "Google"), ("grok", "xAI"), ("llama", "Meta"),
+    ("mistral", "Mistral AI"), ("deepseek", "DeepSeek"), ("qwen", "Alibaba"),
+    ("mock", "Mock (offline)"),
+)
+
+
+def model_company(model: Optional[str]) -> str:
+    """Best-effort vendor name from a model id (unknown models stay 'Unknown')."""
+    low = (model or "").lower()
+    for prefix, company in _COMPANY_PREFIXES:
+        if low.startswith(prefix):
+            return company
+    return "Unknown"
+
+
+def _identity_block(model: str) -> str:
+    return (
+        f"**Your identity**\n"
+        f"You are the model `{model}`, built by {model_company(model)}, serving as one "
+        "seat of this council. Your fellow seats (and which company built each) are "
+        "listed in `council_roster` in your task context when deliberating. Use this "
+        "knowledge well: different vendors have different training biases, so treat "
+        "the panel's diversity as a resource — and remember that agreement between "
+        "similar models is NOT independent evidence. Arguments count on their merits, "
+        "never on the prestige of who made them."
+    )
+
+
+DIALOGUE_REVIEW_DIRECTIVE = """\
+**Whole-dialogue review (do this BEFORE composing your move)**
+Your task context includes `dialogue_so_far` — the full transcript of every move
+in this dialogue, in order, with each speaker's model/company attribution. Before
+you answer, reason over the WHOLE dialogue, not just the latest move:
+1. Trace how the discussion evolved: what was asked, claimed, challenged, revised.
+2. List (privately) what is now established, what was refuted, and what is still open.
+3. Identify the single strongest unanswered point relevant to YOUR move.
+4. Only then compose your move — it must advance the dialogue from where it truly
+   stands, not restart it or ignore what others already established."""
+
+
 SYNTHESIS_CONTENT_DIRECTIVE = """\
 **Synthesis output — REQUIRED structure (exact field names)**
 Your `content` MUST be a JSON object with EXACTLY these five string fields — use
@@ -202,14 +246,24 @@ def build_reasoning_system_prompt(
     phase: Optional[DialogPhase] = None,
     task_kind: Optional[TaskKind] = None,
     response_contract: str = DEFAULT_RESPONSE_CONTRACT,
+    model: Optional[str] = None,
 ) -> str:
     """
     Compose the full-reasoning system prompt for one task. Real models receive the
-    council identity + reasoning protocol + role + phase (+ evaluation discipline
-    for judging tasks) + the structured-output contract.
+    council identity + WHO THEY ARE (model/company) + reasoning protocol + role +
+    phase (+ whole-dialogue review for deliberation; + evaluation discipline for
+    judging tasks — where judged outputs stay ANONYMOUS) + the output contract.
     """
     role_label = role.value.upper().replace("_", " ") if role else "COUNCIL MEMBER"
-    parts = [CORE_AGENT_PROMPT, REASONING_PROTOCOL]
+    parts = [CORE_AGENT_PROMPT]
+    if model:
+        parts.append(_identity_block(model))
+    parts.append(REASONING_PROTOCOL)
+    # Deliberation moves must be composed AFTER reviewing the whole dialogue.
+    # Judging tasks (scores/ratification) deliberately do NOT get this — they see
+    # only the anonymous output under evaluation, never the attributed transcript.
+    if task_kind is not None and task_kind not in _EVALUATIVE_KINDS:
+        parts.append(DIALOGUE_REVIEW_DIRECTIVE)
 
     role_line = ROLE_REASONING.get(role) if role else None
     parts.append(f"**Active Role This Phase: {role_label}**"
