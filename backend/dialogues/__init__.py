@@ -105,9 +105,11 @@ from .self_improvement import (
     EpistemicLessonStore,
     Lesson,
     ProcessLesson,
+    TopicSkillTracker,
     extract_lesson,
     distill_lesson_with_council,
     review_process_with_council,
+    rank_lessons_with_council,
 )
 
 __all__ = [
@@ -144,7 +146,9 @@ __all__ = [
     "build_full_brief", "save_conversation_json", "load_conversation_json",
     "LiveAnthropicAdapter", "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
+    "TopicSkillTracker",
     "extract_lesson", "distill_lesson_with_council", "review_process_with_council",
+    "rank_lessons_with_council",
     "run_demo", "build_demo_orchestrator",
 ]
 

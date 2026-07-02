@@ -867,6 +867,31 @@ remain untouched — lessons appear only in deliberation context.
 
 ---
 
+## Phase 14 — Adaptive dialectic, semantic retrieval, topic skill
+
+**Confidence-Adaptive Dialectic.** The dialectic now *escalates where the risk
+is*. The trigger is purely mechanical (mean confidence of the initial responses —
+CED-owned metadata): uniformly **high** confidence (≥ 0.80) is exactly where
+herding hides, so the elenchus receives a **devil's-advocate mandate** ("construct
+the strongest case AGAINST the emerging consensus — but do not manufacture a fake
+objection if none exists"); uniformly **low** confidence (≤ 0.45) yields an
+**uncertainty-mapping mandate** (map what is unknown instead of forcing a
+verdict). The trigger state is audited (`adaptive_dialectic`).
+
+**Semantic lesson retrieval** (`ai_learning=True`): a keyword prefilter proposes
+candidate lessons, then a council seat *selects which ones genuinely transfer*
+to the new question (`LESSON_RELEVANCE`; surface overlap ≠ transfer). Resolved
+once per session and cached; honest keyword fallback on any failure; the audit
+records `lesson_retrieval: council | keyword`.
+
+**Per-topic seat skill** (`TopicSkillTracker`, optional): peer scores aggregated
+by (seat, topic) via the existing `classify_topic` — which seat is actually good
+at what. Like the leaderboard it is **CED-owned analytics, hidden from agents**
+(never in any prompt/context), used for seat selection and operator reports;
+JSON persistence with the standard interpretation warning.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

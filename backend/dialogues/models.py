@@ -178,6 +178,7 @@ class TaskKind(str, Enum):
     SECTION_SCORE           = "section_score"           # Phase 8C.2 registry peer section scoring
     LESSON_DISTILLATION     = "lesson_distillation"     # Phase 13D AI-authored lesson
     PROCESS_REVIEW          = "process_review"          # Phase 13D AI meta-reflection on the dialogue
+    LESSON_RELEVANCE        = "lesson_relevance"        # Phase 14 AI lesson retrieval
 
 
 class AgentTask(BaseModel):

@@ -321,6 +321,10 @@ class ScriptedMockProvider(BaseProviderAdapter):
                                           "uncertainty over universal assertions.",
                 "pitfalls": ["overclaiming beyond the cited evidence"],
             }, "confidence": 0.8})
+        if task.task_kind == TaskKind.LESSON_RELEVANCE:
+            n = len(task.context.get("candidate_lessons", []) or [])
+            return json.dumps({"content": {"relevant_indices": list(range(min(2, n)))},
+                               "confidence": 0.7})
         if task.task_kind == TaskKind.PROCESS_REVIEW:
             return json.dumps({"content": {
                 "what_worked": "The elenchus pressed the load-bearing assumption directly.",

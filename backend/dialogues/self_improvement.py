@@ -396,3 +396,120 @@ async def review_process_with_council(ced, state: SessionState) -> Optional[Proc
         advice_for_next_dialogue=_clip(advice),
         session_id=state.session_id,
     )
+
+
+async def rank_lessons_with_council(ced, question: str, k: int = 3):
+    """
+    Phase 14 — semantic lesson retrieval: keyword prefilter proposes candidates,
+    then a council seat SELECTS which lessons genuinely TRANSFER to the new
+    question (surface overlap is not transfer). Returns (lessons, mode) where
+    mode is "council" or "keyword" (honest fallback on any failure).
+    """
+    from .models import AgentRole, AgentState, AgentTask, DialogPhase, TaskKind
+    store = ced.lesson_store
+    if store is None:
+        return [], "keyword"
+    candidates = store.relevant(question, k=8)          # deterministic prefilter
+    if not candidates or ced.registry is None:
+        return candidates[:k], "keyword"
+    adapters = ced.registry.available_adapters()
+    if not adapters:
+        return candidates[:k], "keyword"
+    task = AgentTask(
+        session_id="lesson_retrieval", agent_id="lesson_ranker",
+        role=AgentRole.EMPIRICIST, phase=DialogPhase.OPENING,
+        question=question,
+        context={"candidate_lessons": candidates},
+        output_schema={"_role": "empiricist", "_question": question},
+        task_kind=TaskKind.LESSON_RELEVANCE,
+    )
+    astate = AgentState(agent_id="lesson_ranker",
+                        primary_role=AgentRole.EMPIRICIST,
+                        assigned_role=AgentRole.EMPIRICIST)
+    resp = await ced.registry.run_adapter(adapters[0], task, astate, None)
+    if not resp.ok:
+        return candidates[:k], "keyword"
+    idx = resp.parsed_move.content.get("relevant_indices", None)
+    if not isinstance(idx, list):
+        return candidates[:k], "keyword"
+    picked = [candidates[i] for i in idx
+              if isinstance(i, int) and 0 <= i < len(candidates)][:k]
+    return picked, "council"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# E. TopicSkillTracker — per-topic skill profile per seat (CED-owned analytics)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# WHICH seat is actually good at WHAT. Mechanical: peer scores (already CED-owned
+# analytics) aggregated by (seat, topic) using the existing classify_topic
+# heuristic. Like the leaderboard, this is HIDDEN FROM AGENTS — it informs seat
+# selection and operator decisions, never a prompt.
+
+TOPIC_SKILL_SCHEMA = "topic_skill_v0"
+SKILL_INTERPRETATION_WARNING = (
+    "Peer-evaluation signals aggregated by topic — not proof of truth or ability.")
+
+
+@dataclass
+class TopicSkill:
+    seat: str
+    topic: str
+    score_sum: float = 0.0
+    score_count: int = 0
+
+    @property
+    def average(self) -> float:
+        return round(self.score_sum / self.score_count, 4) if self.score_count else 0.0
+
+
+class TopicSkillTracker:
+    """CED-owned per-(seat, topic) skill profile from peer scores. Never shown
+    to agents; used mechanically for seat selection and operator reports."""
+
+    def __init__(self, skills: Optional[Dict[str, TopicSkill]] = None) -> None:
+        self._skills: Dict[str, TopicSkill] = skills or {}   # key "seat|topic"
+
+    def ingest_session(self, state: SessionState) -> None:
+        from .topic import classify_topic
+        topic = classify_topic(state.question).value
+        seat_of_move = {m.move_id: m.provider_id for m in state.moves if m.provider_id}
+        for ms in state.micro_scores:
+            seat = seat_of_move.get(ms.output_id)
+            if seat is None or ms.overall_score is None:
+                continue
+            key = f"{seat}|{topic}"
+            ts = self._skills.setdefault(key, TopicSkill(seat=seat, topic=topic))
+            ts.score_sum += float(ms.overall_score)
+            ts.score_count += 1
+
+    def best_seats(self, topic: str) -> List[str]:
+        """Seats ranked by peer-scored average on this topic (desc; stable)."""
+        rows = [s for s in self._skills.values() if s.topic == topic and s.score_count]
+        rows.sort(key=lambda s: (-s.average, s.seat))
+        return [s.seat for s in rows]
+
+    def profile(self, seat: str) -> Dict[str, float]:
+        """topic -> average for one seat (the seat's skill fingerprint)."""
+        return {s.topic: s.average for s in self._skills.values()
+                if s.seat == seat and s.score_count}
+
+    def report(self) -> Dict[str, Any]:
+        return {
+            "schema_version": TOPIC_SKILL_SCHEMA,
+            "skills": {k: asdict(v) for k, v in sorted(self._skills.items())},
+            "interpretation_warning": SKILL_INTERPRETATION_WARNING,
+        }
+
+    def save(self, path: str) -> None:
+        Path(path).write_text(json.dumps(self.report(), ensure_ascii=False, indent=2) + "\n",
+                              encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str) -> "TopicSkillTracker":
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        if doc.get("schema_version") != TOPIC_SKILL_SCHEMA:
+            raise ValueError(f"schema_version mismatch: expected {TOPIC_SKILL_SCHEMA!r}")
+        return cls({k: TopicSkill(seat=v["seat"], topic=v["topic"],
+                                  score_sum=v["score_sum"], score_count=v["score_count"])
+                    for k, v in doc.get("skills", {}).items()})

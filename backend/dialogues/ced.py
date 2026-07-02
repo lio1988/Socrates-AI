@@ -196,6 +196,7 @@ class CEDOrchestrator:
         lesson_store=None,
         seat_health=None,
         ai_learning: bool = False,
+        topic_skill=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -228,6 +229,10 @@ class CEDOrchestrator:
         # its own process (PROCESS_REVIEW). Any AI failure falls back honestly to
         # the mechanical extractor — never fabricated.
         self.ai_learning = ai_learning
+        # Phase 14: per-(seat, topic) skill profile (CED-owned analytics, hidden
+        # from agents) + per-session lesson-retrieval cache (lessons, mode).
+        self.topic_skill = topic_skill
+        self._session_lessons: Dict[str, Tuple[List[Dict[str, Any]], str]] = {}
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -557,8 +562,10 @@ class CEDOrchestrator:
         }
         # Phase 13: PUBLIC lessons from prior ratified dialogues on related
         # questions (never scores/identities) — the council builds on its past.
+        # Phase 14: prefer the per-session cache (AI-ranked when ai_learning).
         if self.lesson_store is not None:
-            lessons = self.lesson_store.relevant(state.question, k=3)
+            cached = self._session_lessons.get(state.session_id)
+            lessons = cached[0] if cached else self.lesson_store.relevant(state.question, k=3)
             if lessons:
                 base["lessons_from_prior_dialogues"] = lessons
             # Phase 13D: the council's own advice to its future self (process
@@ -583,12 +590,34 @@ class CEDOrchestrator:
         if phase == DialogPhase.ELENCHUS:
             # The critic must know what hidden assumption Socrates targeted —
             # otherwise the elenchus cannot press where the dialogue is pointed.
-            return {
+            ctx: Dict[str, Any] = {
                 "socratic_opening_question": self._socratic_opening(state),
                 "initial_responses": [
                     {"role": m.role.value, "content": m.content}
                     for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)],
             }
+            # Phase 14 — Confidence-Adaptive Dialectic: uniform HIGH confidence is
+            # exactly where herding hides → escalate to a devil's-advocate mandate;
+            # uniform LOW confidence → map the uncertainty honestly instead of
+            # forcing an answer. Trigger is mechanical (confidence metadata only).
+            adaptive = self._adaptive_dialectic(state)
+            if adaptive["devils_advocate_triggered"]:
+                ctx["devils_advocate_mandate"] = (
+                    "ESCALATION: every initial response arrived with uniformly HIGH "
+                    f"confidence (mean {adaptive['initial_mean_confidence']}). Confident "
+                    "agreement is precisely where collective error hides. Your mandate "
+                    "this round: construct the STRONGEST possible case AGAINST the "
+                    "emerging consensus — attack its load-bearing assumption directly. "
+                    "If the consensus survives your best attack, it has earned its "
+                    "confidence; do not manufacture a fake objection if none exists.")
+            elif adaptive["uncertainty_mode_triggered"]:
+                ctx["uncertainty_mapping_mandate"] = (
+                    "The council's initial responses show uniformly LOW confidence "
+                    f"(mean {adaptive['initial_mean_confidence']}). Do not force a "
+                    "verdict this round: your mandate is to MAP the uncertainty — "
+                    "identify exactly what is unknown, what evidence would settle it, "
+                    "and which sub-questions are answerable now.")
+            return ctx
         if phase == DialogPhase.REFLECTION:
             mine = next((m for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
                          if m.agent_id == agent_id), None)
@@ -731,6 +760,11 @@ class CEDOrchestrator:
         if not ready:
             return self._registry_fallback_final(state, warning, blocked_phase=None)
 
+        # Phase 14: resolve relevant lessons ONCE per session (AI-ranked when
+        # ai_learning; keyword otherwise) and cache for every phase context.
+        if self.lesson_store is not None:
+            self._session_lessons[sid] = await self._resolve_session_lessons(state)
+
         phase_results: List[Tuple[DialogPhase, CouncilRoundResult]] = []
         for phase in REGISTRY_SESSION_PHASES:
             result = await self._run_registry_phase(state, phase, timeout_seconds)
@@ -756,6 +790,35 @@ class CEDOrchestrator:
         await self._self_improvement_ingest(state, final)
         return final
 
+    async def _resolve_session_lessons(self, state: SessionState) -> Tuple[List[Dict[str, Any]], str]:
+        """Phase 14: pick the lessons this session should see — a council seat
+        selects genuine transfer when ai_learning (honest keyword fallback)."""
+        try:
+            if self.ai_learning and self.registry is not None:
+                from .self_improvement import rank_lessons_with_council
+                return await rank_lessons_with_council(self, state.question, k=3)
+            return self.lesson_store.relevant(state.question, k=3), "keyword"
+        except Exception:
+            return [], "keyword"
+
+    # Confidence-Adaptive Dialectic (Phase 14): thresholds on the mean confidence
+    # of the INITIAL responses (CED-owned metadata; a purely mechanical trigger).
+    HIGH_CONSENSUS_CONFIDENCE = 0.80    # everyone confident → herding risk → escalate
+    LOW_CONFIDENCE_FLOOR = 0.45         # everyone unsure → map uncertainty honestly
+
+    def _adaptive_dialectic(self, state: SessionState) -> Dict[str, Any]:
+        initial = state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
+        if not initial:
+            return {"initial_mean_confidence": None,
+                    "devils_advocate_triggered": False,
+                    "uncertainty_mode_triggered": False}
+        mean_conf = round(sum(m.confidence for m in initial) / len(initial), 4)
+        return {
+            "initial_mean_confidence": mean_conf,
+            "devils_advocate_triggered": mean_conf >= self.HIGH_CONSENSUS_CONFIDENCE,
+            "uncertainty_mode_triggered": mean_conf <= self.LOW_CONFIDENCE_FLOOR,
+        }
+
     async def _self_improvement_ingest(self, state: SessionState, final: FinalResponse) -> None:
         """Phase 13 hooks (no-ops when the stores are absent): seat telemetry from
         the task_log; a PUBLIC lesson only from a RATIFIED outcome. With
@@ -765,6 +828,8 @@ class CEDOrchestrator:
         try:
             if self.seat_health is not None:
                 self.seat_health.ingest_session(state)
+            if self.topic_skill is not None:
+                self.topic_skill.ingest_session(state)
             if self.lesson_store is None:
                 return
             lesson = None
@@ -794,8 +859,11 @@ class CEDOrchestrator:
         phase_results: List[Tuple[DialogPhase, CouncilRoundResult]],
     ) -> Dict[str, Any]:
         """CED-owned audit add-ons for a registry session (hidden from agents)."""
+        cached = self._session_lessons.get(state.session_id)
         return {
             "execution_mode": "registry",
+            "adaptive_dialectic": self._adaptive_dialectic(state),
+            "lesson_retrieval": (cached[1] if cached else None),
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
             "provider_status_summary": self.registry.status_summary(),
             "registry_phase_rounds": [

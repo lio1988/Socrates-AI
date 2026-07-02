@@ -249,6 +249,16 @@ Be specific about THIS dialogue's process; generic advice is a failure.
 Example: {"content": {"what_worked": "…", "what_failed": "…",
 "advice_for_next_dialogue": "…"}, "confidence": 0.75}"""
 
+LESSON_RELEVANCE_DIRECTIVE = """\
+**Lesson relevance — REQUIRED structure (exact field names)**
+You are given candidate lessons from PAST dialogues (`candidate_lessons`, a
+numbered list) and a NEW question. Select ONLY the lessons whose insight
+genuinely TRANSFERS to the new question — surface keyword overlap is not
+transfer. Your `content` MUST be a JSON object with EXACTLY this field:
+  "relevant_indices" — list of 0-based indices into candidate_lessons (max 3;
+                       empty list if nothing genuinely transfers)
+Example: {"content": {"relevant_indices": [0, 2]}, "confidence": 0.8}"""
+
 _SCORE_KINDS = {TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE}
 
 _EVALUATIVE_KINDS = {
@@ -309,6 +319,8 @@ def build_reasoning_system_prompt(
         parts.append(LESSON_DISTILLATION_DIRECTIVE)
     if task_kind == TaskKind.PROCESS_REVIEW:
         parts.append(PROCESS_REVIEW_DIRECTIVE)
+    if task_kind == TaskKind.LESSON_RELEVANCE:
+        parts.append(LESSON_RELEVANCE_DIRECTIVE)
 
     parts.append("**Output**\n" + response_contract)
     return "\n\n".join(parts)
