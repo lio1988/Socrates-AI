@@ -774,6 +774,36 @@ council actually beats a strong single model.
 
 ---
 
+## Phase 12 — Live council hardening (proven on real models)
+
+The first real live runs (gated, Haiku seats) completed a **full multi-agent
+Socratic dialogue end-to-end** — all six deliberation phases, council
+ratification, and a populated 5-section answer. Getting there surfaced a set of
+mock-vs-real gaps, each fixed and locked in by offline regression tests
+(`tests_dialogues/test_live_hardening.py`):
+
+| Live symptom | Root cause | Fix |
+|---|---|---|
+| `schema_error` / free-form content | real models don't know the expected shape (mock did) | **per-task content directives** in `reasoning_prompts.py`: synthesis (exact 5 section names), peer scoring (exact 7 `ScoreBreakdown` dims), ratification (exact verdict shape) |
+| `invalid_json: Extra data` | models append prose after the JSON object | parser uses `raw_decode` — first JSON object wins, trailing text ignored (schema still enforced) |
+| `invalid_json: Unterminated string` | 2048 max_tokens truncated rich (Greek) answers | `DEFAULT_MAX_TOKENS = 8192` |
+| `400 adaptive thinking not supported` | thinking sent to non-Opus models | `supports_adaptive_thinking()` — Opus-4.x only |
+| `timeout` on long reasoning | 30s registry budget | 180s per call (`CED_LIVE_TIMEOUT`), SDK timeout aligned |
+| empty final answer | assembly needs peer scores; live scoring is finicky | **`assembly_fallback`** (live only): a section with no valid scores deterministically uses a real synthesis draft — never fabricated, never empty. Default stays strict (`unresolved`) |
+| transient 429 / timeout kills a seat | no retry | **bounded deterministic retry** (`CED_LIVE_RETRIES`, default 1; fixed delay, transient-only — never retries schema/auth/credit errors). The registry per-task budget covers all attempts |
+
+**Runners:** `scripts/live_dialogue.py` (gated live|mock full-dialogue runner with a
+per-phase trace and full failure diagnostics) and `scripts/diagnose_connectivity.py`
+(no-key DNS/TCP/TLS probe). A `400 "credit balance is too low"` from the API is an
+**account** issue (Plans & Billing), not a code failure — the runner reports it
+verbatim.
+
+> The permanent invariant is intact throughout: the fallback only *mechanically
+> selects* a real agent draft (stable `draft_id` order, `score_count = 0` recorded
+> honestly); CED still never fabricates content, scores, or verdicts.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

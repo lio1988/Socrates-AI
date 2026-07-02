@@ -53,10 +53,13 @@ KEY_ENV = "ANTHROPIC_API_KEY"              # provider key, loaded locally, never
 MODELS_ENV = "CED_LIVE_MODELS"             # optional comma-separated per-seat models
 MAXTOK_ENV = "CED_LIVE_MAX_TOKENS"         # optional
 TIMEOUT_ENV = "CED_LIVE_TIMEOUT"           # optional per-provider call timeout (seconds)
+RETRIES_ENV = "CED_LIVE_RETRIES"           # optional transient-failure retries per call
 
 DEFAULT_LIVE_MODEL = DEFAULT_OFFLINE_MODEL  # "claude-opus-4-8"
 DEFAULT_MAX_TOKENS = 8192   # generous: rich (esp. Greek) reasoning JSON must not truncate
 DEFAULT_REGISTRY_TIMEOUT = 180.0   # long: real reasoning responses can take a while
+DEFAULT_RETRIES = 1                # ONE deterministic retry on rate-limit/timeout only
+DEFAULT_RETRY_DELAY = 2.0          # fixed delay (no randomness/backoff)
 DEFAULT_COUNCIL_SIZE = 4
 
 
@@ -103,6 +106,14 @@ def resolve_timeout(env) -> float:
         return DEFAULT_REGISTRY_TIMEOUT
 
 
+def resolve_retries(env) -> int:
+    try:
+        return max(0, int(env.get(RETRIES_ENV) if env.get(RETRIES_ENV) is not None
+                          else DEFAULT_RETRIES))
+    except (TypeError, ValueError):
+        return DEFAULT_RETRIES
+
+
 # ── the live Anthropic adapter (real agent behind the _produce_raw_text seam) ─
 
 class _GuardTransport:
@@ -127,26 +138,51 @@ class LiveAnthropicAdapter(OfflineProviderAdapter):
     is_offline = False
     is_live = True
 
+    # Only transient failures are retried; deterministic failures (schema, auth,
+    # invalid JSON, generic errors like "credit balance too low") are NOT — a
+    # retry there wastes money without changing the outcome.
+    RETRYABLE = frozenset({ProviderStatus.RATE_LIMITED, ProviderStatus.TIMEOUT})
+
     def __init__(self, provider_id: str, api_key: str, *,
                  model: str = DEFAULT_LIVE_MODEL,
-                 max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
+                 max_tokens: int = DEFAULT_MAX_TOKENS,
+                 timeout: float = DEFAULT_REGISTRY_TIMEOUT,
+                 retries: int = DEFAULT_RETRIES,
+                 retry_delay_seconds: float = DEFAULT_RETRY_DELAY) -> None:
         super().__init__(
             provider_id, _GuardTransport(),
             provider_name=f"Anthropic Live ({model})",
             model=model, max_tokens=max_tokens, api_key=api_key,
         )
+        self.timeout = timeout
+        self.retries = max(0, int(retries))
+        self.retry_delay_seconds = max(0.0, float(retry_delay_seconds))
 
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
         request = self._build_request(task, agent_state)
         self.last_request = request
         import anthropic  # lazy — ONLY here, ONLY on a real live call
-        async with anthropic.AsyncAnthropic(api_key=self.api_key) as client:
+        # Explicit SDK timeout aligned with the registry's per-call budget.
+        async with anthropic.AsyncAnthropic(api_key=self.api_key, timeout=self.timeout) as client:
             message = await client.messages.create(**request.to_messages_kwargs())
         envelope = message.to_dict()
         self.last_envelope = envelope
         return self._extract_text(envelope)
 
     async def generate_agent_move(self, task, agent_state) -> ProviderResponse:
+        """One attempt + a bounded, deterministic retry on TRANSIENT failures only
+        (rate limit / timeout). Fixed delay, no randomness; retry_count recorded."""
+        response = await self._generate_once(task, agent_state)
+        attempt = 0
+        while response.status in self.RETRYABLE and attempt < self.retries:
+            attempt += 1
+            if self.retry_delay_seconds:
+                await asyncio.sleep(self.retry_delay_seconds)
+            response = await self._generate_once(task, agent_state)
+        response.retry_count = attempt
+        return response
+
+    async def _generate_once(self, task, agent_state) -> ProviderResponse:
         start = time.perf_counter()
 
         def _ms() -> float:
@@ -174,8 +210,13 @@ class LiveAnthropicAdapter(OfflineProviderAdapter):
             name = type(exc).__name__
             if name == "RateLimitError":
                 return _fail(ProviderStatus.RATE_LIMITED, "rate limited (429)")
-            if name in ("APITimeoutError", "APIConnectionError"):
-                return _fail(ProviderStatus.TIMEOUT, "request timeout / connection error")
+            if name == "APITimeoutError":
+                return _fail(ProviderStatus.TIMEOUT,
+                             f"request timed out after {self.timeout:g}s — "
+                             f"raise {TIMEOUT_ENV} or use a faster model")
+            if name == "APIConnectionError":
+                return _fail(ProviderStatus.ERROR,
+                             "connection error reaching the API — check network / proxy / firewall")
             if name == "AuthenticationError":
                 return _fail(ProviderStatus.ERROR, "authentication failed (check key)")
             return _fail(ProviderStatus.ERROR, _redact(str(exc), self.api_key))
@@ -205,7 +246,12 @@ def build_council_registry(
     (the offline default). Env-only; never reads `.env`; makes NO network call.
     """
     env = os.environ if env is None else env
-    registry = CouncilProviderRegistry(provider_timeout_seconds=resolve_timeout(env))
+    timeout = resolve_timeout(env)
+    retries = resolve_retries(env)
+    # The registry's per-task budget wraps the adapter's whole call INCLUDING its
+    # internal retries, so it must cover every attempt (+ fixed delays + margin).
+    budget = (retries + 1) * timeout + retries * DEFAULT_RETRY_DELAY + 5.0
+    registry = CouncilProviderRegistry(provider_timeout_seconds=budget)
 
     key = resolve_key(env)
     if live_enabled(env) and key is not None:
@@ -213,7 +259,8 @@ def build_council_registry(
         max_tokens = resolve_max_tokens(env)
         for i, model in enumerate(models):
             registry.register(LiveAnthropicAdapter(
-                f"anthropic_seat{i}_{model}", key, model=model, max_tokens=max_tokens))
+                f"anthropic_seat{i}_{model}", key, model=model, max_tokens=max_tokens,
+                timeout=timeout, retries=retries))
         return registry, "live"
 
     for i in range(council_size):
