@@ -31,6 +31,7 @@ from .models import (
     AgentState,
     AgentTask,
     CouncilRoundResult,
+    EpistemicMarker,
     ProviderResponse,
     ProviderStatus,
     TaskKind,
@@ -134,6 +135,16 @@ def parse_and_validate_move(
         )
     except (ValidationError, KeyError, TypeError) as exc:
         return None, ProviderStatus.SCHEMA_ERROR, f"schema validation failed: {exc}"
+    # Phase 18: lift the move's epistemic marker (the honesty vocabulary) out of
+    # the content so CED can check marker↔confidence consistency mechanically.
+    # An invalid/absent marker is simply not lifted — never a rejection.
+    if isinstance(data["content"], dict):
+        raw_marker = data["content"].get("epistemic_marker")
+        if raw_marker:
+            try:
+                move.epistemic_markers = [EpistemicMarker(str(raw_marker))]
+            except (ValueError, TypeError):
+                pass
     return move, ProviderStatus.OK, None
 
 

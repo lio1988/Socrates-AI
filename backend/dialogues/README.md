@@ -979,6 +979,34 @@ persistence (`calibration_v0`).
 
 ---
 
+## Phase 18 — The honesty vocabulary, machine-readable
+
+**Epistemic markers flow end-to-end.** The `EpistemicMarker` vocabulary
+(established_fact | logical_inference | reasonable_hypothesis |
+open_uncertainty | unsubstantiated_claim) existed since V1 but never reached
+the live path. Now: deliberating agents are told the **exact vocabulary and its
+confidence ceilings** (`EPISTEMIC_MARKER_DIRECTIVE`), the registry parser lifts
+`content.epistemic_marker` into `move.epistemic_markers` (invalid/missing →
+simply not lifted, never a rejection), and CED **checks marker↔confidence
+consistency mechanically**: a move tagged `unsubstantiated_claim` at confidence
+0.9 is an epistemic inconsistency — recorded in the audit
+(`epistemic_consistency`: tagged / violations / ceilings), never rewritten.
+Fittingly, the check immediately caught the mock's own Socratic opening
+(open_uncertainty @ 0.7 > 0.55).
+
+**Role exemplars (form, not topic).** Every role's prompt now carries one
+compact exemplar of an excellent move — a gold-standard Socratic question,
+objection, evidence check, reconstruction, revision-with-arithmetic, verdict —
+each explicitly marked "imitate the FORM, not the topic" (deliberately
+domain-neutral to avoid topical overfit). Few-shot form guidance is the highest
+-leverage prompt technique available offline.
+
+**Pre-mortem.** The reasoning protocol gains its closing step: *"what will the
+council's best critic say about THIS move? If you can already see the flaw, fix
+it now — never ship a move you can already refute yourself."*
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

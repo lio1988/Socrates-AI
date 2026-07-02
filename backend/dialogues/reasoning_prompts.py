@@ -98,9 +98,94 @@ REASONING_PROTOCOL = """\
    it is weak. Do NOT hide behind hedging, and do NOT overclaim.
 6. Be specific and useful. Cite the exact claim/assumption you address. Vague,
    generic, or rhetorical output is a failure even if it sounds impressive.
+7. Pre-mortem. Before emitting, ask: what will the council's best critic say about
+   THIS move? If you can already see the flaw, fix it now — never ship a move you
+   can already refute yourself.
 
 Do your reasoning thoroughly in your thinking; then emit ONLY the structured answer
 required by the output schema — clean, with no leftover scratch work."""
+
+
+# ── epistemic markers: the honesty vocabulary, machine-readable ────────────────
+
+# Honest confidence ceiling per marker (CED checks consistency mechanically).
+MARKER_CONFIDENCE_BANDS = {
+    "established_fact":      1.00,
+    "logical_inference":     0.95,
+    "reasonable_hypothesis": 0.75,
+    "open_uncertainty":      0.55,
+    "unsubstantiated_claim": 0.40,
+}
+
+EPISTEMIC_MARKER_DIRECTIVE = """\
+**Epistemic marker (tag the status of your central claim)**
+Include in your `content` an `"epistemic_marker"` field — the honest status of
+your move's CENTRAL claim, using EXACTLY one of these values:
+  "established_fact"      — verifiable, uncontested          (confidence ≤ 1.00)
+  "logical_inference"     — follows necessarily from premises (confidence ≤ 0.95)
+  "reasonable_hypothesis" — plausible, evidence incomplete    (confidence ≤ 0.75)
+  "open_uncertainty"      — genuinely unsettled               (confidence ≤ 0.55)
+  "unsubstantiated_claim" — asserted without support          (confidence ≤ 0.40)
+Your `confidence` MUST respect the ceiling of the marker you chose — a
+"reasonable_hypothesis" delivered at confidence 0.9 is an epistemic
+inconsistency, and the protocol records it. Choose the marker first, honestly;
+let the confidence follow."""
+
+
+# ── exemplars: the FORM of an excellent move, per role (imitate form, not topic) ─
+
+ROLE_EXEMPLARS = {
+    AgentRole.SOCRATES: (
+        'Form of an excellent Socratic question (imitate the FORM, not the topic): '
+        '"When we say urban trees \'cool\' a city — do we mean they lower measured '
+        'air temperature, or that people feel cooler near them? Which of the two is '
+        'the policy actually buying?" — one question, isolates the ambiguity the '
+        'whole debate rests on.'
+    ),
+    AgentRole.ELENCHUS_CRITIC: (
+        'Form of an excellent objection (imitate the FORM, not the topic): "The '
+        'claim \'trees lowered the district\'s temperature by 2°C\' cites a study '
+        'that compared different districts, not the same district before/after '
+        'planting — so it supports correlation with greener districts, not the '
+        'causal claim made." — quotes the exact claim, names the exact inferential '
+        'gap, nothing else.'
+    ),
+    AgentRole.EMPIRICIST: (
+        'Form of an excellent evidence check (imitate the FORM, not the topic): '
+        '"Claim A (2°C cooling): one observational study, n=12 districts, '
+        'unverified — a paired before/after measurement would settle it. Claim B '
+        '(shade reduces surface temp): established, replicated." — per-claim status '
+        'plus the concrete verification path.'
+    ),
+    AgentRole.MAIEUTIC_RECONSTRUCTOR: (
+        'Form of an excellent reconstruction (imitate the FORM, not the topic): '
+        '"The defensible core: tree shade reliably lowers surface and perceived '
+        'temperature; the citywide 2°C air-temperature claim does not survive and '
+        'is dropped, not hedged. Revised position: plant for shade corridors where '
+        'people walk, not for citywide averages." — keeps what survived, drops what '
+        'did not, ends more precise than it began.'
+    ),
+    AgentRole.SYNTHESIZER: (
+        'Form of an excellent synthesis move: commit exactly where the evidence '
+        'allows ("shade cooling: established"), scope the rest ("citywide claims: '
+        'unsupported at present"), and take the stress test from the strongest '
+        'objection actually raised in this dialogue — never from a weaker invented '
+        'one.'
+    ),
+    AgentRole.REFLECTOR: (
+        'Form of an excellent revision (imitate the FORM, not the topic): "Prior '
+        '0.8 that the 2°C claim held. The critic showed the study cannot support '
+        'causation — that is decisive against my central evidence. Posterior 0.35; '
+        'position narrowed to shade-level effects only." — the update arithmetic is '
+        'visible and honest.'
+    ),
+    AgentRole.FINAL_EVALUATOR: (
+        'Form of an excellent verdict: name the exact section and the exact defect '
+        'or approve with the exact reason — "core_answer claims causation its own '
+        'stress test refutes; required fix: scope the claim to shade effects" beats '
+        'any page of diplomatic prose.'
+    ),
+}
 
 
 # ── per-role rigor directives ─────────────────────────────────────────────────
@@ -393,6 +478,14 @@ def build_reasoning_system_prompt(
     role_line = ROLE_REASONING.get(role) if role else None
     parts.append(f"**Active Role This Phase: {role_label}**"
                  + (f"\n{role_line}" if role_line else ""))
+    # Deliberating agents get their role's exemplar (the FORM of excellence) and
+    # the epistemic-marker vocabulary; judging tasks emit scores/verdicts, so
+    # neither applies there.
+    if task_kind is not None and task_kind not in _EVALUATIVE_KINDS:
+        exemplar = ROLE_EXEMPLARS.get(role) if role else None
+        if exemplar:
+            parts.append(exemplar)
+        parts.append(EPISTEMIC_MARKER_DIRECTIVE)
 
     phase_line = PHASE_REASONING.get(phase) if phase else None
     if phase_line:

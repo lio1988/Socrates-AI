@@ -838,6 +838,25 @@ class CEDOrchestrator:
         await self._self_improvement_ingest(state, final)
         return final
 
+    def _epistemic_consistency(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 18: mechanical marker↔confidence consistency check. An agent that
+        tags its central claim 'unsubstantiated_claim' yet reports confidence 0.9
+        is being epistemically inconsistent — CED records it (never rewrites it)."""
+        from .reasoning_prompts import MARKER_CONFIDENCE_BANDS
+        tagged = 0
+        violations: List[Dict[str, Any]] = []
+        for m in state.moves:
+            if not m.epistemic_markers:
+                continue
+            tagged += 1
+            marker = m.epistemic_markers[0].value
+            ceiling = MARKER_CONFIDENCE_BANDS.get(marker)
+            if ceiling is not None and m.confidence > ceiling + 1e-9:
+                violations.append({"move_id": m.move_id, "marker": marker,
+                                   "confidence": m.confidence, "ceiling": ceiling})
+        return {"moves_tagged": tagged, "violations": violations,
+                "violation_count": len(violations)}
+
     def _record_outcome(self, state: SessionState, final: FinalResponse) -> None:
         """Rolling vital-signs record (bounded; CED-owned; hidden from agents)."""
         adaptive = self._adaptive_dialectic(state)
@@ -971,6 +990,7 @@ class CEDOrchestrator:
         return {
             "execution_mode": "registry",
             "adaptive_dialectic": self._adaptive_dialectic(state),
+            "epistemic_consistency": self._epistemic_consistency(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "lesson_retrieval": (cached[1] if cached else None),
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
