@@ -195,6 +195,7 @@ class CEDOrchestrator:
         assembly_fallback: bool = False,
         lesson_store=None,
         seat_health=None,
+        ai_learning: bool = False,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -222,6 +223,11 @@ class CEDOrchestrator:
         #   operational telemetry per provider seat (content-blind).
         self.lesson_store = lesson_store
         self.seat_health = seat_health
+        # Phase 13D: when True (and a lesson_store exists), lessons are AUTHORED
+        # by a council agent (LESSON_DISTILLATION) and the council also reviews
+        # its own process (PROCESS_REVIEW). Any AI failure falls back honestly to
+        # the mechanical extractor — never fabricated.
+        self.ai_learning = ai_learning
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -555,6 +561,11 @@ class CEDOrchestrator:
             lessons = self.lesson_store.relevant(state.question, k=3)
             if lessons:
                 base["lessons_from_prior_dialogues"] = lessons
+            # Phase 13D: the council's own advice to its future self (process
+            # meta-reflection) — general guidance, not question-specific.
+            guidance = getattr(self.lesson_store, "process_guidance", lambda k=2: [])()
+            if guidance:
+                base["process_lessons_from_past_dialogues"] = guidance
         specific = self._phase_specific_context(state, phase, agent_id)
         base.update(specific)
         return base
@@ -742,20 +753,39 @@ class CEDOrchestrator:
 
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
-        self._self_improvement_ingest(state, final)
+        await self._self_improvement_ingest(state, final)
         return final
 
-    def _self_improvement_ingest(self, state: SessionState, final: FinalResponse) -> None:
-        """Phase 13 hooks (no-ops when the stores are absent). Mechanical only:
-        seat telemetry from the task_log; a PUBLIC lesson only from a RATIFIED
-        outcome. Failures here must never break a session result."""
+    async def _self_improvement_ingest(self, state: SessionState, final: FinalResponse) -> None:
+        """Phase 13 hooks (no-ops when the stores are absent): seat telemetry from
+        the task_log; a PUBLIC lesson only from a RATIFIED outcome. With
+        ai_learning, the lesson is AUTHORED by a council agent and the council
+        reviews its own process — any AI failure falls back to the mechanical
+        extractor. Failures here must never break a session result."""
         try:
             if self.seat_health is not None:
                 self.seat_health.ingest_session(state)
-            if self.lesson_store is not None:
-                lesson = self.lesson_store.ingest(state, final)
-                if lesson is not None:
+            if self.lesson_store is None:
+                return
+            lesson = None
+            if self.ai_learning:
+                from .self_improvement import (
+                    distill_lesson_with_council, review_process_with_council,
+                )
+                lesson = await distill_lesson_with_council(self, state, final)
+                process = await review_process_with_council(self, state)
+                if process is not None:
+                    self.lesson_store.add_process(process)
+                    final.audit_summary["process_lesson_recorded"] = True
+            if lesson is not None:
+                self.lesson_store.add(lesson)
+                final.audit_summary["lesson_recorded"] = True
+                final.audit_summary["lesson_distilled_by"] = "council"
+            else:
+                mechanical = self.lesson_store.ingest(state, final)
+                if mechanical is not None:
                     final.audit_summary["lesson_recorded"] = True
+                    final.audit_summary["lesson_distilled_by"] = "mechanical"
         except Exception:   # telemetry must never take down a dialogue
             final.audit_summary["self_improvement_error"] = True
 
@@ -827,6 +857,13 @@ class CEDOrchestrator:
         phase_results: Optional[List[Tuple[DialogPhase, CouncilRoundResult]]] = None,
     ) -> FinalResponse:
         """Safe non-proceeding FinalResponse when readiness/quorum is not met."""
+        # Phase 13: FAILED sessions are exactly where seat telemetry matters most —
+        # the tracker learns which seats caused the quorum failure (content-blind).
+        if self.seat_health is not None:
+            try:
+                self.seat_health.ingest_session(state)
+            except Exception:
+                pass   # telemetry must never take down even a fallback
         audit = {
             "execution_mode": "registry",
             "proceeded": False,

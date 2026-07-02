@@ -226,6 +226,29 @@ Your `content` MUST be a JSON object with a "verdict" field that is EXACTLY one 
     and "required_fix": "<what must change>"
 Example: {"content": {"verdict": "accept", "rationale": "Meets the bar."}, "confidence": 0.85}"""
 
+LESSON_DISTILLATION_DIRECTIVE = """\
+**Lesson distillation — REQUIRED structure (exact field names)**
+You are distilling what this dialogue TAUGHT, for reuse in future dialogues on
+related questions. Your `content` MUST be a JSON object with EXACTLY these fields:
+  "insight"                — the single most valuable thing this dialogue established
+  "transferable_principle" — a general principle future councils should apply
+  "pitfalls"               — list of 1-3 reasoning traps this dialogue exposed
+Distill — do not summarize. A lesson is what changes future behavior.
+Example: {"content": {"insight": "…", "transferable_principle": "…",
+"pitfalls": ["…"]}, "confidence": 0.8}"""
+
+PROCESS_REVIEW_DIRECTIVE = """\
+**Process review — REQUIRED structure (exact field names)**
+You are reviewing the COUNCIL'S OWN PROCESS in this dialogue (not the topic):
+where the dialectic worked, where it failed, and what the next council should do
+differently. Your `content` MUST be a JSON object with EXACTLY these fields:
+  "what_worked"              — the process move that most improved the answer
+  "what_failed"              — the process failure that most hurt it
+  "advice_for_next_dialogue" — one concrete, actionable process instruction
+Be specific about THIS dialogue's process; generic advice is a failure.
+Example: {"content": {"what_worked": "…", "what_failed": "…",
+"advice_for_next_dialogue": "…"}, "confidence": 0.75}"""
+
 _SCORE_KINDS = {TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE}
 
 _EVALUATIVE_KINDS = {
@@ -282,6 +305,10 @@ def build_reasoning_system_prompt(
         parts.append(SCORE_CONTENT_DIRECTIVE)
     if task_kind == TaskKind.COUNCIL_RATIFICATION:
         parts.append(RATIFICATION_CONTENT_DIRECTIVE)
+    if task_kind == TaskKind.LESSON_DISTILLATION:
+        parts.append(LESSON_DISTILLATION_DIRECTIVE)
+    if task_kind == TaskKind.PROCESS_REVIEW:
+        parts.append(PROCESS_REVIEW_DIRECTIVE)
 
     parts.append("**Output**\n" + response_contract)
     return "\n\n".join(parts)

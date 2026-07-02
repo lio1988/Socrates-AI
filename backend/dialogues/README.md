@@ -843,6 +843,24 @@ ced, mode = build_council(lesson_store=store, seat_health=health)
 store.save("lessons.json"); health.save("seat_health.json")
 ```
 
+**D. AI-in-the-loop learning (`ai_learning=True`)** — the learning itself becomes
+intelligent, with CED still governing:
+
+- **AI-authored lessons** (`LESSON_DISTILLATION`): at session end a council seat
+  — through the same registry adapters (mock = deterministic, live = real model)
+  — *authors* the lesson: `insight`, `transferable_principle`, `pitfalls`. CED
+  validates the schema; the mechanical public facts remain the backbone; the
+  audit records `lesson_distilled_by: council`.
+- **Process meta-reflection** (`PROCESS_REVIEW`): a seat reviews the council's
+  OWN process this dialogue (what worked / what failed / one concrete advice) —
+  and future sessions receive it as `process_lessons_from_past_dialogues`. The
+  council literally coaches its future self.
+- **Honest fallback:** any AI failure (timeout/schema) falls back to the
+  mechanical extractor — `lesson_distilled_by: mechanical`, nothing fabricated.
+- **Failure telemetry:** seat health now also ingests **failed** sessions —
+  exactly where the reliability signal lives (the quorum-failure culprit is
+  identified mechanically).
+
 Hooks are failure-isolated: a broken store can never take down a dialogue
 (`self_improvement_error` is recorded in the audit instead). Judging tasks
 remain untouched — lessons appear only in deliberation context.

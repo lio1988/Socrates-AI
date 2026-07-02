@@ -176,6 +176,8 @@ class TaskKind(str, Enum):
     COUNCIL_RATIFICATION    = "council_ratification"   # Phase 8C.1 per-provider verdict
     MOVE_SCORE              = "move_score"              # Phase 8C.2 registry peer move scoring
     SECTION_SCORE           = "section_score"           # Phase 8C.2 registry peer section scoring
+    LESSON_DISTILLATION     = "lesson_distillation"     # Phase 13D AI-authored lesson
+    PROCESS_REVIEW          = "process_review"          # Phase 13D AI meta-reflection on the dialogue
 
 
 class AgentTask(BaseModel):

@@ -312,6 +312,22 @@ class ScriptedMockProvider(BaseProviderAdapter):
             verdict = self._ratification_verdict(task)
             conf = verdict.pop("confidence", 0.8) if isinstance(verdict, dict) else 0.8
             return json.dumps({"content": verdict, "confidence": conf})
+        # Phase 13D AI-in-the-loop learning → deterministic distilled payloads.
+        if task.task_kind == TaskKind.LESSON_DISTILLATION:
+            return json.dumps({"content": {
+                "insight": f"The most defensible position on «{task.question[:70]}» is "
+                           "scope-limited and evidence-conditional.",
+                "transferable_principle": "Prefer scope-limited claims with explicit "
+                                          "uncertainty over universal assertions.",
+                "pitfalls": ["overclaiming beyond the cited evidence"],
+            }, "confidence": 0.8})
+        if task.task_kind == TaskKind.PROCESS_REVIEW:
+            return json.dumps({"content": {
+                "what_worked": "The elenchus pressed the load-bearing assumption directly.",
+                "what_failed": "The synthesis initially under-used the strongest objection.",
+                "advice_for_next_dialogue": "Ground the crucial stress test in the strongest "
+                                            "objection actually raised.",
+            }, "confidence": 0.75})
         # Phase 8C.2 peer scoring → return a structured score payload (the scored
         # content is the move/section text; the FakeProvider produces the breakdown).
         if task.task_kind in (TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE):

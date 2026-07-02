@@ -171,21 +171,51 @@ def _clip(text: str, n: int = 300) -> str:
 
 @dataclass(frozen=True)
 class Lesson:
-    """A PUBLIC distillation of one ratified dialogue. No scores, no identities."""
+    """A PUBLIC distillation of one ratified dialogue. No scores, no identities.
+    `distilled_by` records WHO wrote it: "mechanical" (CED clipping) or "council"
+    (an AI agent authored insight/principle/pitfalls — Phase 13D)."""
     question: str
     final_verdict: str
     core_answer: str
     caveats: List[str] = field(default_factory=list)
     decisive_objections: List[str] = field(default_factory=list)
     session_id: str = ""
+    insight: str = ""
+    transferable_principle: str = ""
+    pitfalls: List[str] = field(default_factory=list)
+    distilled_by: str = "mechanical"
 
     def public_dict(self) -> Dict[str, Any]:
-        return {
+        out = {
             "question": self.question,
             "final_verdict": self.final_verdict,
             "core_answer": self.core_answer,
             "caveats": list(self.caveats),
             "decisive_objections": list(self.decisive_objections),
+        }
+        if self.insight:
+            out["insight"] = self.insight
+        if self.transferable_principle:
+            out["transferable_principle"] = self.transferable_principle
+        if self.pitfalls:
+            out["pitfalls"] = list(self.pitfalls)
+        return out
+
+
+@dataclass(frozen=True)
+class ProcessLesson:
+    """AI meta-reflection on the council's OWN process (not the topic) — what the
+    next dialogue should do differently. PUBLIC; no scores, no identities."""
+    what_worked: str
+    what_failed: str
+    advice_for_next_dialogue: str
+    session_id: str = ""
+
+    def public_dict(self) -> Dict[str, Any]:
+        return {
+            "what_worked": self.what_worked,
+            "what_failed": self.what_failed,
+            "advice_for_next_dialogue": self.advice_for_next_dialogue,
         }
 
 
@@ -215,11 +245,23 @@ def extract_lesson(state: SessionState, final: FinalResponse) -> Optional[Lesson
 class EpistemicLessonStore:
     """Cross-session public memory: the council builds on its own past dialogues."""
 
-    def __init__(self, lessons: Optional[List[Lesson]] = None) -> None:
+    def __init__(self, lessons: Optional[List[Lesson]] = None,
+                 process_lessons: Optional[List[ProcessLesson]] = None) -> None:
         self._lessons: List[Lesson] = list(lessons or [])
+        self._process: List[ProcessLesson] = list(process_lessons or [])
 
     def __len__(self) -> int:
         return len(self._lessons)
+
+    def add(self, lesson: Lesson) -> None:
+        self._lessons.append(lesson)
+
+    def add_process(self, lesson: ProcessLesson) -> None:
+        self._process.append(lesson)
+
+    def process_guidance(self, k: int = 2) -> List[Dict[str, Any]]:
+        """The latest k process lessons — the council's advice to its future self."""
+        return [pl.public_dict() for pl in self._process[-k:]]
 
     def ingest(self, state: SessionState, final: FinalResponse) -> Optional[Lesson]:
         lesson = extract_lesson(state, final)
@@ -244,7 +286,8 @@ class EpistemicLessonStore:
     # -- persistence (local JSON; public artifacts only) --
     def save(self, path: str) -> None:
         doc = {"schema_version": LESSON_SCHEMA,
-               "lessons": [asdict(l) for l in self._lessons]}
+               "lessons": [asdict(l) for l in self._lessons],
+               "process_lessons": [asdict(p) for p in self._process]}
         Path(path).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
                               encoding="utf-8")
 
@@ -253,4 +296,103 @@ class EpistemicLessonStore:
         doc = json.loads(Path(path).read_text(encoding="utf-8"))
         if doc.get("schema_version") != LESSON_SCHEMA:
             raise ValueError(f"schema_version mismatch: expected {LESSON_SCHEMA!r}")
-        return cls([Lesson(**l) for l in doc.get("lessons", [])])
+        return cls([Lesson(**l) for l in doc.get("lessons", [])],
+                   [ProcessLesson(**p) for p in doc.get("process_lessons", [])])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# D. AI-in-the-loop learning — agents AUTHOR the lessons; CED governs & verifies
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The mechanical extractor clips text; an AI distiller UNDERSTANDS the dialogue.
+# Both paths obey the same rules: distillation runs through the SAME registry
+# adapters (mock = deterministic, live = real model), CED validates the schema,
+# and on ANY failure it falls back honestly to the mechanical lesson — never a
+# fabricated one. Inputs are PUBLIC artifacts only.
+
+def _public_final_sections(final: FinalResponse) -> Dict[str, str]:
+    if not final.synthesis:
+        return {}
+    return {s.section_name.value: s.content for s in final.synthesis.sections
+            if not s.unresolved and s.content.strip()}
+
+
+async def distill_lesson_with_council(ced, state: SessionState,
+                                      final: FinalResponse) -> Optional[Lesson]:
+    """Ask ONE council seat (via the registry) to author the lesson. Returns None
+    on any failure — the caller falls back to the mechanical extractor."""
+    from .models import AgentRole, AgentState, AgentTask, DialogPhase, TaskKind
+    if ced.registry is None or not final.ratified:
+        return None
+    adapters = ced.registry.available_adapters()
+    if not adapters:
+        return None
+    if ced.seat_health is not None:
+        order = ced.seat_health.rank_seats([a.provider_id for a in adapters])
+        adapters = sorted(adapters, key=lambda a: order.index(a.provider_id))
+    task = AgentTask(
+        session_id=state.session_id, agent_id="lesson_distiller",
+        role=AgentRole.SYNTHESIZER, phase=DialogPhase.COMPLETE,
+        question=state.question,
+        context={"final_answer_sections": _public_final_sections(final)},
+        output_schema={"_role": "synthesizer", "_question": state.question},
+        task_kind=TaskKind.LESSON_DISTILLATION,
+    )
+    astate = AgentState(agent_id="lesson_distiller",
+                        primary_role=AgentRole.SYNTHESIZER,
+                        assigned_role=AgentRole.SYNTHESIZER)
+    resp = await ced.registry.run_adapter(adapters[0], task, astate, None)
+    if not resp.ok:
+        return None
+    c = resp.parsed_move.content
+    insight = str(c.get("insight", "")).strip()
+    principle = str(c.get("transferable_principle", "")).strip()
+    if not insight and not principle:
+        return None                      # AI gave nothing usable → mechanical fallback
+    base = extract_lesson(state, final)  # mechanical public facts stay the backbone
+    if base is None:
+        return None
+    pitfalls = c.get("pitfalls", [])
+    return Lesson(
+        question=base.question, final_verdict=base.final_verdict,
+        core_answer=base.core_answer, caveats=base.caveats,
+        decisive_objections=base.decisive_objections, session_id=base.session_id,
+        insight=_clip(insight), transferable_principle=_clip(principle),
+        pitfalls=[_clip(str(p)) for p in pitfalls][:3] if isinstance(pitfalls, list) else [],
+        distilled_by="council",
+    )
+
+
+async def review_process_with_council(ced, state: SessionState) -> Optional[ProcessLesson]:
+    """Ask ONE council seat to critique the council's OWN process this session.
+    Returns None on any failure (no fabricated self-praise)."""
+    from .models import AgentRole, AgentState, AgentTask, DialogPhase, TaskKind
+    if ced.registry is None:
+        return None
+    adapters = ced.registry.available_adapters()
+    if not adapters:
+        return None
+    task = AgentTask(
+        session_id=state.session_id, agent_id="process_reviewer",
+        role=AgentRole.REFLECTOR, phase=DialogPhase.COMPLETE,
+        question=state.question,
+        context={"dialogue_so_far": ced._dialogue_transcript(state)},
+        output_schema={"_role": "reflector", "_question": state.question},
+        task_kind=TaskKind.PROCESS_REVIEW,
+    )
+    astate = AgentState(agent_id="process_reviewer",
+                        primary_role=AgentRole.REFLECTOR,
+                        assigned_role=AgentRole.REFLECTOR)
+    resp = await ced.registry.run_adapter(adapters[-1], task, astate, None)
+    if not resp.ok:
+        return None
+    c = resp.parsed_move.content
+    advice = str(c.get("advice_for_next_dialogue", "")).strip()
+    if not advice:
+        return None
+    return ProcessLesson(
+        what_worked=_clip(str(c.get("what_worked", ""))),
+        what_failed=_clip(str(c.get("what_failed", ""))),
+        advice_for_next_dialogue=_clip(advice),
+        session_id=state.session_id,
+    )
