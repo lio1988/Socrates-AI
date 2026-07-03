@@ -725,6 +725,40 @@ class CEDOrchestrator:
         healthy_ids = {a.provider_id for a in self._healthy_adapters()}
         return sorted(s for s in all_ids if s not in healthy_ids)
 
+    def _seat_ranking_key(self, provider_id: str, topic: str):
+        """Deterministic ranking key: unrated seats FIRST (a new seat deserves a
+        chance — same philosophy as SeatHealthTracker.rank_seats), then among
+        seats with a track record, higher topic skill and lower failure rate
+        win. Ties (including 'no data at all', the common early-session case)
+        are broken by Python's STABLE sort, which preserves the original
+        registration/round-robin order — so with no analytics yet, routing is
+        byte-for-byte the pre-Phase-21 order, not an arbitrary string sort."""
+        skill = self.topic_skill.profile(provider_id).get(topic) if self.topic_skill else None
+        stats = self.seat_health.stats().get(provider_id) if self.seat_health else None
+        failure_rate = stats.failure_rate if (stats is not None and stats.tasks) else None
+        has_data = skill is not None or failure_rate is not None
+        return (1 if has_data else 0,
+                -(skill if skill is not None else 0.0),
+                failure_rate if failure_rate is not None else 0.0)
+
+    def _ranked_adapters(self, state: SessionState) -> List["LLMProviderAdapter"]:
+        """
+        Phase 21 — analytics-informed seat routing: when a phase needs FEWER
+        provider seats than are healthy and available, prefer the ones CED's own
+        accumulated topic-skill + reliability analytics rate best for THIS
+        question's topic — mechanical, from aggregate numbers only, never from
+        content. With no trackers attached this is a no-op (returns
+        `_healthy_adapters()` unchanged — the original round-robin order).
+        Role assignment (who plays which Socratic role) is untouched: this only
+        changes WHICH PROVIDER executes an already-assigned agent's task.
+        """
+        adapters = self._healthy_adapters()
+        if self.topic_skill is None and self.seat_health is None:
+            return adapters
+        from .topic import classify_topic
+        topic = classify_topic(state.question).value
+        return sorted(adapters, key=lambda a: self._seat_ranking_key(a.provider_id, topic))
+
     async def _run_registry_phase(
         self, state: SessionState, phase: DialogPhase,
         timeout_seconds: Optional[float],
@@ -738,7 +772,7 @@ class CEDOrchestrator:
         assignment = self._registry_phase_assignment(state, phase)
         self._apply_phase_roles(state, phase, assignment)
         items = sorted(assignment.items())
-        adapters = self._healthy_adapters()
+        adapters = self._ranked_adapters(state)   # Phase 21: analytics-informed routing
         task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
         want_sections = (phase == DialogPhase.SYNTHESIS)
 
@@ -1062,12 +1096,18 @@ class CEDOrchestrator:
     ) -> Dict[str, Any]:
         """CED-owned audit add-ons for a registry session (hidden from agents)."""
         cached = self._session_lessons.get(state.session_id)
+        from .topic import classify_topic
         return {
             "execution_mode": "registry",
             "adaptive_dialectic": self._adaptive_dialectic(state),
             "epistemic_consistency": self._epistemic_consistency(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
+            "seat_routing": {
+                "topic": classify_topic(state.question).value,
+                "order": [a.provider_id for a in self._ranked_adapters(state)],
+                "analytics_informed": bool(self.topic_skill or self.seat_health),
+            },
             "lesson_retrieval": (cached[1] if cached else None),
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
             "provider_status_summary": self.registry.status_summary(),

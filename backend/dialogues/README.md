@@ -1055,6 +1055,35 @@ hiccup should not cost an entire session's work.
 
 ---
 
+## Phase 21 — Analytics-informed seat routing
+
+A real collaboration/cohesion gap: `TopicSkillTracker` and `CalibrationLedger`
+were ingested every session but **never read** — CED measured which seats were
+good at what, then routed deliberation with plain registration-order
+round-robin, ignoring its own analytics entirely. Closed:
+
+- When a phase needs **fewer** healthy seats than are available (the common
+  case — e.g. the Socratic opening is a single slot), CED now prefers the
+  seats its own topic-skill + reliability data rate best for **this
+  question's topic** (`classify_topic`), via `_ranked_adapters`.
+- **Exploration preserved**: an unrated seat still ranks *before* a known-but-
+  mediocre one — the same "give it a chance" philosophy as
+  `SeatHealthTracker.rank_seats` — so a good-but-untested seat is never
+  permanently starved by an early bad draw.
+- **No trackers, or trackers with no data yet → byte-for-byte the pre-Phase-21
+  order.** Ties are broken by Python's *stable* sort preserving registration
+  order — never an arbitrary `provider_id` string sort.
+- **Scope is deliberately narrow**: only *which provider* executes an
+  already-assigned agent's task changes. Role assignment (`assign_roles_for_phase`
+  — who plays Socrates/Critic/etc.) is completely untouched. Peer-scoring and
+  ratification voter eligibility (`_eligible_score_voters`, ratification
+  adapters) are **left unbiased on purpose** — every voice counts equally in
+  judging regardless of topic skill.
+- Audited (`seat_routing`: topic, resulting order, whether analytics
+  contributed) and **hidden from agents**, like the leaderboard.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
