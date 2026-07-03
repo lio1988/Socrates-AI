@@ -200,6 +200,7 @@ class CEDOrchestrator:
         open_questions=None,
         calibration=None,
         ratification_repair: str = "block",
+        phase_retry: bool = False,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -251,6 +252,11 @@ class CEDOrchestrator:
             raise ValueError(f"ratification_repair must be 'block' or 'runner_up', "
                              f"got {ratification_repair!r}")
         self.ratification_repair = ratification_repair
+        # Phase 20: phase rescue — retry ONLY the failed slots of a quorum-failed
+        # phase, once, rerouted to the next seat. Off by default (strict legacy
+        # behavior); build_council enables it for the capable/live path.
+        self.phase_retry = phase_retry
+        self._phase_retries: Dict[str, List[Dict[str, Any]]] = {}
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -736,7 +742,8 @@ class CEDOrchestrator:
         task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
         want_sections = (phase == DialogPhase.SYNTHESIS)
 
-        def _build_task(agent_id: str, role: AgentRole, slot: int) -> AgentTask:
+        def _build_task(agent_id: str, role: AgentRole, slot: int,
+                        attempt: int = 0) -> AgentTask:
             schema: Dict[str, Any] = {"_role": role.value, "_question": state.question}
             if want_sections:
                 schema["_sections"] = True
@@ -745,43 +752,74 @@ class CEDOrchestrator:
                 question=state.question,
                 context=self._registry_phase_context(state, phase, agent_id),
                 output_schema=schema, round_number=state.round_number,
-                task_kind=task_kind, slot_index=slot,
+                task_kind=task_kind, slot_index=slot, attempt_index=attempt,
             )
 
-        async def _one(slot: int, agent_id: str, role: AgentRole):
-            task = _build_task(agent_id, role, slot)
+        async def _one(slot: int, agent_id: str, role: AgentRole,
+                       attempt: int = 0, offset: int = 0):
+            task = _build_task(agent_id, role, slot, attempt)
             agent_state = state.agent_states.get(
                 agent_id, AgentState(agent_id=agent_id, primary_role=role, assigned_role=role))
-            adapter = adapters[slot % len(adapters)]   # round-robin provider mapping
+            adapter = adapters[(slot + offset) % len(adapters)]   # round-robin mapping
             resp = await self.registry.run_adapter(adapter, task, agent_state, timeout_seconds)
             return task, resp
 
+        def _absorb(pairs) -> List[ProviderResponse]:
+            """Validate responses into moves + task-log entries (no fabrication)."""
+            out: List[ProviderResponse] = []
+            for task, resp in pairs:
+                out.append(resp)
+                if resp.ok:
+                    move = resp.parsed_move
+                    # Deterministic identity — independent of which provider/when.
+                    move.move_id = self._deterministic_move_id(
+                        state, task.agent_id, phase, task.role,
+                        task.task_kind, task.slot_index, task.attempt_index)
+                    move.task_kind = task.task_kind
+                    move.slot_index = task.slot_index
+                    move.attempt_index = task.attempt_index
+                    move.provider_id = resp.provider_id   # producer (no-self-scoring)
+                    state.moves.append(move)
+                    self._record_task_log(state, task, move.move_id,
+                                          provider_id=resp.provider_id,
+                                          provider_status=resp.status)
+                else:
+                    # Failed provider → task trace only, NO fabricated move.
+                    self._record_task_log(state, task, None,
+                                          provider_id=resp.provider_id,
+                                          provider_status=resp.status)
+            return out
+
         pairs = list(await asyncio.gather(
             *(_one(i, aid, role) for i, (aid, role) in enumerate(items))))
-
-        responses: List[ProviderResponse] = []
-        for task, resp in pairs:
-            responses.append(resp)
-            if resp.ok:
-                move = resp.parsed_move
-                # Deterministic identity — independent of which provider/when.
-                move.move_id = self._deterministic_move_id(
-                    state, task.agent_id, phase, task.role,
-                    task.task_kind, task.slot_index, task.attempt_index)
-                move.task_kind = task.task_kind
-                move.slot_index = task.slot_index
-                move.provider_id = resp.provider_id   # producer (for no-self-scoring)
-                state.moves.append(move)
-                self._record_task_log(state, task, move.move_id,
-                                      provider_id=resp.provider_id,
-                                      provider_status=resp.status)
-            else:
-                # Failed provider → task trace only, NO fabricated move.
-                self._record_task_log(state, task, None,
-                                      provider_id=resp.provider_id,
-                                      provider_status=resp.status)
-
+        responses = _absorb(pairs)
         effective_quorum = min(self.registry.quorum_for_assembly, len(items)) if items else 0
+
+        # Phase 20 — phase rescue (opt-in): a transient failure in one phase must
+        # not destroy the whole session (and everything already paid for). Retry
+        # ONLY the failed slots, ONCE, REROUTED to the next seat (offset+1), with
+        # attempt_index=1 so move identity stays deterministic and duplicate-free.
+        # All attempts remain in the task_log — nothing is hidden or rewritten.
+        ok_count = sum(1 for r in responses if r.ok)
+        if (self.phase_retry and adapters and items
+                and ok_count < effective_quorum):
+            failed = [(t.slot_index, items[t.slot_index][0], items[t.slot_index][1])
+                      for t, r in pairs if not r.ok]
+            retry_pairs = list(await asyncio.gather(
+                *(_one(slot, aid, role, attempt=1, offset=1)
+                  for slot, aid, role in failed)))
+            retry_responses = _absorb(retry_pairs)
+            merged = [r for _, r in pairs if r.ok] + retry_responses
+            rescued = sum(1 for r in merged if r.ok) >= effective_quorum
+            self._phase_retries.setdefault(state.session_id, []).append({
+                "phase": phase.value,
+                "failed_slots": [slot for slot, _, _ in failed],
+                "first_failed_providers": [r.provider_id for _, r in pairs if not r.ok],
+                "retry_ok_providers": [r.provider_id for r in retry_responses if r.ok],
+                "rescued": rescued,
+            })
+            responses = merged
+
         result = self.registry.finalize_round(responses, quorum=effective_quorum)
         state.registry_rounds.append(result)
         return result
@@ -1029,6 +1067,7 @@ class CEDOrchestrator:
             "adaptive_dialectic": self._adaptive_dialectic(state),
             "epistemic_consistency": self._epistemic_consistency(state),
             "quarantine_excluded": self._quarantine_exclusions(),
+            "phase_retries": self._phase_retries.get(state.session_id, []),
             "lesson_retrieval": (cached[1] if cached else None),
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
             "provider_status_summary": self.registry.status_summary(),

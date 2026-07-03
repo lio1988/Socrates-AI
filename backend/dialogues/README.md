@@ -1031,6 +1031,30 @@ scores that order the runner-ups); CED only governs the protocol.
 
 ---
 
+## Phase 20 — Phase Rescue
+
+The gap: a single transient failure (a timeout, a rate limit) in **any**
+deliberation phase used to kill the **whole session** — discarding every
+already-paid-for phase before it. `phase_retry=True` (`build_council` default)
+fixes this mechanically:
+
+- On a quorum-failed phase, CED retries **only the slots that failed** —
+  exactly **once**, **rerouted** to the next available seat (never retried on
+  the same one that just failed).
+- Retried tasks get `attempt_index=1`, so move identity stays deterministic —
+  no duplicates, no fabricated moves, every provider attempt stays in the
+  `task_log`.
+- If the reroute also fails (e.g. every seat is down), the phase's honest
+  quorum-failure stands — CED never fabricates a rescue that didn't happen.
+- Fully audited per phase (`phase_retries`: failed slots, first vs. retry
+  provider ids, `rescued`).
+
+Off by default on a bare `CEDOrchestrator` (legacy behavior unchanged);
+`build_council` enables it, since real providers are exactly where a transient
+hiccup should not cost an entire session's work.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
