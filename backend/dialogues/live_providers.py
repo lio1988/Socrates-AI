@@ -272,7 +272,7 @@ def build_council(
     env=None, *, council_size: int = DEFAULT_COUNCIL_SIZE, shadow_scoring_mode=None,
     lesson_store=None, seat_health=None, ai_learning: bool = False, topic_skill=None,
     open_questions=None, calibration=None, ratification_repair: str = "runner_up",
-    phase_retry: bool = True,
+    phase_retry: bool = True, training_corpus=None,
 ) -> Tuple[Any, str]:
     """
     A ready-to-run council orchestrator. Same code path real or mock — mock by
@@ -297,5 +297,5 @@ def build_council(
                           ai_learning=ai_learning, topic_skill=topic_skill,
                           open_questions=open_questions, calibration=calibration,
                           ratification_repair=ratification_repair,
-                          phase_retry=phase_retry, **kwargs)
+                          phase_retry=phase_retry, training_corpus=training_corpus, **kwargs)
     return ced, mode

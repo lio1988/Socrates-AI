@@ -201,6 +201,7 @@ class CEDOrchestrator:
         calibration=None,
         ratification_repair: str = "block",
         phase_retry: bool = False,
+        training_corpus=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -257,6 +258,9 @@ class CEDOrchestrator:
         # behavior); build_council enables it for the capable/live path.
         self.phase_retry = phase_retry
         self._phase_retries: Dict[str, List[Dict[str, Any]]] = {}
+        # Phase 22: optional Teacher-Loop corpus — harvests SFT + peer-score
+        # preference data from each finished session (duck-typed: .ingest_session).
+        self.training_corpus = training_corpus
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -1064,6 +1068,8 @@ class CEDOrchestrator:
                 self.topic_skill.ingest_session(state)
             if self.calibration is not None:
                 self.calibration.ingest_session(state)
+            if self.training_corpus is not None:
+                self.training_corpus.ingest_session(state, final)
             if self.open_questions is not None:
                 self.open_questions.ingest_session(state, final)
             if self.lesson_store is None:

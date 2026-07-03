@@ -1084,6 +1084,45 @@ round-robin, ignoring its own analytics entirely. Closed:
 
 ---
 
+## Phase 22 — The Teacher Loop (self-distillation flywheel)
+
+The council is not just an answer engine — it is a **data generator with quality
+labels**. Every ratified dialogue is an endorsed demonstration; every peer-score
+margin is a preference judgment. `backend/training/` turns that into a student
+LLM that can re-enter the council:
+
+```
+council teaches → harvest SFT + preference data (from REAL scores)
+               → LoRA fine-tune a small open model locally (NVIDIA GPU)
+               → the student re-enters as a council seat
+               → measured by the external-truth instruments (R1 / R3a)
+               → the flywheel turns, cheaper and better each cycle
+```
+
+- **Harvest** (`TrainingCorpus`, optional `training_corpus=` on the council):
+  SFT demonstrations come **only from ratified sessions** (the endorsed
+  synthesis + the Socratic opening); preference pairs are **chosen = the
+  peer-score winner draft's real text vs rejected = a clearly lower-scored
+  draft** (margin-gated). No fabrication — the labels are the council's own
+  scores and mechanical assembly. Deduped; exports `sft.jsonl` +
+  `preferences.jsonl` + `manifest.json`.
+- **Train** (`local_trainer`): **inert by default** — `gpu_report()` detects the
+  NVIDIA GPU, `build_training_plan()` describes the run, and
+  `write_training_script()` emits a self-contained, syntactically-validated
+  trl/peft **LoRA SFT+DPO** script the operator runs on their own CUDA box.
+  torch is lazy-imported; **nothing trains from inside the council process**;
+  no keys, no network.
+- **Re-enter** (`reentry_instructions()`): the trained student plugs in through
+  the exact same provider transport seam the live Anthropic adapter uses, then
+  deliberates and is peer-scored alongside the frontier seats — and is only
+  credited with improvement once the external-truth instruments say so.
+
+The harvest hook is failure-isolated (a broken corpus can never break a
+session), and the whole package is CED-governed: agents produce, peer scores
+label, CED aggregates mechanically.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
