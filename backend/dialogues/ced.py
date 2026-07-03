@@ -199,6 +199,7 @@ class CEDOrchestrator:
         topic_skill=None,
         open_questions=None,
         calibration=None,
+        ratification_repair: str = "block",
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -242,6 +243,14 @@ class CEDOrchestrator:
         # Phase 17: CalibrationLedger — Brier-scored confidence calibration per
         # seat (CED-owned analytics, hidden from agents like the leaderboard).
         self.calibration = calibration
+        # Phase 19: what to do on a critical ratification block —
+        #   "block" (Option A, default): withhold the answer, mark repair_required;
+        #   "runner_up" (Option B): mechanically swap each blocked section for its
+        #   peer-scored runner-up draft and re-ratify (max MAX_RATIFICATION_ROUNDS).
+        if ratification_repair not in ("block", "runner_up"):
+            raise ValueError(f"ratification_repair must be 'block' or 'runner_up', "
+                             f"got {ratification_repair!r}")
+        self.ratification_repair = ratification_repair
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -831,7 +840,35 @@ class CEDOrchestrator:
         # Phase 8C.1 — COUNCIL ratification through the registry (no single
         # Final Evaluator monopoly). Deliberation already used the registry above.
         ratification = await self.run_council_ratification(state, timeout_seconds)
+
+        # Phase 19 — ratification repair Option B (opt-in): when the council
+        # raises a schema-valid critical block on specific sections, CED swaps
+        # each blocked section for its RUNNER-UP draft (peer-score ranking; a
+        # purely mechanical selection) and asks the council to ratify AGAIN —
+        # bounded by MAX_RATIFICATION_ROUNDS. CED never overrides a block: if no
+        # runner-up exists or rounds run out, repair_required stands honestly.
+        repair_audit: Dict[str, Any] = {"mode": self.ratification_repair,
+                                        "rounds_used": 0, "repairs": [],
+                                        "round_statuses": [ratification.status.value]}
+        if self.ratification_repair == "runner_up":
+            tried: Dict[SectionName, set] = {}
+            while (ratification.status == CouncilRatificationStatus.REPAIR_REQUIRED
+                   and repair_audit["rounds_used"] < MAX_RATIFICATION_ROUNDS):
+                repairs = self._repair_blocked_sections(state, ratification, tried)
+                if not repairs:
+                    repair_audit["outcome"] = "unrepairable_no_runner_up"
+                    break
+                repair_audit["repairs"].extend(repairs)
+                repair_audit["rounds_used"] += 1
+                ratification = await self.run_council_ratification(state, timeout_seconds)
+                repair_audit["round_statuses"].append(ratification.status.value)
+            if "outcome" not in repair_audit:
+                repair_audit["outcome"] = ("repaired_and_ratified"
+                                           if ratification.is_ratified()
+                                           else ratification.status.value)
+
         final = self._build_council_final(state, ratification)
+        final.audit_summary["ratification_repair"] = repair_audit
 
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
@@ -1236,6 +1273,63 @@ class CEDOrchestrator:
         )
         state.council_ratification = ratification
         return ratification
+
+    def _repair_blocked_sections(
+        self, state: SessionState, ratification: "CouncilRatification",
+        tried: Dict[SectionName, set],
+    ) -> List[Dict[str, Any]]:
+        """
+        Option B repair — purely mechanical: for each section the council
+        critically blocked, swap in the RUNNER-UP draft (next by peer-score
+        ranking; deterministic draft_id order when no scores exist, mirroring the
+        assembly fallback). CED selects only by rank/order — never by content.
+        Returns the provenance records; empty when nothing can be swapped.
+        """
+        assembled = state.assembled_answer
+        if assembled is None:
+            return []
+        drafts_by_id = {d.draft_id: d for d in state.section_drafts}
+        repairs: List[Dict[str, Any]] = []
+        for section in ratification.target_sections:
+            current = assembled.section(section)
+            if current is None:
+                continue
+            seen = tried.setdefault(section, set())
+            if current.selected_draft_id:
+                seen.add(current.selected_draft_id)
+            replacement: Optional[AssembledSection] = None
+            via = None
+            # 1) peer-score ranking (the honest ordering when scores exist)
+            for entry in self._section_ranking(state, section):
+                if entry["draft_id"] not in seen:
+                    replacement = self._section_assembled(section, entry, drafts_by_id)
+                    via = "peer_ranking"
+                    break
+            # 2) no scores (e.g. shadow scoring off) → deterministic draft order,
+            #    the same mechanical rule the assembly fallback uses
+            if replacement is None:
+                candidates = sorted(
+                    (d for d in state.section_drafts
+                     if d.draft_id not in seen and d.section_text(section).strip()),
+                    key=lambda d: d.draft_id)
+                if candidates:
+                    d = candidates[0]
+                    replacement = AssembledSection(
+                        section_name=section, selected_draft_id=d.draft_id,
+                        selected_author_agent_id=d.author_agent_id,
+                        content=d.section_text(section),
+                        average_score=0.0, score_count=0, variance=0.0)
+                    via = "deterministic_order"
+            if replacement is None:
+                continue   # no untried runner-up — this section stays blocked
+            seen.add(replacement.selected_draft_id)
+            assembled.sections = [replacement if s.section_name == section else s
+                                  for s in assembled.sections]
+            repairs.append({"section": section.value,
+                            "from_draft": current.selected_draft_id,
+                            "to_draft": replacement.selected_draft_id,
+                            "via": via})
+        return repairs
 
     def _build_council_final(
         self, state: SessionState, ratification: CouncilRatification,

@@ -1007,6 +1007,30 @@ it now — never ship a move you can already refute yourself."*
 
 ---
 
+## Phase 19 — Ratification Repair, Option B
+
+The long-deferred capability lands: instead of only *blocking* on a critical
+ratification objection (Option A — still the constructor default), the CED can
+now **repair and re-submit** (`ratification_repair="runner_up"`, enabled by
+default in `build_council`):
+
+1. The council critically blocks specific sections (schema-valid objections
+   with `target_section` + `required_fix`).
+2. CED mechanically swaps each blocked section for its **runner-up draft** —
+   next by peer-score ranking, or deterministic `draft_id` order when no scores
+   exist (the same rule as the assembly fallback). Never a semantic choice.
+3. The **council ratifies again**. Bounded by `MAX_RATIFICATION_ROUNDS` (2);
+   already-tried drafts are never re-offered for the same section.
+4. If no runner-up exists or rounds run out, `repair_required` stands and the
+   answer is withheld — CED **never overrides a block**.
+
+Every step is audited (`ratification_repair`: mode, rounds_used, per-repair
+provenance `from_draft → to_draft → via`, and the council's status per round).
+The invariant holds: agents judge (the block, the re-ratification, the peer
+scores that order the runner-ups); CED only governs the protocol.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
