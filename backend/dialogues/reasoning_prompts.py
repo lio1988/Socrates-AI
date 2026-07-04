@@ -367,6 +367,16 @@ Your `content` MUST be a JSON object with a "verdict" field that is EXACTLY one 
     and "required_fix": "<what must change>"
 Example: {"content": {"verdict": "accept", "rationale": "Meets the bar."}, "confidence": 0.85}"""
 
+RATIFICATION_COHERENCE_NOTE = """\
+**Cross-section coherence (the answer was assembled section-by-section)**
+The five sections you are ratifying were each selected INDEPENDENTLY and may come
+from DIFFERENT drafts. Beyond judging each section on its own, verify they cohere
+as ONE answer: the crucial_stress_test must challenge the SAME position the
+core_answer commits to; the final_verdict must follow from the core_answer; the
+nuance and blind_spots must not contradict the core claim. If the sections argue
+past each other or contradict, that is a `blocking_objection` — name the
+incoherent sections in `target_section` and the required reconciliation."""
+
 LESSON_DISTILLATION_DIRECTIVE = """\
 **Lesson distillation — REQUIRED structure (exact field names)**
 You are distilling what this dialogue TAUGHT, for reuse in future dialogues on
@@ -500,6 +510,7 @@ def build_reasoning_system_prompt(
         parts.append(SCORE_CONTENT_DIRECTIVE)
     if task_kind == TaskKind.COUNCIL_RATIFICATION:
         parts.append(RATIFICATION_CONTENT_DIRECTIVE)
+        parts.append(RATIFICATION_COHERENCE_NOTE)
     if task_kind == TaskKind.LESSON_DISTILLATION:
         parts.append(LESSON_DISTILLATION_DIRECTIVE)
     if task_kind == TaskKind.PROCESS_REVIEW:

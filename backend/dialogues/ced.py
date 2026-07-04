@@ -1118,6 +1118,7 @@ class CEDOrchestrator:
             "adaptive_dialectic": self._adaptive_dialectic(state),
             "epistemic_consistency": self._epistemic_consistency(state),
             "score_weighting": self._weighting_audit(state),
+            "assembly_coherence": self._assembly_coherence(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
             "seat_routing": {
@@ -2511,6 +2512,26 @@ class CEDOrchestrator:
             s["draft_id"],         # 4. deterministic id order
         ))
         return stats
+
+    def _assembly_coherence(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 24 observability: how fragmented the blind assembly is — i.e. how
+        many DISTINCT drafts the five resolved sections were stitched from. High
+        fragmentation ⇒ higher cross-section-incoherence risk (which the ratifier
+        is told to check). CED-owned audit; a metric, never a semantic judgement,
+        and never shown to agents."""
+        assembled = state.assembled_answer
+        if assembled is None:
+            return {"resolved_sections": 0, "distinct_source_drafts": 0,
+                    "fragmentation": 0.0, "single_source": True}
+        resolved = [s for s in assembled.sections if not s.unresolved and s.selected_draft_id]
+        drafts = {s.selected_draft_id for s in resolved}
+        n = len(resolved)
+        return {
+            "resolved_sections": n,
+            "distinct_source_drafts": len(drafts),
+            "fragmentation": round(len(drafts) / n, 4) if n else 0.0,
+            "single_source": len(drafts) <= 1,
+        }
 
     def _weighting_audit(self, state: SessionState) -> Dict[str, Any]:
         """Phase 23 observability: report the aggregation mode and, when

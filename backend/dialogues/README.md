@@ -1146,6 +1146,32 @@ uniform vs confidence through the dialectic-delta and let the verifiers decide.
 
 ---
 
+## Phase 24 — Cross-section coherence
+
+Blind assembly picks each of the five sections **independently**, so the final
+answer can stitch sections from different drafts that argue past each other — a
+"Frankenstein" answer — and nothing was checking that. Two fixes, both
+invariant-safe:
+
+- **Mechanical fragmentation metric** (`assembly_coherence` in the audit): how
+  many *distinct drafts* the resolved sections were stitched from
+  (`fragmentation = distinct/resolved`, `single_source` flag). It is a metric,
+  never a semantic judgement, and **hidden from agents** like the leaderboard.
+- **Ratifier coherence directive**: the ratification prompt now tells the
+  Final Evaluator that the sections were assembled section-by-section and may
+  come from different drafts, and to verify they cohere as one answer (the
+  stress test must challenge the same position the core answer commits to; the
+  verdict must follow from it) — raising a `blocking_objection` on the
+  incoherent sections otherwise. The note is **generic** (no session-specific
+  data, no scores, no identities), so blind judging is preserved; it appears
+  **only** on the ratification task, never on scoring or deliberation.
+
+Now a fragmented answer is both *visible* (the metric) and *guarded* (the
+ratifier is told to catch contradictions) — closing the last-mile gap where the
+dialectic's per-section winners could quietly contradict each other.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
