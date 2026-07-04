@@ -1024,6 +1024,9 @@ class CEDOrchestrator:
     # of the INITIAL responses (CED-owned metadata; a purely mechanical trigger).
     HIGH_CONSENSUS_CONFIDENCE = 0.80    # everyone confident → herding risk → escalate
     LOW_CONFIDENCE_FLOOR = 0.45         # everyone unsure → map uncertainty honestly
+    # Phase 26: a section winner backed by fewer than this many PEER scores is
+    # "thinly corroborated" — one reviewer's opinion, not a corroborated result.
+    WELL_CORROBORATED_MIN = 2
     # Diversity guard (Phase 16): a SECOND, independent herding signal — content
     # similarity of the initial responses (keyword Jaccard; purely mechanical).
     LOW_DIVERSITY_FLOOR = 0.35          # 1.0 = fully diverse, 0.0 = identical
@@ -1130,6 +1133,7 @@ class CEDOrchestrator:
             "epistemic_consistency": self._epistemic_consistency(state),
             "score_weighting": self._weighting_audit(state),
             "assembly_coherence": self._assembly_coherence(state),
+            "assembly_reliability": self._assembly_reliability(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
             "seat_routing": {
@@ -2544,6 +2548,34 @@ class CEDOrchestrator:
             "single_source": len(drafts) <= 1,
             "cohesion_margin": self.cohesion_margin,
             "cohesion_overrides": self._cohesion_overrides,
+        }
+
+    def _assembly_reliability(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 26 observability: per-section CORROBORATION depth. Each resolved
+        section carries the number of PEER scores its winning draft got; a section
+        that won on a single score (or none, via fallback) rests on thin evidence.
+        This surfaces which parts of the answer are well-corroborated vs one-voter
+        opinions — an epistemic-honesty signal. CED-owned audit; a mechanical
+        count, never a semantic judgement, and never shown to agents."""
+        assembled = state.assembled_answer
+        empty = {"resolved_sections": 0, "min_corroboration": 0,
+                 "mean_corroboration": 0.0, "thinly_corroborated_sections": 0,
+                 "thin_sections": [], "well_corroborated": True}
+        if assembled is None:
+            return empty
+        resolved = [s for s in assembled.sections if not s.unresolved and s.selected_draft_id]
+        if not resolved:
+            return empty
+        counts = [s.score_count for s in resolved]
+        thin = [s.section_name.value for s in resolved
+                if s.score_count < self.WELL_CORROBORATED_MIN]
+        return {
+            "resolved_sections": len(resolved),
+            "min_corroboration": min(counts),
+            "mean_corroboration": round(sum(counts) / len(counts), 4),
+            "thinly_corroborated_sections": len(thin),
+            "thin_sections": thin,
+            "well_corroborated": not thin,
         }
 
     def _weighting_audit(self, state: SessionState) -> Dict[str, Any]:

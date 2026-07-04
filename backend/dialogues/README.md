@@ -1207,6 +1207,29 @@ a clean protocol variant for `protocol_evolution` to A/B on external truth.
 
 ---
 
+## Phase 26 — Per-section corroboration reliability
+
+The session-level `coverage_ratio` says how many scores were collected overall,
+but nothing said how well **each section** of the final answer was corroborated:
+a section that won on a **single** peer score (one reviewer's opinion) — or none
+at all, via the assembly fallback — was indistinguishable from one backed by
+several concordant scores.
+
+`assembly_reliability` (in the audit) surfaces, per resolved section, the number
+of peer scores its winning draft received, and flags the **thinly corroborated**
+ones (`< WELL_CORROBORATED_MIN = 2`): `min_corroboration`, `mean_corroboration`,
+`thin_sections`, `well_corroborated`. It is a mechanical count, never a
+judgement, **CED-owned and hidden from agents** like the leaderboard.
+
+This is squarely the project's epistemic-honesty ethic: the system now *knows
+and reports* which parts of its answer rest on thin evidence. It even reveals an
+uncomfortable truth about small councils — a **2-seat** council scores each draft
+by exactly one peer, so *every* section is thinly corroborated (mean = 1.0); the
+metric surfaces that instead of hiding it, and argues (mechanically) for more
+reviewers when corroboration matters.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
