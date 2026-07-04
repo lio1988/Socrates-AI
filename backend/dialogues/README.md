@@ -1172,6 +1172,41 @@ dialectic's per-section winners could quietly contradict each other.
 
 ---
 
+## Phase 25 — Coherence-aware assembly (the smart part)
+
+Flagging and guarding fragmentation is reactive. The deeper fix makes the
+**assembly itself prefer coherence** — mechanically, without sacrificing
+quality. The key insight: *a single draft's five sections are coherent by
+construction* (one agent wrote them together); incoherence is born of mixing.
+
+`cohesion_margin` (0–10 scale; default `0.0` = off) turns on a bounded
+quality↔coherence trade:
+
+1. Compute each draft's **global strength** — the mean of its per-section
+   average scores (order-independent, deterministic).
+2. For each section, among the drafts within `cohesion_margin` of the section's
+   top score, take the section from the **globally strongest** draft (ties fall
+   back to the score ranking).
+
+So the answer **anchors to the strongest coherent draft** and only "borrows" a
+section from another draft when that draft wins **decisively** (beyond the
+margin). A section is *never* taken from a draft weaker than the winner by more
+than the margin — the quality give-up is bounded and explicit. It stays fully
+mechanical (peer scores + a deterministic global-strength tie-break; no
+semantic CED judgement) and is audited (`cohesion_margin`, `cohesion_overrides`
+— how many sections the anchor pulled off the raw score-winner).
+
+Worked example: draft A scores 8.0 on all five sections; draft B spikes to 8.3
+on `core_answer` but 5.0 elsewhere. Plain assembly ships a 2-source answer
+(core from B, rest from A). With `cohesion_margin=0.5`, the 0.3 core gap is
+inside the margin, A is globally stronger, so all five sections come from A — a
+single-source, fully coherent answer for a 0.3-point core trade. With a 0.1
+margin the trade is refused (quality wins beyond the margin). Default `0.0`
+leaves every prior test byte-for-byte unchanged; like confidence-weighting it is
+a clean protocol variant for `protocol_evolution` to A/B on external truth.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

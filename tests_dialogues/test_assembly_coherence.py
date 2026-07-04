@@ -86,8 +86,8 @@ def test_full_session_audits_coherence():
     ced = _ced()
     final = asyncio.run(ced.run_registry_session(Q, session_id="ac"))
     m = final.audit_summary["assembly_coherence"]
-    assert set(m) == {"resolved_sections", "distinct_source_drafts",
-                      "fragmentation", "single_source"}
+    assert {"resolved_sections", "distinct_source_drafts", "fragmentation",
+            "single_source"} <= set(m)                   # Phase 25 adds cohesion keys
     assert m["resolved_sections"] >= 1
 
 
