@@ -1230,6 +1230,26 @@ reviewers when corroboration matters.
 
 ---
 
+## Phase 27 — Penalty-flag aggregation
+
+Voters can flag a section for real epistemic problems — `unsupported_claim`,
+`logical_gap`, `overconfidence`, `missed_uncertainty`, and so on. Those flags
+were parsed and stored on every score… and then **never read**. A section could
+win on score and ship with unresolved flags, silently (the mock council quietly
+raises `missed_uncertainty` on real sections — invisible until now).
+
+`assembly_flags` (in the audit) aggregates the penalty flags voters raised on the
+**winning** content of each assembled section: `flags_by_section` (flag → count),
+`serious_flag_count`, and a `clean` bool. Only flags on the draft that *won* a
+section are counted (a losing draft's flags never shipped); stylistic flags
+(`vague`, `rhetorical_fluff`) are excluded from the serious count. It is a
+mechanical count of the council's *own* flags — never a CED judgement — and is
+**CED-owned and hidden from agents** (only flag names and counts, never scores or
+identities). The council's problem-detection finally *means something*: a section
+that won yet carries an `unsupported_claim` flag is now visible.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
