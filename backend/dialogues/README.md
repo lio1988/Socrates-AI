@@ -1123,6 +1123,29 @@ label, CED aggregates mechanically.
 
 ---
 
+## Phase 23 — Confidence-weighted aggregation
+
+A real gap in the CED↔agent interaction: section winners were picked by a
+**plain mean** of peer scores, ignoring the `confidence` each voter
+*self-reports in that very score* (the field existed in `SectionScore` but was
+unused in aggregation). A reviewer's tentative "8, but I'm not sure" counted
+exactly as much as a firm "8, high confidence."
+
+`score_weighting="confidence"` (opt-in; default `"uniform"`) makes the section
+winner a **confidence-weighted mean** — `Σ(score·conf) / Σ(conf)`. It stays a
+mechanical aggregation (the invariant explicitly permits weighted means); it
+never silences anyone (a low-confidence vote keeps a positive weight); and an
+all-zero-confidence section falls back to the plain mean (no division by zero).
+The effect is audited, not hidden (`score_weighting`: mode + how many section
+winners it moved vs the plain mean).
+
+`"uniform"` is byte-for-byte the prior behavior, so this is a clean **protocol
+variant** — exactly the kind of change `protocol_evolution` (Phase 13C) is built
+to A/B on external truth: rather than *asserting* confidence-weighting helps, run
+uniform vs confidence through the dialectic-delta and let the verifiers decide.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

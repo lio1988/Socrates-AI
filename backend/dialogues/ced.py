@@ -202,6 +202,7 @@ class CEDOrchestrator:
         ratification_repair: str = "block",
         phase_retry: bool = False,
         training_corpus=None,
+        score_weighting: str = "uniform",
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -261,6 +262,15 @@ class CEDOrchestrator:
         # Phase 22: optional Teacher-Loop corpus — harvests SFT + peer-score
         # preference data from each finished session (duck-typed: .ingest_session).
         self.training_corpus = training_corpus
+        # Phase 23: how peer scores aggregate to pick a section winner —
+        #   "uniform" (default): plain mean, identical to all prior behavior;
+        #   "confidence": mean weighted by each voter's SELF-REPORTED confidence
+        #   in that score (a mechanical weighted average — still no semantic CED
+        #   judgement; a low-confidence vote still counts, just less).
+        if score_weighting not in ("uniform", "confidence"):
+            raise ValueError(f"score_weighting must be 'uniform' or 'confidence', "
+                             f"got {score_weighting!r}")
+        self.score_weighting = score_weighting
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -1107,6 +1117,7 @@ class CEDOrchestrator:
             "execution_mode": "registry",
             "adaptive_dialectic": self._adaptive_dialectic(state),
             "epistemic_consistency": self._epistemic_consistency(state),
+            "score_weighting": self._weighting_audit(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
             "seat_routing": {
@@ -2462,26 +2473,36 @@ class CEDOrchestrator:
     # ── Blind Section Assembly (section-by-section, mechanical) ───────────────
 
     def _section_ranking(
-        self, state: SessionState, section: SectionName
+        self, state: SessionState, section: SectionName,
+        weighting: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Rank drafts for one section by the tie-breaker chain:
-          1. highest average overall_score
-          2. lower variance
-          3. higher score_count
-          4. deterministic draft_id order
+          1. highest average overall_score (weighted by voter confidence when
+             score_weighting == "confidence"; plain mean when "uniform")
+          2. lower variance   3. higher score_count   4. deterministic draft_id
+        `weighting` overrides self.score_weighting (used by the audit to compare
+        the two aggregations); variance/count/id tie-breakers stay unchanged.
         """
-        by_draft: Dict[str, List[float]] = {}
+        mode = weighting or self.score_weighting
+        by_draft: Dict[str, List[Tuple[float, float]]] = {}   # draft -> [(score, weight)]
         for ss in state.section_scores_for(section):
-            by_draft.setdefault(ss.draft_id, []).append(float(ss.overall_score))
+            w = float(ss.confidence) if mode == "confidence" else 1.0
+            by_draft.setdefault(ss.draft_id, []).append((float(ss.overall_score), w))
 
         stats: List[Dict[str, Any]] = []
-        for draft_id, vals in by_draft.items():
+        for draft_id, pairs in by_draft.items():
+            scores = [s for s, _ in pairs]
+            wsum = sum(w for _, w in pairs)
+            # weighted mean; if every weight is 0 (all-zero confidence) fall back
+            # to the plain mean so a section is never lost to a division by zero.
+            avg = (sum(s * w for s, w in pairs) / wsum) if wsum > 0 \
+                else (sum(scores) / len(scores))
             stats.append({
                 "draft_id": draft_id,
-                "average_score": sum(vals) / len(vals),
-                "score_count": len(vals),
-                "variance": self._variance(vals),
+                "average_score": avg,
+                "score_count": len(pairs),
+                "variance": self._variance(scores),
             })
         stats.sort(key=lambda s: (
             -s["average_score"],   # 1. highest average
@@ -2490,6 +2511,20 @@ class CEDOrchestrator:
             s["draft_id"],         # 4. deterministic id order
         ))
         return stats
+
+    def _weighting_audit(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 23 observability: report the aggregation mode and, when
+        confidence-weighting is on, how many section winners it moved vs the
+        plain mean — so its effect can be honestly evaluated (never hidden)."""
+        if self.score_weighting == "uniform":
+            return {"mode": "uniform", "sections_reweighted": 0}
+        flips = 0
+        for section in SECTION_ORDER:
+            w = self._section_ranking(state, section, weighting="confidence")
+            u = self._section_ranking(state, section, weighting="uniform")
+            if w and u and w[0]["draft_id"] != u[0]["draft_id"]:
+                flips += 1
+        return {"mode": "confidence", "sections_reweighted": flips}
 
     def _section_assembled(
         self, section: SectionName, entry: Dict[str, Any],
