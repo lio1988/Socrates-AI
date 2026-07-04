@@ -1123,6 +1123,90 @@ label, CED aggregates mechanically.
 
 ---
 
+## Phase 23 — Confidence-weighted aggregation
+
+A real gap in the CED↔agent interaction: section winners were picked by a
+**plain mean** of peer scores, ignoring the `confidence` each voter
+*self-reports in that very score* (the field existed in `SectionScore` but was
+unused in aggregation). A reviewer's tentative "8, but I'm not sure" counted
+exactly as much as a firm "8, high confidence."
+
+`score_weighting="confidence"` (opt-in; default `"uniform"`) makes the section
+winner a **confidence-weighted mean** — `Σ(score·conf) / Σ(conf)`. It stays a
+mechanical aggregation (the invariant explicitly permits weighted means); it
+never silences anyone (a low-confidence vote keeps a positive weight); and an
+all-zero-confidence section falls back to the plain mean (no division by zero).
+The effect is audited, not hidden (`score_weighting`: mode + how many section
+winners it moved vs the plain mean).
+
+`"uniform"` is byte-for-byte the prior behavior, so this is a clean **protocol
+variant** — exactly the kind of change `protocol_evolution` (Phase 13C) is built
+to A/B on external truth: rather than *asserting* confidence-weighting helps, run
+uniform vs confidence through the dialectic-delta and let the verifiers decide.
+
+---
+
+## Phase 24 — Cross-section coherence
+
+Blind assembly picks each of the five sections **independently**, so the final
+answer can stitch sections from different drafts that argue past each other — a
+"Frankenstein" answer — and nothing was checking that. Two fixes, both
+invariant-safe:
+
+- **Mechanical fragmentation metric** (`assembly_coherence` in the audit): how
+  many *distinct drafts* the resolved sections were stitched from
+  (`fragmentation = distinct/resolved`, `single_source` flag). It is a metric,
+  never a semantic judgement, and **hidden from agents** like the leaderboard.
+- **Ratifier coherence directive**: the ratification prompt now tells the
+  Final Evaluator that the sections were assembled section-by-section and may
+  come from different drafts, and to verify they cohere as one answer (the
+  stress test must challenge the same position the core answer commits to; the
+  verdict must follow from it) — raising a `blocking_objection` on the
+  incoherent sections otherwise. The note is **generic** (no session-specific
+  data, no scores, no identities), so blind judging is preserved; it appears
+  **only** on the ratification task, never on scoring or deliberation.
+
+Now a fragmented answer is both *visible* (the metric) and *guarded* (the
+ratifier is told to catch contradictions) — closing the last-mile gap where the
+dialectic's per-section winners could quietly contradict each other.
+
+---
+
+## Phase 25 — Coherence-aware assembly (the smart part)
+
+Flagging and guarding fragmentation is reactive. The deeper fix makes the
+**assembly itself prefer coherence** — mechanically, without sacrificing
+quality. The key insight: *a single draft's five sections are coherent by
+construction* (one agent wrote them together); incoherence is born of mixing.
+
+`cohesion_margin` (0–10 scale; default `0.0` = off) turns on a bounded
+quality↔coherence trade:
+
+1. Compute each draft's **global strength** — the mean of its per-section
+   average scores (order-independent, deterministic).
+2. For each section, among the drafts within `cohesion_margin` of the section's
+   top score, take the section from the **globally strongest** draft (ties fall
+   back to the score ranking).
+
+So the answer **anchors to the strongest coherent draft** and only "borrows" a
+section from another draft when that draft wins **decisively** (beyond the
+margin). A section is *never* taken from a draft weaker than the winner by more
+than the margin — the quality give-up is bounded and explicit. It stays fully
+mechanical (peer scores + a deterministic global-strength tie-break; no
+semantic CED judgement) and is audited (`cohesion_margin`, `cohesion_overrides`
+— how many sections the anchor pulled off the raw score-winner).
+
+Worked example: draft A scores 8.0 on all five sections; draft B spikes to 8.3
+on `core_answer` but 5.0 elsewhere. Plain assembly ships a 2-source answer
+(core from B, rest from A). With `cohesion_margin=0.5`, the 0.3 core gap is
+inside the margin, A is globally stronger, so all five sections come from A — a
+single-source, fully coherent answer for a 0.3-point core trade. With a 0.1
+margin the trade is refused (quality wins beyond the margin). Default `0.0`
+leaves every prior test byte-for-byte unchanged; like confidence-weighting it is
+a clean protocol variant for `protocol_evolution` to A/B on external truth.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

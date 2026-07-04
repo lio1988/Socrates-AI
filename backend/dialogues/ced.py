@@ -202,6 +202,8 @@ class CEDOrchestrator:
         ratification_repair: str = "block",
         phase_retry: bool = False,
         training_corpus=None,
+        score_weighting: str = "uniform",
+        cohesion_margin: float = 0.0,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -261,6 +263,25 @@ class CEDOrchestrator:
         # Phase 22: optional Teacher-Loop corpus — harvests SFT + peer-score
         # preference data from each finished session (duck-typed: .ingest_session).
         self.training_corpus = training_corpus
+        # Phase 23: how peer scores aggregate to pick a section winner —
+        #   "uniform" (default): plain mean, identical to all prior behavior;
+        #   "confidence": mean weighted by each voter's SELF-REPORTED confidence
+        #   in that score (a mechanical weighted average — still no semantic CED
+        #   judgement; a low-confidence vote still counts, just less).
+        if score_weighting not in ("uniform", "confidence"):
+            raise ValueError(f"score_weighting must be 'uniform' or 'confidence', "
+                             f"got {score_weighting!r}")
+        self.score_weighting = score_weighting
+        # Phase 25: coherence-aware assembly. 0.0 (default) = OFF, byte-for-byte
+        # the old per-section score-winner pick. When > 0, a section may be taken
+        # from a globally-stronger (more coherent-anchor) draft instead of the raw
+        # score-winner ONLY IF that draft is within `cohesion_margin` (0–10 scale)
+        # of the winner — trading a bounded, sub-margin section-quality delta for
+        # a less fragmented, more internally-coherent whole answer. Mechanical.
+        if cohesion_margin < 0:
+            raise ValueError(f"cohesion_margin must be >= 0, got {cohesion_margin!r}")
+        self.cohesion_margin = float(cohesion_margin)
+        self._cohesion_overrides = 0   # sections cohesion moved off the score-winner
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -1107,6 +1128,8 @@ class CEDOrchestrator:
             "execution_mode": "registry",
             "adaptive_dialectic": self._adaptive_dialectic(state),
             "epistemic_consistency": self._epistemic_consistency(state),
+            "score_weighting": self._weighting_audit(state),
+            "assembly_coherence": self._assembly_coherence(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
             "seat_routing": {
@@ -2462,26 +2485,36 @@ class CEDOrchestrator:
     # ── Blind Section Assembly (section-by-section, mechanical) ───────────────
 
     def _section_ranking(
-        self, state: SessionState, section: SectionName
+        self, state: SessionState, section: SectionName,
+        weighting: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Rank drafts for one section by the tie-breaker chain:
-          1. highest average overall_score
-          2. lower variance
-          3. higher score_count
-          4. deterministic draft_id order
+          1. highest average overall_score (weighted by voter confidence when
+             score_weighting == "confidence"; plain mean when "uniform")
+          2. lower variance   3. higher score_count   4. deterministic draft_id
+        `weighting` overrides self.score_weighting (used by the audit to compare
+        the two aggregations); variance/count/id tie-breakers stay unchanged.
         """
-        by_draft: Dict[str, List[float]] = {}
+        mode = weighting or self.score_weighting
+        by_draft: Dict[str, List[Tuple[float, float]]] = {}   # draft -> [(score, weight)]
         for ss in state.section_scores_for(section):
-            by_draft.setdefault(ss.draft_id, []).append(float(ss.overall_score))
+            w = float(ss.confidence) if mode == "confidence" else 1.0
+            by_draft.setdefault(ss.draft_id, []).append((float(ss.overall_score), w))
 
         stats: List[Dict[str, Any]] = []
-        for draft_id, vals in by_draft.items():
+        for draft_id, pairs in by_draft.items():
+            scores = [s for s, _ in pairs]
+            wsum = sum(w for _, w in pairs)
+            # weighted mean; if every weight is 0 (all-zero confidence) fall back
+            # to the plain mean so a section is never lost to a division by zero.
+            avg = (sum(s * w for s, w in pairs) / wsum) if wsum > 0 \
+                else (sum(scores) / len(scores))
             stats.append({
                 "draft_id": draft_id,
-                "average_score": sum(vals) / len(vals),
-                "score_count": len(vals),
-                "variance": self._variance(vals),
+                "average_score": avg,
+                "score_count": len(pairs),
+                "variance": self._variance(scores),
             })
         stats.sort(key=lambda s: (
             -s["average_score"],   # 1. highest average
@@ -2490,6 +2523,42 @@ class CEDOrchestrator:
             s["draft_id"],         # 4. deterministic id order
         ))
         return stats
+
+    def _assembly_coherence(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 24 observability: how fragmented the blind assembly is — i.e. how
+        many DISTINCT drafts the five resolved sections were stitched from. High
+        fragmentation ⇒ higher cross-section-incoherence risk (which the ratifier
+        is told to check). CED-owned audit; a metric, never a semantic judgement,
+        and never shown to agents."""
+        assembled = state.assembled_answer
+        if assembled is None:
+            return {"resolved_sections": 0, "distinct_source_drafts": 0,
+                    "fragmentation": 0.0, "single_source": True}
+        resolved = [s for s in assembled.sections if not s.unresolved and s.selected_draft_id]
+        drafts = {s.selected_draft_id for s in resolved}
+        n = len(resolved)
+        return {
+            "resolved_sections": n,
+            "distinct_source_drafts": len(drafts),
+            "fragmentation": round(len(drafts) / n, 4) if n else 0.0,
+            "single_source": len(drafts) <= 1,
+            "cohesion_margin": self.cohesion_margin,
+            "cohesion_overrides": self._cohesion_overrides,
+        }
+
+    def _weighting_audit(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 23 observability: report the aggregation mode and, when
+        confidence-weighting is on, how many section winners it moved vs the
+        plain mean — so its effect can be honestly evaluated (never hidden)."""
+        if self.score_weighting == "uniform":
+            return {"mode": "uniform", "sections_reweighted": 0}
+        flips = 0
+        for section in SECTION_ORDER:
+            w = self._section_ranking(state, section, weighting="confidence")
+            u = self._section_ranking(state, section, weighting="uniform")
+            if w and u and w[0]["draft_id"] != u[0]["draft_id"]:
+                flips += 1
+        return {"mode": "confidence", "sections_reweighted": flips}
 
     def _section_assembled(
         self, section: SectionName, entry: Dict[str, Any],
@@ -2522,21 +2591,59 @@ class CEDOrchestrator:
             content=chosen.section_text(section),
             average_score=0.0, score_count=0, variance=0.0, unresolved=False)
 
+    def _cohesion_strengths(self, state: SessionState) -> Dict[str, float]:
+        """Each draft's GLOBAL strength = mean of its per-section average scores
+        across all five sections (peer-scored). Order-independent, deterministic —
+        the anchor signal for coherence-aware assembly."""
+        totals: Dict[str, float] = {}
+        counts: Dict[str, int] = {}
+        for section in SECTION_ORDER:
+            for e in self._section_ranking(state, section):
+                totals[e["draft_id"]] = totals.get(e["draft_id"], 0.0) + e["average_score"]
+                counts[e["draft_id"]] = counts.get(e["draft_id"], 0) + 1
+        return {d: totals[d] / counts[d] for d in totals}
+
+    def _cohesive_pick(self, ranking: List[Dict[str, Any]],
+                       strengths: Dict[str, float]) -> Dict[str, Any]:
+        """Among the drafts within `cohesion_margin` of the section's top score,
+        choose the globally strongest (coherent anchor); ties fall back to the
+        original score ranking. Never selects a draft weaker than the winner by
+        more than the margin — quality is preserved within a bounded band."""
+        top = ranking[0]["average_score"]
+        best_key, best = None, ranking[0]
+        for pos, e in enumerate(ranking):
+            if e["average_score"] < top - self.cohesion_margin:
+                break   # ranking is score-descending → nothing further qualifies
+            key = (-strengths.get(e["draft_id"], 0.0), pos)
+            if best_key is None or key < best_key:
+                best_key, best = key, e
+        return best
+
     def assemble_sections(self, session_id: str) -> AssembledAnswer:
         """
         Section-by-section blind assembly: independently for each of the five
         sections, pick the draft with the highest average overall_score (with
         deterministic tie-breakers). CED never chooses winners semantically.
+        With cohesion_margin > 0, near-tied sections prefer the globally strongest
+        draft, pulling the answer toward a coherent single source (Phase 25).
         """
         state = self.get_session(session_id)
         drafts_by_id = {d.draft_id: d for d in state.section_drafts}
+        strengths = self._cohesion_strengths(state) if self.cohesion_margin > 0 else {}
+        self._cohesion_overrides = 0
 
         assembled_sections: List[AssembledSection] = []
         for section in SECTION_ORDER:
             ranking = self._section_ranking(state, section)
             if ranking:
+                if self.cohesion_margin > 0:
+                    entry = self._cohesive_pick(ranking, strengths)
+                    if entry["draft_id"] != ranking[0]["draft_id"]:
+                        self._cohesion_overrides += 1
+                else:
+                    entry = ranking[0]
                 assembled_sections.append(
-                    self._section_assembled(section, ranking[0], drafts_by_id)
+                    self._section_assembled(section, entry, drafts_by_id)
                 )
             elif self.assembly_fallback:
                 # No valid peer scores, but fallback enabled: use a real synthesis
