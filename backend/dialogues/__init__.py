@@ -144,6 +144,19 @@ from .learning_preference_miner import (
     mine_preferences,
     smart_learning_summary,
 )
+from .learning_process_miner import (
+    ProcessSignal,
+    ProcessMiningMode,
+    ProcessMiningPolicy,
+    ProcessStepScore,
+    ProcessTransition,
+    ProcessSFTExample,
+    ProcessMiningReport,
+    score_process_step,
+    mine_process_transitions,
+    mine_process_examples,
+    process_reward_summary,
+)
 from .self_improvement import (
     SeatHealthTracker,
     EpistemicLessonStore,
@@ -210,6 +223,10 @@ __all__ = [
     "TracePreferenceScore", "MinedPreferenceCandidate", "PreferenceMiningReport",
     "score_trace_for_preference", "mine_preference_candidates", "mine_preferences",
     "smart_learning_summary",
+    "ProcessSignal", "ProcessMiningMode", "ProcessMiningPolicy",
+    "ProcessStepScore", "ProcessTransition", "ProcessSFTExample", "ProcessMiningReport",
+    "score_process_step", "mine_process_transitions", "mine_process_examples",
+    "process_reward_summary",
     "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
     "TopicSkillTracker", "CalibrationLedger",
