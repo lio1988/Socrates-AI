@@ -8,18 +8,23 @@ production-shaped path either way:
     ced, mode = build_council(env)          # mode == "live" or "mock"
     final = asyncio.run(ced.run_registry_session(question, session_id=...))
 
-Real agents are engaged ONLY when doubly gated, exactly like the Phase 9B smoke:
+Real agents are engaged ONLY when gated, exactly like the Phase 9B smoke:
   1. CED_ENABLE_LIVE_PROVIDERS == "1", and
-  2. ANTHROPIC_API_KEY is a real (non-placeholder) key.
+  2. the selected live provider family has a real (non-placeholder) key.
 Otherwise `build_council` returns a deterministic **mock** council — the default.
+
+Phase 26B adds an opt-in mixed-provider council surface:
+  - old behavior is unchanged when CED_PROVIDER_FAMILIES is absent;
+  - when present, seats can be `anthropic`, `nvidia`, or `mock`;
+  - CED scoring/ratification/assembly semantics are untouched.
 
 Hard guarantees:
   - **No network call at build time.** Live adapters are constructed but never
-    invoked here; the `anthropic` SDK is imported lazily, only on a real call.
+    invoked here; provider SDK/HTTP calls happen lazily, only on a real call.
   - Config comes from environment variables ONLY — never reads/writes `.env`,
     never hardcodes or prints a key.
-  - All invariants are preserved: the live agents receive the full reasoning
-    prompt (Phase 10), minimal awareness, peer scoring (judge-not-author), and the
+  - All invariants are preserved: live agents receive the full reasoning prompt
+    (Phase 10), minimal awareness, peer scoring (judge-not-author), and the
     no-fabrication / quorum rules — the orchestration is unchanged.
 
 This module is the council-grade home for live providers (multi-seat council).
@@ -29,6 +34,7 @@ smoke CLI (one provider, one task) and intentionally stands alone.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import time
@@ -45,15 +51,27 @@ from .offline_provider_adapter import (
     DEFAULT_OFFLINE_MODEL, OfflineProviderAdapter, OfflineRefusal,
     OfflineTransportError,
 )
+from .nvidia_nim_provider import (
+    DEFAULT_NVIDIA_BASE_URL,
+    DEFAULT_NVIDIA_MODEL,
+    LiveNvidiaNIMAdapter,
+)
 
 # ── configuration (environment variables ONLY) ───────────────────────────────
 
 FLAG_ENV = "CED_ENABLE_LIVE_PROVIDERS"     # must be "1" to engage real agents
 KEY_ENV = "ANTHROPIC_API_KEY"              # provider key, loaded locally, never printed
-MODELS_ENV = "CED_LIVE_MODELS"             # optional comma-separated per-seat models
+MODELS_ENV = "CED_LIVE_MODELS"             # optional comma-separated Anthropic per-seat models
 MAXTOK_ENV = "CED_LIVE_MAX_TOKENS"         # optional
 TIMEOUT_ENV = "CED_LIVE_TIMEOUT"           # optional per-provider call timeout (seconds)
 RETRIES_ENV = "CED_LIVE_RETRIES"           # optional transient-failure retries per call
+
+# Phase 26B: optional mixed-provider surface. If PROVIDER_FAMILIES_ENV is absent,
+# old Anthropic/mock behavior is preserved.
+PROVIDER_FAMILIES_ENV = "CED_PROVIDER_FAMILIES"   # e.g. anthropic,nvidia,nvidia,mock
+NVIDIA_KEY_ENV = "NVIDIA_API_KEY"
+NVIDIA_MODELS_ENV = "CED_NVIDIA_MODELS"           # optional comma-separated NVIDIA per-seat models
+NVIDIA_BASE_URL_ENV = "CED_NVIDIA_BASE_URL"       # optional NIM-compatible base URL
 
 DEFAULT_LIVE_MODEL = DEFAULT_OFFLINE_MODEL  # "claude-opus-4-8"
 DEFAULT_MAX_TOKENS = 8192   # generous: rich (esp. Greek) reasoning JSON must not truncate
@@ -66,12 +84,18 @@ DEFAULT_COUNCIL_SIZE = 4
 # ── secret-safe redaction (shared with the smoke script) ──────────────────────
 
 def _redact(text: Optional[str], key: Optional[str] = None) -> str:
-    """Mask anything that could be a key (exact key value + sk-… patterns)."""
+    """Mask anything that could be a key (exact key value + sk-/nvapi- patterns)."""
     if not text:
         return text or ""
     if key:
         text = text.replace(key, "***REDACTED***")
-    return re.sub(r"sk-[A-Za-z0-9_\-]{6,}", "***REDACTED***", text)
+    text = re.sub(r"sk-[A-Za-z0-9_\-]{6,}", "***REDACTED***", text)
+    text = re.sub(r"nvapi-[A-Za-z0-9_\-]{6,}", "***REDACTED***", text)
+    return text
+
+
+def _safe_id_fragment(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_") or "model"
 
 
 # ── gating (pure, env-driven; never reads .env, never calls) ─────────────────
@@ -85,11 +109,40 @@ def resolve_key(env) -> Optional[str]:
     return None if is_placeholder_key(key) else key
 
 
+def resolve_nvidia_key(env) -> Optional[str]:
+    key = env.get(NVIDIA_KEY_ENV, "")
+    return None if is_placeholder_key(key) else key
+
+
+def _parse_csv(raw: str) -> List[str]:
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def resolve_provider_families(env, council_size: int) -> List[str]:
+    """Empty list means: use the legacy Anthropic/mock behavior unchanged."""
+    raw = env.get(PROVIDER_FAMILIES_ENV, "").strip()
+    if not raw:
+        return []
+    values = [v.lower() for v in _parse_csv(raw)]
+    return values or []
+
+
 def resolve_models(env, council_size: int) -> List[str]:
     raw = env.get(MODELS_ENV, "").strip()
     if raw:
-        return [m.strip() for m in raw.split(",") if m.strip()]
+        return _parse_csv(raw)
     return [DEFAULT_LIVE_MODEL] * council_size
+
+
+def resolve_nvidia_models(env, count: int) -> List[str]:
+    raw = env.get(NVIDIA_MODELS_ENV, "").strip()
+    if raw:
+        return _parse_csv(raw)
+    return [DEFAULT_NVIDIA_MODEL] * count
+
+
+def resolve_nvidia_base_url(env) -> str:
+    return (env.get(NVIDIA_BASE_URL_ENV, "") or DEFAULT_NVIDIA_BASE_URL).rstrip("/")
 
 
 def resolve_max_tokens(env) -> int:
@@ -234,16 +287,62 @@ class LiveAnthropicAdapter(OfflineProviderAdapter):
         )
 
 
-# ── the readiness switch: build a council registry / orchestrator ─────────────
+# ── registry builders ────────────────────────────────────────────────────────
+
+def _mock_registry(council_size: int, budget: float) -> CouncilProviderRegistry:
+    registry = CouncilProviderRegistry(provider_timeout_seconds=budget)
+    for i in range(council_size):
+        registry.register(ScriptedMockProvider(f"mock_seat{i}"))
+    return registry
+
+
+def _build_mixed_registry(env, families: List[str], *, timeout: float, retries: int,
+                          budget: float, max_tokens: int) -> CouncilProviderRegistry:
+    registry = CouncilProviderRegistry(provider_timeout_seconds=budget)
+    anthropic_key = resolve_key(env)
+    nvidia_key = resolve_nvidia_key(env)
+    anthropic_models = resolve_models(env, families.count("anthropic") + families.count("claude"))
+    nvidia_models = resolve_nvidia_models(env, families.count("nvidia") + families.count("nim"))
+    nvidia_base_url = resolve_nvidia_base_url(env)
+    a_i = 0
+    n_i = 0
+
+    for seat_i, family in enumerate(families):
+        if family in ("mock", "fake", "scripted"):
+            registry.register(ScriptedMockProvider(f"mock_seat{seat_i}"))
+            continue
+        if family in ("anthropic", "claude"):
+            model = anthropic_models[a_i % max(1, len(anthropic_models))]
+            a_i += 1
+            registry.register(LiveAnthropicAdapter(
+                f"anthropic_seat{seat_i}_{_safe_id_fragment(model)}",
+                anthropic_key or "your_key_here", model=model, max_tokens=max_tokens,
+                timeout=timeout, retries=retries,
+            ))
+            continue
+        if family in ("nvidia", "nim"):
+            model = nvidia_models[n_i % max(1, len(nvidia_models))]
+            n_i += 1
+            registry.register(LiveNvidiaNIMAdapter(
+                f"nvidia_seat{seat_i}_{_safe_id_fragment(model)}",
+                nvidia_key or "your_key_here", model=model, base_url=nvidia_base_url,
+                max_tokens=max_tokens, timeout=timeout, retries=retries,
+            ))
+            continue
+        raise ValueError(
+            f"Unknown provider family {family!r}; supported: anthropic, nvidia, mock"
+        )
+    return registry
+
 
 def build_council_registry(
     env=None, *, council_size: int = DEFAULT_COUNCIL_SIZE,
 ) -> Tuple[CouncilProviderRegistry, str]:
     """
-    Return (registry, mode). `mode == "live"` when doubly gated (flag + real key) —
-    registers real `LiveAnthropicAdapter` seats (constructed, NOT called here);
-    otherwise `mode == "mock"` and registers deterministic `ScriptedMockProvider`s
-    (the offline default). Env-only; never reads `.env`; makes NO network call.
+    Return (registry, mode). Legacy behavior: `mode == "live"` only when the old
+    Anthropic double gate is satisfied; otherwise deterministic mock. Mixed mode:
+    when CED_PROVIDER_FAMILIES is set and the global live flag is enabled, seats
+    are built from the requested provider families.
     """
     env = os.environ if env is None else env
     timeout = resolve_timeout(env)
@@ -251,12 +350,22 @@ def build_council_registry(
     # The registry's per-task budget wraps the adapter's whole call INCLUDING its
     # internal retries, so it must cover every attempt (+ fixed delays + margin).
     budget = (retries + 1) * timeout + retries * DEFAULT_RETRY_DELAY + 5.0
-    registry = CouncilProviderRegistry(provider_timeout_seconds=budget)
+    max_tokens = resolve_max_tokens(env)
 
+    families = resolve_provider_families(env, council_size)
+    if families:
+        if live_enabled(env):
+            return _build_mixed_registry(
+                env, families, timeout=timeout, retries=retries,
+                budget=budget, max_tokens=max_tokens,
+            ), "mixed"
+        return _mock_registry(len(families), budget), "mock"
+
+    # Legacy Phase 11 behavior preserved when CED_PROVIDER_FAMILIES is absent.
+    registry = CouncilProviderRegistry(provider_timeout_seconds=budget)
     key = resolve_key(env)
     if live_enabled(env) and key is not None:
         models = resolve_models(env, council_size)
-        max_tokens = resolve_max_tokens(env)
         for i, model in enumerate(models):
             registry.register(LiveAnthropicAdapter(
                 f"anthropic_seat{i}_{model}", key, model=model, max_tokens=max_tokens,
@@ -277,11 +386,12 @@ def build_council(
 ) -> Tuple[Any, str]:
     """
     A ready-to-run council orchestrator. Same code path real or mock — mock by
-    default; live ONLY when gated + keyed. Returns (CEDOrchestrator, mode).
+    default; live/mixed ONLY when gated + keyed. Returns (CEDOrchestrator, mode).
 
         ced, mode = build_council()                       # offline mock
         ced, mode = build_council(council_size=3)
         # with CED_ENABLE_LIVE_PROVIDERS=1 + ANTHROPIC_API_KEY set → mode == "live"
+        # with CED_PROVIDER_FAMILIES=anthropic,nvidia,mock + flag → mode == "mixed"
     """
     from .ced import CEDOrchestrator
     from .agent import SocraticAgent
@@ -289,7 +399,7 @@ def build_council(
 
     registry, mode = build_council_registry(env, council_size=council_size)
     provider = FakeProvider()  # legacy self.agents slot — unused on the registry path
-    agents = [SocraticAgent(f"agent_{i}", provider) for i in range(council_size)]
+    agents = [SocraticAgent(f"agent_{i}", provider) for i in range(len(registry.all_adapters()))]
     kwargs = {} if shadow_scoring_mode is None else {"shadow_scoring_mode": shadow_scoring_mode}
     # Enable the assembly fallback so a live run still produces an answer even if
     # finicky real-model peer-scoring yields no valid section scores.
