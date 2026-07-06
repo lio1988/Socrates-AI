@@ -132,6 +132,18 @@ from .learning_trace_collector import (
     provider_catalog,
     learning_export_summary,
 )
+from .learning_preference_miner import (
+    PreferenceSignal,
+    PreferenceMiningMode,
+    PreferenceMiningPolicy,
+    TracePreferenceScore,
+    MinedPreferenceCandidate,
+    PreferenceMiningReport,
+    score_trace_for_preference,
+    mine_preference_candidates,
+    mine_preferences,
+    smart_learning_summary,
+)
 from .self_improvement import (
     SeatHealthTracker,
     EpistemicLessonStore,
@@ -194,6 +206,10 @@ __all__ = [
     "ProviderMeta", "collect_learning_dataset", "collect_task_traces",
     "collect_ratification_traces", "collect_score_traces", "infer_provider_family",
     "provider_catalog", "learning_export_summary",
+    "PreferenceSignal", "PreferenceMiningMode", "PreferenceMiningPolicy",
+    "TracePreferenceScore", "MinedPreferenceCandidate", "PreferenceMiningReport",
+    "score_trace_for_preference", "mine_preference_candidates", "mine_preferences",
+    "smart_learning_summary",
     "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
     "TopicSkillTracker", "CalibrationLedger",
