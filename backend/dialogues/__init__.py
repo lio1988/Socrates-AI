@@ -122,6 +122,16 @@ from .learning_foundation import (
     sanitize_public_payload,
     jsonl,
 )
+from .learning_trace_collector import (
+    ProviderMeta,
+    collect_learning_dataset,
+    collect_task_traces,
+    collect_ratification_traces,
+    collect_score_traces,
+    infer_provider_family,
+    provider_catalog,
+    learning_export_summary,
+)
 from .self_improvement import (
     SeatHealthTracker,
     EpistemicLessonStore,
@@ -181,6 +191,9 @@ __all__ = [
     "PreferenceExample", "EvalExample", "EvalVerifierType",
     "assess_training_eligibility", "build_preference_example",
     "sanitize_public_payload", "jsonl",
+    "ProviderMeta", "collect_learning_dataset", "collect_task_traces",
+    "collect_ratification_traces", "collect_score_traces", "infer_provider_family",
+    "provider_catalog", "learning_export_summary",
     "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
     "TopicSkillTracker", "CalibrationLedger",
