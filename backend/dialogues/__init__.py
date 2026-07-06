@@ -175,6 +175,21 @@ from .learning_alignment_exporter import (
     build_alignment_export_pack,
     alignment_export_summary,
 )
+from .learning_quality_gates import (
+    QualitySeverity,
+    QualityVerdict,
+    QualityGatePolicy,
+    QualityIssue,
+    ArtifactQualitySummary,
+    DatasetQualityReport,
+    jaccard_similarity,
+    check_artifact_integrity,
+    check_record_shapes,
+    check_split_leakage,
+    check_dataset_volume,
+    evaluate_quality_gates,
+    quality_gate_summary,
+)
 from .self_improvement import (
     SeatHealthTracker,
     EpistemicLessonStore,
@@ -251,6 +266,10 @@ __all__ = [
     "trace_sft_records", "dpo_records", "nemo_dpo_records",
     "reward_pair_records", "process_sft_records", "build_alignment_export_pack",
     "alignment_export_summary",
+    "QualitySeverity", "QualityVerdict", "QualityGatePolicy", "QualityIssue",
+    "ArtifactQualitySummary", "DatasetQualityReport", "jaccard_similarity",
+    "check_artifact_integrity", "check_record_shapes", "check_split_leakage",
+    "check_dataset_volume", "evaluate_quality_gates", "quality_gate_summary",
     "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
     "TopicSkillTracker", "CalibrationLedger",
