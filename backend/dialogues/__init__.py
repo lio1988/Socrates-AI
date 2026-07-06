@@ -100,6 +100,12 @@ from .live_providers import (
     build_council,
     build_council_registry,
 )
+from .nvidia_nim_provider import (
+    LiveNvidiaNIMAdapter,
+    NvidiaNIMRequest,
+    CannedNvidiaNIMTransport,
+    nvidia_chat_envelope,
+)
 from .self_improvement import (
     SeatHealthTracker,
     EpistemicLessonStore,
@@ -152,7 +158,9 @@ __all__ = [
     "ConversationManager", "ConversationSession", "ConversationTurn",
     "PublicEpistemicMemory", "HiddenCedTrace", "ChatResponse",
     "build_full_brief", "save_conversation_json", "load_conversation_json",
-    "LiveAnthropicAdapter", "build_council", "build_council_registry",
+    "LiveAnthropicAdapter", "LiveNvidiaNIMAdapter", "NvidiaNIMRequest",
+    "CannedNvidiaNIMTransport", "nvidia_chat_envelope",
+    "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
     "TopicSkillTracker", "CalibrationLedger",
     "extract_lesson", "distill_lesson_with_council", "review_process_with_council",
