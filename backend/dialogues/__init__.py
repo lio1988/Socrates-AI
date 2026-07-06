@@ -190,6 +190,27 @@ from .learning_quality_gates import (
     evaluate_quality_gates,
     quality_gate_summary,
 )
+from .learning_training_planner import (
+    TrainingFamily,
+    TrainingReadiness,
+    DryRunMode,
+    TrainingPlannerPolicy,
+    TrainingJobPlan,
+    TrainingDryRunPlan,
+    plan_family,
+    build_training_dry_run_plan,
+    dry_run_plan_summary,
+)
+from .learning_dry_run_cli import (
+    infer_alignment_format,
+    infer_dataset_split,
+    load_alignment_pack_from_mapping,
+    load_alignment_pack_from_directory,
+    run_local_dry_run,
+    run_local_dry_run_from_directory,
+    build_arg_parser,
+    main as learning_dry_run_main,
+)
 from .self_improvement import (
     SeatHealthTracker,
     EpistemicLessonStore,
@@ -270,6 +291,12 @@ __all__ = [
     "ArtifactQualitySummary", "DatasetQualityReport", "jaccard_similarity",
     "check_artifact_integrity", "check_record_shapes", "check_split_leakage",
     "check_dataset_volume", "evaluate_quality_gates", "quality_gate_summary",
+    "TrainingFamily", "TrainingReadiness", "DryRunMode", "TrainingPlannerPolicy",
+    "TrainingJobPlan", "TrainingDryRunPlan", "plan_family",
+    "build_training_dry_run_plan", "dry_run_plan_summary",
+    "infer_alignment_format", "infer_dataset_split", "load_alignment_pack_from_mapping",
+    "load_alignment_pack_from_directory", "run_local_dry_run",
+    "run_local_dry_run_from_directory", "build_arg_parser", "learning_dry_run_main",
     "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
     "TopicSkillTracker", "CalibrationLedger",
