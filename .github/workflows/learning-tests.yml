@@ -1,0 +1,49 @@
+name: Learning Stack Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'backend/dialogues/**'
+      - 'tests_dialogues/**'
+      - 'docs/phase_26*.md'
+      - 'requirements.txt'
+      - '.github/workflows/learning-tests.yml'
+
+jobs:
+  pytest-learning-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run learning stack tests
+        run: |
+          python -m pytest \
+            tests_dialogues/test_learning_foundation.py \
+            tests_dialogues/test_learning_trace_collector.py \
+            tests_dialogues/test_learning_preference_miner.py \
+            tests_dialogues/test_learning_process_miner.py \
+            tests_dialogues/test_learning_alignment_exporter.py \
+            tests_dialogues/test_learning_quality_gates.py \
+            tests_dialogues/test_learning_training_planner.py \
+            tests_dialogues/test_learning_dry_run_cli.py \
+            tests_dialogues/test_learning_pipeline_e2e.py \
+            tests_dialogues/test_learning_health_audit.py \
+            tests_dialogues/test_learning_live_learner.py \
+            tests_dialogues/test_learning_interaction_control.py \
+            tests_dialogues/test_learning_triad_loop.py \
+            tests_dialogues/test_learning_intervention_planner.py \
+            tests_dialogues/test_learning_ground_truth_checks.py \
+            tests_dialogues/test_learning_evidence_harness.py
