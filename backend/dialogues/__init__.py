@@ -190,6 +190,17 @@ from .learning_quality_gates import (
     evaluate_quality_gates,
     quality_gate_summary,
 )
+from .learning_training_planner import (
+    TrainingFamily,
+    TrainingReadiness,
+    DryRunMode,
+    TrainingPlannerPolicy,
+    TrainingJobPlan,
+    TrainingDryRunPlan,
+    plan_family,
+    build_training_dry_run_plan,
+    dry_run_plan_summary,
+)
 from .self_improvement import (
     SeatHealthTracker,
     EpistemicLessonStore,
@@ -270,6 +281,9 @@ __all__ = [
     "ArtifactQualitySummary", "DatasetQualityReport", "jaccard_similarity",
     "check_artifact_integrity", "check_record_shapes", "check_split_leakage",
     "check_dataset_volume", "evaluate_quality_gates", "quality_gate_summary",
+    "TrainingFamily", "TrainingReadiness", "DryRunMode", "TrainingPlannerPolicy",
+    "TrainingJobPlan", "TrainingDryRunPlan", "plan_family",
+    "build_training_dry_run_plan", "dry_run_plan_summary",
     "build_council", "build_council_registry",
     "SeatHealthTracker", "EpistemicLessonStore", "Lesson", "ProcessLesson",
     "TopicSkillTracker", "CalibrationLedger",
