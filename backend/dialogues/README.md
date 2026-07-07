@@ -1207,6 +1207,74 @@ a clean protocol variant for `protocol_evolution` to A/B on external truth.
 
 ---
 
+## Phase 26 — Per-section corroboration reliability
+
+The session-level `coverage_ratio` says how many scores were collected overall,
+but nothing said how well **each section** of the final answer was corroborated:
+a section that won on a **single** peer score (one reviewer's opinion) — or none
+at all, via the assembly fallback — was indistinguishable from one backed by
+several concordant scores.
+
+`assembly_reliability` (in the audit) surfaces, per resolved section, the number
+of peer scores its winning draft received, and flags the **thinly corroborated**
+ones (`< WELL_CORROBORATED_MIN = 2`): `min_corroboration`, `mean_corroboration`,
+`thin_sections`, `well_corroborated`. It is a mechanical count, never a
+judgement, **CED-owned and hidden from agents** like the leaderboard.
+
+This is squarely the project's epistemic-honesty ethic: the system now *knows
+and reports* which parts of its answer rest on thin evidence. It even reveals an
+uncomfortable truth about small councils — a **2-seat** council scores each draft
+by exactly one peer, so *every* section is thinly corroborated (mean = 1.0); the
+metric surfaces that instead of hiding it, and argues (mechanically) for more
+reviewers when corroboration matters.
+
+---
+
+## Phase 27 — Penalty-flag aggregation
+
+Voters can flag a section for real epistemic problems — `unsupported_claim`,
+`logical_gap`, `overconfidence`, `missed_uncertainty`, and so on. Those flags
+were parsed and stored on every score… and then **never read**. A section could
+win on score and ship with unresolved flags, silently (the mock council quietly
+raises `missed_uncertainty` on real sections — invisible until now).
+
+`assembly_flags` (in the audit) aggregates the penalty flags voters raised on the
+**winning** content of each assembled section: `flags_by_section` (flag → count),
+`serious_flag_count`, and a `clean` bool. Only flags on the draft that *won* a
+section are counted (a losing draft's flags never shipped); stylistic flags
+(`vague`, `rhetorical_fluff`) are excluded from the serious count. It is a
+mechanical count of the council's *own* flags — never a CED judgement — and is
+**CED-owned and hidden from agents** (only flag names and counts, never scores or
+identities). The council's problem-detection finally *means something*: a section
+that won yet carries an `unsupported_claim` flag is now visible.
+
+---
+
+## Phase 28 — Transparency becomes curiosity
+
+Phases 26/27 made thin corroboration and shipped flags *visible* — but the
+signals were themselves inert: nothing acted on them. The living system already
+has the actuator: the **OpenQuestionLedger**. Now, on every ratified session, it
+also harvests the transparency panel:
+
+- **serious flags on shipped content** → a `flagged_section` open question
+  (priority just below `uncertainty`): *"Flagged concerns shipped in «…»:
+  core_answer: unsupported_claim×2 — address the flagged weakness"*;
+- **thinly corroborated sections** → a `thin_corroboration` question:
+  *"…nuance, blind_spots — re-examine with more reviewers"*.
+
+One **aggregated** question per signal (informed, not spammed), deduped by
+normalized text, ordered into the agenda by source priority
+(`quorum_failure > uncertainty > flagged_section > blind_spot >
+thin_corroboration > caveat`) — and, critically, **runnable**: the autonomous
+inquiry cycle picks them up like any other open question. Observe → question →
+re-inquire: the epistemic-transparency panel now drives the system's own
+research agenda instead of just decorating the audit. (Unratified sessions skip
+the harvest — their flagged content never shipped; the quorum failure itself is
+already the loudest question.)
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

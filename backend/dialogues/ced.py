@@ -1024,6 +1024,14 @@ class CEDOrchestrator:
     # of the INITIAL responses (CED-owned metadata; a purely mechanical trigger).
     HIGH_CONSENSUS_CONFIDENCE = 0.80    # everyone confident → herding risk → escalate
     LOW_CONFIDENCE_FLOOR = 0.45         # everyone unsure → map uncertainty honestly
+    # Phase 26: a section winner backed by fewer than this many PEER scores is
+    # "thinly corroborated" — one reviewer's opinion, not a corroborated result.
+    WELL_CORROBORATED_MIN = 2
+    # Phase 27: penalty flags voters raise on the WINNING content. These two are
+    # stylistic; every other flag (unsupported_claim, logical_gap, overconfidence,
+    # missed_uncertainty, logical/schema issues, unfair_attack, irrelevant) is a
+    # substantive epistemic concern that should be visible on the final answer.
+    STYLISTIC_FLAG_VALUES = frozenset({"vague", "rhetorical_fluff"})
     # Diversity guard (Phase 16): a SECOND, independent herding signal — content
     # similarity of the initial responses (keyword Jaccard; purely mechanical).
     LOW_DIVERSITY_FLOOR = 0.35          # 1.0 = fully diverse, 0.0 = identical
@@ -1130,6 +1138,8 @@ class CEDOrchestrator:
             "epistemic_consistency": self._epistemic_consistency(state),
             "score_weighting": self._weighting_audit(state),
             "assembly_coherence": self._assembly_coherence(state),
+            "assembly_reliability": self._assembly_reliability(state),
+            "assembly_flags": self._assembly_flags(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
             "seat_routing": {
@@ -2544,6 +2554,69 @@ class CEDOrchestrator:
             "single_source": len(drafts) <= 1,
             "cohesion_margin": self.cohesion_margin,
             "cohesion_overrides": self._cohesion_overrides,
+        }
+
+    def _assembly_reliability(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 26 observability: per-section CORROBORATION depth. Each resolved
+        section carries the number of PEER scores its winning draft got; a section
+        that won on a single score (or none, via fallback) rests on thin evidence.
+        This surfaces which parts of the answer are well-corroborated vs one-voter
+        opinions — an epistemic-honesty signal. CED-owned audit; a mechanical
+        count, never a semantic judgement, and never shown to agents."""
+        assembled = state.assembled_answer
+        empty = {"resolved_sections": 0, "min_corroboration": 0,
+                 "mean_corroboration": 0.0, "thinly_corroborated_sections": 0,
+                 "thin_sections": [], "well_corroborated": True}
+        if assembled is None:
+            return empty
+        resolved = [s for s in assembled.sections if not s.unresolved and s.selected_draft_id]
+        if not resolved:
+            return empty
+        counts = [s.score_count for s in resolved]
+        thin = [s.section_name.value for s in resolved
+                if s.score_count < self.WELL_CORROBORATED_MIN]
+        return {
+            "resolved_sections": len(resolved),
+            "min_corroboration": min(counts),
+            "mean_corroboration": round(sum(counts) / len(counts), 4),
+            "thinly_corroborated_sections": len(thin),
+            "thin_sections": thin,
+            "well_corroborated": not thin,
+        }
+
+    def _assembly_flags(self, state: SessionState) -> Dict[str, Any]:
+        """Phase 27: penalty flags voters raised on the WINNING content of each
+        assembled section — the epistemic concerns that shipped with the answer.
+        These were parsed and stored but never surfaced (inert). Aggregated here
+        so a section that WON on score yet carries e.g. an unsupported_claim /
+        logical_gap / missed_uncertainty flag is visible. Mechanical count of the
+        council's own flags — never a CED judgement; audit-only, hidden from
+        agents; scores/identities never exposed (only flag names + counts)."""
+        assembled = state.assembled_answer
+        empty = {"flagged_sections": [], "flags_by_section": {},
+                 "serious_flag_count": 0, "clean": True}
+        if assembled is None:
+            return empty
+        by_section: Dict[str, Dict[str, int]] = {}
+        serious = 0
+        for sec in assembled.sections:
+            if sec.unresolved or not sec.selected_draft_id:
+                continue
+            counts: Dict[str, int] = {}
+            for ss in state.section_scores_for(sec.section_name):
+                if ss.draft_id != sec.selected_draft_id:
+                    continue   # only flags on the content that WON this section
+                for f in ss.penalty_flags:
+                    counts[f.value] = counts.get(f.value, 0) + 1
+            if counts:
+                by_section[sec.section_name.value] = counts
+                serious += sum(c for fv, c in counts.items()
+                               if fv not in self.STYLISTIC_FLAG_VALUES)
+        return {
+            "flagged_sections": sorted(by_section),
+            "flags_by_section": by_section,
+            "serious_flag_count": serious,
+            "clean": serious == 0,
         }
 
     def _weighting_audit(self, state: SessionState) -> Dict[str, Any]:

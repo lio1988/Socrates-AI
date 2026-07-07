@@ -38,7 +38,14 @@ from .self_improvement import Lesson, _clip, _keywords
 LEDGER_SCHEMA = "open_questions_v0"
 
 # Deterministic priority: a failed dialogue is a louder gap than a blind spot.
-_SOURCE_PRIORITY = {"quorum_failure": 0, "uncertainty": 1, "blind_spot": 2, "caveat": 3}
+_SOURCE_PRIORITY = {
+    "quorum_failure": 0,      # the dialogue itself failed — the loudest gap
+    "uncertainty": 1,         # the council was uniformly unsure
+    "flagged_section": 2,     # shipped content carries serious voter flags (Ph.27)
+    "blind_spot": 3,          # the answer names what it may be missing
+    "thin_corroboration": 4,  # shipped content rests on a single peer score (Ph.26)
+    "caveat": 5,              # ratified, but with reservations
+}
 
 
 def _norm(text: str) -> str:
@@ -103,6 +110,24 @@ class OpenQuestionLedger:
             if isinstance(c, dict) and c.get("caveat"):
                 self.add(f"Caveat to revisit from «{_clip(state.question, 80)}»: "
                          f"{_clip(str(c['caveat']), 180)}", "caveat", state.session_id)
+        # Phase 28 — transparency becomes curiosity: the Ph.26/27 audit signals
+        # were visible but inert; now they feed the research agenda. Mechanical
+        # reads of the CED's own audit — one aggregated question per signal, so
+        # the ledger is informed, not spammed.
+        flags = au.get("assembly_flags", {}) or {}
+        if flags.get("serious_flag_count", 0) > 0:
+            detail = "; ".join(
+                f"{sec}: " + ", ".join(f"{k}×{v}" for k, v in sorted(counts.items()))
+                for sec, counts in sorted(flags.get("flags_by_section", {}).items()))
+            self.add(f"Flagged concerns shipped in «{_clip(state.question, 80)}»: "
+                     f"{_clip(detail, 160)} — address the flagged weakness",
+                     "flagged_section", state.session_id)
+        rel = au.get("assembly_reliability", {}) or {}
+        if rel.get("thinly_corroborated_sections", 0) > 0:
+            self.add(f"Thinly corroborated sections in «{_clip(state.question, 80)}»: "
+                     f"{_clip(', '.join(rel.get('thin_sections', [])), 120)} — "
+                     "re-examine with more reviewers",
+                     "thin_corroboration", state.session_id)
 
     def _mark_resolved(self, question: str, session_id: str) -> None:
         key = _norm(question)
