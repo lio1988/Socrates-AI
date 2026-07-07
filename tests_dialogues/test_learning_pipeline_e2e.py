@@ -33,7 +33,7 @@ def _state_with_process_progression():
         move_id="initial",
         task_id="task_initial",
         agent_id="agent_initial",
-        role=AgentRole.THESIS_BUILDER,
+        role=AgentRole.SYNTHESIZER,
         phase=DialogPhase.INITIAL_RESPONSE,
         task_kind=TaskKind.INITIAL_RESPONSE,
         provider_id="mock_initial",
