@@ -48,6 +48,9 @@ _VOLATILE_ID_KEYS = {
     "packet_id",
     "feedback_packet_id",
     "loop_id",
+    "sha" + "256",
+    "content_" + "sha256",
+    "artifact_" + "hashes",
 }
 
 
