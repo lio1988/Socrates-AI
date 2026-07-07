@@ -1,10 +1,3 @@
-"""
-Phase 26M — Deterministic Live Learner tests.
-
-The live learner is the student observing CED dialogue/pipeline flow. It updates a
-ledger deterministically and never trains or mutates CED.
-"""
-
 from backend.dialogues.learning_health_audit import LearningHealthPolicy, audit_learning_pipeline_result
 from backend.dialogues.learning_live_learner import (
     LearnerSignal,
@@ -37,7 +30,7 @@ def _state(session_id="sess_learner"):
         move_id="initial",
         task_id="task_initial",
         agent_id="agent_initial",
-        role=AgentRole.THESIS_BUILDER,
+        role=AgentRole.SYNTHESIZER,
         phase=DialogPhase.INITIAL_RESPONSE,
         task_kind=TaskKind.INITIAL_RESPONSE,
         provider_id="mock_initial",
