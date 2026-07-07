@@ -33,6 +33,24 @@ from .models import SessionState
 from .provider_registry import CouncilProviderRegistry
 
 
+_VOLATILE_ID_KEYS = {
+    "created_at",
+    "trace_id",
+    "preference_id",
+    "eval_id",
+    "manifest_id",
+    "observation_id",
+    "last_observation_id",
+    "message_id",
+    "advisory_id",
+    "cycle_id",
+    "interaction_cycle_id",
+    "packet_id",
+    "feedback_packet_id",
+    "loop_id",
+}
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -44,6 +62,22 @@ def _stable_json(value: Any) -> str:
 def triad_hash(value: Any, *, prefix: str = "") -> str:
     digest = hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()
     return f"{prefix}{digest[:16]}" if prefix else digest
+
+
+def _stable_identity_payload(value: Any) -> Any:
+    """Remove volatile runtime identifiers before computing deterministic triad IDs."""
+    clean = sanitize_public_payload(value)
+    if isinstance(clean, dict):
+        return {
+            str(key): _stable_identity_payload(item)
+            for key, item in clean.items()
+            if str(key) not in _VOLATILE_ID_KEYS
+        }
+    if isinstance(clean, list):
+        return [_stable_identity_payload(item) for item in clean]
+    if isinstance(clean, tuple):
+        return [_stable_identity_payload(item) for item in clean]
+    return clean
 
 
 class TriadLoopPolicy(BaseModel):
@@ -101,6 +135,10 @@ def _safe_take(items: List[str], maximum: int) -> List[str]:
     return sorted(dict.fromkeys(items))[: max(0, maximum)]
 
 
+def _learner_identity_hash(state: LearnerState, *, prefix: str = "learner_") -> str:
+    return triad_hash(_stable_identity_payload(learner_state_summary(state)), prefix=prefix)
+
+
 def build_ced_feedback_packet(
     interaction: InteractionCycle,
     *,
@@ -154,7 +192,8 @@ def build_ced_feedback_packet(
         },
         "dry_run_only": True,
     }
-    return CEDFeedbackPacket(packet_id=triad_hash(payload, prefix="ced_feedback_"), **payload)
+    packet_id = triad_hash(_stable_identity_payload(payload), prefix="ced_feedback_")
+    return CEDFeedbackPacket(packet_id=packet_id, **payload)
 
 
 def run_triad_learning_loop(
@@ -168,7 +207,7 @@ def run_triad_learning_loop(
 ) -> TriadLoopResult:
     """Run the canonical deterministic triad loop after a completed CED session."""
     policy = policy or TriadLoopPolicy.conservative()
-    learner_before_hash = triad_hash(learner_state.model_dump(mode="json"), prefix="learner_") if learner_state else None
+    learner_before_hash = _learner_identity_hash(learner_state) if learner_state else None
 
     pipeline = run_learning_pipeline_from_state(
         state,
@@ -186,16 +225,16 @@ def run_triad_learning_loop(
         metadata={"runner": "phase_26o_triad_loop", **(metadata or {})},
     )
     feedback = build_ced_feedback_packet(interaction, session_id=state.session_id, policy=policy)
-    learner_after_hash = triad_hash(interaction.learner_state.model_dump(mode="json"), prefix="learner_")
+    learner_after_hash = _learner_identity_hash(interaction.learner_state)
 
     loop_payload = {
         "session_id": state.session_id,
         "learner_before_hash": learner_before_hash,
         "learner_after_hash": learner_after_hash,
-        "pipeline_summary": pipeline.summary,
-        "health_summary": health.summary,
-        "interaction_cycle_id": interaction.cycle_id,
-        "feedback_packet_id": feedback.packet_id,
+        "pipeline_summary": _stable_identity_payload(pipeline.summary),
+        "health_summary": _stable_identity_payload(health.summary),
+        "interaction_summary": _stable_identity_payload(interaction_cycle_summary(interaction)),
+        "feedback_packet": _stable_identity_payload(feedback.model_dump(mode="json")),
         "metadata": sanitize_public_payload(metadata or {}),
     }
     return TriadLoopResult(
