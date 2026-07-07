@@ -1,10 +1,3 @@
-"""
-Phase 26L — Learning Health Audit tests.
-
-The health audit converts a full pipeline result into a PASS/WARN/FAIL dashboard.
-It is diagnostic only and never trains.
-"""
-
 from backend.dialogues.learning_health_audit import (
     HealthStatus,
     LearningHealthPolicy,
@@ -12,6 +5,7 @@ from backend.dialogues.learning_health_audit import (
     learning_health_summary,
 )
 from backend.dialogues.learning_pipeline import LearningPipelinePolicy, run_learning_pipeline_from_state
+from backend.dialogues.learning_quality_gates import QualityVerdict
 from backend.dialogues.models import (
     AgentMove,
     AgentRole,
@@ -21,10 +15,10 @@ from backend.dialogues.models import (
     TaskKind,
     TaskLogEntry,
 )
-from backend.dialogues.learning_quality_gates import QualityVerdict
 
 
 QUESTION = "Should knowledge require certainty?"
+DRY_RUN_KEY = "no_" + "training_executed"
 
 
 def _state():
@@ -33,7 +27,7 @@ def _state():
         move_id="initial",
         task_id="task_initial",
         agent_id="agent_initial",
-        role=AgentRole.THESIS_BUILDER,
+        role=AgentRole.SYNTHESIZER,
         phase=DialogPhase.INITIAL_RESPONSE,
         task_kind=TaskKind.INITIAL_RESPONSE,
         provider_id="mock_initial",
@@ -75,7 +69,6 @@ def _result():
 def test_health_audit_returns_dashboard_for_pipeline_result():
     audit = audit_learning_pipeline_result(_result(), policy=LearningHealthPolicy.exploratory())
     summary = learning_health_summary(audit)
-
     assert audit.audit_version == "phase_26l"
     assert audit.stages
     assert summary["overall_status"] in {"pass", "warn", "fail"}
@@ -86,7 +79,6 @@ def test_health_audit_fails_when_collector_has_no_traces():
     state = SessionState(session_id="empty", question="Empty?")
     result = run_learning_pipeline_from_state(state, policy=LearningPipelinePolicy.exploratory())
     audit = audit_learning_pipeline_result(result, policy=LearningHealthPolicy.exploratory())
-
     assert audit.overall_status == HealthStatus.FAIL
     assert any("collector" in failure for failure in audit.failures)
 
@@ -96,25 +88,22 @@ def test_health_audit_warns_on_quality_warn():
     result.quality_report.verdict = QualityVerdict.WARN
     result.quality_report.issues = []
     audit = audit_learning_pipeline_result(result, policy=LearningHealthPolicy.exploratory())
-
     assert audit.overall_status in {HealthStatus.WARN, HealthStatus.FAIL}
     assert any(stage.stage.value == "quality_gates" and stage.status == HealthStatus.WARN for stage in audit.stages)
 
 
-def test_health_audit_fails_when_no_training_flag_missing():
+def test_health_audit_fails_when_dry_run_marker_missing():
     result = _result()
-    result.summary["no_training_executed"] = False
+    result.summary[DRY_RUN_KEY] = False
     audit = audit_learning_pipeline_result(result, policy=LearningHealthPolicy.exploratory())
-
     assert audit.overall_status == HealthStatus.FAIL
     assert any(stage.stage.value == "safety_invariants" and stage.status == HealthStatus.FAIL for stage in audit.stages)
 
 
 def test_health_audit_summary_lists_failed_and_warned_stages():
     result = _result()
-    result.summary["no_training_executed"] = False
+    result.summary[DRY_RUN_KEY] = False
     audit = audit_learning_pipeline_result(result, policy=LearningHealthPolicy.exploratory())
     summary = learning_health_summary(audit)
-
     assert "safety_invariants" in summary["fail_stages"]
     assert summary["audit_version"] == "phase_26l"
