@@ -1250,6 +1250,31 @@ that won yet carries an `unsupported_claim` flag is now visible.
 
 ---
 
+## Phase 28 — Transparency becomes curiosity
+
+Phases 26/27 made thin corroboration and shipped flags *visible* — but the
+signals were themselves inert: nothing acted on them. The living system already
+has the actuator: the **OpenQuestionLedger**. Now, on every ratified session, it
+also harvests the transparency panel:
+
+- **serious flags on shipped content** → a `flagged_section` open question
+  (priority just below `uncertainty`): *"Flagged concerns shipped in «…»:
+  core_answer: unsupported_claim×2 — address the flagged weakness"*;
+- **thinly corroborated sections** → a `thin_corroboration` question:
+  *"…nuance, blind_spots — re-examine with more reviewers"*.
+
+One **aggregated** question per signal (informed, not spammed), deduped by
+normalized text, ordered into the agenda by source priority
+(`quorum_failure > uncertainty > flagged_section > blind_spot >
+thin_corroboration > caveat`) — and, critically, **runnable**: the autonomous
+inquiry cycle picks them up like any other open question. Observe → question →
+re-inquire: the epistemic-transparency panel now drives the system's own
+research agenda instead of just decorating the audit. (Unratified sessions skip
+the harvest — their flagged content never shipped; the quorum failure itself is
+already the loudest question.)
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
