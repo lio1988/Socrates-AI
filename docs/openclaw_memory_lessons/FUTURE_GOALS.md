@@ -327,7 +327,75 @@ Acceptance criteria:
 
 ---
 
-## Goal 11 — OpenClaw UI panel
+## Goal 11 — OpenClaw Shadow Apprentice Mode
+
+Create a safe training mode where the local agent observes and compares before it becomes a full council member.
+
+Core idea:
+
+```text
+The local agent should learn beside the council before it influences the council.
+```
+
+In Shadow Apprentice Mode, the local model receives the same task and selected memory lessons, produces its own structured answer, but does not affect synthesis, scoring, ratification, or the final answer.
+
+Flow:
+
+```text
+Cloud / existing council runs normally
+  ↓
+CED produces synthesis and ratification
+  ↓
+Local apprentice produces shadow output for the same task
+  ↓
+OpenClaw compares local output with ratified output and Evidence Harness result
+  ↓
+Lesson proposer extracts what the local apprentice missed or did well
+  ↓
+Memory Lessons improve future local runs
+```
+
+Stages:
+
+```text
+Stage 1 — Shadow
+Local agent answers in parallel but has no effect on the final answer.
+
+Stage 2 — Apprentice
+Local agent may contribute low-risk sections such as blind_spots or nuance, but cannot decide final verdict.
+
+Stage 3 — Candidate
+Local agent can enter SYNTHESIS and win individual sections if its sections score well.
+
+Stage 4 — Full Council Member
+Local agent receives normal rotating roles like any other provider.
+```
+
+Metrics to track:
+
+- exact-output format violations
+- unsupported-claim rate
+- contradiction detection quality
+- similarity to ratified stable claims
+- useful blind-spot discovery
+- synthesis section win rate
+- ratification objection quality
+
+Acceptance criteria:
+
+- shadow output is recorded separately from final council output
+- shadow output never changes final answer in Stage 1
+- comparison produces proposed lessons, not automatic prompt changes
+- no hidden scorecards are injected into future agent context
+- promotion between stages requires test results or explicit approval
+
+Why this matters:
+
+OpenClaw can train a local model safely, without risking council quality. The local model first watches, predicts, compares, and improves. Only later does it earn participation.
+
+---
+
+## Goal 12 — OpenClaw UI panel
 
 Build a future OpenClaw UI panel that displays the learning process.
 
@@ -337,6 +405,7 @@ Panel should show:
 - selected memory lessons
 - role rotation
 - agent outputs
+- local apprentice shadow output
 - 5-section synthesis drafts
 - blind assembly result
 - ratification result
@@ -347,7 +416,7 @@ This turns terminal output into a living evidence dashboard.
 
 ---
 
-## Goal 12 — Fine-tuning dataset preparation
+## Goal 13 — Fine-tuning dataset preparation
 
 Fine-tuning is not the first learning step.
 
@@ -359,6 +428,7 @@ Before fine-tuning, collect enough clean examples:
 - synthesis section winners
 - ratification repairs
 - local-agent failures and fixes
+- Shadow Apprentice comparisons
 
 Future dataset file pattern:
 
@@ -389,10 +459,11 @@ Recommended order:
 6. prompt registry
 7. Proof Sprint v0.3 with memory lessons
 8. local LLM provider
-9. OpenClaw UI panel
-10. prompt patch generator
-11. dataset export
-12. optional fine-tuning
+9. Shadow Apprentice Mode
+10. OpenClaw UI panel
+11. prompt patch generator
+12. dataset export
+13. optional fine-tuning
 ```
 
 ---
@@ -407,6 +478,7 @@ Do not do these yet:
 - do not merge OpenClaw UI logic into the CED core
 - do not make one provider a permanent judge
 - do not make Memory Lessons a source of hidden factual truth
+- do not let the local apprentice affect final answers before promotion
 
 ---
 
@@ -417,5 +489,6 @@ OpenClaw remembers.
 CED governs.
 Evidence Harness measures.
 Agents execute.
+The local apprentice watches before it acts.
 Prompts improve through small tested patches.
 ```
