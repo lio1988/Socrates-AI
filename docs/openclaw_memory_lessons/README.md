@@ -1,8 +1,18 @@
 # OpenClaw Memory Lessons Layer v0.1
 
-This document defines the first base layer for making OpenClaw a living local learning cockpit on top of Socrates-AI / CED.
+Branch:
 
-The goal is not to turn runtime agents into uncontrolled memory holders. The goal is to let the system learn through external, auditable memory lessons that can be selectively injected into otherwise stateless agent calls.
+```text
+feature/openclaw-memory-lessons-v0
+```
+
+This README is the branch-specific high-level entry point for the OpenClaw Memory Lessons / Self-Improving Researcher foundation.
+
+For canonical branch document names, read:
+
+```text
+docs/openclaw_memory_lessons/OPENCLAW_MEMORY_LESSONS_BRANCH_INDEX.md
+```
 
 ## Core idea
 
@@ -24,6 +34,40 @@ It does **not** change role rotation.
 It does **not** make agents own persistent memory.
 It does **not** perform fine-tuning.
 It does **not** expose API keys, provider secrets, hidden scorecards, or raw leaderboards to agents.
+
+## Branch-specific canonical docs
+
+```text
+OPENCLAW_MEMORY_LESSONS_BRANCH_INDEX
+  docs/openclaw_memory_lessons/OPENCLAW_MEMORY_LESSONS_BRANCH_INDEX.md
+
+OPENCLAW_MEMORY_LESSONS_BRANCH_README
+  docs/openclaw_memory_lessons/README.md
+
+OPENCLAW_MEMORY_LESSONS_MEMORY
+  docs/openclaw_memory_lessons/MEMORY_LESSONS.md
+
+OPENCLAW_MEMORY_LESSONS_GOALS
+  docs/openclaw_memory_lessons/FUTURE_GOALS.md
+
+OPENCLAW_MEMORY_LESSONS_STATE
+  docs/openclaw_memory_lessons/BRANCH_STATE.md
+
+OPENCLAW_MEMORY_LESSONS_AGENT_PROMPT_BASE
+  docs/openclaw_memory_lessons/AGENT_PROMPT_BASE.md
+
+OPENCLAW_MEMORY_LESSONS_SYNTHESIS
+  docs/openclaw_memory_lessons/SYNTHESIS_5_SECTION.md
+
+OPENCLAW_MEMORY_LESSONS_PROMPT_PATCH_POLICY
+  docs/openclaw_memory_lessons/PROMPT_PATCH_POLICY.md
+
+OPENCLAW_MEMORY_LESSONS_TREE_SEARCH
+  docs/openclaw_memory_lessons/SOCRATIC_TREE_SEARCH.md
+
+OPENCLAW_MEMORY_LESSONS_TREE_MEMORY_MAP
+  docs/openclaw_memory_lessons/TREE_SEARCH_MEMORY_MAP.md
+```
 
 ## Architectural rule
 
@@ -47,28 +91,6 @@ Evidence Harness evaluates performance when ground truth exists
 OpenClaw stores new trace and proposes new lessons
 ```
 
-## Files in this base
-
-```text
-docs/openclaw_memory_lessons/README.md
-  High-level architecture and integration rules.
-
-docs/openclaw_memory_lessons/MEMORY_LESSONS.md
-  Human-readable curated memory lessons.
-
-prompts/agent_master_prompt_v0_1.md
-  Shared master prompt for all LLM agents.
-
-prompts/claude_fable_agent_prompt_v0_1.md
-  Claude Fable provider-specific agent prompt built on the shared protocol.
-
-prompts/synthesis_5_section_prompt_v0_1.md
-  Locked 5-section synthesis prompt for blind assembly.
-
-prompts/prompt_patch_policy_v0_1.md
-  Rules for future small prompt improvements.
-```
-
 ## Memory lesson lifecycle
 
 A lesson should move through these states:
@@ -78,21 +100,6 @@ proposed → tested → verified → stable → deprecated
 ```
 
 A lesson should become `verified` only after it is supported by at least one concrete run, Proof Sprint result, ratification trace, or repeated observed failure pattern.
-
-## Lesson types
-
-```text
-exact_output
-unsupported_claim
-uncertainty_control
-contradiction_detection
-synthesis_quality
-ratification_quality
-role_rotation
-memory_usage
-prompt_patch
-provider_behavior
-```
 
 ## What agents may see
 
@@ -146,6 +153,12 @@ The first runtime version should do only this:
 5. Save the council trace.
 6. Convert failures into proposed lessons.
 7. Keep all prompt changes as explicit patches.
+
+## Branch identity sentence
+
+```text
+This branch is the OpenClaw Memory Lessons / Self-Improving Researcher foundation branch.
+```
 
 ## Principle
 
