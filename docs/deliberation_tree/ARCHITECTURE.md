@@ -153,9 +153,18 @@ run_registry_session:
    (Phase 22 `write_training_script` → student re-enters as a seat) already
    exists; mastery of choosing among lines of thinking is what the pairs
    encode: which revision of which draft the council's own scores endorsed.
-2. **Generation gating** — an arena: the LoRA student (Teacher Loop) re-enters
-   as a seat only if it beats the incumbent on a fixed benchmark (R2
-   matched-compute replay). AlphaGo's 55% gate, adapted.
+2. **Generation gating — DONE (v0).** `backend/training/arena.py::PromotionArena`
+   — the candidate seat (e.g. the Phase 22 LoRA student) fights the incumbent
+   head-to-head on a fixed benchmark: both draft full five-section answers,
+   a judge panel (never the contenders) scores them through the SAME anonymous
+   section-scoring contract the council uses, with neutral labels that rotate
+   every question (no label ever systematically means "candidate").
+   Mechanical verdict: promote ⇔ decided ≥ min_decided AND win_rate ≥ gate
+   (default 0.55 — AlphaGo's). Failures are INVALID, never defeats; ties
+   decide nothing; insufficient evidence keeps the incumbent (burden of proof
+   on the challenger). The arena only reports — a human performs the seat
+   swap, the same never-auto-promote symmetry as the OpenClaw lesson
+   lifecycle.
 3. **Curriculum** — OpenQuestionLedger entries become the next sessions'
    questions: the system searches hardest where its own uncertainty lives.
 4. **Value grounding** — Evidence Harness verdicts as the `z` signal for
