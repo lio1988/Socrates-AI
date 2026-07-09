@@ -227,15 +227,31 @@ Connection map:
   from Shadow Apprentice, earns versions through gates, and enters the
   council only through the Promotion Arena.
 
-## 7. What v0 deliberately does NOT do
+## 7. Landed in 13.1 (was out of v0 scope)
+
+- **Persistence** — `identity_registry.py`: one human-readable JSON file per
+  agent (`<agent_id>.json`, sorted keys, filesystem-safe ids), exact
+  round-trip via `from_record`, deterministic `all_profiles()`. Storage
+  only: loading a profile confers no authority.
+- **Instrument-fed gate evidence** — `evidence_collection.py`:
+  `evidence_from_trace_windows` (failure-count deltas per lesson type via
+  the REAL Goal 6 detectors; both windows must be non-empty),
+  `evidence_from_shadow_profile` (shadow section wins — shadow semantics
+  are declared by the caller and auditable via session ids),
+  `evidence_from_arena` (informational arena metrics), and
+  `collect_gate_evidence` (disjoint-key merge). A metric no instrument can
+  compute stays ABSENT and its gate fails honestly — e.g.
+  `unsupported_claim_failures_delta` is never emitted today because no
+  detector observes unsupported claims from traces alone; that gate cannot
+  pass until a real instrument exists. By design.
+
+## 8. Still deliberately NOT done
 
 - No CED wiring: nothing in the runtime pipeline builds or reads profiles.
-- No persistence: profiles are built on demand from traces; storing them
-  (JSONL registry) is a future goal once the shape has settled.
 - No auto-linking of proposer patterns to `known_failures`.
-- No gate evidence auto-collection: evidence dicts are assembled explicitly
-  by the operator (or future tooling) from harness/arena/A-B reports.
+- No shadow-run markers in the trace format (shadow declaration stays a
+  caller responsibility the approver can audit).
 
 Each of these is a deliberate scope cut, not an oversight: the profile shape
-and the promotion constitution come first; automation of evidence collection
-comes only after the instruments it would read from are trusted.
+and the promotion constitution come first; deeper automation comes only
+after the instruments it would read from are trusted.

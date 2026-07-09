@@ -19,7 +19,8 @@ Honest snapshot of what exists on this branch. Updated when a layer lands.
 | Goal 6 — lesson_proposer | `4df5869` | `openclaw_memory/lesson_proposer.py` | 15 |
 | AlphaGo distill step (tree → TrainingCorpus pairs) | `33e7453` | `backend/training/corpus.py` | 11 |
 | Promotion Arena (generation gating, 0.55 gate) | `e209788` | `backend/training/arena.py` | 11 |
-| Goal 13 — Agent Identity Layer (this commit) | see git log | `openclaw_identity/` (3 modules) | 21 |
+| Goal 13 — Agent Identity Layer | `f45b6d6` | `openclaw_identity/` (3 modules) | 21 |
+| Goal 13.1 — Identity registry + instrument-fed evidence | see git log | `openclaw_identity/` (+2 modules) | 14 |
 
 ## Learning arcs currently closed
 
@@ -59,8 +60,9 @@ Identity arc (new):
   dataset preparation beyond the Phase 22 corpus).
 - §6.3 curriculum (OpenQuestionLedger → next questions), §6.4 Evidence
   Harness value grounding.
-- Identity persistence (profile registry file), auto-linking proposer
-  patterns to known_failures, gate evidence auto-collection.
+- Auto-linking proposer patterns to known_failures; shadow-run markers in
+  the trace format; an instrument that observes unsupported claims (until
+  then gate v0.2→v0.3 honestly cannot pass).
 
 ## Branch status
 

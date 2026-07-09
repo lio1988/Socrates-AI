@@ -78,6 +78,36 @@ class AgentIdentityProfile:
         }
 
 
+def from_record(record: Dict[str, Any]) -> AgentIdentityProfile:
+    """Rebuild a profile from ``to_record()`` output (registry load path).
+
+    ``agent_id`` is required; every other field falls back to the same
+    defaults a fresh profile has. Round-trips: from_record(p.to_record()) == p.
+    """
+    agent_id = str(record.get("agent_id", "")).strip()
+    if not agent_id:
+        raise ValueError("identity record requires a non-empty agent_id")
+    return AgentIdentityProfile(
+        agent_id=agent_id,
+        identity_version=str(record.get("identity_version", "v0.1")),
+        promotion_status=str(record.get("promotion_status", "base_agent")),
+        role_strengths={str(k): float(v)
+                        for k, v in (record.get("role_strengths") or {}).items()},
+        section_wins={str(k): int(v)
+                      for k, v in (record.get("section_wins") or {}).items()},
+        section_opportunities={str(k): int(v)
+                               for k, v in (record.get("section_opportunities")
+                                            or {}).items()},
+        sessions_analyzed=int(record.get("sessions_analyzed", 0)),
+        ratified_sessions=int(record.get("ratified_sessions", 0)),
+        known_failures=tuple(record.get("known_failures") or ()),
+        stable_lessons=tuple(record.get("stable_lessons") or ()),
+        next_gate=record.get("next_gate"),
+        version_history=tuple(dict(e) for e in (record.get("version_history")
+                                                or ())),
+    )
+
+
 def _provider_by_move(trace: Dict[str, Any]) -> Dict[str, str]:
     out: Dict[str, str] = {}
     for move in trace.get("moves", []) or []:
