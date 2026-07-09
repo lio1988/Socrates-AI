@@ -17,12 +17,24 @@ Live (set flag + key + cheap models first, in PowerShell):
     # load ANTHROPIC_API_KEY from .env into the environment (see README), then:
     python scripts/live_dialogue.py "Είναι η γνώση ατομική ή συλλογική;"
 
+Optional feature switches (env-only, cost-conscious defaults):
+    CED_OPENCLAW_LESSONS=0   # OFF switch — stable OpenClaw lessons load by
+                             # default (local file, free; adds a little prompt
+                             # context to deliberation calls)
+    CED_TRACE_CAPTURE=0      # OFF switch — auditable JSONL trace per run is
+                             # written by default (local file, free)
+    CED_TRACE_DIR=path       # where traces go (default runs/openclaw_traces)
+    CED_TREE_EXPANSIONS=2    # deliberation tree search: N revision expansions
+                             # (default 0 = off; EACH one adds real model calls
+                             # on a live run — enable deliberately)
+
 No key is ever printed; .env is never modified.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import pathlib
 import sys
 
@@ -42,12 +54,63 @@ def _clip(value, n: int) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def _resolve_features(env=None):
+    """
+    Env-configured optional features for build_council (cost-conscious):
+    free local features (lessons, trace) default ON with an explicit OFF
+    switch; anything that adds real model calls (tree search) defaults OFF.
+    Failure-isolated: a broken/missing lessons file never blocks the dialogue.
+    Returns (build_council_kwargs, human_notes).
+    """
+    env = os.environ if env is None else env
+    features, notes = {}, []
+
+    if env.get("CED_OPENCLAW_LESSONS", "1") != "0":
+        try:
+            from backend.dialogues.openclaw_memory import load_stable_lessons
+            pool = load_stable_lessons()
+        except Exception:
+            pool = []
+        if pool:
+            features["openclaw_lessons"] = pool
+            notes.append(f"lessons: {len(pool)} stable")
+        else:
+            notes.append("lessons: unavailable (skipped)")
+    else:
+        notes.append("lessons: off")
+
+    if env.get("CED_TRACE_CAPTURE", "1") != "0":
+        from backend.dialogues.openclaw_memory import TraceCapturer
+        trace_dir = env.get("CED_TRACE_DIR",
+                            str(_ROOT / "runs" / "openclaw_traces"))
+        features["trace_capturer"] = TraceCapturer(output_dir=trace_dir)
+        notes.append(f"trace: {trace_dir}")
+    else:
+        notes.append("trace: off")
+
+    try:
+        expansions = int(env.get("CED_TREE_EXPANSIONS", "0"))
+    except ValueError:
+        expansions = 0
+    if expansions > 0:
+        features["tree_expansions"] = expansions
+        notes.append(f"tree: {expansions} expansions (adds real calls when live)")
+    else:
+        notes.append("tree: off")
+
+    return features, notes
+
+
 def main(argv=None) -> int:
     argv = sys.argv if argv is None else argv
     question = argv[1] if len(argv) > 1 else DEFAULT_QUESTION
 
     # Cheap: 2 seats (minimum quorum), NO shadow scoring -> fewer live calls.
-    ced, mode = build_council(council_size=2, shadow_scoring_mode=ShadowScoringMode.OFF)
+    # Optional layers (lessons / trace / tree search) come from env switches.
+    features, feature_notes = _resolve_features()
+    ced, mode = build_council(council_size=2,
+                              shadow_scoring_mode=ShadowScoringMode.OFF,
+                              **features)
 
     print("=" * _W)
     if mode == "live":
@@ -59,6 +122,7 @@ def main(argv=None) -> int:
     print("=" * _W)
     print(f"  question : {question}")
     print(f"  council  : 2 agents | scoring: off | mode: {mode}")
+    print(f"  features : {' | '.join(feature_notes)}")
     print("-" * _W)
 
     final = asyncio.run(ced.run_registry_session(question, session_id="live_dialogue"))
@@ -99,6 +163,21 @@ def main(argv=None) -> int:
             print(f"       {_clip(s.content, _W * 2)}")
     else:
         print("    (no answer — council did not reach quorum; safe fallback)")
+    # Operator view of the optional layers (CED-owned audit — agents never see it).
+    audit = final.audit_summary or {}
+    oc = audit.get("openclaw_lessons")
+    if oc:
+        print(f"  openclaw lessons : selected {oc.get('selected_count', 0)} "
+              f"of {oc.get('pool_size', 0)} -> {oc.get('selected', [])}")
+    tree = audit.get("deliberation_tree") or {}
+    if tree.get("enabled"):
+        print(f"  tree search      : {tree.get('revision_count', 0)} revisions | "
+              f"amplification_gain={tree.get('amplification_gain')} | "
+              f"best={tree.get('best_draft_id')}")
+    capturer = features.get("trace_capturer")
+    if capturer is not None and capturer.session_count:
+        print(f"  trace            : {capturer.session_count} trace(s) -> "
+              f"{capturer.output_dir}")
     print("=" * _W)
     print(f"  Done. mode = {mode}. No key printed; .env untouched.")
     print("=" * _W)

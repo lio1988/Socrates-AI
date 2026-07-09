@@ -22,6 +22,9 @@ __pycache__/
 dialog_*.txt
 *.log
 
+# Runtime run artifacts (OpenClaw traces etc.) — never committed
+runs/
+
 # Cache
 .pytest_cache/
 .mypy_cache/

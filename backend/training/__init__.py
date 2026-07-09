@@ -23,6 +23,7 @@ from .corpus import (
     PreferencePair,
     TrainingCorpus,
     harvest_session,
+    harvest_tree_preferences,
 )
 from .local_trainer import (
     LoRAConfig,
@@ -34,10 +35,19 @@ from .local_trainer import (
     write_training_script,
     reentry_instructions,
 )
+from .arena import (
+    ARENA_SCHEMA_VERSION,
+    DEFAULT_MIN_DECIDED,
+    DEFAULT_PROMOTION_GATE,
+    PromotionArena,
+)
 
 __all__ = [
     "SFTExample", "PreferencePair", "TrainingCorpus", "harvest_session",
+    "harvest_tree_preferences",
     "LoRAConfig", "TrainingPlan", "TrainingUnavailable",
     "gpu_report", "check_training_deps", "build_training_plan",
     "write_training_script", "reentry_instructions",
+    "ARENA_SCHEMA_VERSION", "DEFAULT_MIN_DECIDED", "DEFAULT_PROMOTION_GATE",
+    "PromotionArena",
 ]

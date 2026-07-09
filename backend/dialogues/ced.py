@@ -204,6 +204,10 @@ class CEDOrchestrator:
         training_corpus=None,
         score_weighting: str = "uniform",
         cohesion_margin: float = 0.0,
+        openclaw_lessons=None,
+        trace_capturer=None,
+        tree_expansions: int = 0,
+        tree_exploration: float = 0.5,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -282,6 +286,29 @@ class CEDOrchestrator:
             raise ValueError(f"cohesion_margin must be >= 0, got {cohesion_margin!r}")
         self.cohesion_margin = float(cohesion_margin)
         self._cohesion_overrides = 0   # sections cohesion moved off the score-winner
+        # OpenClaw Memory Lessons: when a lesson pool is provided, relevant
+        # behavioral lessons are injected into DELIBERATION contexts only (never
+        # into anonymous judging tasks like scoring/ratification). The pool is a
+        # sequence of MemoryLesson records from the openclaw_memory subpackage;
+        # None (default) = byte-for-byte unchanged behavior — no lessons injected.
+        self.openclaw_lessons = openclaw_lessons
+        # OpenClaw trace capture: duck-typed consumer with
+        # .ingest_session(state, final) — same pattern as training_corpus.
+        # Captures auditable per-run traces (no keys/credentials/hidden CoT).
+        self.trace_capturer = trace_capturer
+        # Deliberation Tree Search: search as a policy-improvement operator
+        # (docs/deliberation_tree/ARCHITECTURE.md). 0 (default) = OFF, byte-for-
+        # byte the one-shot pipeline. When > 0: after section scoring, CED spends
+        # `tree_expansions` UCB-selected revision tasks enriching the draft pool
+        # before blind assembly. Selection uses CED-owned scores (protocol
+        # governance, precedented by Phases 19/20/21); the revising agent sees
+        # ONLY the parent draft's section texts + a generic mandate — never
+        # scores, tree statistics, ids, or identities.
+        if tree_expansions < 0:
+            raise ValueError(f"tree_expansions must be >= 0, got {tree_expansions!r}")
+        self.tree_expansions = int(tree_expansions)
+        self.tree_exploration = float(tree_exploration)
+        self._tree_audits: Dict[str, Dict[str, Any]] = {}
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -622,6 +649,18 @@ class CEDOrchestrator:
             guidance = getattr(self.lesson_store, "process_guidance", lambda k=2: [])()
             if guidance:
                 base["process_lessons_from_past_dialogues"] = guidance
+        # OpenClaw Memory Lessons: inject relevant behavioral guidance into
+        # deliberation contexts only. The lessons are external, auditable, and
+        # sanitized — agents see guidance text, never scores or match reasons.
+        if self.openclaw_lessons is not None:
+            from .openclaw_memory import retrieve_lessons, render_memory_lessons_block
+            retrieved = retrieve_lessons(
+                self.openclaw_lessons,
+                task_text=state.question,
+                phase=phase,
+            )
+            if retrieved:
+                base["openclaw_memory_lessons"] = render_memory_lessons_block(retrieved)
         specific = self._phase_specific_context(state, phase, agent_id)
         base.update(specific)
         return base
@@ -932,6 +971,10 @@ class CEDOrchestrator:
         # Phase 8C.2 — peer scoring ALSO goes through the registry (not self.agents).
         await self.run_registry_shadow_scores(state, timeout_seconds)   # move-level
         await self.score_section_drafts_with_registry(state, timeout_seconds)  # section-level
+        # Deliberation Tree Search (opt-in): UCB-selected revision expansions
+        # enrich the draft pool BEFORE blind assembly (superset — never worse).
+        if self.tree_expansions > 0:
+            await self._run_deliberation_tree(state, timeout_seconds)
         self.assemble_sections(sid)
 
         # Phase 8C.1 — COUNCIL ratification through the registry (no single
@@ -1089,6 +1132,11 @@ class CEDOrchestrator:
         ai_learning, the lesson is AUTHORED by a council agent and the council
         reviews its own process — any AI failure falls back to the mechanical
         extractor. Failures here must never break a session result."""
+        if self.trace_capturer is not None:
+            try:
+                self.trace_capturer.ingest_session(state, final)
+            except Exception:
+                final.audit_summary["trace_capture_error"] = True
         try:
             self._record_outcome(state, final)
             if self.seat_health is not None:
@@ -1148,6 +1196,9 @@ class CEDOrchestrator:
                 "analytics_informed": bool(self.topic_skill or self.seat_health),
             },
             "lesson_retrieval": (cached[1] if cached else None),
+            "openclaw_lessons": self._openclaw_audit(state),
+            "deliberation_tree": self._tree_audits.get(
+                state.session_id, {"enabled": False}),
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
             "provider_status_summary": self.registry.status_summary(),
             "registry_phase_rounds": [
@@ -1164,6 +1215,22 @@ class CEDOrchestrator:
             "task_log_count": len(state.task_log),
             "task_log_summary": self._task_log_summary(state),
             "scoring": self._registry_scoring_audit(state),
+        }
+
+    def _openclaw_audit(self, state: SessionState) -> Optional[Dict[str, Any]]:
+        """OpenClaw Memory Lessons audit (CED-owned, hidden from agents)."""
+        if self.openclaw_lessons is None:
+            return None
+        from .openclaw_memory import retrieve_lessons
+        retrieved = retrieve_lessons(
+            self.openclaw_lessons,
+            task_text=state.question,
+        )
+        return {
+            "enabled": True,
+            "pool_size": len(self.openclaw_lessons),
+            "selected": [r.lesson_id for r in retrieved],
+            "selected_count": len(retrieved),
         }
 
     def _registry_scoring_audit(self, state: SessionState) -> Dict[str, Any]:
@@ -2426,16 +2493,22 @@ class CEDOrchestrator:
 
     async def score_section_drafts_with_registry(
         self, state: SessionState, timeout_seconds: Optional[float] = None,
+        drafts: Optional[List[SectionDraft]] = None,
     ) -> List[DraftScorecard]:
         """
         Section-level peer scoring routed through CouncilProviderRegistry. Each
         draft section is scored by every available PEER provider (excluding the
         draft's producer). Invalid/failed scores stay MISSING (recorded in
         missing_sections + section_scores_failed), never fabricated as zeros.
+
+        `drafts` (deliberation tree): score ONLY these drafts and APPEND their
+        scorecards to state.draft_scorecards instead of replacing the set —
+        used to score tree revisions incrementally. Default None = the whole
+        state.section_drafts pool with replace semantics (unchanged behavior).
         """
         cards: List[DraftScorecard] = []
         plan = []   # (draft, voter, section, content, slot)
-        for draft in state.section_drafts:
+        for draft in (state.section_drafts if drafts is None else drafts):
             voters = [a for a in self._healthy_adapters()
                       if a.provider_id != draft.provider_id]
             for vslot, voter in enumerate(voters):
@@ -2489,8 +2562,143 @@ class CEDOrchestrator:
                 author_agent_id=g["draft"].author_agent_id, voter_agent_id=g["voter"],
                 section_scores=g["scores"], missing_sections=g["missing"]))
 
-        state.draft_scorecards = cards
+        if drafts is None:
+            state.draft_scorecards = cards
+        else:
+            state.draft_scorecards.extend(cards)
         return cards
+
+    # ── Deliberation Tree Search (search as a policy-improvement operator) ────
+
+    def _draft_mean_scores(self, state: SessionState) -> Dict[str, float]:
+        """Mean overall peer score per draft_id across all scorecards. REAL
+        scores only — a draft with zero valid peer scores is simply absent
+        (never fabricated as 0). CED-owned; used for tree selection + audit."""
+        by_draft: Dict[str, List[float]] = {}
+        for card in state.draft_scorecards:
+            for ss in card.section_scores:
+                by_draft.setdefault(ss.draft_id, []).append(float(ss.overall_score))
+        return {d: sum(v) / len(v) for d, v in by_draft.items()}
+
+    async def _run_deliberation_tree(
+        self, state: SessionState, timeout_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Deliberation Tree Search (docs/deliberation_tree/ARCHITECTURE.md):
+        spend `tree_expansions` UCB-selected revision tasks improving the most
+        promising drafts, so blind assembly runs over an ENRICHED superset pool
+        (never-worse: assembly can only gain candidates, never lose them).
+
+        The AlphaGo mapping — drafts are the raw policy, peer scores the value
+        estimates, this loop the search operator. Selection uses CED-owned
+        scores (protocol governance); the REVISING agent sees only the parent
+        draft's section texts + a generic mandate — no scores, no tree
+        statistics, no ids, no identities. A failed revision is logged and
+        skipped, never fabricated. Revisions are peer-scored through the same
+        anonymous no-self-scoring path as original drafts.
+        """
+        from .deliberation_tree import DeliberationTree
+
+        tree = DeliberationTree(exploration=self.tree_exploration)
+        means = self._draft_mean_scores(state)
+        drafts_by_id: Dict[str, SectionDraft] = {}
+        for d in state.section_drafts:
+            tree.add_root_draft(d.draft_id, means.get(d.draft_id))
+            drafts_by_id[d.draft_id] = d
+
+        # Authors captured BEFORE the loop (revision moves join the same phase).
+        authors = [m.agent_id for m in state.moves_for_phase(DialogPhase.SYNTHESIS)]
+        adapters = self._ranked_adapters(state)
+        expansion_log: List[Dict[str, Any]] = []
+
+        if not tree.nodes or not adapters or not authors:
+            audit = {"enabled": True, "skipped": "no_drafts_or_adapters",
+                     "expansion_log": expansion_log}
+            self._tree_audits[state.session_id] = audit
+            return audit
+
+        for i in range(self.tree_expansions):
+            parent_id = tree.select()
+            parent = drafts_by_id[parent_id]
+            agent_id = authors[i % len(authors)]
+            context = self._registry_phase_context(
+                state, DialogPhase.SYNTHESIS, agent_id)
+            # Agent-visible: section TEXTS only — no draft id, author, or score.
+            context["draft_under_revision"] = {
+                s.value: parent.section_text(s) for s in SECTION_ORDER}
+            context["revision_mandate"] = (
+                "Produce a STRONGER complete five-section draft than the one in "
+                "draft_under_revision. Keep what is genuinely strong; rewrite "
+                "what is weak. Do not change things merely to look different.")
+            task = AgentTask(
+                session_id=state.session_id, agent_id=agent_id,
+                role=AgentRole.SYNTHESIZER, phase=DialogPhase.SYNTHESIS,
+                question=state.question, context=context,
+                output_schema={"_role": AgentRole.SYNTHESIZER.value,
+                               "_question": state.question, "_sections": True},
+                round_number=state.round_number,
+                task_kind=TaskKind.TREE_REVISION, slot_index=i, attempt_index=0,
+            )
+            agent_state = state.agent_states.get(
+                agent_id, AgentState(agent_id=agent_id,
+                                     primary_role=AgentRole.SYNTHESIZER,
+                                     assigned_role=AgentRole.SYNTHESIZER))
+            adapter = adapters[i % len(adapters)]
+            resp = await self.registry.run_adapter(
+                adapter, task, agent_state, timeout_seconds)
+
+            if not resp.ok:
+                # Budget spent, honestly recorded — never a fabricated draft.
+                self._record_task_log(state, task, None,
+                                      provider_id=resp.provider_id,
+                                      provider_status=resp.status)
+                expansion_log.append({"parent": parent_id, "ok": False,
+                                      "provider_id": resp.provider_id})
+                continue
+
+            move = resp.parsed_move
+            move.move_id = self._deterministic_move_id(
+                state, agent_id, DialogPhase.SYNTHESIS, AgentRole.SYNTHESIZER,
+                TaskKind.TREE_REVISION, i, 0)
+            move.task_kind = TaskKind.TREE_REVISION
+            move.slot_index = i
+            move.attempt_index = 0
+            move.provider_id = resp.provider_id
+            state.moves.append(move)
+            self._record_task_log(state, task, move.move_id,
+                                  provider_id=resp.provider_id,
+                                  provider_status=resp.status)
+
+            c = move.content
+            new_draft = SectionDraft(
+                draft_id=f"draft_{move.move_id}",     # deterministic, like originals
+                session_id=state.session_id,
+                author_agent_id=move.agent_id,
+                move_id=move.move_id,
+                provider_id=move.provider_id,          # producer (no-self-scoring)
+                core_answer=str(c.get("core_answer", "")),
+                crucial_stress_test=str(c.get("crucial_stress_test", "")),
+                blind_spots=str(c.get("blind_spots", "")),
+                nuance=str(c.get("nuance", "")),
+                final_verdict=str(c.get("final_verdict", "")),
+            )
+            state.section_drafts.append(new_draft)
+            drafts_by_id[new_draft.draft_id] = new_draft
+
+            # Same blind anonymous scoring path as every original draft.
+            await self.score_section_drafts_with_registry(
+                state, timeout_seconds, drafts=[new_draft])
+            child_score = self._draft_mean_scores(state).get(new_draft.draft_id)
+            tree.attach(parent_id, new_draft.draft_id, child_score)
+            expansion_log.append({
+                "parent": parent_id, "child": new_draft.draft_id, "ok": True,
+                "child_score": round(child_score, 4) if child_score is not None else None,
+            })
+
+        audit = tree.audit()
+        audit["expansion_log"] = expansion_log
+        self._tree_audits[state.session_id] = audit
+        return audit
 
     # ── Blind Section Assembly (section-by-section, mechanical) ───────────────
 

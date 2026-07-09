@@ -347,6 +347,17 @@ Each field is a substantive paragraph. Example:
 {"content": {"core_answer": "…", "crucial_stress_test": "…", "blind_spots": "…",
 "nuance": "…", "final_verdict": "…"}, "confidence": 0.8}"""
 
+TREE_REVISION_DIRECTIVE = """\
+**Revision mandate**
+Your context contains `draft_under_revision`: a complete five-section draft
+answer produced earlier in this deliberation (author withheld). Your task is to
+produce a STRONGER full draft, not a commentary on it. Keep what is genuinely
+strong; rewrite what is weak. Sharpen the core answer, replace a soft stress
+test with the strongest honest counterargument, surface blind spots the draft
+missed, deepen the nuance, and recalibrate the verdict. If a part of the draft
+is already excellent, preserving it is correct — do not change things merely to
+look different. Output the same five-section structure."""
+
 SCORE_CONTENT_DIRECTIVE = """\
 **Scoring output — REQUIRED structure (exact field names)**
 Your `content` MUST be a JSON object with EXACTLY these seven numeric fields, each
@@ -504,8 +515,10 @@ def build_reasoning_system_prompt(
     if task_kind in _EVALUATIVE_KINDS:
         parts.append(EVALUATION_DIRECTIVE)
 
-    if task_kind == TaskKind.SYNTHESIS_DRAFT:
+    if task_kind in (TaskKind.SYNTHESIS_DRAFT, TaskKind.TREE_REVISION):
         parts.append(SYNTHESIS_CONTENT_DIRECTIVE)
+    if task_kind == TaskKind.TREE_REVISION:
+        parts.append(TREE_REVISION_DIRECTIVE)
     if task_kind in _SCORE_KINDS:
         parts.append(SCORE_CONTENT_DIRECTIVE)
     if task_kind == TaskKind.COUNCIL_RATIFICATION:

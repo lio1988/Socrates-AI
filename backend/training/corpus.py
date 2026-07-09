@@ -15,6 +15,16 @@ assembly, exactly the artifacts CED already owns):
       rejected = a clearly lower-scored draft's text (margin-gated),
     a genuine "the council judged A better than B" signal.
 
+  Tree-distillation pairs (the AlphaGo distill step — see
+  docs/deliberation_tree/ARCHITECTURE.md §1 row 4 and §6.1) — when a session
+  ran the Deliberation Tree Search, every search trajectory where a revision
+  BEAT the draft it revised (real peer-score margin) becomes a whole-draft
+  preference pair: chosen = the search-discovered improved draft, rejected =
+  the one-shot draft it improved on, SAME question as prompt. Training the
+  base policy on these compresses the amplified (search) behavior back into
+  the network: the next generation produces search-quality drafts in one shot
+  and the search then amplifies from a higher base.
+
 Pure, offline, deterministic. No torch, no network, no keys.
 """
 
@@ -39,6 +49,9 @@ SOCRATES_INSTRUCTION = (
     "As Socrates, ask the single most load-bearing question about the following — "
     "the hidden assumption whose resolution would most change the conclusion.")
 PREF_PROMPT = "Write the '{section}' of a council answer to: {question}"
+TREE_PREF_PROMPT = (
+    "Write the complete five-section council answer (JSON with core_answer, "
+    "crucial_stress_test, blind_spots, nuance, final_verdict) to: {question}")
 
 
 @dataclass(frozen=True)
@@ -59,6 +72,10 @@ class PreferencePair:
     margin: float          # winner_avg − rejected_avg (0–10 scale)
     section: str
     source_session: str
+    # "section_score" = per-section winner-vs-loser (original harvest);
+    # "tree_revision" = whole-draft search trajectory (AlphaGo distill step).
+    # Additive field with a default — schema stays teacher_corpus_v0.
+    provenance: str = "section_score"
 
 
 def _section_averages(state: SessionState, section) -> Dict[str, float]:
@@ -67,6 +84,74 @@ def _section_averages(state: SessionState, section) -> Dict[str, float]:
         if sc.overall_score is not None:
             by_draft.setdefault(sc.draft_id, []).append(float(sc.overall_score))
     return {d: sum(v) / len(v) for d, v in by_draft.items() if v}
+
+
+def _draft_mean_scores(state: SessionState) -> Dict[str, float]:
+    """Mean overall peer score per draft across ALL sections (real scores only)."""
+    by_draft: Dict[str, List[float]] = {}
+    for card in state.draft_scorecards:
+        for sc in card.section_scores:
+            if sc.overall_score is not None:
+                by_draft.setdefault(sc.draft_id, []).append(float(sc.overall_score))
+    return {d: sum(v) / len(v) for d, v in by_draft.items() if v}
+
+
+def _draft_full_json(draft) -> str:
+    """One draft's five sections as canonical JSON (the whole-draft 'move')."""
+    answer = {
+        "core_answer": draft.core_answer,
+        "crucial_stress_test": draft.crucial_stress_test,
+        "blind_spots": draft.blind_spots,
+        "nuance": draft.nuance,
+        "final_verdict": draft.final_verdict,
+    }
+    if not any(str(v).strip() for v in answer.values()):
+        return ""
+    return json.dumps(answer, ensure_ascii=False, sort_keys=True)
+
+
+def harvest_tree_preferences(
+    state: SessionState, final: FinalResponse, *, min_margin: float = DEFAULT_MIN_MARGIN,
+) -> List[PreferencePair]:
+    """The AlphaGo distill step: search trajectories → whole-draft preferences.
+
+    Reads the Deliberation Tree audit's expansion_log (WHO revised WHOM — the
+    search structure) but recomputes every margin from the session's REAL peer
+    scorecards, so the corpus's own margin gate applies and nothing is trusted
+    second-hand. chosen = the revision that beat its parent; rejected = the
+    parent draft; prompt = the SAME question the one-shot policy saw. Training
+    on these pairs teaches the base policy to produce the search-discovered
+    draft directly (ARCHITECTURE.md §1 row 4: "the amplified behavior is
+    compressed back into the network"). Empty when the tree never ran.
+    """
+    tree_audit = (final.audit_summary or {}).get("deliberation_tree") or {}
+    expansion_log = tree_audit.get("expansion_log") or []
+    if not expansion_log:
+        return []
+    drafts = {d.draft_id: d for d in state.section_drafts}
+    means = _draft_mean_scores(state)
+    pairs: List[PreferencePair] = []
+    for entry in expansion_log:
+        if not entry.get("ok"):
+            continue                       # failed expansion: no draft, no pair
+        child_id, parent_id = entry.get("child"), entry.get("parent")
+        if child_id not in drafts or parent_id not in drafts:
+            continue
+        if child_id not in means or parent_id not in means:
+            continue                       # unscored side: no real margin exists
+        margin = means[child_id] - means[parent_id]
+        if margin < min_margin:
+            continue
+        chosen = _draft_full_json(drafts[child_id])
+        rejected = _draft_full_json(drafts[parent_id])
+        if not chosen or not rejected or chosen == rejected:
+            continue
+        pairs.append(PreferencePair(
+            prompt=TREE_PREF_PROMPT.format(question=state.question),
+            chosen=chosen, rejected=rejected, margin=round(margin, 4),
+            section="full_draft", source_session=state.session_id,
+            provenance="tree_revision"))
+    return pairs
 
 
 def harvest_session(
@@ -127,6 +212,10 @@ def harvest_session(
                     chosen=chosen_text, rejected=rejected_text,
                     margin=round(margin, 4), section=section.value,
                     source_session=state.session_id))
+
+    # -- Tree distillation: search trajectories → whole-draft preferences
+    #    (empty when the Deliberation Tree never ran — no behavior change) --
+    prefs.extend(harvest_tree_preferences(state, final, min_margin=min_margin))
     return sft, prefs
 
 
@@ -179,6 +268,8 @@ class TrainingCorpus:
             "preference_pairs": len(self._prefs),
             "sft_by_role": roles,
             "preferences_by_section": sections,
+            "tree_preference_pairs": sum(
+                1 for pp in self._prefs if pp.provenance == "tree_revision"),
             "min_margin": self.min_margin,
         }
 
