@@ -280,6 +280,22 @@ and that a poisonous pool is detected as `harmed`.
 
 ## Goal 7 — Prompt registry
 
+**Status: DONE (v0 foundation).** Implemented as
+`backend/dialogues/openclaw_prompts/prompt_registry.py` with tests in
+`tests_dialogues/test_prompt_registry.py`; design doc
+[PROMPT_REGISTRY.md](PROMPT_REGISTRY.md)
+(`OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY`). PromptSpec (base template +
+strict `{{variables}}` + memory-lesson slot that collapses cleanly) +
+append-only provider-scoped PromptPatch records carrying the SAME lifecycle
+as lessons. Never-auto-mutate is mechanical: default render applies only
+stable/verified patches; a proposed patch renders only when NAMED explicitly
+as an A/B candidate; deprecated never renders. Version identity = human
+label + content-addressed sha256 fingerprint (tamper-evident); trace-ready
+`prompt_metadata` fits `TraceCapturer(metadata=...)` as-is; render refuses
+key-shaped secrets. Runtime-inert (CED core and reasoning_prompts.py never
+import it, test-locked) — wiring a rendered prompt into live calls is a
+later, explicit goal.
+
 Create a prompt registry that loads shared prompt base notes and applies provider-specific patches.
 
 Expected first version:

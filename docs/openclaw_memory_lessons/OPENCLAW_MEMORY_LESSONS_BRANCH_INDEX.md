@@ -61,6 +61,11 @@ OPENCLAW_MEMORY_LESSONS_AGENT_SOUL_CARD
   File: docs/openclaw_memory_lessons/AGENT_SOUL_CARD.md
   Purpose: The readable, auditable identity summary (descriptive, not
   authority).
+
+OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY
+  File: docs/openclaw_memory_lessons/PROMPT_REGISTRY.md
+  Purpose: Versioned prompt lineage — specs, provider patches with the
+  lesson lifecycle, content-addressed fingerprints, trace metadata.
 ```
 
 Related document outside this folder:
@@ -89,6 +94,7 @@ TREE_SEARCH = OPENCLAW_MEMORY_LESSONS_TREE_SEARCH
 TREE_MEMORY = OPENCLAW_MEMORY_LESSONS_TREE_MEMORY_MAP
 IDENTITY    = OPENCLAW_MEMORY_LESSONS_AGENT_IDENTITY
 SOUL_CARD   = OPENCLAW_MEMORY_LESSONS_AGENT_SOUL_CARD
+PROMPT_REGISTRY = OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY
 ```
 
 ## Naming rule for future docs
@@ -115,7 +121,9 @@ backend/dialogues/openclaw_identity/   # landed: identity_profile, promotion_pol
                                        # runtime-inert)
 backend/dialogues/openclaw_tree/       # reserved (tree runtime landed CED-side as
                                        # backend/dialogues/deliberation_tree.py)
-backend/dialogues/openclaw_prompts/    # reserved (Goal 7 prompt registry)
+backend/dialogues/openclaw_prompts/    # landed: prompt_registry (versioned specs,
+                                       # provider patches, fingerprints —
+                                       # runtime-inert until explicitly wired)
 ```
 
 Avoid vague names such as:
