@@ -173,6 +173,18 @@ Acceptance criteria:
 
 ## Goal 5 — Trace capture for learning
 
+**Status: DONE (v0).** Implemented as `backend/dialogues/openclaw_memory/trace_capture.py`
+with tests in `tests_dialogues/test_openclaw_trace_capture.py`. Duck-typed
+`TraceCapturer.ingest_session(state, final)` wired into CED session-end as an
+independently failure-isolated consumer (own try/except, separate from other
+self-improvement hooks — trace failures never break a session). Builds auditable
+trace with session id, question, timestamp, per-move summaries (phase/role/
+provider_id/content_keys), selected openclaw lesson ids, assembly result,
+ratification result, and audit keys. No secrets (api_key/sk-ant-/Bearer
+assertion-guarded). Full content opt-in (`include_content=True`), JSONL file
+output opt-in (`output_dir=`). Passthrough via `build_council(trace_capturer=)`.
+No provider calls, no API keys, no network.
+
 Every council run should be able to produce an auditable trace.
 
 Expected future file pattern:

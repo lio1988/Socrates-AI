@@ -44,6 +44,10 @@ from .context_injection import (
     select_and_inject,
     select_lessons_for_task,
 )
+from .trace_capture import (
+    TraceCapturer,
+    build_session_trace,
+)
 
 __all__ = [
     "LESSON_STATUSES",
@@ -67,4 +71,6 @@ __all__ = [
     "render_memory_lessons_block",
     "select_and_inject",
     "select_lessons_for_task",
+    "TraceCapturer",
+    "build_session_trace",
 ]

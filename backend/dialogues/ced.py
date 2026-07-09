@@ -205,6 +205,7 @@ class CEDOrchestrator:
         score_weighting: str = "uniform",
         cohesion_margin: float = 0.0,
         openclaw_lessons=None,
+        trace_capturer=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -289,6 +290,10 @@ class CEDOrchestrator:
         # sequence of MemoryLesson records from the openclaw_memory subpackage;
         # None (default) = byte-for-byte unchanged behavior — no lessons injected.
         self.openclaw_lessons = openclaw_lessons
+        # OpenClaw trace capture: duck-typed consumer with
+        # .ingest_session(state, final) — same pattern as training_corpus.
+        # Captures auditable per-run traces (no keys/credentials/hidden CoT).
+        self.trace_capturer = trace_capturer
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -1100,6 +1105,11 @@ class CEDOrchestrator:
         ai_learning, the lesson is AUTHORED by a council agent and the council
         reviews its own process — any AI failure falls back to the mechanical
         extractor. Failures here must never break a session result."""
+        if self.trace_capturer is not None:
+            try:
+                self.trace_capturer.ingest_session(state, final)
+            except Exception:
+                final.audit_summary["trace_capture_error"] = True
         try:
             self._record_outcome(state, final)
             if self.seat_health is not None:
