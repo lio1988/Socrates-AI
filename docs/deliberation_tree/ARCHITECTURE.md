@@ -135,12 +135,24 @@ run_registry_session:
   composes the synthesis content directive + a revision directive; the mock
   provider emits 5-section content for it.
 
-## 6. Closing the full AlphaGo loop (future work)
+## 6. Closing the full AlphaGo loop
 
-1. **Distill** — feed `improvement_pairs(min_margin)` (child beat parent by a
-   real peer-score margin) into the Phase 22 TrainingCorpus as preference
-   pairs: *train the base policy on the search's output*. The corpus schema
-   already supports exactly this.
+1. **Distill — DONE (v0).** `backend/training/corpus.py::harvest_tree_preferences`
+   converts every search trajectory where a revision beat its parent into a
+   whole-draft preference pair: chosen = the search-discovered draft, rejected
+   = the one-shot draft it improved on, prompt = the SAME question the raw
+   policy saw. Margins are recomputed from the session's real scorecards (the
+   audit's cached numbers are never trusted), gated by the corpus's own
+   `min_margin`. Harvested automatically by `TrainingCorpus.ingest_session`
+   at session end whenever the tree ran; `provenance="tree_revision"` and
+   `stats()["tree_preference_pairs"]` keep the signal auditable. This is
+   operator 4 of §1 made real: *training the base policy on these pairs
+   compresses the amplified (search) behavior back into the network* — the
+   next generation produces search-quality drafts in one shot, and the search
+   then amplifies from a higher base. The LoRA path that consumes the corpus
+   (Phase 22 `write_training_script` → student re-enters as a seat) already
+   exists; mastery of choosing among lines of thinking is what the pairs
+   encode: which revision of which draft the council's own scores endorsed.
 2. **Generation gating** — an arena: the LoRA student (Teacher Loop) re-enters
    as a seat only if it beats the incumbent on a fixed benchmark (R2
    matched-compute replay). AlphaGo's 55% gate, adapted.

@@ -23,6 +23,7 @@ from .corpus import (
     PreferencePair,
     TrainingCorpus,
     harvest_session,
+    harvest_tree_preferences,
 )
 from .local_trainer import (
     LoRAConfig,
@@ -37,6 +38,7 @@ from .local_trainer import (
 
 __all__ = [
     "SFTExample", "PreferencePair", "TrainingCorpus", "harvest_session",
+    "harvest_tree_preferences",
     "LoRAConfig", "TrainingPlan", "TrainingUnavailable",
     "gpu_report", "check_training_deps", "build_training_plan",
     "write_training_script", "reentry_instructions",
