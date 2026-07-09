@@ -425,6 +425,40 @@ Acceptance criteria before fine-tuning:
 
 ---
 
+## Goal 13 — Self-Improving Agent Identity Layer
+
+**Status: DONE (v0 foundation).** Docs:
+`SELF_IMPROVING_AGENT_IDENTITY.md` (canonical
+`OPENCLAW_MEMORY_LESSONS_AGENT_IDENTITY`) and `AGENT_SOUL_CARD.md`
+(canonical `OPENCLAW_MEMORY_LESSONS_AGENT_SOUL_CARD`). Runtime:
+`backend/dialogues/openclaw_identity/` — pure, deterministic, offline,
+system-owned and runtime-inert (the CED core never imports it, test-locked).
+
+The auditable, versioned identity profile per agent seat ("soul",
+non-mystical): trace-derived `role_strengths` (assembly winner → move →
+provider, mechanical counts, no hidden scorecards), curator-supplied
+`known_failures` / `stable_lessons`, the 8-stage identity ladder
+(base_agent → master_branch_researcher, one rung at a time), declarative
+evidence-backed version gates (v0.1 → v1.0), and the Soul Card readable
+summary (descriptive, not authority).
+
+Never-auto-promote is mechanical: `evaluate_gate` only recommends; a
+promotion record requires a PASSING gate plus a named approver who is not
+the agent itself. Missing evidence fails honestly.
+
+Guiding sentence:
+
+```text
+The agent does not become powerful because it claims identity.
+The agent earns identity through evidence.
+```
+
+Next steps for this goal (deliberately out of v0 scope): profile
+persistence registry, auto-linking lesson-proposer patterns to
+known_failures, gate evidence auto-collection from harness/arena reports.
+
+---
+
 ## Roadmap order
 
 Recommended order:
@@ -433,8 +467,8 @@ Recommended order:
 1. lesson_loader          # DONE (v0)
 2. lesson_retriever       # DONE (v0)
 3. AgentTask context injection  # DONE (v0) + CED WIRED
-4. trace capture
-5. lesson proposer
+4. trace capture          # DONE (v0)
+5. lesson proposer        # DONE (v0)
 6. prompt registry
 7. Proof Sprint v0.3 with memory lessons
 8. local LLM provider
@@ -442,6 +476,7 @@ Recommended order:
 10. prompt patch generator
 11. dataset export
 12. optional fine-tuning
+13. agent identity layer  # DONE (v0 foundation)
 ```
 
 ---
