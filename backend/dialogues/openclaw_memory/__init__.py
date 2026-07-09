@@ -48,6 +48,16 @@ from .trace_capture import (
     TraceCapturer,
     build_session_trace,
 )
+from .lesson_proposer import (
+    DEFAULT_MIN_OCCURRENCES,
+    PROPOSAL_ID_START,
+    aggregate_failures,
+    detect_trace_failures,
+    propose_from_capturer,
+    propose_lessons,
+    render_proposed_lessons,
+    write_proposed_lessons,
+)
 
 __all__ = [
     "LESSON_STATUSES",
@@ -73,4 +83,12 @@ __all__ = [
     "select_lessons_for_task",
     "TraceCapturer",
     "build_session_trace",
+    "DEFAULT_MIN_OCCURRENCES",
+    "PROPOSAL_ID_START",
+    "aggregate_failures",
+    "detect_trace_failures",
+    "propose_from_capturer",
+    "propose_lessons",
+    "render_proposed_lessons",
+    "write_proposed_lessons",
 ]

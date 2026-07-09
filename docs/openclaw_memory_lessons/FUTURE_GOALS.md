@@ -217,6 +217,19 @@ Acceptance criteria:
 
 ## Goal 6 — Lesson proposer
 
+**Status: DONE (v0).** Implemented as `backend/dialogues/openclaw_memory/lesson_proposer.py`
+with tests in `tests_dialogues/test_openclaw_lesson_proposer.py`. Mechanical
+failure detectors over Goal 5 traces (ratification failed, assembly missing,
+section unresolved, phase produced zero valid moves), repeated-only gating
+(`min_occurrences`, default 2), deterministic proposal ids in the reserved
+LESSON-9001+ provisional range. Safety proofs are mechanical: every proposal
+has `status="proposed"` which the existing loader excludes from the stable
+pool (never auto-injected); `write_proposed_lessons` refuses the curated
+MEMORY_LESSONS.md outright; proposals round-trip through `parse_memory_lessons`
+byte-consistently. Every proposal carries source (session ids), problem
+pattern, lesson, and risk. Lesson types stay inside the retriever taxonomy so
+promoted lessons are immediately retrievable. No provider calls, no keys.
+
 Create a small component that converts repeated failures into proposed lessons.
 
 Expected first version:
