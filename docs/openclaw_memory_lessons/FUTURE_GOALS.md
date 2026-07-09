@@ -129,6 +129,16 @@ Acceptance criteria:
 
 ## Goal 4 — Agent context injection
 
+**Status: DONE (v0).** Implemented as `backend/dialogues/openclaw_memory/context_injection.py`
+with tests in `tests_dialogues/test_openclaw_context_injection.py`. Non-mutating
+`inject_memory_lessons(task, lessons)` returns a task copy with two OpenClaw-owned
+context keys (`memory_lessons` structured + `memory_lessons_block` rendered
+"Relevant memory lessons:" text); all other context and every task field (role,
+phase, task_kind, question) preserved. The agent-facing payload is sanitized to
+guidance only — id/lesson_type/lesson text, never relevance scores, match
+reasons, or scorecards. `select_and_inject(task)` does retrieval + injection in
+one shot off the task's own fields.
+
 Inject selected memory lessons into the allowed agent context.
 
 Important rule:
@@ -397,7 +407,7 @@ Recommended order:
 ```text
 1. lesson_loader          # DONE (v0)
 2. lesson_retriever       # DONE (v0)
-3. AgentTask context injection
+3. AgentTask context injection  # DONE (v0)
 4. trace capture
 5. lesson proposer
 6. prompt registry

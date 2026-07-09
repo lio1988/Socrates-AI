@@ -34,6 +34,16 @@ from .lesson_retriever import (
     retrieve_lessons,
     score_lesson,
 )
+from .context_injection import (
+    MEMORY_LESSONS_CONTEXT_KEY,
+    MEMORY_LESSONS_HEADER,
+    MEMORY_LESSONS_TEXT_KEY,
+    build_memory_lessons_context,
+    inject_memory_lessons,
+    render_memory_lessons_block,
+    select_and_inject,
+    select_lessons_for_task,
+)
 
 __all__ = [
     "LESSON_STATUSES",
@@ -49,4 +59,12 @@ __all__ = [
     "retrieve_for_task",
     "retrieve_lessons",
     "score_lesson",
+    "MEMORY_LESSONS_CONTEXT_KEY",
+    "MEMORY_LESSONS_TEXT_KEY",
+    "MEMORY_LESSONS_HEADER",
+    "build_memory_lessons_context",
+    "inject_memory_lessons",
+    "render_memory_lessons_block",
+    "select_and_inject",
+    "select_lessons_for_task",
 ]
