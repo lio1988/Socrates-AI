@@ -27,6 +27,13 @@ from .lesson_loader import (
     load_stable_lessons,
     parse_memory_lessons,
 )
+from .lesson_retriever import (
+    DEFAULT_MAX_LESSONS,
+    RetrievedLesson,
+    retrieve_for_task,
+    retrieve_lessons,
+    score_lesson,
+)
 
 __all__ = [
     "LESSON_STATUSES",
@@ -37,4 +44,9 @@ __all__ = [
     "load_memory_lessons",
     "load_stable_lessons",
     "parse_memory_lessons",
+    "DEFAULT_MAX_LESSONS",
+    "RetrievedLesson",
+    "retrieve_for_task",
+    "retrieve_lessons",
+    "score_lesson",
 ]

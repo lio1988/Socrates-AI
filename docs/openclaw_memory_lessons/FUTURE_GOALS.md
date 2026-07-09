@@ -85,6 +85,14 @@ Acceptance criteria:
 
 ## Goal 3 — Lesson retrieval
 
+**Status: DONE (v0).** Implemented as `backend/dialogues/openclaw_memory/lesson_retriever.py`
+with tests in `tests_dialogues/test_openclaw_lesson_retriever.py`. Mechanical,
+deterministic relevance scoring over five auditable signals (failure tags,
+role, phase, task kind, task-text keywords) using explicit enum-value ->
+lesson_type maps; returns the top 2-5 with match reasons, caps output, and
+never pads with unrelated lessons. Defaults to the stable/verified pool. No
+scores/leaderboard read, no network, no keys.
+
 Create a retriever that selects only the relevant lessons for the current task.
 
 Expected first version:
@@ -388,7 +396,7 @@ Recommended order:
 
 ```text
 1. lesson_loader          # DONE (v0)
-2. lesson_retriever
+2. lesson_retriever       # DONE (v0)
 3. AgentTask context injection
 4. trace capture
 5. lesson proposer
