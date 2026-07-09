@@ -382,7 +382,7 @@ def build_council(
     lesson_store=None, seat_health=None, ai_learning: bool = False, topic_skill=None,
     open_questions=None, calibration=None, ratification_repair: str = "runner_up",
     phase_retry: bool = True, training_corpus=None, score_weighting: str = "uniform",
-    cohesion_margin: float = 0.0,
+    cohesion_margin: float = 0.0, openclaw_lessons=None,
 ) -> Tuple[Any, str]:
     """
     A ready-to-run council orchestrator. Same code path real or mock — mock by
@@ -410,5 +410,6 @@ def build_council(
                           ratification_repair=ratification_repair,
                           phase_retry=phase_retry, training_corpus=training_corpus,
                           score_weighting=score_weighting,
-                          cohesion_margin=cohesion_margin, **kwargs)
+                          cohesion_margin=cohesion_margin,
+                          openclaw_lessons=openclaw_lessons, **kwargs)
     return ced, mode

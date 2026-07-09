@@ -204,6 +204,7 @@ class CEDOrchestrator:
         training_corpus=None,
         score_weighting: str = "uniform",
         cohesion_margin: float = 0.0,
+        openclaw_lessons=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -282,6 +283,12 @@ class CEDOrchestrator:
             raise ValueError(f"cohesion_margin must be >= 0, got {cohesion_margin!r}")
         self.cohesion_margin = float(cohesion_margin)
         self._cohesion_overrides = 0   # sections cohesion moved off the score-winner
+        # OpenClaw Memory Lessons: when a lesson pool is provided, relevant
+        # behavioral lessons are injected into DELIBERATION contexts only (never
+        # into anonymous judging tasks like scoring/ratification). The pool is a
+        # sequence of MemoryLesson records from the openclaw_memory subpackage;
+        # None (default) = byte-for-byte unchanged behavior — no lessons injected.
+        self.openclaw_lessons = openclaw_lessons
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -622,6 +629,18 @@ class CEDOrchestrator:
             guidance = getattr(self.lesson_store, "process_guidance", lambda k=2: [])()
             if guidance:
                 base["process_lessons_from_past_dialogues"] = guidance
+        # OpenClaw Memory Lessons: inject relevant behavioral guidance into
+        # deliberation contexts only. The lessons are external, auditable, and
+        # sanitized — agents see guidance text, never scores or match reasons.
+        if self.openclaw_lessons is not None:
+            from .openclaw_memory import retrieve_lessons, render_memory_lessons_block
+            retrieved = retrieve_lessons(
+                self.openclaw_lessons,
+                task_text=state.question,
+                phase=phase,
+            )
+            if retrieved:
+                base["openclaw_memory_lessons"] = render_memory_lessons_block(retrieved)
         specific = self._phase_specific_context(state, phase, agent_id)
         base.update(specific)
         return base
@@ -1138,6 +1157,7 @@ class CEDOrchestrator:
                 "analytics_informed": bool(self.topic_skill or self.seat_health),
             },
             "lesson_retrieval": (cached[1] if cached else None),
+            "openclaw_lessons": self._openclaw_audit(state),
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
             "provider_status_summary": self.registry.status_summary(),
             "registry_phase_rounds": [
@@ -1154,6 +1174,22 @@ class CEDOrchestrator:
             "task_log_count": len(state.task_log),
             "task_log_summary": self._task_log_summary(state),
             "scoring": self._registry_scoring_audit(state),
+        }
+
+    def _openclaw_audit(self, state: SessionState) -> Optional[Dict[str, Any]]:
+        """OpenClaw Memory Lessons audit (CED-owned, hidden from agents)."""
+        if self.openclaw_lessons is None:
+            return None
+        from .openclaw_memory import retrieve_lessons
+        retrieved = retrieve_lessons(
+            self.openclaw_lessons,
+            task_text=state.question,
+        )
+        return {
+            "enabled": True,
+            "pool_size": len(self.openclaw_lessons),
+            "selected": [r.lesson_id for r in retrieved],
+            "selected_count": len(retrieved),
         }
 
     def _registry_scoring_audit(self, state: SessionState) -> Dict[str, Any]:

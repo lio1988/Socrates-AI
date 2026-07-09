@@ -407,7 +407,7 @@ Recommended order:
 ```text
 1. lesson_loader          # DONE (v0)
 2. lesson_retriever       # DONE (v0)
-3. AgentTask context injection  # DONE (v0)
+3. AgentTask context injection  # DONE (v0) + CED WIRED
 4. trace capture
 5. lesson proposer
 6. prompt registry
