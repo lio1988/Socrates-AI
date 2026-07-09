@@ -20,6 +20,12 @@ This is intentionally documentation-first. It should remain separate from CED co
 
 ## Goal 1 — Runtime lesson loader
 
+**Status: DONE (v0).** Implemented as `backend/dialogues/openclaw_memory/lesson_loader.py`
+with tests in `tests_dialogues/test_openclaw_lesson_loader.py`. Deterministic
+Markdown parsing, fenced-template skipping, deprecated-by-default filtering,
+stable/verified-only loading, and clean failure on malformed lessons. No
+provider calls, no API keys, no network.
+
 Create a small loader that can read curated lessons from the memory lesson source.
 
 Expected first version:
@@ -381,7 +387,7 @@ Acceptance criteria before fine-tuning:
 Recommended order:
 
 ```text
-1. lesson_loader
+1. lesson_loader          # DONE (v0)
 2. lesson_retriever
 3. AgentTask context injection
 4. trace capture
