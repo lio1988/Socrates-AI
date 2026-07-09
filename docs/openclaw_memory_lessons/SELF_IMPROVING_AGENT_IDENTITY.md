@@ -245,12 +245,20 @@ Connection map:
   detector observes unsupported claims from traces alone; that gate cannot
   pass until a real instrument exists. By design.
 
+### Landed in 13.2 — shadow-run markers
+
+Traces are marked ``shadow_run`` **at capture time**
+(`TraceCapturer(shadow_run=True)`), and `evidence_from_shadow_traces`
+counts ONLY marked traces — an unmarked trace is never shadow, no matter
+what the caller believes. The counted `shadow_session_ids` travel with the
+evidence so the approver audits exactly which runs backed a promotion. In
+`collect_gate_evidence` the marker-verified path deliberately overrides the
+caller-declared `shadow_profile` path.
+
 ## 8. Still deliberately NOT done
 
 - No CED wiring: nothing in the runtime pipeline builds or reads profiles.
 - No auto-linking of proposer patterns to `known_failures`.
-- No shadow-run markers in the trace format (shadow declaration stays a
-  caller responsibility the approver can audit).
 
 Each of these is a deliberate scope cut, not an oversight: the profile shape
 and the promotion constitution come first; deeper automation comes only

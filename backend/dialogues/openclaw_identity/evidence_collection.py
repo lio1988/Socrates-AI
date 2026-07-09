@@ -71,11 +71,40 @@ def evidence_from_shadow_profile(
     shadow_profile: AgentIdentityProfile,
 ) -> Dict[str, Any]:
     """Shadow-mode evidence from a profile the CALLER built over declared
-    shadow-run traces. Session ids stay auditable inside the profile."""
+    shadow-run traces. Session ids stay auditable inside the profile.
+
+    Prefer :func:`evidence_from_shadow_traces` when traces carry the
+    capture-time ``shadow_run`` marker — there the shadow claim is verified
+    mechanically instead of trusted."""
     return {
         "shadow_blind_spots_wins": shadow_profile.section_wins.get(
             "blind_spots", 0),
         "shadow_sessions_analyzed": shadow_profile.sessions_analyzed,
+    }
+
+
+def evidence_from_shadow_traces(
+    agent_id: str,
+    traces: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Shadow-mode evidence VERIFIED by the capture-time marker.
+
+    Filters to traces whose ``shadow_run`` field is exactly True (set by
+    ``TraceCapturer(shadow_run=True)`` when the session ran) — an unmarked
+    trace is never counted as shadow, no matter what the caller believes.
+    The counted session ids travel with the evidence so the approver can
+    audit precisely which shadow runs backed a promotion. Empty when no
+    marked traces exist (the gate then fails honestly)."""
+    shadow = [t for t in traces if t.get("shadow_run") is True]
+    if not shadow:
+        return {}
+    from .identity_profile import build_identity_profile
+    profile = build_identity_profile(agent_id, shadow)
+    return {
+        "shadow_blind_spots_wins": profile.section_wins.get("blind_spots", 0),
+        "shadow_sessions_analyzed": profile.sessions_analyzed,
+        "shadow_session_ids": sorted(
+            str(t.get("session_id", "")) for t in shadow),
     }
 
 
@@ -95,18 +124,26 @@ def collect_gate_evidence(
     traces_before: Optional[Sequence[Dict[str, Any]]] = None,
     traces_after: Optional[Sequence[Dict[str, Any]]] = None,
     shadow_profile: Optional[AgentIdentityProfile] = None,
+    shadow_traces: Optional[Sequence[Dict[str, Any]]] = None,
+    shadow_agent_id: Optional[str] = None,
     arena_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Merge every available instrument into one gate-evidence dict.
 
     Only computable metrics appear; whatever no instrument produced stays
     absent and its gate fails honestly. The key spaces of the sources are
-    disjoint by construction, so merging never overwrites."""
+    disjoint by construction — except the two shadow sources, where the
+    marker-VERIFIED ``shadow_traces`` path wins over the caller-declared
+    ``shadow_profile`` path (it is applied last on purpose)."""
+    if (shadow_traces is None) != (shadow_agent_id is None):
+        raise ValueError("shadow_traces and shadow_agent_id go together")
     evidence: Dict[str, Any] = {}
     if traces_before is not None and traces_after is not None:
         evidence.update(evidence_from_trace_windows(traces_before, traces_after))
     if shadow_profile is not None:
         evidence.update(evidence_from_shadow_profile(shadow_profile))
+    if shadow_traces is not None and shadow_agent_id is not None:
+        evidence.update(evidence_from_shadow_traces(shadow_agent_id, shadow_traces))
     if arena_report is not None:
         evidence.update(evidence_from_arena(arena_report))
     return evidence

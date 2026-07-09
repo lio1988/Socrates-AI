@@ -34,6 +34,7 @@ from .evidence_collection import (
     collect_gate_evidence,
     evidence_from_arena,
     evidence_from_shadow_profile,
+    evidence_from_shadow_traces,
     evidence_from_trace_windows,
 )
 from .promotion_policy import (
@@ -62,6 +63,7 @@ __all__ = [
     "collect_gate_evidence",
     "evidence_from_arena",
     "evidence_from_shadow_profile",
+    "evidence_from_shadow_traces",
     "evidence_from_trace_windows",
     "IDENTITY_LADDER",
     "STAGE_NAMES",

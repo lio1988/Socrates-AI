@@ -20,7 +20,8 @@ Honest snapshot of what exists on this branch. Updated when a layer lands.
 | AlphaGo distill step (tree → TrainingCorpus pairs) | `33e7453` | `backend/training/corpus.py` | 11 |
 | Promotion Arena (generation gating, 0.55 gate) | `e209788` | `backend/training/arena.py` | 11 |
 | Goal 13 — Agent Identity Layer | `f45b6d6` | `openclaw_identity/` (3 modules) | 21 |
-| Goal 13.1 — Identity registry + instrument-fed evidence | see git log | `openclaw_identity/` (+2 modules) | 14 |
+| Goal 13.1 — Identity registry + instrument-fed evidence | `845bcf9` | `openclaw_identity/` (+2 modules) | 14 |
+| Goal 13.2 — Shadow-run markers (capture-time, verified evidence) | see git log | `trace_capture.py` + `evidence_collection.py` | 9 |
 
 ## Learning arcs currently closed
 
@@ -60,9 +61,10 @@ Identity arc (new):
   dataset preparation beyond the Phase 22 corpus).
 - §6.3 curriculum (OpenQuestionLedger → next questions), §6.4 Evidence
   Harness value grounding.
-- Auto-linking proposer patterns to known_failures; shadow-run markers in
-  the trace format; an instrument that observes unsupported claims (until
-  then gate v0.2→v0.3 honestly cannot pass).
+- Auto-linking proposer patterns to known_failures; an instrument that
+  observes unsupported claims (until then gate v0.2→v0.3 honestly cannot
+  pass); role-scoped apprentice participation (e.g. "only nuance and
+  blind_spots seats") — a future CED opt-in behind the arena gate.
 
 ## Branch status
 

@@ -90,8 +90,15 @@ def build_session_trace(
     *,
     include_content: bool = False,
     metadata: Optional[Dict[str, Any]] = None,
+    shadow_run: bool = False,
 ) -> Dict[str, Any]:
-    """Build an auditable trace record from a completed session."""
+    """Build an auditable trace record from a completed session.
+
+    ``shadow_run`` marks the trace AT CAPTURE TIME as a Shadow-Apprentice
+    run (outputs that never affected final answers). The marker lives inside
+    the auditable record itself, so downstream evidence collection can filter
+    shadow sessions mechanically instead of trusting a later declaration.
+    """
     audit = final.audit_summary or {}
 
     openclaw = audit.get("openclaw_lessons")
@@ -102,6 +109,7 @@ def build_session_trace(
         "session_id": state.session_id,
         "question": state.question,
         "timestamp": _utcnow().isoformat(),
+        "shadow_run": bool(shadow_run),
         "move_count": len(state.moves),
         "moves": [
             _move_summary(m, include_content=include_content)
@@ -133,9 +141,14 @@ class TraceCapturer:
         output_dir: Optional[Path | str] = None,
         include_content: bool = False,
         metadata: Optional[Dict[str, Any]] = None,
+        shadow_run: bool = False,
     ) -> None:
         self.include_content = include_content
         self.metadata = metadata or {}
+        # Shadow-Apprentice capture: every trace this capturer writes is
+        # marked shadow_run at capture time (auditable, mechanically
+        # filterable by evidence collection — never a later declaration).
+        self.shadow_run = bool(shadow_run)
         self.output_dir = Path(output_dir) if output_dir else None
         self.traces: List[Dict[str, Any]] = []
 
@@ -145,6 +158,7 @@ class TraceCapturer:
             state, final,
             include_content=self.include_content,
             metadata=self.metadata if self.metadata else None,
+            shadow_run=self.shadow_run,
         )
         self.traces.append(trace)
 
