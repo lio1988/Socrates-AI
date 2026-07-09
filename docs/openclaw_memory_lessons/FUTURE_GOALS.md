@@ -258,6 +258,24 @@ Acceptance criteria:
 - stable lessons are not overwritten automatically
 - every proposed lesson includes source, problem pattern, lesson, and risk
 
+### Goal 6.1 — Lesson effectiveness A/B harness
+
+**Status: DONE (v0).** Implemented as
+`backend/dialogues/openclaw_memory/lesson_ab.py`
+(`run_lesson_ab`, schema `lesson_ab_v0`) with tests in
+`tests_dialogues/test_lesson_ab.py`. Closes the LESSON POISONING gap: a
+matched-pair experiment per question (control council without lessons vs an
+identically-built treatment council with them, SAME session id so the
+lessons are the only difference) compares mechanical outcomes (ratification,
+mean assembled section score, unresolved counts). Questions where retrieval
+selected zero lessons are honestly UNTESTED; either arm failing assembly is
+INVALID. `helped` requires positive mean delta AND zero ratification
+regressions. The harness reports; a human moves the lesson through its
+lifecycle — this is the instrument for the lifecycle's `tested` step
+(proposed → tested → verified → stable). Rigged-provider tests prove the
+full pipeline (injection → behavioral effect → blind scoring → measurement)
+and that a poisonous pool is detected as `harmed`.
+
 ---
 
 ## Goal 7 — Prompt registry

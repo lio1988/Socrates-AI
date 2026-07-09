@@ -58,6 +58,10 @@ from .lesson_proposer import (
     render_proposed_lessons,
     write_proposed_lessons,
 )
+from .lesson_ab import (
+    AB_SCHEMA_VERSION,
+    run_lesson_ab,
+)
 
 __all__ = [
     "LESSON_STATUSES",
@@ -91,4 +95,6 @@ __all__ = [
     "propose_lessons",
     "render_proposed_lessons",
     "write_proposed_lessons",
+    "AB_SCHEMA_VERSION",
+    "run_lesson_ab",
 ]

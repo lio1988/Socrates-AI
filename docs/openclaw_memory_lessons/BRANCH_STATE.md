@@ -21,7 +21,8 @@ Honest snapshot of what exists on this branch. Updated when a layer lands.
 | Promotion Arena (generation gating, 0.55 gate) | `e209788` | `backend/training/arena.py` | 11 |
 | Goal 13 — Agent Identity Layer | `f45b6d6` | `openclaw_identity/` (3 modules) | 21 |
 | Goal 13.1 — Identity registry + instrument-fed evidence | `845bcf9` | `openclaw_identity/` (+2 modules) | 14 |
-| Goal 13.2 — Shadow-run markers (capture-time, verified evidence) | see git log | `trace_capture.py` + `evidence_collection.py` | 9 |
+| Goal 13.2 — Shadow-run markers (capture-time, verified evidence) | `196a892` | `trace_capture.py` + `evidence_collection.py` | 9 |
+| Goal 6.1 — Lesson effectiveness A/B harness (poisoning detector) | see git log | `openclaw_memory/lesson_ab.py` | 7 |
 
 ## Learning arcs currently closed
 
