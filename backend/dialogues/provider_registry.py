@@ -368,7 +368,7 @@ class ScriptedMockProvider(BaseProviderAdapter):
             return json.dumps({"content": payload, "confidence": payload.get("confidence", 0.7)
                                if isinstance(payload, dict) else 0.7})
         schema: Dict[str, Any] = {"_role": task.role.value, "_question": task.question}
-        if task.task_kind == TaskKind.SYNTHESIS_DRAFT:
+        if task.task_kind in (TaskKind.SYNTHESIS_DRAFT, TaskKind.TREE_REVISION):
             schema["_sections"] = True
         out = self._fake.complete("", "", schema, agent_id=task.agent_id)
         conf = 0.7
