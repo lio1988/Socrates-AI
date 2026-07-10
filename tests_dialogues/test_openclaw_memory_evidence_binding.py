@@ -12,6 +12,7 @@ from backend.dialogues.openclaw_identity import (
     SelfRevisionRegistry,
     SelfRevisionTransactionCoordinator,
     build_self_review_snapshot,
+    governed_profile_fingerprint,
 )
 from backend.dialogues.openclaw_identity.memory_evidence_binding import (
     memory_ab_binding_marker,
@@ -39,12 +40,7 @@ def _source(profile, *, lesson_fp=LESSON_FP):
         "AgentLessonAB/report-1"
         + memory_ab_binding_marker(
             lesson_fingerprint=lesson_fp,
-            identity_fingerprint=(
-                __import__(
-                    "backend.dialogues.openclaw_identity",
-                    fromlist=["governed_profile_fingerprint"],
-                ).governed_profile_fingerprint(profile)
-            ),
+            identity_fingerprint=governed_profile_fingerprint(profile),
             experiment_fingerprint=EXPERIMENT_FP,
         )
         + "#agent-ab-" + "c" * 16
@@ -150,7 +146,7 @@ def test_evaluation_requires_current_lesson_fingerprint(tmp_path):
             current_profile=profile,
             evidence_manifest=manifest,
             stable_lesson_ids=(LESSON,),
-            stable_lesson_fingerprints={LESSON: "e" * 64},
+            lesson_fingerprints={LESSON: "e" * 64},
             evaluated_by="evaluator",
         )
 
@@ -160,7 +156,7 @@ def test_evaluation_requires_current_lesson_fingerprint(tmp_path):
         current_profile=profile,
         evidence_manifest=manifest,
         stable_lesson_ids=(LESSON,),
-        stable_lesson_fingerprints={LESSON: LESSON_FP},
+        lesson_fingerprints={LESSON: LESSON_FP},
         evaluated_by="evaluator",
     )
     assert evaluation.passed is True
@@ -174,7 +170,7 @@ def test_decision_rechecks_lesson_revision(tmp_path):
         current_profile=profile,
         evidence_manifest=manifest,
         stable_lesson_ids=(LESSON,),
-        stable_lesson_fingerprints={LESSON: LESSON_FP},
+        lesson_fingerprints={LESSON: LESSON_FP},
         evaluated_by="evaluator",
     )
 
@@ -185,7 +181,7 @@ def test_decision_rechecks_lesson_revision(tmp_path):
             current_profile=profile,
             evidence_manifest=manifest,
             stable_lesson_ids=(LESSON,),
-            stable_lesson_fingerprints={LESSON: "e" * 64},
+            lesson_fingerprints={LESSON: "e" * 64},
             decision="approved",
             decided_by="approver",
             decision_reference="review/decision-1",
@@ -197,7 +193,7 @@ def test_decision_rechecks_lesson_revision(tmp_path):
         current_profile=profile,
         evidence_manifest=manifest,
         stable_lesson_ids=(LESSON,),
-        stable_lesson_fingerprints={LESSON: LESSON_FP},
+        lesson_fingerprints={LESSON: LESSON_FP},
         decision="approved",
         decided_by="approver",
         decision_reference="review/decision-1",
@@ -217,7 +213,7 @@ def test_application_preflight_refuses_stale_map_before_journal_or_identity(
         current_profile=profile,
         evidence_manifest=manifest,
         stable_lesson_ids=(LESSON,),
-        stable_lesson_fingerprints={LESSON: LESSON_FP},
+        lesson_fingerprints={LESSON: LESSON_FP},
         evaluated_by="evaluator",
     )
     registry.record_decision(
@@ -226,7 +222,7 @@ def test_application_preflight_refuses_stale_map_before_journal_or_identity(
         current_profile=profile,
         evidence_manifest=manifest,
         stable_lesson_ids=(LESSON,),
-        stable_lesson_fingerprints={LESSON: LESSON_FP},
+        lesson_fingerprints={LESSON: LESSON_FP},
         decision="approved",
         decided_by="approver",
         decision_reference="review/decision-1",
@@ -240,7 +236,7 @@ def test_application_preflight_refuses_stale_map_before_journal_or_identity(
             _proposal().proposal_id,
             evidence_manifest=manifest,
             stable_lesson_ids=(LESSON,),
-            stable_lesson_fingerprints={LESSON: "e" * 64},
+            lesson_fingerprints={LESSON: "e" * 64},
             applied_by="identity-writer",
             application_reference="identity/revision-1",
         )
@@ -254,7 +250,7 @@ def test_application_preflight_refuses_stale_map_before_journal_or_identity(
         _proposal().proposal_id,
         evidence_manifest=manifest,
         stable_lesson_ids=(LESSON,),
-        stable_lesson_fingerprints={LESSON: LESSON_FP},
+        lesson_fingerprints={LESSON: LESSON_FP},
         applied_by="identity-writer",
         application_reference="identity/revision-1",
     )
