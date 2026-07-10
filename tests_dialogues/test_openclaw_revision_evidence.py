@@ -29,6 +29,7 @@ def _evidence(**updates):
         "verified_by": "evidence-harness",
         "verification_reference": "report/trace-attribution-1",
         "observed_on": "2026-07-10",
+        "outcomes": (),
     }
     data.update(updates)
     return RevisionEvidenceRecord(**data)
@@ -48,10 +49,11 @@ def _proposal():
     )
 
 
-def test_record_is_strict_verified_and_non_self():
-    evidence = _evidence()
+def test_record_is_strict_verified_non_self_and_outcome_bounded():
+    evidence = _evidence(outcomes=("confirmed",))
     record = evidence.to_record()
     assert record["verified"] is True
+    assert record["outcomes"] == ["confirmed"]
     assert evidence_from_record(record) == evidence
 
     with pytest.raises(ValueError, match="cannot verify its own"):
@@ -60,21 +62,27 @@ def test_record_is_strict_verified_and_non_self():
         _evidence(supports=("authority:grant",))
     with pytest.raises(ValueError, match="sequence, not text"):
         _evidence(supports="identity:add_known_failure")
+    with pytest.raises(ValueError, match="unknown probation outcomes"):
+        _evidence(outcomes=("auto_promote",))
+    with pytest.raises(ValueError, match="sequence, not text"):
+        _evidence(outcomes="confirmed")
 
 
 def test_record_rejects_unknown_fields_unverified_and_secrets():
     record = _evidence().to_record()
-    with pytest.raises(ValueError, match="unknown fields"):
+    with pytest.raises(ValueError, match="missing or unknown"):
         evidence_from_record({**record, "authority": "grant"})
     with pytest.raises(ValueError, match="explicitly verified"):
         evidence_from_record({**record, "verified": False})
     with pytest.raises(ValueError, match="secret-shaped"):
         _evidence(value="api_key=abcdefgh12345678")
+    with pytest.raises(ValueError, match="secret-shaped"):
+        _evidence(observed_on="Bearer abcdefgh12345678")
 
 
 def test_registry_register_load_and_idempotent_replay(tmp_path):
     registry = RevisionEvidenceRegistry(tmp_path)
-    evidence = _evidence()
+    evidence = _evidence(outcomes=("confirmed",))
 
     first = registry.register(evidence)
     second = registry.register(evidence)
@@ -83,22 +91,32 @@ def test_registry_register_load_and_idempotent_replay(tmp_path):
     assert registry.load(REFERENCE) == evidence
     assert list(tmp_path.glob(".*.tmp")) == []
     raw = json.loads(first.read_text(encoding="utf-8"))
-    assert raw["schema_version"] == "openclaw_self_revision_evidence_v1"
+    assert raw["schema_version"] == "openclaw_self_revision_evidence_v2"
     assert raw["record_hash"]
 
 
 def test_registry_refuses_conflicting_duplicate_reference(tmp_path):
     registry = RevisionEvidenceRegistry(tmp_path)
     registry.register(_evidence())
-
     with pytest.raises(ValueError, match="conflicting content"):
         registry.register(_evidence(value="different value"))
 
 
-def test_registry_manifest_filters_by_agent_and_sorts(tmp_path):
+def test_registry_exclusive_lock_prevents_concurrent_overwrite(tmp_path):
     registry = RevisionEvidenceRegistry(tmp_path)
-    registry.register(_evidence(reference="trace/z"))
-    registry.register(_evidence(reference="trace/a"))
+    evidence = _evidence()
+    path = registry._path_for(evidence.reference)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    path.with_suffix(path.suffix + ".lock").write_text(
+        "other-process", encoding="utf-8")
+    with pytest.raises(ValueError, match="locked by another registration"):
+        registry.register(evidence)
+
+
+def test_registry_manifest_filters_by_agent_sorts_and_carries_outcomes(tmp_path):
+    registry = RevisionEvidenceRegistry(tmp_path)
+    registry.register(_evidence(reference="trace/z", outcomes=("reverted",)))
+    registry.register(_evidence(reference="trace/a", outcomes=("confirmed",)))
     registry.register(_evidence(
         reference="trace/other",
         agent_id="other_agent",
@@ -111,10 +129,12 @@ def test_registry_manifest_filters_by_agent_and_sorts(tmp_path):
     assert list(manifest) == ["trace/a", "trace/z"]
     assert manifest["trace/a"]["verified"] is True
     assert manifest["trace/a"]["agent_id"] == AGENT
+    assert manifest["trace/a"]["outcomes"] == ["confirmed"]
     assert "trace/other" not in manifest
 
 
-def test_registry_tampering_and_filename_mismatch_are_visible(tmp_path):
+def test_registry_tampering_unknown_envelope_fields_and_filename_mismatch_visible(
+        tmp_path):
     registry = RevisionEvidenceRegistry(tmp_path)
     path = registry.register(_evidence())
 
