@@ -50,6 +50,12 @@ from .self_revision import (
     proposal_from_record,
 )
 from .self_review import (
+    MAX_INSTRUCTION_BYTES,
+    MAX_KNOWN_FAILURES,
+    MAX_PENDING_PROPOSALS,
+    MAX_REVIEW_EVIDENCE,
+    MAX_SOUL_PRINCIPLES,
+    MAX_STABLE_LESSONS,
     SELF_REVIEW_BOUNDARIES,
     SNAPSHOT_VERSION,
     SelfReviewEvidence,
@@ -73,6 +79,16 @@ from .revision_evidence import (
     RevisionEvidenceRecord,
     RevisionEvidenceRegistry,
     evidence_from_record,
+)
+from .revision_evidence_builders import (
+    AGENT_LESSON_AB_REPORT_VERSION,
+    IDENTITY_FAILURE_REPORT_VERSION,
+    IDENTITY_RESOLUTION_REPORT_VERSION,
+    SOUL_ATTESTATION_VERSION,
+    build_agent_lesson_ab_evidence,
+    build_identity_failure_evidence,
+    build_identity_resolution_evidence,
+    build_soul_attestation_evidence,
 )
 from .soul_card import CARD_HEADER, GUIDING_SENTENCE, render_soul_card
 
@@ -102,6 +118,12 @@ __all__ = [
     "approve_and_apply_self_revision",
     "evaluate_self_revision",
     "proposal_from_record",
+    "MAX_INSTRUCTION_BYTES",
+    "MAX_KNOWN_FAILURES",
+    "MAX_PENDING_PROPOSALS",
+    "MAX_REVIEW_EVIDENCE",
+    "MAX_SOUL_PRINCIPLES",
+    "MAX_STABLE_LESSONS",
     "SELF_REVIEW_BOUNDARIES",
     "SNAPSHOT_VERSION",
     "SelfReviewEvidence",
@@ -119,6 +141,14 @@ __all__ = [
     "RevisionEvidenceRecord",
     "RevisionEvidenceRegistry",
     "evidence_from_record",
+    "AGENT_LESSON_AB_REPORT_VERSION",
+    "IDENTITY_FAILURE_REPORT_VERSION",
+    "IDENTITY_RESOLUTION_REPORT_VERSION",
+    "SOUL_ATTESTATION_VERSION",
+    "build_agent_lesson_ab_evidence",
+    "build_identity_failure_evidence",
+    "build_identity_resolution_evidence",
+    "build_soul_attestation_evidence",
     "CARD_HEADER",
     "GUIDING_SENTENCE",
     "render_soul_card",
