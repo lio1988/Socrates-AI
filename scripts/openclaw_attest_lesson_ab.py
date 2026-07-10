@@ -33,11 +33,12 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
 import sys
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
@@ -57,6 +58,7 @@ from backend.dialogues.openclaw_memory import (                         # noqa: 
 )
 
 ATTESTATION_SCHEMA_VERSION = "openclaw_agent_lesson_ab_attestation_v1"
+EXPERIMENT_SCHEMA_VERSION = "openclaw_agent_lesson_ab_experiment_v1"
 _W = 78
 _MAX_REPORT_BYTES = 1_000_000
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -76,6 +78,37 @@ _ENVELOPE_FIELDS = {
     "experiment_fingerprint",
     "experiment_manifest",
     "instrument_report",
+}
+_EXPERIMENT_FIELDS = {
+    "schema_version",
+    "target_agent_id",
+    "lesson_id",
+    "treatment_scope",
+    "question_hashes",
+    "control_configuration",
+    "treatment_configuration",
+    "execution_mode",
+    "provider_ids",
+    "judge_configuration",
+    "random_seeds",
+    "arm_orders",
+    "counterbalanced",
+    "compute_budget",
+    "producer_version",
+}
+_ARM_CONFIGURATION_FIELDS = {
+    "base_configuration_fingerprint",
+    "injected_lesson_fingerprints",
+    "injection_target_agent_id",
+}
+_JUDGE_CONFIGURATION_FIELDS = {
+    "judge_set_fingerprint",
+    "self_judging_allowed",
+}
+_COMPUTE_BUDGET_FIELDS = {
+    "token_limit",
+    "timeout_seconds",
+    "retry_limit",
 }
 _ACTIONS = {
     "link": "link_stable_lesson",
@@ -127,6 +160,17 @@ def _hex_digest(value: Any, *, field: str) -> str:
     return text
 
 
+def _nonempty_text(value: Any, *, field: str, maximum: int = 256) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{field} must be non-empty")
+    if len(text) > maximum:
+        raise ValueError(f"{field} exceeds {maximum} characters")
+    if any(ord(char) < 32 for char in text):
+        raise ValueError(f"{field} contains control characters")
+    return text
+
+
 def _find_secret(value: Any, path: str = "experiment_manifest") -> str:
     if isinstance(value, Mapping):
         for key, child in value.items():
@@ -159,6 +203,230 @@ def _canonical_digest(value: Any, *, field: str) -> str:
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{field} must be canonical JSON") from exc
     return hashlib.sha256(payload).hexdigest()
+
+
+def _sequence(value: Any, *, field: str) -> tuple[Any, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise ValueError(f"{field} must be a sequence")
+    return tuple(value)
+
+
+def _exact_mapping(value: Any, *, field: str, fields: set[str]) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field} must be a JSON object")
+    if set(value) != fields:
+        raise ValueError(
+            f"{field} contains missing or unknown fields: "
+            f"{sorted(set(value) ^ fields)}")
+    return value
+
+
+def _validate_arm_configuration(
+    value: Any,
+    *,
+    field: str,
+) -> Mapping[str, Any]:
+    config = _exact_mapping(
+        value, field=field, fields=_ARM_CONFIGURATION_FIELDS)
+    _hex_digest(
+        config.get("base_configuration_fingerprint"),
+        field=f"{field}.base_configuration_fingerprint",
+    )
+    injections = _sequence(
+        config.get("injected_lesson_fingerprints"),
+        field=f"{field}.injected_lesson_fingerprints",
+    )
+    for index, fingerprint in enumerate(injections):
+        _hex_digest(
+            fingerprint,
+            field=f"{field}.injected_lesson_fingerprints[{index}]",
+        )
+    if len(set(injections)) != len(injections):
+        raise ValueError(f"{field} contains duplicate lesson fingerprints")
+    target = str(config.get("injection_target_agent_id", "")).strip()
+    return {
+        "base_configuration_fingerprint": config[
+            "base_configuration_fingerprint"],
+        "injected_lesson_fingerprints": injections,
+        "injection_target_agent_id": target,
+    }
+
+
+def _validate_experiment_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    report: Mapping[str, Any],
+    bindings: Mapping[str, str],
+) -> None:
+    _exact_mapping(
+        manifest,
+        field="experiment_manifest",
+        fields=_EXPERIMENT_FIELDS,
+    )
+    if manifest.get("schema_version") != EXPERIMENT_SCHEMA_VERSION:
+        raise ValueError(
+            f"experiment_manifest must use schema_version "
+            f"{EXPERIMENT_SCHEMA_VERSION!r}")
+
+    target_agent_id = _nonempty_text(
+        manifest.get("target_agent_id"),
+        field="experiment_manifest.target_agent_id",
+        maximum=128,
+    )
+    lesson_id = _nonempty_text(
+        manifest.get("lesson_id"),
+        field="experiment_manifest.lesson_id",
+        maximum=128,
+    )
+    if target_agent_id != str(report.get("target_agent_id", "")).strip():
+        raise ValueError(
+            "experiment_manifest target_agent_id does not match instrument_report")
+    if lesson_id != str(report.get("lesson_id", "")).strip():
+        raise ValueError(
+            "experiment_manifest lesson_id does not match instrument_report")
+    if manifest.get("treatment_scope") != "single_agent" or \
+            report.get("treatment_scope") != "single_agent":
+        raise ValueError(
+            "experiment_manifest and instrument_report must use "
+            "treatment_scope='single_agent'")
+
+    question_hashes = _sequence(
+        manifest.get("question_hashes"),
+        field="experiment_manifest.question_hashes",
+    )
+    if not question_hashes:
+        raise ValueError("experiment_manifest requires question_hashes")
+    normalized_questions = tuple(
+        _hex_digest(value, field=f"question_hashes[{index}]")
+        for index, value in enumerate(question_hashes)
+    )
+    if len(set(normalized_questions)) != len(normalized_questions):
+        raise ValueError("experiment_manifest question_hashes must be distinct")
+
+    seeds = _sequence(
+        manifest.get("random_seeds"),
+        field="experiment_manifest.random_seeds",
+    )
+    if len(seeds) != len(question_hashes):
+        raise ValueError(
+            "experiment_manifest random_seeds must align with question_hashes")
+    if any(isinstance(seed, bool) or not isinstance(seed, int) or seed < 0
+           for seed in seeds):
+        raise ValueError(
+            "experiment_manifest random_seeds must be non-negative integers")
+
+    arm_orders = _sequence(
+        manifest.get("arm_orders"),
+        field="experiment_manifest.arm_orders",
+    )
+    if len(arm_orders) != len(question_hashes):
+        raise ValueError(
+            "experiment_manifest arm_orders must align with question_hashes")
+    normalized_orders = []
+    for index, order in enumerate(arm_orders):
+        pair = _sequence(order, field=f"arm_orders[{index}]")
+        if pair not in {
+            ("control", "treatment"),
+            ("treatment", "control"),
+        }:
+            raise ValueError(
+                "each experiment arm order must contain control and treatment "
+                "exactly once")
+        normalized_orders.append(pair)
+    counterbalanced = manifest.get("counterbalanced")
+    if not isinstance(counterbalanced, bool):
+        raise ValueError("experiment_manifest counterbalanced must be boolean")
+    if counterbalanced and len(normalized_orders) > 1 and len(
+            set(normalized_orders)) < 2:
+        raise ValueError(
+            "counterbalanced experiment must exercise both arm orders")
+
+    control = _validate_arm_configuration(
+        manifest.get("control_configuration"),
+        field="control_configuration",
+    )
+    treatment = _validate_arm_configuration(
+        manifest.get("treatment_configuration"),
+        field="treatment_configuration",
+    )
+    if control["base_configuration_fingerprint"] != \
+            treatment["base_configuration_fingerprint"]:
+        raise ValueError(
+            "control and treatment must share one base configuration fingerprint")
+    if control["injected_lesson_fingerprints"] or \
+            control["injection_target_agent_id"]:
+        raise ValueError(
+            "control configuration must contain no lesson injection")
+    if treatment["injected_lesson_fingerprints"] != (
+            bindings["lesson_fingerprint"],):
+        raise ValueError(
+            "treatment configuration must inject exactly the bound lesson")
+    if treatment["injection_target_agent_id"] != target_agent_id:
+        raise ValueError(
+            "treatment configuration must inject only into the target agent")
+
+    providers = _sequence(
+        manifest.get("provider_ids"),
+        field="experiment_manifest.provider_ids",
+    )
+    normalized_providers = tuple(
+        _nonempty_text(value, field="provider_id", maximum=128)
+        for value in providers
+    )
+    if not normalized_providers:
+        raise ValueError("experiment_manifest requires provider_ids")
+    if len(set(normalized_providers)) != len(normalized_providers):
+        raise ValueError("experiment_manifest provider_ids must be distinct")
+
+    _nonempty_text(
+        manifest.get("execution_mode"),
+        field="experiment_manifest.execution_mode",
+        maximum=128,
+    )
+    _nonempty_text(
+        manifest.get("producer_version"),
+        field="experiment_manifest.producer_version",
+        maximum=128,
+    )
+
+    judge = _exact_mapping(
+        manifest.get("judge_configuration"),
+        field="judge_configuration",
+        fields=_JUDGE_CONFIGURATION_FIELDS,
+    )
+    _hex_digest(
+        judge.get("judge_set_fingerprint"),
+        field="judge_configuration.judge_set_fingerprint",
+    )
+    if judge.get("self_judging_allowed") is not False:
+        raise ValueError("single-agent Lesson A/B forbids self-judging")
+
+    budget = _exact_mapping(
+        manifest.get("compute_budget"),
+        field="compute_budget",
+        fields=_COMPUTE_BUDGET_FIELDS,
+    )
+    token_limit = budget.get("token_limit")
+    retry_limit = budget.get("retry_limit")
+    timeout_seconds = budget.get("timeout_seconds")
+    if isinstance(token_limit, bool) or not isinstance(token_limit, int) or \
+            token_limit <= 0:
+        raise ValueError("compute_budget.token_limit must be a positive integer")
+    if isinstance(retry_limit, bool) or not isinstance(retry_limit, int) or \
+            retry_limit < 0:
+        raise ValueError(
+            "compute_budget.retry_limit must be a non-negative integer")
+    if isinstance(timeout_seconds, bool) or not isinstance(
+            timeout_seconds, (int, float)) or not math.isfinite(
+                float(timeout_seconds)) or float(timeout_seconds) <= 0:
+        raise ValueError(
+            "compute_budget.timeout_seconds must be a positive finite number")
+
+    tested = report.get("tested")
+    if isinstance(tested, bool) or not isinstance(tested, int) or \
+            tested > len(question_hashes):
+        raise ValueError(
+            "instrument_report tested count exceeds experiment question count")
 
 
 def _unpack_envelope(
@@ -336,10 +604,15 @@ def main(argv=None, env=None) -> int:
 
     try:
         report_path, envelope = _load_envelope(_value(argv, "--report"))
-        report, bindings, _manifest = _unpack_envelope(envelope)
+        report, bindings, manifest = _unpack_envelope(envelope)
         action = _normalize_action(_value(argv, "--action"))
         _validate_report_identity(
             report, agent_id=agent_id, verified_by=verified_by)
+        _validate_experiment_manifest(
+            manifest,
+            report=report,
+            bindings=bindings,
+        )
 
         # The strict builder remains the only conversion path. The binding
         # suffix becomes part of its canonical report digest and immutable
