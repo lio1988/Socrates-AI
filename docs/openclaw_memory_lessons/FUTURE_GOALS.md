@@ -401,6 +401,25 @@ Acceptance criteria:
 
 ## Goal 10 — Local LLM provider for OpenClaw
 
+**Status: DONE (v0).** Implemented as
+`backend/dialogues/openclaw_local/local_provider.py` with tests in
+`tests_dialogues/test_local_provider.py`. `LocalLLMAdapter` targets any
+OpenAI-compatible localhost endpoint (Ollama default
+`http://localhost:11434/v1`, LM Studio, llama.cpp, vLLM) and INHERITS the
+proven transport/retry/redaction/no-fabrication/JSON-repair machinery from
+the existing OpenAI-compatible adapter — one transport, two flavors. No API
+key required (local availability = enabled). Explicitly gated:
+`CED_ENABLE_LOCAL_APPRENTICE=1` + `CED_LOCAL_LLM_MODEL` (+ optional
+`CED_LOCAL_LLM_URL`/`_TIMEOUT`/`_KEY`), env-only, never `.env`; a missing
+gate or model is a clean skip with the exact instruction, never an error;
+`probe_local_server` gives a helpful "is Ollama running?" hint on a dead
+server. Default provider id is `local_apprentice_001` — the design-target
+identity holder. `build_local_shadow_apprentice` bridges straight into the
+Goal 11 runner (test-locked e2e: canned local output shadows a council and
+wins rigged sections with zero network). The CED core never imports the
+package: the local model enters the council only through the Promotion
+Arena.
+
 Add a local provider adapter so OpenClaw can run a local model as an agent.
 
 Possible backends:

@@ -128,6 +128,9 @@ backend/dialogues/openclaw_prompts/    # landed: prompt_registry (versioned spec
 backend/dialogues/openclaw_shadow/     # landed: shadow_apprentice (Stage 1
                                        # runner — observes, gets judged,
                                        # never touches the council)
+backend/dialogues/openclaw_local/      # landed: local_provider (gated local
+                                       # OpenAI-compatible adapter — the
+                                       # local_apprentice_001 seat)
 ```
 
 Avoid vague names such as:
