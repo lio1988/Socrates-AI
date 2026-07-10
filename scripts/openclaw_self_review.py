@@ -34,7 +34,8 @@ if str(_ROOT) not in sys.path:
 from backend.dialogues.openclaw_identity import (                       # noqa: E402
     IdentityRegistry,
     RevisionEvidenceRegistry,
-    SelfRevisionRegistry,
+    StrictSelfRevisionRegistry,
+    assert_revision_state_consistent,
     build_self_review_snapshot,
     build_self_revision_instruction,
     proposal_from_record,
@@ -165,7 +166,9 @@ def main(argv=None, env=None) -> int:
             return 1
         manifest = _load_evidence(
             evidence_dir, legacy_evidence_path, agent_id)
-        lifecycle_records = SelfRevisionRegistry(revision_dir).all_records(agent_id)
+        lifecycle_records = StrictSelfRevisionRegistry(
+            revision_dir).all_records(agent_id)
+        assert_revision_state_consistent(profile, lifecycle_records)
         pending = tuple(
             proposal_from_record(
                 record["proposal"], expected_agent_id=agent_id)
@@ -202,6 +205,7 @@ def main(argv=None, env=None) -> int:
     print(f"  agent        : {agent_id}")
     print(f"  evidence     : {len(snapshot.verified_evidence)} verified record(s)")
     print(f"  pending      : {len(snapshot.pending_proposal_ids)} proposal(s)")
+    print(f"  consistency  : identity and lifecycle registries agree")
     print(f"  snapshot     : {snapshot_path}")
     print(f"  summary      : {summary_path}")
     print(f"  instruction  : {instruction_path}")
