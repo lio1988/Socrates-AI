@@ -7,14 +7,15 @@ import pytest
 from backend.dialogues.openclaw_identity import (
     AgentIdentityProfile,
     SelfRevisionProposal,
-    SelfRevisionRegistry,
+    StrictSelfRevisionRegistry,
     approve_and_apply_self_revision,
     assert_revision_state_consistent,
     build_reversal_proposal,
     build_self_review_snapshot,
-    evaluate_self_revision,
     reconcile_revision_state,
 )
+
+SelfRevisionRegistry = StrictSelfRevisionRegistry
 
 AGENT = "agent_alpha"
 VALUE = "rushes exact-output tasks"
@@ -293,7 +294,7 @@ def test_full_confirmed_rollback_reconciles_both_registries(tmp_path):
 
 def test_reconciliation_detects_missing_and_preapplication_drift(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
-    profile, original, _, applied = _prepare_original(registry)
+    profile, _, _, applied = _prepare_original(registry)
     records = registry.all_records(AGENT)
 
     missing = reconcile_revision_state(applied, ())
