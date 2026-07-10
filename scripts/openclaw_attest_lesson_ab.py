@@ -42,23 +42,11 @@ from backend.dialogues.openclaw_memory import load_stable_lessons      # noqa: E
 RAW_REPORT_VERSION = "openclaw_single_agent_lesson_ab_result_v1"
 _W = 78
 _RAW_FIELDS = {
-    "schema_version",
-    "target_agent_id",
-    "lesson_id",
-    "treatment_scope",
-    "tested",
-    "min_tested",
-    "verdict",
-    "helped",
-    "mean_score_delta",
-    "harm_rate",
-    "max_harm_rate",
-    "ratification_regressions",
-    "unresolved_regressions",
-    "catastrophic_regressions",
-    "configuration_mismatches",
-    "source",
-    "observed_on",
+    "schema_version", "target_agent_id", "lesson_id", "treatment_scope",
+    "tested", "min_tested", "verdict", "helped", "mean_score_delta",
+    "harm_rate", "max_harm_rate", "ratification_regressions",
+    "unresolved_regressions", "catastrophic_regressions",
+    "configuration_mismatches", "source", "observed_on",
 }
 
 
@@ -93,17 +81,24 @@ def _read_report(path: pathlib.Path) -> Mapping[str, Any]:
     return dict(value)
 
 
-def _reference(report: Mapping[str, Any], action: str) -> str:
+def _reference(
+    report: Mapping[str, Any],
+    action: str,
+    verified_by: str,
+    verification_reference: str,
+) -> str:
     semantic = {
-        key: report[key]
-        for key in sorted(report)
-        if key not in {"observed_on"}
+        "instrument_report": {
+            key: report[key]
+            for key in sorted(report)
+            if key != "observed_on"
+        },
+        "action": action,
+        "verified_by": verified_by,
+        "verification_reference": verification_reference,
     }
     digest = hashlib.sha256(json.dumps(
-        semantic,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
+        semantic, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")).hexdigest()[:16]
     return (
         f"agent-ab/{report['target_agent_id']}/{report['lesson_id']}/"
@@ -112,26 +107,18 @@ def _reference(report: Mapping[str, Any], action: str) -> str:
 
 
 def _stable_lesson_ids(path: str | None) -> set[str]:
-    return {
-        lesson.lesson_id
-        for lesson in load_stable_lessons(path or None)
-    }
+    return {lesson.lesson_id for lesson in load_stable_lessons(path or None)}
 
 
 def _validate_state(
-    *,
-    action: str,
-    lesson_id: str,
-    agent_id: str,
-    lessons_path: str | None,
-    identity_dir: str,
+    *, action: str, lesson_id: str, agent_id: str,
+    lessons_path: str | None, identity_dir: str,
 ) -> None:
     if action == "link":
         if lesson_id not in _stable_lesson_ids(lessons_path):
             raise ValueError(
                 "Memory link evidence requires an already stable/verified lesson")
         return
-
     profile = IdentityRegistry(identity_dir).load_profile(agent_id)
     if profile is None:
         raise ValueError("Memory unlink evidence requires an existing identity profile")
@@ -142,15 +129,13 @@ def _validate_state(
 
 def _strict_report(
     raw: Mapping[str, Any],
-    *,
-    action: str,
-    verified_by: str,
-    verification_reference: str,
-    observed_on: str,
+    *, action: str, verified_by: str,
+    verification_reference: str, observed_on: str,
 ) -> dict[str, Any]:
     return {
         "schema_version": AGENT_LESSON_AB_REPORT_VERSION,
-        "reference": _reference(raw, action),
+        "reference": _reference(
+            raw, action, verified_by, verification_reference),
         "target_agent_id": raw["target_agent_id"],
         "lesson_id": raw["lesson_id"],
         "treatment_scope": raw["treatment_scope"],
@@ -197,22 +182,15 @@ def main(argv=None, env=None) -> int:
             "CED_IDENTITY_DIR", str(_ROOT / "runs" / "openclaw_identity"))
         lessons_path = env.get("CED_MEMORY_LESSONS_PATH", "").strip() or None
         _validate_state(
-            action=args.action,
-            lesson_id=lesson_id,
-            agent_id=agent_id,
-            lessons_path=lessons_path,
-            identity_dir=identity_dir,
-        )
+            action=args.action, lesson_id=lesson_id, agent_id=agent_id,
+            lessons_path=lessons_path, identity_dir=identity_dir)
 
         observed_on = str(raw.get("observed_on", "")).strip() or str(
             env.get("CED_ATTEST_DATE", "")).strip() or _dt.date.today().isoformat()
         strict = _strict_report(
-            raw,
-            action=args.action,
-            verified_by=verified_by,
+            raw, action=args.action, verified_by=verified_by,
             verification_reference=verification_reference,
-            observed_on=observed_on,
-        )
+            observed_on=observed_on)
         builder_action = (
             "link_stable_lesson" if args.action == "link"
             else "unlink_stable_lesson"
@@ -221,8 +199,7 @@ def main(argv=None, env=None) -> int:
             strict, action=builder_action)
         evidence_dir = env.get(
             "CED_SELF_REVISION_EVIDENCE_DIR",
-            str(_ROOT / "runs" / "openclaw_self_revision_evidence"),
-        )
+            str(_ROOT / "runs" / "openclaw_self_revision_evidence"))
         RevisionEvidenceRegistry(evidence_dir).register(evidence)
     except (SystemExit, ValueError) as exc:
         if isinstance(exc, SystemExit):
