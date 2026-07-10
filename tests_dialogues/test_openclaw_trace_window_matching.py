@@ -67,3 +67,24 @@ def test_different_question_sets_cannot_fake_improvement():
     assert evidence["trace_window_mismatch_reason"] == \
         "different_question_multisets"
     assert not any(key.endswith("_failures_delta") for key in evidence)
+
+
+def test_one_sided_missing_question_metadata_is_rejected():
+    before = [_trace("b1", "same question", assembly_present=False)]
+    after = [_trace("a1", "", assembly_present=True)]
+
+    evidence = evidence_from_trace_windows(before, after)
+
+    assert evidence["trace_window_match"] is False
+    assert evidence["trace_window_mismatch_reason"] == \
+        "incomplete_question_metadata"
+    assert not any(key.endswith("_failures_delta") for key in evidence)
+
+
+def test_equal_size_legacy_windows_without_questions_remain_supported():
+    before = [_trace("b1", "", assembly_present=False)]
+    after = [_trace("a1", "", assembly_present=True)]
+
+    evidence = evidence_from_trace_windows(before, after)
+
+    assert evidence["synthesis_quality_failures_delta"] == -1
