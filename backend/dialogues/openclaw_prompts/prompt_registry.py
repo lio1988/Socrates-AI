@@ -1,80 +1,39 @@
 """
 OpenClaw Prompt Registry — deterministic, auditable prompt lineage (Goal 7).
 
-The missing control layer this closes: prompts had no version identity. A
-prompt that drifts silently cannot be A/B tested, cannot be traced, and
-cannot be trusted. This registry gives every prompt:
+Two different identities are tracked:
+  - composition fingerprint: base template + applied patch texts
+  - rendered fingerprint: the exact final text after variables/lessons/patches
 
-  - a declarative spec (base template + variables + lesson slot)
-  - small, append-only, provider-scoped patches with the SAME lifecycle as
-    memory lessons (proposed -> tested -> verified -> stable -> deprecated)
-  - a human version label AND a content-addressed fingerprint, so the trace
-    metadata is tamper-evident: if the rendered text changed, the version
-    string changes
-  - trace-ready metadata (no secrets, no scores)
-
-Mechanical safety (never aspirational):
-
-  - NO automatic prompt mutation: a render applies ONLY stable/verified
-    patches unless the caller names specific candidate patch ids explicitly
-    (that is how a proposed patch gets its A/B run — the Lesson A/B harness
-    pattern is the shared "tested" instrument). Deprecated patches never
-    render, even as candidates.
-  - Append-only patches: v0 has no replace/delete operations — every patch
-    is reversible by construction (PROMPT_PATCH_POLICY).
-  - Strict variables: a missing required variable or an unknown supplied
-    variable raises — never a silent empty slot. Placeholders use
-    ``{{name}}`` (double braces) because prompt bodies legitimately contain
-    JSON examples with single braces.
-  - The lesson slot collapses cleanly when no lessons are supplied — no
-    dangling "Relevant memory lessons:" header.
-  - Leak guard: rendered text is refused if it carries key-shaped secrets.
-  - Runtime-inert: nothing in the CED core imports this package
-    (test-locked, same isolation as the identity layer). Wiring a rendered
-    prompt into live calls is a LATER, explicit goal.
-
-Pure stdlib, deterministic, offline. No provider calls, no keys.
+The registry is version-aware: multiple versions of one prompt_id may coexist.
+An unversioned lookup becomes an error when more than one version exists, so no
+caller can silently drift to an arbitrary prompt.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-#: Same lifecycle as memory lessons (MEMORY_LESSONS.md / lesson_loader).
 PROMPT_STATUSES: Tuple[str, ...] = (
     "proposed", "tested", "verified", "stable", "deprecated",
 )
-
-#: Patch statuses a DEFAULT render may apply (mirror of STABLE_OR_VERIFIED).
 RENDERABLE_STATUSES: frozenset = frozenset({"stable", "verified"})
-
-#: ``{{variable_name}}`` — double braces so JSON examples in prompt bodies
-#: (single braces) never collide with substitution.
 _PLACEHOLDER_RE = re.compile(r"\{\{([a-z_][a-z0-9_]*)\}\}")
-
-#: Render-time refusal patterns (same family as the trace-capture guard).
-_LEAK_PATTERNS: Tuple[str, ...] = ("sk-ant-", "ANTHROPIC_API_KEY", "Bearer ")
-
-#: Applies-to-every-provider marker for patches.
+_LEAK_PATTERNS: Tuple[str, ...] = (
+    "sk-ant-", "ANTHROPIC_API_KEY", "Bearer ",
+)
 ALL_PROVIDERS = "*"
 
 
 @dataclass(frozen=True)
 class PromptPatch:
-    """A small, append-only, provider-scoped prompt addition.
-
-    Carries the PROMPT_PATCH_POLICY audit fields (reason, expected effect,
-    risk) and the lesson lifecycle. A patch is a BLOCK APPENDED to the
-    rendered prompt — v0 deliberately has no replace/delete operations, so
-    every patch is reversible by construction.
-    """
-    patch_id: str                       # e.g. "PATCH-0001"
+    patch_id: str
     name: str
     status: str
-    text: str                           # the appended block
+    text: str
     reason: str
     expected_effect: str
     risk: str
@@ -93,29 +52,31 @@ class PromptPatch:
     def applies_to(self, provider_id: Optional[str]) -> bool:
         if ALL_PROVIDERS in self.target_providers:
             return True
-        return provider_id is not None and provider_id in self.target_providers
+        return (
+            provider_id is not None
+            and provider_id in self.target_providers
+        )
 
 
 @dataclass(frozen=True)
 class PromptSpec:
-    """Declarative identity of one prompt: template + variables + patches."""
-    prompt_id: str                      # e.g. "openclaw_synthesis"
-    version_label: str                  # human lineage label, e.g. "v0.1"
+    prompt_id: str
+    version_label: str
     description: str
-    base_text: str                      # template with {{variables}}
+    base_text: str
     required_variables: Tuple[str, ...] = ()
-    lesson_slot: str = "memory_lessons" # optional variable: collapses if empty
+    lesson_slot: str = "memory_lessons"
     patches: Tuple[PromptPatch, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.prompt_id.strip():
             raise ValueError("prompt_id must be non-empty")
-        ids = [p.patch_id for p in self.patches]
-        if len(ids) != len(set(ids)):
+        if not self.version_label.strip():
+            raise ValueError("version_label must be non-empty")
+        patch_ids = [patch.patch_id for patch in self.patches]
+        if len(patch_ids) != len(set(patch_ids)):
             raise ValueError(f"{self.prompt_id}: duplicate patch ids")
 
-
-# ── Patch selection (the never-auto-mutate rule, mechanically) ───────────────
 
 def applied_patches(
     spec: PromptSpec,
@@ -123,33 +84,37 @@ def applied_patches(
     *,
     candidate_patch_ids: Sequence[str] = (),
 ) -> List[PromptPatch]:
-    """Ordered patches a render will append.
-
-    Default: ONLY stable/verified patches that target this provider.
-    ``candidate_patch_ids`` names specific proposed/tested patches to include
-    for an explicit A/B experiment — blanket inclusion does not exist.
-    Deprecated patches never apply, even when named. Naming an unknown patch
-    id raises (an experiment must know exactly what it is testing).
-    """
-    by_id = {p.patch_id: p for p in spec.patches}
-    unknown = [pid for pid in candidate_patch_ids if pid not in by_id]
+    """Select patches without automatic mutation."""
+    by_id = {patch.patch_id: patch for patch in spec.patches}
+    unknown = [
+        patch_id for patch_id in candidate_patch_ids
+        if patch_id not in by_id
+    ]
     if unknown:
-        raise ValueError(f"{spec.prompt_id}: unknown candidate patches {unknown!r}")
+        raise ValueError(
+            f"{spec.prompt_id}: unknown candidate patches {unknown!r}")
+
+    candidate_set = set(candidate_patch_ids)
     wanted: List[PromptPatch] = []
-    for patch in sorted(spec.patches, key=lambda p: p.patch_id):
+    for patch in sorted(spec.patches, key=lambda item: item.patch_id):
         if not patch.applies_to(provider_id):
             continue
         if patch.status == "deprecated":
-            continue                    # never renders, candidate or not
-        if patch.status in RENDERABLE_STATUSES or patch.patch_id in set(candidate_patch_ids):
+            continue
+        if (
+            patch.status in RENDERABLE_STATUSES
+            or patch.patch_id in candidate_set
+        ):
             wanted.append(patch)
     return wanted
 
 
-# ── Rendering (strict, deterministic) ─────────────────────────────────────────
-
-def _substitute(template: str, variables: Mapping[str, str],
-                *, context: str) -> str:
+def _substitute(
+    template: str,
+    variables: Mapping[str, str],
+    *,
+    context: str,
+) -> str:
     found = set(_PLACEHOLDER_RE.findall(template))
     supplied = set(variables)
     missing = sorted(found - supplied)
@@ -157,9 +122,13 @@ def _substitute(template: str, variables: Mapping[str, str],
         raise ValueError(f"{context}: missing variables {missing!r}")
     unknown = sorted(supplied - found)
     if unknown:
-        raise ValueError(f"{context}: unknown variables {unknown!r} "
-                         "(strict rendering refuses silent extras)")
-    return _PLACEHOLDER_RE.sub(lambda m: str(variables[m.group(1)]), template)
+        raise ValueError(
+            f"{context}: unknown variables {unknown!r} "
+            "(strict rendering refuses silent extras)")
+    return _PLACEHOLDER_RE.sub(
+        lambda match: str(variables[match.group(1)]),
+        template,
+    )
 
 
 def render_prompt(
@@ -169,31 +138,33 @@ def render_prompt(
     provider_id: Optional[str] = None,
     candidate_patch_ids: Sequence[str] = (),
 ) -> str:
-    """Render one prompt deterministically.
-
-    - every required variable must be supplied; extras are refused
-    - the lesson slot vanishes cleanly when its value is empty/absent
-    - applicable patches (see :func:`applied_patches`) are appended in
-      patch_id order, separated by blank lines
-    - the result is refused if it carries key-shaped secrets
-    """
-    vars_norm: Dict[str, str] = {k: str(v) for k, v in variables.items()}
-    missing_required = sorted(set(spec.required_variables) - set(vars_norm))
+    """Render one prompt deterministically and refuse obvious secrets."""
+    vars_norm: Dict[str, str] = {
+        key: str(value) for key, value in variables.items()
+    }
+    missing_required = sorted(
+        set(spec.required_variables) - set(vars_norm))
     if missing_required:
-        raise ValueError(f"{spec.prompt_id}: missing required variables "
-                         f"{missing_required!r}")
+        raise ValueError(
+            f"{spec.prompt_id}: missing required variables "
+            f"{missing_required!r}")
 
-    # Lesson slot: optional by design — empty means the slot line disappears.
-    if spec.lesson_slot:
-        if not vars_norm.get(spec.lesson_slot, "").strip():
-            vars_norm[spec.lesson_slot] = ""
+    if spec.lesson_slot and not vars_norm.get(
+            spec.lesson_slot, "").strip():
+        vars_norm[spec.lesson_slot] = ""
 
-    text = _substitute(spec.base_text, vars_norm, context=spec.prompt_id)
-    # Collapse the hole an empty lesson slot leaves behind.
+    text = _substitute(
+        spec.base_text,
+        vars_norm,
+        context=f"{spec.prompt_id}@{spec.version_label}",
+    )
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
 
-    for patch in applied_patches(spec, provider_id,
-                                 candidate_patch_ids=candidate_patch_ids):
+    for patch in applied_patches(
+        spec,
+        provider_id,
+        candidate_patch_ids=candidate_patch_ids,
+    ):
         text = f"{text}\n\n{patch.text.strip()}"
 
     for pattern in _LEAK_PATTERNS:
@@ -204,22 +175,33 @@ def render_prompt(
     return text
 
 
-# ── Version identity (label + content-addressed fingerprint) ─────────────────
-
 def prompt_fingerprint(
     spec: PromptSpec,
     provider_id: Optional[str] = None,
     *,
     candidate_patch_ids: Sequence[str] = (),
 ) -> str:
-    """Deterministic sha256[:12] of the composition (base + applied patch
-    texts, in order). Tamper-evident lineage: any change to the base text or
-    to the applied patch set changes the fingerprint."""
+    """Composition fingerprint (template + applied patch text).
+
+    Kept under the original name for compatibility. This is not the hash of the
+    rendered prompt because variables and lesson text are intentionally absent.
+    """
     parts = [spec.base_text]
-    parts.extend(p.text for p in applied_patches(
-        spec, provider_id, candidate_patch_ids=candidate_patch_ids))
-    canon = "\x00".join(parts)
-    return hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
+    parts.extend(
+        patch.text for patch in applied_patches(
+            spec,
+            provider_id,
+            candidate_patch_ids=candidate_patch_ids,
+        )
+    )
+    canonical = "\x00".join(parts)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+
+
+def rendered_prompt_fingerprint(rendered_text: str) -> str:
+    """Fingerprint the exact text sent to a provider."""
+    return hashlib.sha256(
+        rendered_text.encode("utf-8")).hexdigest()[:12]
 
 
 def prompt_metadata(
@@ -227,45 +209,117 @@ def prompt_metadata(
     provider_id: Optional[str] = None,
     *,
     candidate_patch_ids: Sequence[str] = (),
+    rendered_text: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Trace-ready audit metadata (matches TraceCapturer's metadata= slot).
-    Carries lineage only — no prompt text, no scores, no secrets."""
-    patches = applied_patches(spec, provider_id,
-                              candidate_patch_ids=candidate_patch_ids)
-    return {
+    """Trace-ready lineage metadata.
+
+    ``prompt_fingerprint`` remains the backwards-compatible composition hash.
+    When exact rendered text is supplied, ``rendered_prompt_fingerprint`` binds
+    the actual variables and memory block without storing the prompt itself.
+    """
+    patches = applied_patches(
+        spec,
+        provider_id,
+        candidate_patch_ids=candidate_patch_ids,
+    )
+    composition = prompt_fingerprint(
+        spec,
+        provider_id,
+        candidate_patch_ids=candidate_patch_ids,
+    )
+    metadata: Dict[str, Any] = {
         "prompt_id": spec.prompt_id,
         "prompt_version": spec.version_label,
-        "prompt_fingerprint": prompt_fingerprint(
-            spec, provider_id, candidate_patch_ids=candidate_patch_ids),
-        "applied_patches": [p.patch_id for p in patches],
+        "prompt_fingerprint": composition,
+        "composition_fingerprint": composition,
+        "applied_patches": [patch.patch_id for patch in patches],
         "candidate_patches": sorted(candidate_patch_ids),
         "provider_scope": provider_id or ALL_PROVIDERS,
         "lesson_slot": spec.lesson_slot,
     }
+    if rendered_text is not None:
+        metadata["rendered_prompt_fingerprint"] = \
+            rendered_prompt_fingerprint(rendered_text)
+    return metadata
 
 
-# ── The registry ──────────────────────────────────────────────────────────────
+def render_prompt_with_metadata(
+    spec: PromptSpec,
+    variables: Mapping[str, Any],
+    *,
+    provider_id: Optional[str] = None,
+    candidate_patch_ids: Sequence[str] = (),
+) -> Tuple[str, Dict[str, Any]]:
+    """Render once and return metadata bound to that exact text."""
+    rendered = render_prompt(
+        spec,
+        variables,
+        provider_id=provider_id,
+        candidate_patch_ids=candidate_patch_ids,
+    )
+    metadata = prompt_metadata(
+        spec,
+        provider_id,
+        candidate_patch_ids=candidate_patch_ids,
+        rendered_text=rendered,
+    )
+    return rendered, metadata
+
 
 class PromptRegistry:
-    """Deterministic catalog of prompt specs, keyed by prompt_id."""
+    """Version-aware deterministic prompt catalog."""
 
     def __init__(self) -> None:
-        self._specs: Dict[str, PromptSpec] = {}
+        self._specs: Dict[Tuple[str, str], PromptSpec] = {}
 
     def register(self, spec: PromptSpec) -> None:
-        if spec.prompt_id in self._specs:
-            raise ValueError(f"duplicate prompt_id {spec.prompt_id!r} "
-                             "(evolve via a new version_label, not overwrite)")
-        self._specs[spec.prompt_id] = spec
+        key = (spec.prompt_id, spec.version_label)
+        if key in self._specs:
+            raise ValueError(
+                f"duplicate prompt version {spec.prompt_id!r} "
+                f"{spec.version_label!r}")
+        self._specs[key] = spec
 
-    def get(self, prompt_id: str) -> PromptSpec:
-        if prompt_id not in self._specs:
+    def get(
+        self,
+        prompt_id: str,
+        version_label: Optional[str] = None,
+    ) -> PromptSpec:
+        if version_label is not None:
+            key = (prompt_id, version_label)
+            if key not in self._specs:
+                raise KeyError(
+                    f"unknown prompt version {prompt_id!r} "
+                    f"{version_label!r}")
+            return self._specs[key]
+
+        matches = [
+            spec for (registered_id, _), spec in self._specs.items()
+            if registered_id == prompt_id
+        ]
+        if not matches:
             raise KeyError(f"unknown prompt {prompt_id!r}")
-        return self._specs[prompt_id]
+        if len(matches) > 1:
+            versions = sorted(spec.version_label for spec in matches)
+            raise ValueError(
+                f"prompt {prompt_id!r} has multiple versions {versions!r}; "
+                "version_label is required")
+        return matches[0]
 
     def all_prompts(self) -> List[PromptSpec]:
-        return [self._specs[k] for k in sorted(self._specs)]
+        return [
+            self._specs[key]
+            for key in sorted(self._specs)
+        ]
 
-    def metadata_for(self, prompt_id: str,
-                     provider_id: Optional[str] = None) -> Dict[str, Any]:
-        return prompt_metadata(self.get(prompt_id), provider_id)
+    def metadata_for(
+        self,
+        prompt_id: str,
+        provider_id: Optional[str] = None,
+        *,
+        version_label: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return prompt_metadata(
+            self.get(prompt_id, version_label),
+            provider_id,
+        )
