@@ -6,6 +6,8 @@ import pytest
 
 from backend.dialogues.openclaw_memory import (
     MemoryLesson,
+    load_lesson_fingerprints,
+    load_stable_lesson_fingerprints,
     memory_lesson_fingerprint,
 )
 
@@ -24,6 +26,39 @@ def _lesson():
         lesson="Verify every exact-output constraint before finalizing.",
         risk="May over-constrain open-ended tasks.",
     )
+
+
+def _catalogue():
+    return """# Test catalogue
+
+### LESSON-0007 — Exact-output discipline
+
+**Status:** stable
+**Lesson type:** behavioral
+**Source:** test
+**Use when:** synthesis
+**Problem pattern:** Rushes.
+**Bad pattern:** Ignore constraints.
+**Good pattern:** Check constraints.
+**Lesson:** Verify constraints.
+**Risk:** Over-constraint.
+
+---
+
+### LESSON-0008 — Retired guidance
+
+**Status:** deprecated
+**Lesson type:** behavioral
+**Source:** test
+**Use when:** review
+**Problem pattern:** Old pattern.
+**Bad pattern:** Old bad.
+**Good pattern:** Old good.
+**Lesson:** Old lesson retained for rollback audit.
+**Risk:** Deprecated.
+
+---
+"""
 
 
 def test_memory_lesson_fingerprint_is_deterministic_sha256():
@@ -53,3 +88,15 @@ def test_every_governed_lesson_field_changes_the_fingerprint():
 def test_memory_lesson_fingerprint_refuses_untyped_records():
     with pytest.raises(ValueError, match="requires a MemoryLesson"):
         memory_lesson_fingerprint({"lesson_id": "LESSON-0007"})
+
+
+def test_complete_map_includes_deprecated_for_governed_unlink(tmp_path):
+    path = tmp_path / "MEMORY_LESSONS.md"
+    path.write_text(_catalogue(), encoding="utf-8")
+
+    complete = load_lesson_fingerprints(path)
+    stable = load_stable_lesson_fingerprints(path)
+
+    assert set(complete) == {"LESSON-0007", "LESSON-0008"}
+    assert set(stable) == {"LESSON-0007"}
+    assert all(len(value) == 64 for value in complete.values())
