@@ -39,7 +39,13 @@ def _observations(
     )
     if not result:
         raise ValueError("tree evidence requires at least one observation")
-    return result
+    return tuple(sorted(
+        result,
+        key=lambda item: (
+            item.comparison_key, item.session_id, item.child_draft_id,
+            item.observation_digest,
+        ),
+    ))
 
 
 def summarize_tree_revision_observations(
@@ -83,6 +89,8 @@ def build_tree_revision_failure_evidence(
     """Convert repeated, distinct-session tree regressions to Identity evidence."""
     items = _observations(values)
     target = clean_agent(agent_id)
+    if str(verified_by or "").strip().casefold() == target.casefold():
+        raise ValueError("an agent cannot verify its own tree evidence")
     if min_regressions < 2 or len(items) < min_regressions:
         raise ValueError("tree failure evidence needs repeated regressions")
     if any(item.agent_id != target for item in items):
@@ -144,6 +152,8 @@ def build_tree_revision_resolution_evidence(
     before = _observations(before_values)
     after = _observations(after_values)
     target = clean_agent(agent_id)
+    if str(verified_by or "").strip().casefold() == target.casefold():
+        raise ValueError("an agent cannot verify its own tree evidence")
     if min_window < 2 or len(before) != len(after) or len(before) < min_window:
         raise ValueError("tree resolution windows must be equal and sufficiently large")
     if any(item.agent_id != target for item in before + after):
@@ -170,12 +180,18 @@ def build_tree_revision_resolution_evidence(
         raise ValueError("tree resolution requires matched comparison keys")
     for key, left in before_by_key.items():
         right = after_by_key[key]
+        if left.question_hash != right.question_hash:
+            raise ValueError("tree resolution matched items use different questions")
+        if left.provider_id != right.provider_id:
+            raise ValueError("tree resolution matched items use different providers")
         if left.judge_ids != right.judge_ids:
             raise ValueError("tree resolution matched items use different judges")
         if left.matched_sections != right.matched_sections:
             raise ValueError("tree resolution matched items use different sections")
         if left.matched_score_count != right.matched_score_count:
             raise ValueError("tree resolution matched items use different score counts")
+        if left.effect_margin != right.effect_margin:
+            raise ValueError("tree resolution matched items use different effect margins")
         if left.tree_exploration != right.tree_exploration:
             raise ValueError("tree resolution matched items use different exploration")
         if left.tree_total_expansions != right.tree_total_expansions:
