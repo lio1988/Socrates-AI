@@ -51,13 +51,17 @@ def _clean_text(value: Any, *, field: str, maximum: int) -> str:
 def _clean_references(values: Iterable[Any]) -> Tuple[str, ...]:
     if isinstance(values, (str, bytes)):
         raise ValueError("evidence_references must be a sequence, not text")
-    refs = tuple(sorted({
-        _clean_text(value, field="evidence reference", maximum=256)
-        for value in values
-    }))
+    refs = []
+    seen = set()
+    for value in values:
+        reference = _clean_text(
+            value, field="evidence reference", maximum=256)
+        if reference not in seen:
+            refs.append(reference)
+            seen.add(reference)
     if not refs:
         raise ValueError("self-revision proposal requires evidence references")
-    return refs
+    return tuple(refs)
 
 
 @dataclass(frozen=True)
@@ -154,6 +158,9 @@ def proposal_from_record(
     if extras:
         raise ValueError(
             f"self-revision proposal contains unknown fields: {sorted(extras)}")
+    raw_references = record.get("evidence_references") or ()
+    if isinstance(raw_references, (str, bytes)):
+        raise ValueError("evidence_references must be a sequence, not text")
     proposal = SelfRevisionProposal(
         proposal_id=record.get("proposal_id", ""),
         agent_id=record.get("agent_id", ""),
@@ -162,7 +169,7 @@ def proposal_from_record(
         action=record.get("action", ""),
         value=record.get("value", ""),
         reason=record.get("reason", ""),
-        evidence_references=tuple(record.get("evidence_references") or ()),
+        evidence_references=tuple(raw_references),
         risk=record.get("risk", ""),
         status=record.get("status", "proposed"),
     )
@@ -276,6 +283,9 @@ def approve_and_apply_self_revision(
     """Return a new profile after independent validation and non-self approval."""
     if proposal.agent_id != profile.agent_id:
         raise ValueError("proposal agent_id does not match the identity profile")
+    if any(entry.get("proposal_id") == proposal.proposal_id
+           for entry in profile.revision_history):
+        raise ValueError("self-revision proposal_id has already been applied")
     if evaluation.proposal_id != proposal.proposal_id:
         raise ValueError("revision evaluation does not match the proposal")
     if not evaluation.passed:
