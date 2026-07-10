@@ -24,12 +24,18 @@ Pure, deterministic, offline. No provider calls, no network, no keys.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 SECTION_NAMES: Tuple[str, ...] = (
     "core_answer", "crucial_stress_test", "blind_spots", "nuance", "final_verdict",
 )
 
+_PROFILE_FIELDS = {
+    "agent_id", "identity_version", "promotion_status", "role_strengths",
+    "section_wins", "section_opportunities", "sessions_analyzed",
+    "ratified_sessions", "known_failures", "stable_lessons", "soul_principles",
+    "next_gate", "version_history", "revision_history",
+}
 _DRAFT_PREFIX = "draft_"
 
 
@@ -72,32 +78,160 @@ class AgentIdentityProfile:
         }
 
 
+def _mapping(record: Mapping[str, Any], field_name: str) -> Mapping[Any, Any]:
+    value = record.get(field_name) or {}
+    if not isinstance(value, Mapping):
+        raise ValueError(f"identity field {field_name!r} must be a mapping")
+    return value
+
+
+def _sequence(record: Mapping[str, Any], field_name: str) -> Sequence[Any]:
+    value = record.get(field_name) or ()
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise ValueError(f"identity field {field_name!r} must be a sequence")
+    return value
+
+
+def _string_tuple(record: Mapping[str, Any], field_name: str) -> Tuple[str, ...]:
+    values = _sequence(record, field_name)
+    result = []
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError(
+                f"identity field {field_name!r} must contain only text")
+        result.append(value)
+    return tuple(result)
+
+
+def _history_tuple(
+    record: Mapping[str, Any], field_name: str
+) -> Tuple[Dict[str, Any], ...]:
+    values = _sequence(record, field_name)
+    history = []
+    for value in values:
+        if not isinstance(value, Mapping):
+            raise ValueError(
+                f"identity field {field_name!r} must contain mappings")
+        history.append(dict(value))
+    return tuple(history)
+
+
+def _section_float_mapping(
+    record: Mapping[str, Any], field_name: str
+) -> Dict[str, float]:
+    result: Dict[str, float] = {}
+    for raw_key, raw_value in _mapping(record, field_name).items():
+        key = str(raw_key)
+        if key not in SECTION_NAMES:
+            raise ValueError(
+                f"identity field {field_name!r} contains unknown section {key!r}")
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"identity field {field_name!r} contains a non-numeric value") from exc
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(
+                f"identity field {field_name!r} values must be between 0 and 1")
+        result[key] = value
+    return result
+
+
+def _section_int_mapping(
+    record: Mapping[str, Any], field_name: str
+) -> Dict[str, int]:
+    result: Dict[str, int] = {}
+    for raw_key, raw_value in _mapping(record, field_name).items():
+        key = str(raw_key)
+        if key not in SECTION_NAMES:
+            raise ValueError(
+                f"identity field {field_name!r} contains unknown section {key!r}")
+        if isinstance(raw_value, bool):
+            raise ValueError(
+                f"identity field {field_name!r} contains a boolean count")
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"identity field {field_name!r} contains a non-integer value") from exc
+        if value < 0 or value != raw_value:
+            raise ValueError(
+                f"identity field {field_name!r} counts must be non-negative integers")
+        result[key] = value
+    return result
+
+
+def _non_negative_int(record: Mapping[str, Any], field_name: str) -> int:
+    raw_value = record.get(field_name, 0)
+    if isinstance(raw_value, bool):
+        raise ValueError(f"identity field {field_name!r} cannot be boolean")
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"identity field {field_name!r} must be an integer") from exc
+    if value < 0 or value != raw_value:
+        raise ValueError(
+            f"identity field {field_name!r} must be a non-negative integer")
+    return value
+
+
 def from_record(record: Dict[str, Any]) -> AgentIdentityProfile:
-    """Rebuild a profile from ``to_record()`` output."""
+    """Rebuild a profile from untrusted JSON with strict schema/type checks."""
+    if not isinstance(record, Mapping):
+        raise ValueError("identity record must be a mapping")
+    extras = set(record) - _PROFILE_FIELDS
+    if extras:
+        raise ValueError(
+            f"identity record contains unknown fields: {sorted(extras)}")
+
     agent_id = str(record.get("agent_id", "")).strip()
     if not agent_id:
         raise ValueError("identity record requires a non-empty agent_id")
+    identity_version = str(record.get("identity_version", "v0.1")).strip()
+    promotion_status = str(record.get("promotion_status", "base_agent")).strip()
+    if not identity_version or not promotion_status:
+        raise ValueError("identity version and promotion status must be non-empty")
+
+    role_strengths = _section_float_mapping(record, "role_strengths")
+    section_wins = _section_int_mapping(record, "section_wins")
+    section_opportunities = _section_int_mapping(record, "section_opportunities")
+    for section, wins in section_wins.items():
+        if wins > section_opportunities.get(section, 0):
+            raise ValueError(
+                f"identity section wins exceed opportunities for {section!r}")
+    for section, rate in role_strengths.items():
+        opportunities = section_opportunities.get(section, 0)
+        wins = section_wins.get(section, 0)
+        expected = round(wins / opportunities, 4) if opportunities else 0.0
+        if abs(rate - expected) > 0.0001:
+            raise ValueError(
+                f"identity role strength for {section!r} does not match counts")
+
+    sessions_analyzed = _non_negative_int(record, "sessions_analyzed")
+    ratified_sessions = _non_negative_int(record, "ratified_sessions")
+    if ratified_sessions > sessions_analyzed:
+        raise ValueError("ratified_sessions cannot exceed sessions_analyzed")
+
+    next_gate = record.get("next_gate")
+    if next_gate is not None and not isinstance(next_gate, str):
+        raise ValueError("identity next_gate must be text or null")
+
     return AgentIdentityProfile(
         agent_id=agent_id,
-        identity_version=str(record.get("identity_version", "v0.1")),
-        promotion_status=str(record.get("promotion_status", "base_agent")),
-        role_strengths={str(k): float(v)
-                        for k, v in (record.get("role_strengths") or {}).items()},
-        section_wins={str(k): int(v)
-                      for k, v in (record.get("section_wins") or {}).items()},
-        section_opportunities={str(k): int(v)
-                               for k, v in (record.get("section_opportunities")
-                                            or {}).items()},
-        sessions_analyzed=int(record.get("sessions_analyzed", 0)),
-        ratified_sessions=int(record.get("ratified_sessions", 0)),
-        known_failures=tuple(record.get("known_failures") or ()),
-        stable_lessons=tuple(record.get("stable_lessons") or ()),
-        soul_principles=tuple(record.get("soul_principles") or ()),
-        next_gate=record.get("next_gate"),
-        version_history=tuple(dict(e) for e in (record.get("version_history")
-                                                 or ())),
-        revision_history=tuple(dict(e) for e in (record.get("revision_history")
-                                                  or ())),
+        identity_version=identity_version,
+        promotion_status=promotion_status,
+        role_strengths=role_strengths,
+        section_wins=section_wins,
+        section_opportunities=section_opportunities,
+        sessions_analyzed=sessions_analyzed,
+        ratified_sessions=ratified_sessions,
+        known_failures=_string_tuple(record, "known_failures"),
+        stable_lessons=_string_tuple(record, "stable_lessons"),
+        soul_principles=_string_tuple(record, "soul_principles"),
+        next_gate=next_gate,
+        version_history=_history_tuple(record, "version_history"),
+        revision_history=_history_tuple(record, "revision_history"),
     )
 
 
