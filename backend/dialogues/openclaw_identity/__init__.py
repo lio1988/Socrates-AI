@@ -69,11 +69,11 @@ from .self_review import (
 )
 from .revision_registry import (
     REGISTRY_SCHEMA_VERSION,
-    SelfRevisionRegistry,
+    SelfRevisionRegistry as BaseSelfRevisionRegistry,
 )
 from .revision_registry_governed import (
     MAX_ACTIVE_PROPOSALS_PER_AGENT,
-    SelfRevisionRegistry as GovernedSelfRevisionRegistry,
+    SelfRevisionRegistry,
 )
 from .revision_transaction_governed import SelfRevisionTransactionCoordinator
 from .governed_system_transactional import GovernedSelfRevisionSystem
@@ -93,7 +93,7 @@ from .revision_evidence import (
     RevisionEvidenceRegistry,
     evidence_from_record,
 )
-from .revision_evidence_builders import (
+from .revision_evidence_builders_hardened import (
     AGENT_LESSON_AB_REPORT_VERSION,
     IDENTITY_FAILURE_REPORT_VERSION,
     IDENTITY_RESOLUTION_REPORT_VERSION,
@@ -103,6 +103,7 @@ from .revision_evidence_builders import (
     build_identity_resolution_evidence,
     build_soul_attestation_evidence,
 )
+from .revision_transaction import TRANSACTION_SCHEMA_VERSION
 from .soul_card import CARD_HEADER, GUIDING_SENTENCE, render_soul_card
 
 __all__ = [
@@ -148,9 +149,9 @@ __all__ = [
     "profile_fingerprint",
     "render_self_review_summary",
     "REGISTRY_SCHEMA_VERSION",
+    "BaseSelfRevisionRegistry",
     "SelfRevisionRegistry",
     "MAX_ACTIVE_PROPOSALS_PER_AGENT",
-    "GovernedSelfRevisionRegistry",
     "SelfRevisionTransactionCoordinator",
     "GovernedSelfRevisionSystem",
     "RevisionConsistencyReport",
@@ -171,6 +172,7 @@ __all__ = [
     "build_identity_failure_evidence",
     "build_identity_resolution_evidence",
     "build_soul_attestation_evidence",
+    "TRANSACTION_SCHEMA_VERSION",
     "CARD_HEADER",
     "GUIDING_SENTENCE",
     "render_soul_card",
