@@ -12,10 +12,11 @@ Usage:
     python scripts/openclaw_self_review.py local_apprentice_001
 
 Environment:
-    CED_IDENTITY_DIR               identity profiles
-    CED_SELF_REVISION_DIR          proposal lifecycle registry
-    CED_SELF_REVISION_EVIDENCE     trusted evidence manifest JSON
-    CED_SELF_REVIEW_DIR            output artifacts
+    CED_IDENTITY_DIR                    identity profiles
+    CED_SELF_REVISION_DIR               proposal lifecycle registry
+    CED_SELF_REVISION_EVIDENCE_DIR      trusted immutable evidence registry
+    CED_SELF_REVISION_EVIDENCE          legacy manifest JSON (optional fallback)
+    CED_SELF_REVIEW_DIR                 output artifacts
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ if str(_ROOT) not in sys.path:
 
 from backend.dialogues.openclaw_identity import (                       # noqa: E402
     IdentityRegistry,
+    RevisionEvidenceRegistry,
     SelfRevisionRegistry,
     build_self_review_snapshot,
     build_self_revision_instruction,
@@ -49,7 +51,7 @@ _PENDING_STATUSES = frozenset({
 })
 
 
-def _load_manifest(path: pathlib.Path):
+def _load_legacy_manifest(path: pathlib.Path):
     if not path.exists():
         return {}
     try:
@@ -59,6 +61,23 @@ def _load_manifest(path: pathlib.Path):
     if not isinstance(value, dict):
         raise ValueError("self-revision evidence manifest must be a JSON object")
     return value
+
+
+def _load_evidence(
+    evidence_dir: pathlib.Path,
+    legacy_path: pathlib.Path,
+    agent_id: str,
+):
+    """Prefer immutable registry records; merge legacy JSON only without conflict."""
+    manifest = RevisionEvidenceRegistry(evidence_dir).manifest(agent_id)
+    legacy = _load_legacy_manifest(legacy_path)
+    for reference, record in legacy.items():
+        if reference in manifest and manifest[reference] != record:
+            raise ValueError(
+                f"evidence reference {reference!r} conflicts between registry "
+                "and legacy manifest")
+        manifest.setdefault(reference, record)
+    return manifest
 
 
 def _atomic_write(path: pathlib.Path, text: str) -> pathlib.Path:
@@ -102,7 +121,11 @@ def main(argv=None, env=None) -> int:
         "CED_SELF_REVISION_DIR",
         str(_ROOT / "runs" / "openclaw_self_revisions"),
     ))
-    evidence_path = pathlib.Path(env.get(
+    evidence_dir = pathlib.Path(env.get(
+        "CED_SELF_REVISION_EVIDENCE_DIR",
+        str(_ROOT / "runs" / "openclaw_self_revision_evidence"),
+    ))
+    legacy_evidence_path = pathlib.Path(env.get(
         "CED_SELF_REVISION_EVIDENCE",
         str(_ROOT / "runs" / "openclaw_self_revision_evidence.json"),
     ))
@@ -114,7 +137,8 @@ def main(argv=None, env=None) -> int:
         if profile is None:
             print(f"No identity profile found for {agent_id!r} in {identity_dir}")
             return 1
-        manifest = _load_manifest(evidence_path)
+        manifest = _load_evidence(
+            evidence_dir, legacy_evidence_path, agent_id)
         lifecycle_records = SelfRevisionRegistry(revision_dir).all_records(agent_id)
         pending = tuple(
             proposal_from_record(
