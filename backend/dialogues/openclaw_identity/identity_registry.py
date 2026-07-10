@@ -4,7 +4,9 @@ OpenClaw Agent Identity — persistent, auditable identity profiles.
 One human-readable JSON file is stored per agent. Persistence grants no runtime
 authority, but earned history is protected mechanically:
   - an existing version_history must remain an exact prefix of the new history
-  - appended entries must form valid version/status transitions
+  - appended version transitions must match a canonical VersionGate
+  - appended stage transitions must advance exactly one canonical ladder rung
+  - every transition needs a named, non-self approver
   - earned version or ladder status cannot change without corresponding history
   - writes are atomic (temp file + fsync + os.replace)
 
@@ -33,11 +35,72 @@ def _history_prefix(
     return len(new) >= len(old) and tuple(new[:len(old)]) == tuple(old)
 
 
+def _validate_approver(entry: Dict, agent_id: str) -> None:
+    approver = str(entry.get("approved_by", "")).strip()
+    if not approver:
+        raise ValueError("identity-history transition requires a named approver")
+    if approver == agent_id:
+        raise ValueError("an agent cannot approve its own identity transition")
+
+
+def _validate_version_transition(
+    entry: Dict,
+    current_version: str,
+    agent_id: str,
+) -> str:
+    from .promotion_policy import VERSION_GATES
+
+    if not {"from_version", "to_version", "gate_id"}.issubset(entry):
+        raise ValueError(
+            "version transition requires from_version, to_version, and gate_id")
+    from_version = str(entry["from_version"])
+    to_version = str(entry["to_version"])
+    gate_id = str(entry["gate_id"])
+    if from_version != current_version:
+        raise ValueError(
+            "version-history chain does not start at the stored version")
+
+    gate = next(
+        (candidate for candidate in VERSION_GATES
+         if candidate.gate_id == gate_id),
+        None,
+    )
+    if gate is None:
+        raise ValueError(f"unknown canonical identity gate {gate_id!r}")
+    if gate.from_version != from_version or gate.to_version != to_version:
+        raise ValueError(
+            "version-history transition does not match its canonical gate")
+    _validate_approver(entry, agent_id)
+    return to_version
+
+
+def _validate_stage_transition(
+    entry: Dict,
+    current_status: str,
+    agent_id: str,
+) -> str:
+    from .promotion_policy import STAGE_NAMES
+
+    if not {"from_status", "to_status"}.issubset(entry):
+        raise ValueError("stage transition requires from_status and to_status")
+    from_status = str(entry["from_status"])
+    to_status = str(entry["to_status"])
+    if from_status != current_status:
+        raise ValueError(
+            "stage-history chain does not start at the stored status")
+    if from_status not in STAGE_NAMES or to_status not in STAGE_NAMES:
+        raise ValueError("stage transition references an unknown ladder status")
+    if STAGE_NAMES.index(to_status) != STAGE_NAMES.index(from_status) + 1:
+        raise ValueError("stage transition must advance exactly one ladder rung")
+    _validate_approver(entry, agent_id)
+    return to_status
+
+
 def _validate_appended_history(
     existing: AgentIdentityProfile,
     profile: AgentIdentityProfile,
 ) -> None:
-    """Refuse history rewrite/truncation and unrecorded earned-state changes."""
+    """Refuse history rewrite, non-canonical jumps, and unrecorded state changes."""
     old_history = tuple(existing.version_history)
     new_history = tuple(profile.version_history)
     if not _history_prefix(old_history, new_history):
@@ -54,21 +117,12 @@ def _validate_appended_history(
             raise ValueError(
                 "each appended identity-history entry must describe exactly one "
                 "version or stage transition")
-
         if has_version:
-            if not {"from_version", "to_version"}.issubset(entry):
-                raise ValueError("version transition requires from_version/to_version")
-            if str(entry["from_version"]) != current_version:
-                raise ValueError(
-                    "version-history chain does not start at the stored version")
-            current_version = str(entry["to_version"])
+            current_version = _validate_version_transition(
+                entry, current_version, profile.agent_id)
         else:
-            if not {"from_status", "to_status"}.issubset(entry):
-                raise ValueError("stage transition requires from_status/to_status")
-            if str(entry["from_status"]) != current_status:
-                raise ValueError(
-                    "stage-history chain does not start at the stored status")
-            current_status = str(entry["to_status"])
+            current_status = _validate_stage_transition(
+                entry, current_status, profile.agent_id)
 
     if current_version != profile.identity_version:
         raise ValueError(
