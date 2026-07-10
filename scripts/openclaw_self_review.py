@@ -63,18 +63,27 @@ def _load_legacy_manifest(path: pathlib.Path):
     return value
 
 
+def _sequence_core(value, *, field):
+    raw = value or ()
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple, set)):
+        raise ValueError(f"evidence {field} must be a sequence, not text")
+    return tuple(sorted(str(item).strip() for item in raw))
+
+
 def _evidence_core(record):
     if not isinstance(record, dict):
         raise ValueError("evidence entries must be JSON objects")
-    raw_supports = record.get("supports") or ()
-    if isinstance(raw_supports, (str, bytes)):
-        raise ValueError("evidence supports must be a sequence, not text")
     return {
         "agent_id": str(record.get("agent_id", "")).strip(),
         "verified": record.get("verified") is True,
         "source": str(record.get("source", "")).strip(),
-        "supports": tuple(sorted(str(value).strip() for value in raw_supports)),
+        "supports": _sequence_core(record.get("supports"), field="supports"),
         "value": str(record.get("value", "")).strip(),
+        "verified_by": str(record.get("verified_by", "")).strip(),
+        "verification_reference": str(
+            record.get("verification_reference", "")).strip(),
+        "observed_on": str(record.get("observed_on", "")).strip(),
+        "outcomes": _sequence_core(record.get("outcomes"), field="outcomes"),
     }
 
 
@@ -83,7 +92,7 @@ def _load_evidence(
     legacy_path: pathlib.Path,
     agent_id: str,
 ):
-    """Prefer immutable registry records; merge legacy JSON only without conflict."""
+    """Prefer immutable records; merge legacy JSON only on full semantic match."""
     manifest = RevisionEvidenceRegistry(evidence_dir).manifest(agent_id)
     legacy = _load_legacy_manifest(legacy_path)
     for reference, record in legacy.items():
