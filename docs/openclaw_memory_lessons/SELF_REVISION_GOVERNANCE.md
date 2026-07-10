@@ -1,67 +1,72 @@
 # Governed Agent Self-Revision
 
-**Core runtime:** `backend/dialogues/openclaw_identity/self_revision.py`  
-**Bounded self-review:** `backend/dialogues/openclaw_identity/self_review.py`  
-**Lifecycle registry:** `backend/dialogues/openclaw_identity/revision_registry.py`  
-**Rollback helper:** `backend/dialogues/openclaw_identity/revision_reversal.py`  
-**Identity storage:** `backend/dialogues/openclaw_identity/identity_registry.py`  
-**Operator command:** `scripts/openclaw_self_review.py`
-
 ## Purpose
 
-This layer allows an agent to propose evidence-backed changes to its own
-**descriptive** Memory, Identity, and Soul Card without giving the agent the
-ability to activate, approve, conceal, or silently rewrite those changes.
+This layer lets an agent inspect a bounded, evidence-backed view of its own
+performance and propose changes to its descriptive **Memory**, **Identity**, and
+**Soul Card**.
 
-"Soul" remains non-mystical and non-authoritative. It is an auditable profile:
-strengths, known failures, stable lessons, approved principles, versions, and
-append-only history.
+It does **not** let an agent:
 
-```text
-The agent observes itself through a bounded snapshot.
-The agent proposes.
-Trusted instruments verify.
-A named non-self approver decides.
-The registries record the result append-only.
-Post-change evidence confirms or reverses it.
-CED authority does not change.
-```
-
-## Complete lifecycle
+- approve or verify itself;
+- edit its identity file directly;
+- manufacture evidence;
+- alter prompts automatically;
+- acquire tools, council weight, permissions, or runtime authority;
+- erase old history.
 
 ```text
-system-owned identity + verified evidence
-        ↓ bounded self-review snapshot
-explicit self-review task
-        ↓ exactly one strict JSON proposal
-SelfRevisionProposal
-        ↓ independent evidence validation
-RevisionEvaluation
-        ↓ named non-self decision
-approved / rejected
-        ↓ approved profile revision
-probationary lifecycle state
-        ↓ post-change evidence
-confirmed OR new inverse rollback proposal
+agent observes bounded evidence
+        ↓
+agent proposes one strict JSON revision
+        ↓
+trusted non-self instruments verify evidence
+        ↓
+independent evaluator recomputes the result
+        ↓
+separate named non-self approver decides
+        ↓
+recoverable append-only application transaction
+        ↓
+probationary post-change evidence
+        ↓
+confirmed OR governed inverse proposal
 ```
 
-A proposal never mutates a profile by itself. A passing evaluation never
-activates a change by itself. The apply path independently re-runs evidence
-checks, so a forged `passed=true` is ineffective.
+“​​Soul” remains non-mystical: it is a versioned record of approved descriptive
+principles, known failures, stable lessons, earned versions, and public evidence.
+It never grants authority.
 
-## Allowed revision targets
+## Runtime modules
 
-| Target | Allowed action | Effect after approval |
+| Responsibility | Module |
+|---|---|
+| Strict proposal and evidence evaluation | `openclaw_identity/self_revision.py` |
+| Bounded self-review snapshot | `openclaw_identity/self_review.py` |
+| Strict identity profile | `openclaw_identity/identity_profile.py` |
+| Full-history identity persistence | `openclaw_identity/identity_registry.py` |
+| Immutable verified evidence | `openclaw_identity/revision_evidence.py` |
+| Instrument-specific evidence builders | `openclaw_identity/revision_evidence_builders.py` |
+| Proposal lifecycle | `openclaw_identity/revision_registry.py` |
+| Canonical inverse proposal | `openclaw_identity/revision_reversal.py` |
+| Recoverable application journal | `openclaw_identity/revision_transaction.py` |
+| Terminal-aware journal verification | `openclaw_identity/revision_transaction_recovery.py` |
+| Self-review artifact command | `scripts/openclaw_self_review.py` |
+| Interrupted transaction recovery | `scripts/openclaw_recover_revision.py` |
+| Joined operator view | `scripts/openclaw_status.py` |
+
+## Allowed descriptive changes
+
+| Target | Action | Meaning |
 |---|---|---|
-| `identity` | `add_known_failure` | Records an evidence-backed weakness |
-| `identity` | `resolve_known_failure` | Removes a previously recorded weakness |
-| `memory` | `link_stable_lesson` | Links an already stable/verified lesson |
-| `memory` | `unlink_stable_lesson` | Removes a linked lesson from this profile |
-| `soul` | `add_principle` | Adds an approved descriptive principle |
-| `soul` | `retire_principle` | Retires a previously approved principle |
+| `identity` | `add_known_failure` | Record an attributed repeated weakness |
+| `identity` | `resolve_known_failure` | Resolve it after matched recovery evidence |
+| `memory` | `link_stable_lesson` | Link an already stable verified lesson |
+| `memory` | `unlink_stable_lesson` | Remove a lesson shown harmful for this agent |
+| `soul` | `add_principle` | Add a constitutionally reviewed commitment |
+| `soul` | `retire_principle` | Retire it after explicit review |
 
-These fields are descriptive. They do not add tools, permissions, provider
-access, council voting weight, role authority, or automatic prompt mutation.
+These actions change descriptive profile fields only.
 
 ## Proposal contract
 
@@ -73,240 +78,325 @@ access, council voting weight, role authority, or automatic prompt mutation.
   "target": "identity",
   "action": "add_known_failure",
   "value": "rushes exact-output tasks",
-  "reason": "This pattern repeated in the cited sessions.",
-  "evidence_references": [
-    "trace/session-1",
-    "report/ab-1"
-  ],
-  "risk": "The evidence window may be too narrow.",
+  "reason": "The cited attributed evidence repeats across sessions.",
+  "evidence_references": ["attribution/exact-output-1"],
+  "risk": "The attribution window may be narrow.",
   "status": "proposed"
 }
 ```
 
-Mechanical rules:
+Rules:
 
-- `proposed_by` must equal `agent_id`;
-- `status` must enter as `proposed`;
-- unknown fields fail closed;
-- Memory values must be `LESSON-*` identifiers;
-- evidence references are required and deduplicated without reordering;
-- empty, oversized, control-character, and secret-shaped text is rejected.
+- exact field set; hidden or missing fields fail;
+- `proposed_by == agent_id`;
+- safe agent/proposal IDs;
+- maximum 64 evidence references;
+- Memory values must use `LESSON-*`;
+- empty, oversized, control-character, and secret-shaped text fails;
+- proposals enter only as `proposed`.
 
-## Bounded self-review snapshot
+## Trusted evidence provenance
 
-The full profile is not placed in normal task prompts. During an explicit
-self-review task, `build_self_review_snapshot` exposes only:
-
-- the reviewed agent's identity version and stage;
-- public section win/opportunity counts and derived rates;
-- its recorded failures, linked stable lessons, and approved principles;
-- verified evidence records owned by the same agent;
-- pending proposal IDs;
-- explicit no-authority boundaries.
-
-It excludes other agents, raw dialogue content, hidden scorecards, credentials,
-write capabilities, promotion controls, and CED internals.
-
-Every snapshot has two deterministic hashes:
-
-- `profile_fingerprint`: binds the review to the exact identity state;
-- `snapshot_fingerprint`: binds the proposal to the exact bounded input package.
-
-`build_self_revision_instruction` produces a proposal-only task that requires
-**one JSON object and nothing else**. It cannot activate anything.
-
-The offline operator command is:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\openclaw_self_review.py local_apprentice_001
-```
-
-It writes:
-
-```text
-runs/openclaw_self_review/local_apprentice_001.snapshot.json
-runs/openclaw_self_review/local_apprentice_001.summary.md
-runs/openclaw_self_review/local_apprentice_001.instruction.txt
-```
-
-No provider is called and no identity file is changed.
-
-## Trusted evidence manifest
-
-The proposal cites IDs. Verification reads those IDs from a system-owned
-manifest rather than trusting prose written by the agent.
+Every evidence item used for self-revision requires:
 
 ```json
 {
-  "trace/session-1": {
-    "verified": true,
-    "agent_id": "local_apprentice_001",
-    "source": "TraceCapture/session-1",
-    "supports": ["identity:add_known_failure"],
-    "value": "rushes exact-output tasks"
-  }
+  "verified": true,
+  "agent_id": "local_apprentice_001",
+  "source": "TraceAttribution/window-1",
+  "supports": ["identity:add_known_failure"],
+  "value": "rushes exact-output tasks",
+  "verified_by": "evidence-harness",
+  "verification_reference": "report/attribution-1",
+  "observed_on": "2026-07-10",
+  "outcomes": []
 }
 ```
 
-For every cited record, validation requires:
+The verifier must be named and different from the agent. Anonymous
+`verified: true` is insufficient, including through the legacy JSON path.
 
-1. the record exists;
-2. `verified` is exactly `true`;
-3. the evidence belongs to the same agent seat;
-4. the record names an auditable source;
-5. `supports` includes the exact `target:action` pair;
-6. the evidence value exactly equals the proposed value.
+Approved identity history stores:
 
-Therefore evidence that is real but unrelated cannot authorize an arbitrary
-Soul or Memory edit.
+- exact evidence references;
+- verifier identities;
+- verification references;
+- a deterministic digest of the cited evidence manifest;
+- approver identity and approval reference.
 
-For `memory:link_stable_lesson`, the lesson ID must also exist in the separate
-stable/verified lesson catalogue. An agent cannot create a lesson and activate
-it in one step.
+## Immutable evidence registry
 
-## Approval constitution
+`RevisionEvidenceRegistry` stores one atomic immutable envelope per evidence
+reference.
 
-`approve_and_apply_self_revision` requires:
+- schema: `openclaw_self_revision_evidence_v2`;
+- exact envelope and record fields;
+- record SHA-256 digest;
+- filename/reference binding;
+- named non-self verifier;
+- canonical action supports;
+- optional probation outcomes: `confirmed`, `reverted`;
+- idempotent exact re-registration;
+- conflicting duplicate reference refusal;
+- per-record exclusive lock;
+- secret-shaped data refusal.
 
-- a passing evaluation for the same proposal ID;
-- independent re-evaluation against the trusted manifest;
-- a named approver;
-- an approver different from the agent;
-- a non-empty approval reference;
-- an operation valid against the current profile state.
+A legacy evidence JSON can temporarily coexist, but duplicate references must
+match the registry in **all** relevant semantics, including verifier,
+verification reference, observed date, supports, and outcomes.
 
-Duplicate proposal IDs, duplicate additions, and removal of absent values are
-rejected.
+## Causal instrument builders
 
-## Identity persistence
+Generic session failures and whole-council A/B results cannot automatically
+become personal Identity or Memory evidence.
 
-`AgentIdentityProfile` includes:
+### Identity weakness attribution
+
+`build_identity_failure_evidence` requires:
+
+- at least two distinct sessions and source traces;
+- the same failure pattern;
+- explicit attribution to the same agent;
+- `attribution_verified=true` per observation;
+- named non-self verification.
+
+### Identity resolution
+
+`build_identity_resolution_evidence` requires:
+
+- equal matched before/after windows;
+- non-overlapping sessions;
+- repeated failures before;
+- zero failures after;
+- explicit agent and pattern identity.
+
+Resolution evidence supports both the original `add_known_failure` action and
+its inverse `resolve_known_failure`, and may prove the original probation change
+should be `reverted`.
+
+### Agent-specific Lesson A/B
+
+The normal council-wide `lesson_ab_v2` report is deliberately insufficient.
+`build_agent_lesson_ab_evidence` requires
+`openclaw_agent_lesson_ab_v1` with `treatment_scope="single_agent"`.
+
+Link evidence requires:
+
+- enough tested matched comparisons;
+- `verdict="helped"` and `helped=true`;
+- positive mean delta;
+- no ratification, unresolved, catastrophic, or configuration regression;
+- harm rate within its bound.
+
+Unlink evidence requires a concrete harmful result and supports both the
+original link and inverse unlink actions.
+
+### Soul constitutional attestation
+
+Soul principles are normative commitments, not facts inferred automatically
+from traces. `build_soul_attestation_evidence` requires:
+
+- explicit constitutional review;
+- explicit risk review;
+- cited supporting evidence references;
+- written rationale;
+- named non-self reviewer and review artifact.
+
+## Bounded self-review snapshot
+
+Schema: `openclaw_self_review_v4`.
+
+The snapshot contains only:
+
+- this agent’s canonical version and stage;
+- public section wins/opportunities and derived rates;
+- known failures, linked stable lessons, and approved principles;
+- verified evidence owned by this agent;
+- named verifier provenance;
+- pending proposal IDs;
+- explicit no-authority boundaries.
+
+It excludes other agents, raw dialogue content, hidden scorecards, secrets,
+provider credentials, CED internals, and write capabilities.
+
+Hard bounds:
 
 ```text
-soul_principles
-revision_history
+verified evidence      ≤ 64
+pending proposals      ≤ 32
+known failures         ≤ 32
+stable lessons         ≤ 64
+Soul principles        ≤ 32
+rendered instruction   ≤ 65,536 UTF-8 bytes
 ```
 
-`IdentityRegistry` protects these alongside version history:
+## Two identity fingerprints
 
-- existing revision history must remain an exact prefix;
-- proposal IDs cannot be replayed;
-- every appended entry is structurally revalidated;
-- every entry must have a non-self approver;
-- stored actions are replayed from the previous profile state;
-- replay must exactly equal `known_failures`, `stable_lessons`, and
-  `soul_principles` on the new profile;
-- direct mutation without matching history is refused;
-- writes remain atomic (`temp → fsync → os.replace`).
+The architecture separates:
 
-A baseline profile must be saved before self-revision history is appended. This
-separates initial curated bootstrap data from later agent-authored evolution.
+1. **Governed fingerprint** (`profile_fingerprint`) — Identity version/stage,
+   known failures, stable lessons, Soul principles, gates, and append-only
+   histories.
+2. **Observational fingerprint** — all governed state plus refreshable role
+   rates, win counts, opportunities, and session totals.
 
-## Proposal lifecycle registry
+The snapshot hash commits to both. Therefore the original self-review package is
+exactly auditable, while new session metrics can refresh during probation
+without falsely appearing as an unauthorized governed identity change.
 
-`SelfRevisionRegistry` stores one immutable JSON record per proposal. Its events
-are append-only and hash-chained:
+## Proposal lifecycle
+
+Schema: `openclaw_self_revision_registry_v3`.
 
 ```text
 submitted
   → evaluated_passed | evaluated_failed
   → approved | rejected
-  → probationary (profile application recorded)
+  → probationary
   → confirmed | reverted
 ```
 
-Rules:
+The first hashed event commits to:
 
-- submission actor must be the reviewed agent;
-- evaluation, decision, application, and outcome actors must be named non-self;
-- a failing evaluation cannot be approved;
-- application requires an actual matching entry in `profile.revision_history`;
-- application stores the resulting profile fingerprint and revision index;
-- terminal records cannot receive more events;
-- corrupt JSON, invalid transitions, broken hashes, or rewritten event content
-  raise visibly;
-- writes are atomic.
+- proposal digest;
+- full snapshot fingerprint;
+- governed profile fingerprint;
+- snapshot evidence-reference digest.
 
-The hash chain is an audit-integrity aid, not cryptographic authentication. A
-future remote transparency log or signature layer may anchor it externally.
+Further rules:
 
-## Probation and confirmation
+- evaluation is recomputed internally;
+- evaluator and approver must be different named actors;
+- current governed state and evidence digest must remain unchanged;
+- application recomputes the exact expected updated profile;
+- outcome evidence must support the exact action, value, and requested outcome;
+- outcome verifier and final outcome reviewer must be different actors;
+- `reverted` requires an existing canonical inverse proposal bound to the
+  current governed state;
+- events have exact schemas, bounded count, hash chain, and exclusive lock.
 
-An applied revision is recorded as `probationary` in the lifecycle registry.
-This means:
+## Full-history identity validation
 
-- the descriptive profile contains the approved change;
-- the change has not yet earned a positive post-change outcome;
-- new evidence must show whether it helped or caused regression.
+Every `IdentityRegistry` load proves the **entire** stored history, not only new
+append operations.
 
-A named non-self reviewer records either:
+### Version and stage history
 
-- `confirmed`, with a post-change evidence reference; or
-- `reverted`, linked to a **new governed inverse proposal**.
+- canonical version set and stage ladder only;
+- canonical next gate;
+- exact one-step stage movement;
+- canonical promotion gate, description, evidence, and reasons;
+- named non-self approver;
+- reverse validation from current state to bootstrap state.
 
-This distinction prevents "approved once" from being treated as "proven
-forever".
+### Self-revision history
 
-## Rollback without history deletion
+- exact entry fields;
+- unique proposal IDs;
+- complete verifier provenance and evidence digest;
+- non-self verifier and approver;
+- reverse reconstruction of the previous field state;
+- forward replay must recreate the exact final governed state.
 
-`build_reversal_proposal` never edits old history. It creates a new proposal with
-the canonical inverse action:
+JSON that remains syntactically valid but has rewritten old evidence, hidden
+fields, altered verifiers, missing effects, or non-canonical transitions is
+reported as corrupt.
+
+## Recoverable application transaction
+
+Identity save and lifecycle application are separate atomic files. A crash
+between them is handled by a write-ahead journal:
 
 ```text
-add_known_failure      ↔ resolve_known_failure
-link_stable_lesson     ↔ unlink_stable_lesson
-add_principle          ↔ retire_principle
+prepared
+  → identity_saved
+  → lifecycle_recorded
+  → committed
 ```
 
-The reversal:
+Schema: `openclaw_self_revision_transaction_v1`.
 
-- uses a new proposal ID;
-- cites new evidence;
-- is authored by the same agent;
-- passes the normal validation and approval path;
-- is refused if the original effect is no longer current.
+The journal commits to:
 
-Thus rollback is another auditable evolution step, not erasure.
+- exact proposal;
+- exact cited evidence records;
+- stable lesson catalogue used for evaluation;
+- previous and updated profile records;
+- previous and updated governed fingerprints;
+- application actor/reference/date.
 
-## Soul Card
+Recovery handles these deterministic cases:
 
-The Soul Card displays approved principles and the number of recorded
-self-revisions. It remains an operator artifact and grants no authority.
+- neither side applied yet;
+- Identity saved, lifecycle still approved;
+- lifecycle application recorded before journal advancement;
+- observational metrics refreshed after Identity save.
 
-```text
-Approved soul principles:
-  - State uncertainty before asserting a final verdict.
-Self-revisions recorded: 1
+Any governed state conflicting with both transaction endpoints fails closed.
+
+A committed application journal remains valid after later probation outcomes by
+checking the unique original `applied` event hash rather than assuming it is
+still the final lifecycle event.
+
+Operator recovery:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_recover_revision.py `
+  local_apprentice_001 REV-2026-0001
 ```
 
-## Runtime boundaries
+This command completes an already prepared transaction. It creates no new
+proposal, evidence, approval, or authority.
 
-This phase deliberately does **not**:
+## Rollback without erasure
 
-- import identity into the CED core;
-- let an agent write its profile directly;
-- inject the full Soul Card into ordinary model context;
-- auto-approve or auto-activate any proposal;
-- turn a Soul principle into a prompt patch automatically;
-- promote an agent, swap a council seat, or change role rotation;
-- treat memory or identity as factual proof;
-- call providers or consume API keys.
-
-## Next safe integration phase
-
-The next phase may run the explicit instruction through a gated local provider
-and parse its single JSON response using `proposal_from_record`. That integration
-must still:
-
-- run outside ordinary council deliberation;
-- use only the bounded snapshot;
-- persist the proposal before evaluation;
-- prevent the proposing agent from evaluating or approving it;
-- require real instrument-produced manifest entries;
-- keep all activated changes descriptive and reversible.
+Rollback creates a **new** inverse proposal:
 
 ```text
-self-observation may generate a proposal;
-only independently verified evidence plus external approval may revise identity;
-identity revision alone never grants runtime power.
+add_known_failure  ↔ resolve_known_failure
+link_stable_lesson ↔ unlink_stable_lesson
+add_principle      ↔ retire_principle
+```
+
+The original history remains. Reversal requires new evidence, a new proposal ID,
+normal evaluation, independent approval, and the same recoverable application
+path.
+
+## Operator commands
+
+Create bounded review artifacts:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_self_review.py `
+  local_apprentice_001
+```
+
+View all evidence, lifecycle, and transaction states:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_status.py
+```
+
+`openclaw_status.py` prioritizes incomplete transaction recovery before new
+review, experiments, or evidence collection.
+
+## Explicit boundaries
+
+This phase still does not:
+
+- import Identity into the CED core;
+- inject full Soul Cards into ordinary dialogue prompts;
+- call a provider from the artifact/recovery commands;
+- auto-generate trusted personal evidence from generic traces;
+- auto-approve or auto-activate changes;
+- change council seats, runtime roles, permissions, tools, or voting weight;
+- treat hash chains as actor authentication;
+- replace future signed evidence or a remote transparency log.
+
+```text
+The agent may observe and propose.
+Trusted instruments may verify.
+Independent governance may approve.
+Recoverable registries may apply.
+None of these alone grants authority.
 ```
