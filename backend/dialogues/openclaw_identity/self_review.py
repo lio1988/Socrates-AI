@@ -17,12 +17,18 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
 from .identity_profile import AgentIdentityProfile
 from .self_revision import REVISION_TARGET_ACTIONS, SelfRevisionProposal
 
-SNAPSHOT_VERSION = "openclaw_self_review_v1"
+SNAPSHOT_VERSION = "openclaw_self_review_v2"
+MAX_REVIEW_EVIDENCE = 64
+MAX_PENDING_PROPOSALS = 32
+MAX_KNOWN_FAILURES = 32
+MAX_STABLE_LESSONS = 64
+MAX_SOUL_PRINCIPLES = 32
+MAX_INSTRUCTION_BYTES = 65536
 
 _SECRET_PATTERNS = (
     re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
@@ -56,6 +62,17 @@ def _safe_text(value: Any, *, field: str, maximum: int = 1000) -> str:
             raise ValueError(
                 f"{field} contains secret-shaped data matching {pattern.pattern!r}")
     return text
+
+
+def _require_bounded_count(
+    values: Sequence[Any],
+    *,
+    field: str,
+    maximum: int,
+) -> None:
+    if len(values) > maximum:
+        raise ValueError(
+            f"{field} contains {len(values)} entries; maximum is {maximum}")
 
 
 def _canonical_digest(payload: Mapping[str, Any]) -> str:
@@ -195,6 +212,10 @@ def _eligible_evidence(
             supports=supports,
             value=value,
         ))
+        if len(evidence_rows) > MAX_REVIEW_EVIDENCE:
+            raise ValueError(
+                "self-review evidence exceeds the bounded snapshot limit of "
+                f"{MAX_REVIEW_EVIDENCE}")
     return tuple(evidence_rows)
 
 
@@ -205,6 +226,24 @@ def build_self_review_snapshot(
     pending_proposals: Sequence[SelfRevisionProposal] = (),
 ) -> SelfReviewSnapshot:
     """Create a safe snapshot containing only this agent's reviewable evidence."""
+    _require_bounded_count(
+        profile.known_failures,
+        field="known_failures",
+        maximum=MAX_KNOWN_FAILURES,
+    )
+    _require_bounded_count(
+        profile.stable_lessons,
+        field="stable_lessons",
+        maximum=MAX_STABLE_LESSONS,
+    )
+    _require_bounded_count(
+        profile.soul_principles,
+        field="soul_principles",
+        maximum=MAX_SOUL_PRINCIPLES,
+    )
+    if isinstance(pending_proposals, (str, bytes)):
+        raise ValueError("pending_proposals must be a sequence, not text")
+
     pending_ids = []
     seen = set()
     for proposal in pending_proposals:
@@ -215,6 +254,10 @@ def build_self_review_snapshot(
         if proposal.proposal_id not in seen:
             pending_ids.append(proposal.proposal_id)
             seen.add(proposal.proposal_id)
+        if len(pending_ids) > MAX_PENDING_PROPOSALS:
+            raise ValueError(
+                "pending self-revision proposals exceed the bounded snapshot "
+                f"limit of {MAX_PENDING_PROPOSALS}")
 
     return SelfReviewSnapshot(
         agent_id=_safe_text(profile.agent_id, field="agent_id", maximum=128),
@@ -259,7 +302,7 @@ def build_self_revision_instruction(snapshot: SelfReviewSnapshot) -> str:
         "risk": "how this self-change could be wrong or harmful",
         "status": "proposed",
     }
-    return "\n".join([
+    instruction = "\n".join([
         "SELF-REVIEW TASK (proposal only; no authority)",
         "Return exactly one JSON object and nothing else.",
         "You may propose at most one change to your own descriptive identity.",
@@ -274,6 +317,12 @@ def build_self_revision_instruction(snapshot: SelfReviewSnapshot) -> str:
         json.dumps(
             snapshot.to_record(), ensure_ascii=False, sort_keys=True, indent=2),
     ])
+    size = len(instruction.encode("utf-8"))
+    if size > MAX_INSTRUCTION_BYTES:
+        raise ValueError(
+            f"self-review instruction is {size} bytes; maximum is "
+            f"{MAX_INSTRUCTION_BYTES}")
+    return instruction
 
 
 def render_self_review_summary(snapshot: SelfReviewSnapshot) -> str:
