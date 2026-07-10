@@ -1,4 +1,4 @@
-"""End-to-end tests for strict rollback completion and registry reconciliation."""
+"""End-to-end tests for applied rollback and cross-registry reconciliation."""
 
 import dataclasses
 
@@ -6,8 +6,8 @@ import pytest
 
 from backend.dialogues.openclaw_identity import (
     AgentIdentityProfile,
+    GovernedSelfRevisionRegistry,
     SelfRevisionProposal,
-    StrictSelfRevisionRegistry,
     approve_and_apply_self_revision,
     assert_revision_state_consistent,
     build_reversal_proposal,
@@ -15,14 +15,13 @@ from backend.dialogues.openclaw_identity import (
     reconcile_revision_state,
 )
 
-SelfRevisionRegistry = StrictSelfRevisionRegistry
+SelfRevisionRegistry = GovernedSelfRevisionRegistry
 
 AGENT = "agent_alpha"
 VALUE = "rushes exact-output tasks"
 ORIGINAL_REF = "trace/original"
 REVERSAL_REF = "trace/reversal"
 ORIGINAL_OUTCOME_REF = "outcome/original"
-REVERSAL_OUTCOME_REF = "outcome/reversal"
 STABLE_IDS = ("LESSON-0001",)
 
 
@@ -139,7 +138,7 @@ def _prepare_original(registry):
     return profile, original, manifest, applied
 
 
-def _prepare_confirmed_reversal(registry, original, applied):
+def _prepare_applied_reversal(registry, original, applied):
     reversal = build_reversal_proposal(
         applied,
         original.proposal_id,
@@ -157,22 +156,6 @@ def _prepare_confirmed_reversal(registry, original, applied):
         approver="reversal-approver",
         application_reference="identity/revision/1",
     )
-    reversal_outcome = dict(reversal_manifest)
-    reversal_outcome.update(_evidence(
-        reversal,
-        REVERSAL_OUTCOME_REF,
-        outcomes=("confirmed",),
-        verifier="post-change-verifier",
-    ))
-    registry.record_outcome(
-        AGENT,
-        reversal.proposal_id,
-        current_profile=restored,
-        outcome="confirmed",
-        evidence_manifest=reversal_outcome,
-        recorded_by="post-change-reviewer",
-        evidence_reference=REVERSAL_OUTCOME_REF,
-    )
     return reversal, restored
 
 
@@ -186,6 +169,7 @@ def test_submit_rejects_obsolete_or_forged_snapshot_version(tmp_path):
 
     with pytest.raises(ValueError, match="current governed version"):
         registry.submit(proposal, snapshot=forged)
+    assert registry.load(AGENT, proposal.proposal_id) is None
 
 
 def test_original_cannot_be_marked_reverted_for_submitted_only_inverse(tmp_path):
@@ -213,7 +197,7 @@ def test_original_cannot_be_marked_reverted_for_submitted_only_inverse(tmp_path)
         verifier="post-change-verifier",
     ))
 
-    with pytest.raises(ValueError, match="applied and confirmed"):
+    with pytest.raises(ValueError, match="must be applied"):
         registry.record_outcome(
             AGENT,
             original.proposal_id,
@@ -228,10 +212,10 @@ def test_original_cannot_be_marked_reverted_for_submitted_only_inverse(tmp_path)
         "probationary"
 
 
-def test_confirmed_inverse_must_equal_current_profile_before_reverted(tmp_path):
+def test_applied_inverse_must_equal_current_profile_before_reverted(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
     _, original, manifest, applied = _prepare_original(registry)
-    reversal, restored = _prepare_confirmed_reversal(
+    reversal, restored = _prepare_applied_reversal(
         registry, original, applied)
     outcome_manifest = dict(manifest)
     outcome_manifest.update(_evidence(
@@ -241,7 +225,7 @@ def test_confirmed_inverse_must_equal_current_profile_before_reverted(tmp_path):
         verifier="post-change-verifier",
     ))
 
-    with pytest.raises(ValueError, match="current identity profile"):
+    with pytest.raises(ValueError, match="current governed profile"):
         registry.record_outcome(
             AGENT,
             original.proposal_id,
@@ -255,10 +239,10 @@ def test_confirmed_inverse_must_equal_current_profile_before_reverted(tmp_path):
         )
 
 
-def test_full_confirmed_rollback_reconciles_both_registries(tmp_path):
+def test_applied_rollback_reconciles_both_registries(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
     _, original, manifest, applied = _prepare_original(registry)
-    reversal, restored = _prepare_confirmed_reversal(
+    reversal, restored = _prepare_applied_reversal(
         registry, original, applied)
     outcome_manifest = dict(manifest)
     outcome_manifest.update(_evidence(
@@ -281,7 +265,7 @@ def test_full_confirmed_rollback_reconciles_both_registries(tmp_path):
     records = registry.all_records(AGENT)
     by_id = {record["proposal_id"]: record for record in records}
     assert by_id[original.proposal_id]["status"] == "reverted"
-    assert by_id[reversal.proposal_id]["status"] == "confirmed"
+    assert by_id[reversal.proposal_id]["status"] == "probationary"
     assert VALUE not in restored.known_failures
 
     report = reconcile_revision_state(restored, records)
