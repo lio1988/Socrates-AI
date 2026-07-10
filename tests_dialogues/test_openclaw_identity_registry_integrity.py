@@ -1,4 +1,4 @@
-"""Integrity tests for atomic, append-only Agent Identity persistence."""
+"""Integrity tests for strict, locked, append-only Agent Identity persistence."""
 
 import dataclasses
 import json
@@ -9,6 +9,7 @@ from backend.dialogues.openclaw_identity import (
     AgentIdentityProfile,
     IdentityRegistry,
     evaluate_gate,
+    from_record,
     next_gate_for,
     record_promotion,
 )
@@ -26,7 +27,13 @@ def _profile(**updates):
 
 def test_initial_save_round_trips_and_leaves_no_temp_files(tmp_path):
     registry = IdentityRegistry(tmp_path)
-    profile = _profile(role_strengths={"blind_spots": 0.5})
+    profile = _profile(
+        role_strengths={"blind_spots": 0.5},
+        section_wins={"blind_spots": 1},
+        section_opportunities={"blind_spots": 2},
+        sessions_analyzed=2,
+        ratified_sessions=1,
+    )
 
     path = registry.save_profile(profile)
 
@@ -34,19 +41,25 @@ def test_initial_save_round_trips_and_leaves_no_temp_files(tmp_path):
     assert registry.load_profile(profile.agent_id) == profile
     assert list(tmp_path.glob("*.tmp")) == []
     assert list(tmp_path.glob(".*.tmp")) == []
+    assert list(tmp_path.glob("*.lock")) == []
 
 
 def test_descriptive_evidence_can_be_recomputed_without_history_change(tmp_path):
     registry = IdentityRegistry(tmp_path)
     original = _profile(
         role_strengths={"blind_spots": 0.5},
+        section_wins={"blind_spots": 1},
+        section_opportunities={"blind_spots": 2},
         sessions_analyzed=2,
+        ratified_sessions=1,
     )
     registry.save_profile(original)
 
     refreshed = dataclasses.replace(
         original,
         role_strengths={"blind_spots": 0.75},
+        section_wins={"blind_spots": 3},
+        section_opportunities={"blind_spots": 4},
         sessions_analyzed=4,
         ratified_sessions=3,
     )
@@ -57,9 +70,11 @@ def test_descriptive_evidence_can_be_recomputed_without_history_change(tmp_path)
 
 def test_history_truncation_or_rewrite_is_refused(tmp_path):
     registry = IdentityRegistry(tmp_path)
+    original = _profile()
+    registry.save_profile(original)
     gate = next_gate_for("v0.1")
     promoted = record_promotion(
-        _profile(),
+        original,
         evaluate_gate(gate, {"exact_output_failures_delta": -1}),
         approved_by="operator",
         approval_reference="review/1",
@@ -78,6 +93,19 @@ def test_history_truncation_or_rewrite_is_refused(tmp_path):
     )
     with pytest.raises(ValueError, match="append-only"):
         registry.save_profile(rewritten)
+
+
+def test_new_profile_cannot_arrive_with_prefabricated_history(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    gate = next_gate_for("v0.1")
+    promoted = record_promotion(
+        _profile(),
+        evaluate_gate(gate, {"exact_output_failures_delta": -1}),
+        approved_by="operator",
+        approval_reference="review/1",
+    )
+    with pytest.raises(ValueError, match="must be saved before version"):
+        registry.save_profile(promoted)
 
 
 def test_earned_version_cannot_change_without_history_transition(tmp_path):
@@ -168,6 +196,63 @@ def test_legitimate_promotion_appends_and_persists(tmp_path):
         "packet/identity-001"
 
 
+def test_strict_schema_types_counts_and_unknown_fields_are_refused(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    profile = _profile()
+    path = registry.save_profile(profile)
+    record = json.loads(path.read_text(encoding="utf-8"))
+
+    record["authority"] = "grant"
+    path.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="corrupt"):
+        registry.load_profile(profile.agent_id)
+
+    with pytest.raises(ValueError, match="must be a sequence"):
+        from_record({"agent_id": "a", "known_failures": "not-a-list"})
+    with pytest.raises(ValueError, match="wins exceed opportunities"):
+        from_record({
+            "agent_id": "a",
+            "section_wins": {"nuance": 2},
+            "section_opportunities": {"nuance": 1},
+        })
+    with pytest.raises(ValueError, match="does not match counts"):
+        from_record({
+            "agent_id": "a",
+            "role_strengths": {"nuance": 0.9},
+            "section_wins": {"nuance": 1},
+            "section_opportunities": {"nuance": 2},
+        })
+
+
+def test_secret_shaped_identity_data_is_refused_before_write(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    forged = _profile(
+        soul_principles=("Bearer abcdefgh12345678",),
+    )
+    with pytest.raises(ValueError, match="secret-shaped"):
+        registry.save_profile(forged)
+    assert list(tmp_path.glob("*.json")) == []
+
+
+def test_exclusive_lock_refuses_concurrent_save(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    profile = _profile()
+    path = tmp_path / f"{profile.agent_id}.json"
+    lock = path.with_suffix(path.suffix + ".lock")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    lock.write_text("other-process", encoding="utf-8")
+    with pytest.raises(ValueError, match="locked by another update"):
+        registry.save_profile(profile)
+
+
+def test_unsafe_or_overlong_agent_ids_are_refused(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    with pytest.raises(ValueError, match="filesystem-safe"):
+        registry.save_profile(AgentIdentityProfile(agent_id="../evil"))
+    with pytest.raises(ValueError, match="filesystem-safe"):
+        registry.save_profile(AgentIdentityProfile(agent_id="a" * 129))
+
+
 def test_corrupt_profile_is_never_silently_ignored(tmp_path):
     corrupt = tmp_path / "broken_agent.json"
     corrupt.write_text("{not valid json", encoding="utf-8")
@@ -184,6 +269,10 @@ def test_saved_json_is_human_readable_and_deterministic(tmp_path):
     profile = _profile(
         known_failures=("failure-b", "failure-a"),
         role_strengths={"nuance": 0.4, "blind_spots": 0.8},
+        section_wins={"nuance": 2, "blind_spots": 4},
+        section_opportunities={"nuance": 5, "blind_spots": 5},
+        sessions_analyzed=5,
+        ratified_sessions=4,
     )
 
     path = registry.save_profile(profile)
