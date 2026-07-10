@@ -10,8 +10,10 @@ Constitution:
   Identity is earned through verified performance.
 
 This package is SYSTEM-owned and runtime-inert: the CED core never imports it,
-profiles are never injected into agent contexts, and nothing here grants any
-agent authority. Pure, deterministic, offline.
+full profiles never enter ordinary reasoning contexts, and nothing here grants
+any agent authority. An explicit self-review task may expose only a bounded,
+agent-owned snapshot with verified evidence references and no write capability.
+Pure, deterministic, offline.
 """
 
 from .identity_profile import (
@@ -47,6 +49,25 @@ from .self_revision import (
     evaluate_self_revision,
     proposal_from_record,
 )
+from .self_review import (
+    SELF_REVIEW_BOUNDARIES,
+    SNAPSHOT_VERSION,
+    SelfReviewEvidence,
+    SelfReviewSnapshot,
+    build_self_review_snapshot,
+    build_self_revision_instruction,
+    profile_fingerprint,
+    render_self_review_summary,
+)
+from .revision_registry import (
+    REGISTRY_SCHEMA_VERSION,
+    SelfRevisionRegistry,
+)
+from .revision_reversal import (
+    INVERSE_REVISION_ACTIONS,
+    build_reversal_proposal,
+    is_canonical_reversal,
+)
 from .soul_card import CARD_HEADER, GUIDING_SENTENCE, render_soul_card
 
 __all__ = [
@@ -75,6 +96,19 @@ __all__ = [
     "approve_and_apply_self_revision",
     "evaluate_self_revision",
     "proposal_from_record",
+    "SELF_REVIEW_BOUNDARIES",
+    "SNAPSHOT_VERSION",
+    "SelfReviewEvidence",
+    "SelfReviewSnapshot",
+    "build_self_review_snapshot",
+    "build_self_revision_instruction",
+    "profile_fingerprint",
+    "render_self_review_summary",
+    "REGISTRY_SCHEMA_VERSION",
+    "SelfRevisionRegistry",
+    "INVERSE_REVISION_ACTIONS",
+    "build_reversal_proposal",
+    "is_canonical_reversal",
     "CARD_HEADER",
     "GUIDING_SENTENCE",
     "render_soul_card",
