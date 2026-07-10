@@ -67,9 +67,12 @@ from .self_review import (
     profile_fingerprint,
     render_self_review_summary,
 )
-from .revision_registry import (
-    REGISTRY_SCHEMA_VERSION,
-    SelfRevisionRegistry,
+from .revision_registry import REGISTRY_SCHEMA_VERSION
+from .strict_revision_registry import SelfRevisionRegistry
+from .revision_reconciliation import (
+    RevisionConsistencyReport,
+    assert_revision_state_consistent,
+    reconcile_revision_state,
 )
 from .revision_reversal import (
     INVERSE_REVISION_ACTIONS,
@@ -138,6 +141,9 @@ __all__ = [
     "render_self_review_summary",
     "REGISTRY_SCHEMA_VERSION",
     "SelfRevisionRegistry",
+    "RevisionConsistencyReport",
+    "assert_revision_state_consistent",
+    "reconcile_revision_state",
     "INVERSE_REVISION_ACTIONS",
     "build_reversal_proposal",
     "is_canonical_reversal",
