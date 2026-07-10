@@ -87,8 +87,9 @@ print(report['verdict'], report['mean_score_delta'])
 ```
 
 Matched-pair: same question, councils with vs without the lesson. Verdicts:
-`helped` / `harmed` / `no_effect` / `untested`. The harness reports; you
-decide.
+`helped` / `harmed` / `no_effect` / `untested`. This normal report evaluates the
+whole configured council and is **not sufficient** to revise one agent's Memory.
+The harness reports; you decide.
 
 ## Mode F — Human promotion checklist (the only step that changes status)
 
@@ -164,6 +165,39 @@ and names a review artifact. Use `--action retire_principle` for a reviewed
 retirement. Evidence still requires a separate agent proposal, evaluation,
 non-self approval, and recoverable application.
 
+## Mode G4 — Attest single-agent Lesson A/B evidence for Memory
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_lesson_ab.py local_apprentice_001 `
+  --report runs\agent_lesson_ab\report.json `
+  --action link `
+  --verified-by "Your Name" `
+  --verification-reference "review/lesson-ab-001"
+```
+
+The input must use schema `openclaw_single_agent_lesson_ab_result_v1` and
+`treatment_scope="single_agent"`. A normal council-wide `lesson_ab_v2` report is
+never accepted as personal Memory evidence.
+
+For `--action link`:
+
+- the lesson must already be curated as `stable` or `verified`;
+- the report must say `verdict="helped"`, `helped=true`;
+- mean score delta must be positive;
+- sample size must meet `min_tested`;
+- there may be no ratification, unresolved, catastrophic, configuration, or harm
+  regression beyond the configured bound.
+
+For `--action unlink`:
+
+- the lesson must already be linked in that agent's Identity profile;
+- the report must contain a concrete harmful result;
+- the resulting evidence supports both the original link and canonical unlink
+  inverse and may justify a governed rollback.
+
+Exact reruns are idempotent. A changed instrument result creates a new immutable
+evidence record. Nothing is linked or unlinked by this command.
+
 ## Mode H — Bounded self-review package (agent proposes, nothing activates)
 
 ```powershell
@@ -172,7 +206,7 @@ non-self approval, and recoverable application.
 
 Builds the snapshot/summary/instruction artifacts an agent may use to author
 one descriptive proposal. Evidence comes only from the trusted registry
-(Mode G1/G2/G3). Evaluation, named non-self approval, recoverable application,
+(Modes G1–G4). Evaluation, named non-self approval, recoverable application,
 probation, and confirmation/rollback all still follow — see
 [SELF_REVISION_GOVERNANCE.md](SELF_REVISION_GOVERNANCE.md).
 
@@ -209,6 +243,9 @@ view and the audit files above are the ground truth.
   adjacent loss→win window of the requested size.
 - **Soul refused** — confirm both review flags and cite existing evidence for
   the same agent.
+- **Lesson A/B Memory attestation refused** — use a single-agent report; for
+  link, curate the lesson to stable/verified first; for unlink, the lesson must
+  already be linked to that agent and the report must show concrete harm.
 
 ## The constitution (what no mode can do)
 
