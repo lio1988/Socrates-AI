@@ -25,6 +25,7 @@ from .lesson_loader import (
     default_lessons_path,
     load_memory_lessons,
     load_stable_lessons,
+    memory_lesson_fingerprint,
     parse_memory_lessons,
 )
 from .lesson_retriever import (
@@ -73,6 +74,7 @@ __all__ = [
     "default_lessons_path",
     "load_memory_lessons",
     "load_stable_lessons",
+    "memory_lesson_fingerprint",
     "parse_memory_lessons",
     "DEFAULT_MAX_LESSONS",
     "RetrievedLesson",
