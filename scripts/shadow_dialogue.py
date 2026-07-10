@@ -2,35 +2,33 @@
 Shadow Apprentice runner — watch a local model learn beside the council.
 
 The council answers normally (mock by default — free, deterministic). AFTER
-each final answer exists, the apprentice gets the same question plus the same
-selected memory lessons, is judged blind by the council's own seats, and is
-compared per section against the council's assembled winners. Nothing the
-apprentice does can change a final answer (Goal 11, Stage 1).
+each final answer exists, the apprentice gets the same question plus the exact
+synthesis memory lessons recorded by the council's injected-context ledger, is
+judged blind by the council's own seats, and is compared per section against
+the council's assembled winners. Nothing the apprentice does can change a
+final answer (Goal 11, Stage 1).
 
-Demo (free, mock apprentice — see the whole flow with zero setup):
+Demo:
     python scripts/shadow_dialogue.py
     python scripts/shadow_dialogue.py "your question"
 
-Real local apprentice (needs a local OpenAI-compatible server, e.g. Ollama;
-no cloud credits, in PowerShell):
+Real local apprentice:
     $env:CED_ENABLE_LOCAL_APPRENTICE = "1"
-    $env:CED_LOCAL_LLM_MODEL = "llama3.1:8b"     # any model you have pulled
-    # optional: $env:CED_LOCAL_LLM_URL = "http://localhost:11434/v1"
+    $env:CED_LOCAL_LLM_MODEL = "llama3.1:8b"
     python scripts/shadow_dialogue.py
 
-Optional switches (env-only):
-    CED_OPENCLAW_LESSONS=0    # OFF switch - stable lessons reach the
-                              # apprentice by default (same key as the council)
-    CED_SHADOW_SESSIONS=3     # how many questions in a batch run (default 3)
-    CED_SHADOW_DIR=path       # where shadow records go
-                              # (default runs/openclaw_shadow)
-    CED_IDENTITY_DIR=path     # where the identity registry lives
-                              # (default runs/openclaw_identity)
+Optional env switches:
+    CED_OPENCLAW_LESSONS=0
+    CED_SHADOW_SESSIONS=3
+    CED_SHADOW_DIR=path
+    CED_IDENTITY_DIR=path
+    CED_SHADOW_BATCH_ID=id    # deterministic test/replay id; do not reuse for
+                              # independent promotion evidence
 
-Every session appends a marked shadow record (shadow_run=true) to disk; the
-run ends with the apprentice's SOUL CARD and its progress against identity
-gate v0.3 -> v0.4 (3 verified shadow blind_spots wins). The card is
-descriptive, not authority. No key is ever printed; .env is never modified.
+Normal invocations create a fresh random batch id. The evidence collector
+ignores identical replays and rejects conflicting duplicate session ids. The
+Soul Card is rebuilt from the exact same eligible session IDs as the promotion
+gate, so operator display and gate evidence cannot diverge.
 """
 
 from __future__ import annotations
@@ -39,7 +37,9 @@ import asyncio
 import json
 import os
 import pathlib
+import re
 import sys
+import uuid
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
@@ -71,12 +71,11 @@ DEFAULT_QUESTIONS = [
     "Τι διακρίνει την πεποίθηση από την τεκμηριωμένη γνώση;",
 ]
 _W = 78
+_BATCH_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 def _resolve_apprentice(env=None, *, probe=probe_local_server):
-    """(adapter_or_None, mode, note). Modes: 'local' (gated, server probed OK),
-    'local-unavailable' (gated but the server is down -> honest stop, never a
-    silent mock fallback), 'demo' (gate off -> free deterministic mock)."""
+    """Resolve a gated real local adapter or a free deterministic demo adapter."""
     env = os.environ if env is None else env
     if env.get(LOCAL_GATE_ENV, "").strip() == "1":
         adapter, reason = resolve_local_adapter(env)
@@ -108,35 +107,62 @@ def _questions(argv, env):
     if len(argv) > 1:
         return [argv[1]]
     try:
-        n = max(1, int(env.get("CED_SHADOW_SESSIONS", "3")))
+        count = max(1, int(env.get("CED_SHADOW_SESSIONS", "3")))
     except ValueError:
-        n = 3
-    return (DEFAULT_QUESTIONS * ((n // len(DEFAULT_QUESTIONS)) + 1))[:n]
+        count = 3
+    return (DEFAULT_QUESTIONS * (
+        (count // len(DEFAULT_QUESTIONS)) + 1))[:count]
+
+
+def _batch_id(env) -> str:
+    explicit = str(env.get("CED_SHADOW_BATCH_ID", "")).strip()
+    if explicit:
+        if not _BATCH_ID_RE.fullmatch(explicit):
+            raise ValueError(
+                "CED_SHADOW_BATCH_ID must be 1-64 filesystem-safe characters")
+        return explicit
+    return uuid.uuid4().hex[:12]
 
 
 def _save_records(records, env):
-    out_dir = pathlib.Path(env.get("CED_SHADOW_DIR",
-                                   str(_ROOT / "runs" / "openclaw_shadow")))
+    out_dir = pathlib.Path(env.get(
+        "CED_SHADOW_DIR", str(_ROOT / "runs" / "openclaw_shadow")))
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "shadow_records.jsonl"
-    with path.open("a", encoding="utf-8") as f:
+    with path.open("a", encoding="utf-8") as file:
         for record in records:
-            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+            file.write(json.dumps(
+                record, ensure_ascii=False, default=str) + "\n")
     return path
 
 
+def _identity_records_from_evidence(records, evidence):
+    """Return one raw record for every session admitted by gate evidence."""
+    eligible_ids = {
+        str(session_id)
+        for session_id in evidence.get("shadow_session_ids", [])
+    }
+    selected = []
+    seen = set()
+    for record in records:
+        session_id = str(record.get("session_id", ""))
+        if session_id not in eligible_ids or session_id in seen:
+            continue
+        selected.append(record)
+        seen.add(session_id)
+    return selected
+
+
 def _accumulated_profile(agent_id, records, registry):
-    """Identity across runs: EVIDENCE fields are recomputed fresh from the
-    FULL record history; EARNED fields (version, rank, promotion history,
-    curated failures/lessons) are preserved from the stored registry record —
-    a promotion recorded yesterday survives today's rebuild. A brand-new
-    apprentice starts as a shadow_apprentice at v0.3 (an operator PLACEMENT
-    for shadow mode, not an earned promotion — its empty version_history
-    says so honestly)."""
+    """Recompute eligible evidence while preserving earned identity fields."""
     import dataclasses
-    fresh = build_identity_profile(agent_id, records,
-                                   identity_version="v0.3",
-                                   promotion_status="shadow_apprentice")
+
+    fresh = build_identity_profile(
+        agent_id,
+        records,
+        identity_version="v0.3",
+        promotion_status="shadow_apprentice",
+    )
     stored = registry.load_profile(agent_id)
     if stored is None:
         return fresh
@@ -163,6 +189,12 @@ def main(argv=None, env=None) -> int:
         print("=" * _W)
         return 1
 
+    try:
+        batch_id = _batch_id(env)
+    except ValueError as exc:
+        print(f"Invalid shadow batch id: {exc}")
+        return 1
+
     lessons, lessons_note = _resolve_lessons(env)
     questions = _questions(argv, env)
 
@@ -174,21 +206,28 @@ def main(argv=None, env=None) -> int:
     print("=" * _W)
     print(f"  apprentice : {apprentice_note}")
     print(f"  features   : {lessons_note} | sessions: {len(questions)}")
-    print(f"  rule       : the apprentice observes and is judged - it can")
-    print(f"               NEVER change a council answer (Stage 1).")
+    print(f"  evidence id: {batch_id}")
+    print("  rule       : the apprentice observes and is judged - it can")
+    print("               NEVER change a council answer (Stage 1).")
     print("-" * _W)
 
-    for qi, question in enumerate(questions):
-        # A fresh council per question; the runner accumulates the records.
+    runner = None
+    for question_index, question in enumerate(questions):
         ced, council_mode = build_council(
-            council_size=2, shadow_scoring_mode=ShadowScoringMode.OFF)
-        if qi == 0:
-            runner = ShadowApprentice(apprentice,
-                                      ced.registry.all_adapters(),
-                                      lessons=lessons)
+            council_size=2,
+            shadow_scoring_mode=ShadowScoringMode.OFF,
+            openclaw_lessons=lessons,
+        )
+        if runner is None:
+            runner = ShadowApprentice(
+                apprentice,
+                ced.registry.all_adapters(),
+                lessons=lessons,
+            )
+        session_id = f"shadow_dialogue_{batch_id}_{question_index}"
         final, record = asyncio.run(runner.shadow_session(
-            ced, question, session_id=f"shadow_dialogue_{qi}"))
-        print(f"  [{qi + 1}/{len(questions)}] {question[:56]}")
+            ced, question, session_id=session_id))
+        print(f"  [{question_index + 1}/{len(questions)}] {question[:56]}")
         print(f"      council : ratified={final.ratified} (mode: {council_mode})")
         if not record["ok"]:
             print(f"      shadow  : FAILED ({record.get('reason')})")
@@ -204,19 +243,20 @@ def main(argv=None, env=None) -> int:
                   f"council={row['council_score']}")
     print("-" * _W)
 
-    # Identity: what the apprentice has PROVEN so far — across EVERY run,
-    # not just this one. Records accumulate on disk; earned identity fields
-    # persist in the registry; evidence is recomputed from the full history.
     path = _save_records(runner.shadow_records, env)
     all_records = load_jsonl(path)
+    evidence = evidence_from_shadow_traces(
+        apprentice.provider_id, all_records)
+    identity_records = _identity_records_from_evidence(all_records, evidence)
+
     registry = IdentityRegistry(env.get(
         "CED_IDENTITY_DIR", str(_ROOT / "runs" / "openclaw_identity")))
-    profile = _accumulated_profile(apprentice.provider_id, all_records,
-                                   registry)
+    profile = _accumulated_profile(
+        apprentice.provider_id, identity_records, registry)
     registry_path = registry.save_profile(profile)
     print(render_soul_card(profile))
     print("-" * _W)
-    evidence = evidence_from_shadow_traces(apprentice.provider_id, all_records)
+
     gate = next_gate_for(profile.identity_version)
     if gate is None:
         print(f"  gate: none - {profile.identity_version} is the end of the "
@@ -226,8 +266,8 @@ def main(argv=None, env=None) -> int:
         print(f"  gate {gate.gate_id}: "
               f"{'PASSED (a human may now record the promotion)' if result.passed else 'not yet'}")
         print(f"    {result.reasons[0]}")
-    print(f"  history          : {len(all_records)} shadow record(s) "
-          f"across all runs -> {path}")
+    print(f"  raw history      : {len(all_records)} shadow record(s) across all runs -> {path}")
+    print(f"  eligible identity: {len(identity_records)} unique ratified session(s)")
     print(f"  identity registry-> {registry_path}")
     print("-" * _W)
     print("  Next:")
@@ -235,7 +275,7 @@ def main(argv=None, env=None) -> int:
     print("    python scripts/openclaw_status.py   (the joined-up view)")
     print("=" * _W)
     print(f"  Done. mode = {mode}. The apprentice earned evidence, "
-          f"not authority.")
+          "not authority.")
     print("=" * _W)
     return 0
 

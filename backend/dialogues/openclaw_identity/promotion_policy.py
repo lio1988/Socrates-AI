@@ -1,18 +1,12 @@
 """
-OpenClaw Agent Identity — the promotion policy (ladder, gates, promotions).
+OpenClaw Agent Identity — promotion policy (ladder, gates, promotions).
 
-Three mechanically enforced principles:
-
-  1. NO automatic self-promotion. ``evaluate_gate`` only RECOMMENDS; a
-     promotion record requires a passing gate result AND a named approver who
-     is not the agent itself. The system verifies; a human promotes — the same
-     never-auto-promote symmetry as the OpenClaw lesson lifecycle and the
-     Teacher-Loop Promotion Arena.
-  2. Evidence or nothing. Gates are declarative (metric, op, threshold)
-     evaluated against an explicit evidence dict. A missing metric FAILS with
-     an honest reason — absence of evidence is never treated as success.
-  3. One step at a time. Version gates form an ordered chain; ladder stages
-     advance one rung per approval. No agent skips to authority.
+Mechanically enforced principles:
+  1. No automatic self-promotion.
+  2. Evidence or nothing.
+  3. One version/stage step at a time.
+  4. A caller-supplied GateResult is never trusted: record_promotion
+     recomputes the gate from the embedded evidence before writing history.
 
 Pure, deterministic, offline. No provider calls, no network, no keys.
 """
@@ -25,7 +19,6 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 from .identity_profile import AgentIdentityProfile
 
-# ── The identity ladder (Stage 0 → Stage 7) ──────────────────────────────────
 
 IDENTITY_LADDER: Tuple[Dict[str, Any], ...] = (
     {"stage": 0, "name": "base_agent",
@@ -49,20 +42,17 @@ IDENTITY_LADDER: Tuple[Dict[str, Any], ...] = (
                     "and evidence."},
 )
 
-STAGE_NAMES: Tuple[str, ...] = tuple(s["name"] for s in IDENTITY_LADDER)
+STAGE_NAMES: Tuple[str, ...] = tuple(stage["name"] for stage in IDENTITY_LADDER)
 
-
-# ── Version gates (every promotion is evidence-backed) ───────────────────────
 
 @dataclass(frozen=True)
 class VersionGate:
-    """A declarative, auditable promotion requirement: metric OP threshold."""
     gate_id: str
     from_version: str
     to_version: str
     description: str
     metric: str
-    op: str            # one of <=, >=, <, >, ==
+    op: str
     threshold: float
 
 
@@ -88,18 +78,15 @@ VERSION_GATES: Tuple[VersionGate, ...] = (
 _OPS = {
     "<=": lambda a, b: a <= b,
     ">=": lambda a, b: a >= b,
-    "<":  lambda a, b: a < b,
-    ">":  lambda a, b: a > b,
+    "<": lambda a, b: a < b,
+    ">": lambda a, b: a > b,
     "==": lambda a, b: a == b,
 }
 
 
 @dataclass(frozen=True)
 class GateResult:
-    """The outcome of evaluating one gate against explicit evidence.
-
-    A recommendation, never an action: nothing is promoted by this object.
-    """
+    """A recommendation, never an action."""
     gate_id: str
     passed: bool
     reasons: Tuple[str, ...]
@@ -107,7 +94,6 @@ class GateResult:
 
 
 def next_gate_for(version: str) -> Optional[VersionGate]:
-    """The gate that starts at ``version`` (None past the end of the chain)."""
     for gate in VERSION_GATES:
         if gate.from_version == version:
             return gate
@@ -115,26 +101,54 @@ def next_gate_for(version: str) -> Optional[VersionGate]:
 
 
 def evaluate_gate(gate: VersionGate, evidence: Mapping[str, Any]) -> GateResult:
-    """Mechanically evaluate one gate. Missing/invalid evidence FAILS honestly."""
+    """Mechanically evaluate one gate. Missing/invalid evidence fails."""
     value = evidence.get(gate.metric)
     if value is None:
-        return GateResult(gate.gate_id, False,
-                          (f"missing evidence metric {gate.metric!r}",),
-                          {})
+        return GateResult(
+            gate.gate_id,
+            False,
+            (f"missing evidence metric {gate.metric!r}",),
+            {},
+        )
     try:
         numeric = float(value)
     except (TypeError, ValueError):
-        return GateResult(gate.gate_id, False,
-                          (f"evidence metric {gate.metric!r} is not numeric: "
-                           f"{value!r}",),
-                          {gate.metric: value})
+        return GateResult(
+            gate.gate_id,
+            False,
+            (f"evidence metric {gate.metric!r} is not numeric: {value!r}",),
+            {gate.metric: value},
+        )
     passed = _OPS[gate.op](numeric, float(gate.threshold))
-    reason = (f"{gate.metric}={numeric} {gate.op} {gate.threshold} -> "
-              f"{'pass' if passed else 'fail'}")
-    return GateResult(gate.gate_id, passed, (reason,), {gate.metric: numeric})
+    reason = (
+        f"{gate.metric}={numeric} {gate.op} {gate.threshold} -> "
+        f"{'pass' if passed else 'fail'}")
+    return GateResult(
+        gate.gate_id,
+        passed,
+        (reason,),
+        {gate.metric: numeric},
+    )
 
 
-# ── Recording a promotion (system verifies, a human approves) ────────────────
+def _verified_gate_result(gate: VersionGate, supplied: GateResult) -> GateResult:
+    """Recompute a caller-supplied result from its evidence.
+
+    This closes the forged-result path: ``passed=True`` and a persuasive reason
+    are irrelevant unless the actual evidence satisfies the declarative gate.
+    """
+    if supplied.gate_id != gate.gate_id:
+        raise ValueError(
+            f"gate result {supplied.gate_id!r} does not match {gate.gate_id!r}")
+    verified = evaluate_gate(gate, supplied.evidence_used)
+    if not supplied.passed:
+        raise ValueError("promotion requires a passing gate result")
+    if not verified.passed:
+        raise ValueError(
+            "promotion evidence does not pass the gate when independently "
+            f"re-evaluated: {verified.reasons[0]}")
+    return verified
+
 
 def record_promotion(
     profile: AgentIdentityProfile,
@@ -142,21 +156,28 @@ def record_promotion(
     *,
     approved_by: str,
     approved_on: str = "",
+    approval_reference: str = "",
 ) -> AgentIdentityProfile:
-    """Return a NEW profile with the earned version. Refuses (ValueError):
-    a failing gate, a gate that does not start at the profile's current
-    version, an unnamed approver, or self-approval. The input profile is
-    never mutated — history is append-only and auditable."""
-    gate = next((g for g in VERSION_GATES if g.gate_id == gate_result.gate_id), None)
+    """Return a new profile with one earned version step.
+
+    The gate is resolved from the immutable policy and recomputed from
+    ``gate_result.evidence_used``. A forged ``passed=True`` cannot promote.
+    ``approved_by`` is an auditable attribution, not cryptographic identity.
+    """
+    gate = next(
+        (candidate for candidate in VERSION_GATES
+         if candidate.gate_id == gate_result.gate_id),
+        None,
+    )
     if gate is None:
         raise ValueError(f"unknown gate {gate_result.gate_id!r}")
     if gate.from_version != profile.identity_version:
         raise ValueError(
             f"gate {gate.gate_id!r} starts at {gate.from_version}, but the "
             f"profile is at {profile.identity_version}")
-    if not gate_result.passed:
-        raise ValueError("promotion requires a PASSING gate result "
-                         "(no promotion without evidence)")
+
+    verified = _verified_gate_result(gate, gate_result)
+
     approver = approved_by.strip()
     if not approver:
         raise ValueError("promotion requires a named approver")
@@ -170,9 +191,12 @@ def record_promotion(
         "gate_description": gate.description,
         "approved_by": approver,
         "approved_on": approved_on,
-        "evidence": dict(gate_result.evidence_used),
-        "reasons": list(gate_result.reasons),
+        "evidence": dict(verified.evidence_used),
+        "reasons": list(verified.reasons),
     }
+    if approval_reference.strip():
+        entry["approval_reference"] = approval_reference.strip()
+
     following = next_gate_for(gate.to_version)
     return dataclasses.replace(
         profile,
@@ -188,29 +212,39 @@ def advance_stage(
     *,
     approved_by: str,
     approved_on: str = "",
+    evidence_reference: str = "",
 ) -> AgentIdentityProfile:
-    """Advance the ladder rank by EXACTLY one rung (human-approved, non-self).
-    Rank and version are orthogonal axes; both are earned, neither is claimed."""
+    """Advance the descriptive ladder rank by exactly one rung.
+
+    Stage rank is still runtime-inert. ``evidence_reference`` can bind the
+    human decision to an arena/report/trace packet and is recorded when given.
+    """
     if new_status not in STAGE_NAMES:
         raise ValueError(f"unknown ladder stage {new_status!r}")
-    current = STAGE_NAMES.index(profile.promotion_status) \
-        if profile.promotion_status in STAGE_NAMES else 0
+    current = (
+        STAGE_NAMES.index(profile.promotion_status)
+        if profile.promotion_status in STAGE_NAMES else 0)
     target = STAGE_NAMES.index(new_status)
     if target != current + 1:
         raise ValueError(
             f"stages advance one rung at a time: {profile.promotion_status!r} "
             f"-> {new_status!r} is not a single step")
+
     approver = approved_by.strip()
     if not approver:
         raise ValueError("stage advancement requires a named approver")
     if approver == profile.agent_id:
         raise ValueError("an agent can never approve its own advancement")
+
     entry = {
         "from_status": profile.promotion_status,
         "to_status": new_status,
         "approved_by": approver,
         "approved_on": approved_on,
     }
+    if evidence_reference.strip():
+        entry["evidence_reference"] = evidence_reference.strip()
+
     return dataclasses.replace(
         profile,
         promotion_status=new_status,

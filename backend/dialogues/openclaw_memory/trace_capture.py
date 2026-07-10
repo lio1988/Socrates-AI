@@ -1,29 +1,9 @@
 """
 OpenClaw Memory Lessons — trace capture (Goal 5).
 
-Every council run should produce an auditable trace that can later feed lesson
-extraction and the learning pipeline. This module captures the trace as an
-in-memory record (and optionally writes it to a JSONL file).
-
-The trace consumer is duck-typed to the CED session-end pattern:
-``trace_capturer.ingest_session(state, final)`` — same interface as
-``training_corpus`` in Phase 22. CED calls it at session-end, failure-isolated,
-so a trace failure never breaks a session result.
-
-What the trace CONTAINS:
-  - session id, question, timestamp
-  - per-move summaries: phase, role, provider_id, content keys (not full text
-    by default — full text is opt-in)
-  - selected openclaw lesson ids (when available from audit)
-  - assembly result (winning sections + their source draft ids)
-  - ratification result (ratified, status, rounds)
-  - audit summary (CED-owned diagnostics)
-
-What the trace NEVER contains:
-  - API keys, provider credentials, environment variables
-  - hidden chain-of-thought (provider internals)
-  - raw peer scores or leaderboard data in agent-facing sections
-    (scores appear only in the CED-owned audit, which is already hidden)
+Captures auditable session traces in memory and optionally as JSONL. Trace
+capture is failure-isolated by CED, but this module refuses to persist records
+that contain obvious credential fields or token-shaped values.
 
 No provider calls, no network, no API keys.
 """
@@ -31,13 +11,27 @@ No provider calls, no network, no API keys.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
-from backend.dialogues.models import (
-    FinalResponse,
-    SessionState,
+from backend.dialogues.models import FinalResponse, SessionState
+
+
+_SECRET_KEYS = frozenset({
+    "api_key",
+    "apikey",
+    "authorization",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "password",
+    "secret",
+})
+_SECRET_VALUE_PATTERNS = (
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
 )
 
 
@@ -59,7 +53,8 @@ def _move_summary(move, *, include_content: bool = False) -> Dict[str, Any]:
     if include_content:
         entry["content"] = move.content
     else:
-        entry["content_keys"] = sorted(move.content.keys()) if isinstance(move.content, dict) else []
+        entry["content_keys"] = (
+            sorted(move.content.keys()) if isinstance(move.content, dict) else [])
     return entry
 
 
@@ -67,13 +62,10 @@ def _assembly_summary(final: FinalResponse) -> Optional[Dict[str, Any]]:
     if final.synthesis is None:
         return None
     return {
-        "sections": [
-            {
-                "section_name": s.section_name.value,
-                "source_draft_id": s.selected_draft_id,
-            }
-            for s in final.synthesis.sections
-        ],
+        "sections": [{
+            "section_name": section.section_name.value,
+            "source_draft_id": section.selected_draft_id,
+        } for section in final.synthesis.sections],
     }
 
 
@@ -92,15 +84,8 @@ def build_session_trace(
     metadata: Optional[Dict[str, Any]] = None,
     shadow_run: bool = False,
 ) -> Dict[str, Any]:
-    """Build an auditable trace record from a completed session.
-
-    ``shadow_run`` marks the trace AT CAPTURE TIME as a Shadow-Apprentice
-    run (outputs that never affected final answers). The marker lives inside
-    the auditable record itself, so downstream evidence collection can filter
-    shadow sessions mechanically instead of trusting a later declaration.
-    """
+    """Build one auditable trace record from a completed session."""
     audit = final.audit_summary or {}
-
     openclaw = audit.get("openclaw_lessons")
     selected_lessons = openclaw.get("selected", []) if openclaw else []
 
@@ -112,8 +97,8 @@ def build_session_trace(
         "shadow_run": bool(shadow_run),
         "move_count": len(state.moves),
         "moves": [
-            _move_summary(m, include_content=include_content)
-            for m in state.moves
+            _move_summary(move, include_content=include_content)
+            for move in state.moves
         ],
         "selected_openclaw_lessons": selected_lessons,
         "assembly": _assembly_summary(final),
@@ -126,9 +111,7 @@ def build_session_trace(
 
 
 def load_jsonl(path: Path | str) -> List[Dict[str, Any]]:
-    """Read one JSONL file of records; malformed lines are skipped honestly
-    (a corrupt line must not destroy the rest of the history). Missing file
-    returns [] — an empty history is a state, not an error."""
+    """Read a JSONL file; malformed lines are skipped without fabrication."""
     p = Path(path)
     if not p.exists():
         return []
@@ -147,29 +130,50 @@ def load_jsonl(path: Path | str) -> List[Dict[str, Any]]:
 
 
 def load_traces(directory: Path | str) -> List[Dict[str, Any]]:
-    """Load every trace from a capture directory (the read-back side of
-    ``TraceCapturer(output_dir=...)`` — cross-session learning needs to read
-    yesterday's traces, not only this process's memory). Deterministic:
-    files in sorted name order, lines in file order. Missing directory
-    returns []."""
-    d = Path(directory)
-    if not d.exists():
+    """Load every JSONL trace in deterministic file/line order."""
+    directory_path = Path(directory)
+    if not directory_path.exists():
         return []
     traces: List[Dict[str, Any]] = []
-    for path in sorted(d.glob("*.jsonl")):
+    for path in sorted(directory_path.glob("*.jsonl")):
         traces.extend(load_jsonl(path))
     return traces
 
 
-class TraceCapturer:
-    """In-memory trace collector with optional JSONL file output.
+def _find_secret(value: Any, path: str = "trace") -> Optional[str]:
+    """Return a human-readable violation path, or None.
 
-    Duck-typed to the CED session-end consumer pattern:
-    ``capturer.ingest_session(state, final)``
-
-    Pass to ``CEDOrchestrator`` (or ``build_council``) as the
-    ``trace_capturer`` parameter (see below).
+    Exact sensitive key names are refused when their value is non-empty. String
+    values are scanned for credential-shaped prefixes. This is deliberately
+    narrow to avoid rejecting harmless fields such as ``api_key_present=False``.
     """
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized = str(key).strip().lower().replace("-", "_")
+            child_path = f"{path}.{key}"
+            if normalized in _SECRET_KEYS and child not in (None, "", False):
+                return child_path
+            violation = _find_secret(child, child_path)
+            if violation:
+                return violation
+        return None
+    if isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            violation = _find_secret(child, f"{path}[{index}]")
+            if violation:
+                return violation
+        return None
+    if isinstance(value, str):
+        for pattern in _SECRET_VALUE_PATTERNS:
+            if pattern.search(value):
+                return (
+                    f"{path} contains token-shaped data matching "
+                    f"{pattern.pattern!r}")
+    return None
+
+
+class TraceCapturer:
+    """In-memory trace collector with optional JSONL output."""
 
     def __init__(
         self,
@@ -181,33 +185,38 @@ class TraceCapturer:
     ) -> None:
         self.include_content = include_content
         self.metadata = metadata or {}
-        # Shadow-Apprentice capture: every trace this capturer writes is
-        # marked shadow_run at capture time (auditable, mechanically
-        # filterable by evidence collection — never a later declaration).
         self.shadow_run = bool(shadow_run)
         self.output_dir = Path(output_dir) if output_dir else None
         self.traces: List[Dict[str, Any]] = []
 
-    def ingest_session(self, state: SessionState, final: FinalResponse) -> Dict[str, Any]:
-        """Capture a trace from a completed session (CED session-end hook)."""
+    def ingest_session(
+        self,
+        state: SessionState,
+        final: FinalResponse,
+    ) -> Dict[str, Any]:
+        """Capture a trace, refusing secrets before memory or disk mutation."""
         trace = build_session_trace(
-            state, final,
+            state,
+            final,
             include_content=self.include_content,
             metadata=self.metadata if self.metadata else None,
             shadow_run=self.shadow_run,
         )
+        self._assert_no_secrets(trace)
         self.traces.append(trace)
 
         if self.output_dir is not None:
             self._write_trace(trace)
-
         return trace
 
     def _write_trace(self, trace: Dict[str, Any]) -> Path:
+        # Defense in depth for direct/private calls.
+        self._assert_no_secrets(trace)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         path = self.output_dir / f"{trace['session_id']}.jsonl"
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(trace, ensure_ascii=False, default=str) + "\n")
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(
+                trace, ensure_ascii=False, default=str) + "\n")
         return path
 
     @property
@@ -218,7 +227,8 @@ class TraceCapturer:
         return self.traces[-1] if self.traces else None
 
     def _assert_no_secrets(self, trace: Dict[str, Any]) -> None:
-        """Debug guard: ensure no obvious secrets leaked into a trace."""
-        text = json.dumps(trace, default=str)
-        for forbidden in ("api_key", "ANTHROPIC_API_KEY", "sk-ant-", "Bearer "):
-            assert forbidden not in text, f"trace contains {forbidden!r}"
+        """Runtime guard; raises even under ``python -O`` (not an assert)."""
+        violation = _find_secret(trace)
+        if violation:
+            raise ValueError(
+                f"trace refused because secret-shaped data was found at {violation}")
