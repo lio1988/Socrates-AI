@@ -5,6 +5,7 @@ One human-readable JSON file is stored per agent. Persistence grants no runtime
 authority, but earned history and approved self-revisions are protected:
 
 - version_history and revision_history remain exact append-only prefixes;
+- every stored transition and revision is revalidated on every load;
 - version/stage transitions remain canonical and non-self-approved;
 - known failures, stable lessons, and soul principles cannot change without a
   matching approved revision entry;
@@ -23,7 +24,7 @@ import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .identity_profile import AgentIdentityProfile, from_record
 
@@ -37,6 +38,15 @@ _SECRET_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+_VERSION_ENTRY_REQUIRED = {
+    "from_version", "to_version", "gate_id", "gate_description",
+    "approved_by", "approved_on", "evidence", "reasons",
+}
+_VERSION_ENTRY_ALLOWED = _VERSION_ENTRY_REQUIRED | {"approval_reference"}
+_STAGE_ENTRY_REQUIRED = {
+    "from_status", "to_status", "approved_by", "approved_on",
+}
+_STAGE_ENTRY_ALLOWED = _STAGE_ENTRY_REQUIRED | {"evidence_reference"}
 
 
 def _history_prefix(old: Sequence[Dict], new: Sequence[Dict]) -> bool:
@@ -65,7 +75,7 @@ def _find_secret(value: Any, path: str = "identity") -> Optional[str]:
     return None
 
 
-def _validate_approver(entry: Dict, agent_id: str) -> None:
+def _validate_approver(entry: Mapping[str, Any], agent_id: str) -> None:
     approver = str(entry.get("approved_by", "")).strip()
     if not approver:
         raise ValueError("identity-history transition requires a named approver")
@@ -73,16 +83,50 @@ def _validate_approver(entry: Dict, agent_id: str) -> None:
         raise ValueError("an agent cannot approve its own identity transition")
 
 
+def _validate_version_entry_shape(entry: Mapping[str, Any]) -> None:
+    if not isinstance(entry, Mapping):
+        raise ValueError("version-history entry must be a mapping")
+    fields = set(entry)
+    if not _VERSION_ENTRY_REQUIRED.issubset(fields) or \
+            not fields.issubset(_VERSION_ENTRY_ALLOWED):
+        raise ValueError(
+            "version-history entry contains missing or unknown fields")
+    if not isinstance(entry.get("evidence"), Mapping):
+        raise ValueError("version-history evidence must be a mapping")
+    reasons = entry.get("reasons")
+    if isinstance(reasons, (str, bytes)) or not isinstance(reasons, (list, tuple)):
+        raise ValueError("version-history reasons must be a sequence")
+    if not all(isinstance(reason, str) and reason.strip() for reason in reasons):
+        raise ValueError("version-history reasons must contain non-empty text")
+    if not isinstance(entry.get("approved_on"), str):
+        raise ValueError("version-history approved_on must be text")
+    if "approval_reference" in entry and not isinstance(
+            entry["approval_reference"], str):
+        raise ValueError("version-history approval_reference must be text")
+
+
+def _validate_stage_entry_shape(entry: Mapping[str, Any]) -> None:
+    if not isinstance(entry, Mapping):
+        raise ValueError("stage-history entry must be a mapping")
+    fields = set(entry)
+    if not _STAGE_ENTRY_REQUIRED.issubset(fields) or \
+            not fields.issubset(_STAGE_ENTRY_ALLOWED):
+        raise ValueError("stage-history entry contains missing or unknown fields")
+    if not isinstance(entry.get("approved_on"), str):
+        raise ValueError("stage-history approved_on must be text")
+    if "evidence_reference" in entry and not isinstance(
+            entry["evidence_reference"], str):
+        raise ValueError("stage-history evidence_reference must be text")
+
+
 def _validate_version_transition(
-    entry: Dict,
+    entry: Mapping[str, Any],
     current_version: str,
     agent_id: str,
 ) -> str:
-    from .promotion_policy import VERSION_GATES
+    from .promotion_policy import VERSION_GATES, evaluate_gate
 
-    if not {"from_version", "to_version", "gate_id"}.issubset(entry):
-        raise ValueError(
-            "version transition requires from_version, to_version, and gate_id")
+    _validate_version_entry_shape(entry)
     from_version = str(entry["from_version"])
     to_version = str(entry["to_version"])
     gate_id = str(entry["gate_id"])
@@ -100,19 +144,27 @@ def _validate_version_transition(
     if gate.from_version != from_version or gate.to_version != to_version:
         raise ValueError(
             "version-history transition does not match its canonical gate")
+    if str(entry["gate_description"]) != gate.description:
+        raise ValueError("version-history gate description is not canonical")
+    result = evaluate_gate(gate, dict(entry["evidence"]))
+    if not result.passed:
+        raise ValueError("version-history evidence does not pass its gate")
+    if dict(result.evidence_used) != dict(entry["evidence"]):
+        raise ValueError("version-history stored evidence is not canonical")
+    if list(result.reasons) != list(entry["reasons"]):
+        raise ValueError("version-history stored reasons are not canonical")
     _validate_approver(entry, agent_id)
     return to_version
 
 
 def _validate_stage_transition(
-    entry: Dict,
+    entry: Mapping[str, Any],
     current_status: str,
     agent_id: str,
 ) -> str:
     from .promotion_policy import STAGE_NAMES
 
-    if not {"from_status", "to_status"}.issubset(entry):
-        raise ValueError("stage transition requires from_status and to_status")
+    _validate_stage_entry_shape(entry)
     from_status = str(entry["from_status"])
     to_status = str(entry["to_status"])
     if from_status != current_status:
@@ -124,6 +176,61 @@ def _validate_stage_transition(
         raise ValueError("stage transition must advance exactly one ladder rung")
     _validate_approver(entry, agent_id)
     return to_status
+
+
+def _reverse_version_transition(
+    entry: Mapping[str, Any],
+    current_version: str,
+    agent_id: str,
+) -> str:
+    from .promotion_policy import VERSION_GATES, evaluate_gate
+
+    _validate_version_entry_shape(entry)
+    from_version = str(entry["from_version"])
+    to_version = str(entry["to_version"])
+    gate_id = str(entry["gate_id"])
+    if to_version != current_version:
+        raise ValueError(
+            "stored version-history does not terminate at identity_version")
+    gate = next(
+        (candidate for candidate in VERSION_GATES
+         if candidate.gate_id == gate_id),
+        None,
+    )
+    if gate is None or gate.from_version != from_version or \
+            gate.to_version != to_version:
+        raise ValueError(
+            "stored version-history transition is not a canonical gate")
+    if str(entry["gate_description"]) != gate.description:
+        raise ValueError("stored version-history gate description is not canonical")
+    result = evaluate_gate(gate, dict(entry["evidence"]))
+    if not result.passed or dict(result.evidence_used) != dict(entry["evidence"]):
+        raise ValueError("stored version-history evidence is not canonical")
+    if list(result.reasons) != list(entry["reasons"]):
+        raise ValueError("stored version-history reasons are not canonical")
+    _validate_approver(entry, agent_id)
+    return from_version
+
+
+def _reverse_stage_transition(
+    entry: Mapping[str, Any],
+    current_status: str,
+    agent_id: str,
+) -> str:
+    from .promotion_policy import STAGE_NAMES
+
+    _validate_stage_entry_shape(entry)
+    from_status = str(entry["from_status"])
+    to_status = str(entry["to_status"])
+    if to_status != current_status:
+        raise ValueError(
+            "stored stage-history does not terminate at promotion_status")
+    if from_status not in STAGE_NAMES or to_status not in STAGE_NAMES:
+        raise ValueError("stored stage-history references an unknown status")
+    if STAGE_NAMES.index(to_status) != STAGE_NAMES.index(from_status) + 1:
+        raise ValueError("stored stage transition is not one ladder rung")
+    _validate_approver(entry, agent_id)
+    return from_status
 
 
 def _validate_appended_history(
@@ -160,6 +267,101 @@ def _validate_appended_history(
     if current_status != profile.promotion_status:
         raise ValueError(
             "promotion_status changed without a matching append-only transition")
+
+
+def _reverse_revision_state(
+    failures: Tuple[str, ...],
+    lessons: Tuple[str, ...],
+    principles: Tuple[str, ...],
+    entry: Mapping[str, Any],
+) -> Tuple[Tuple[str, ...], Tuple[str, ...], Tuple[str, ...]]:
+    target = str(entry.get("target", ""))
+    action = str(entry.get("action", ""))
+    value = str(entry.get("value", ""))
+    failure_list = list(failures)
+    lesson_list = list(lessons)
+    principle_list = list(principles)
+
+    if target == "identity" and action == "add_known_failure":
+        if value not in failure_list:
+            raise ValueError("stored add_known_failure effect is absent")
+        failure_list.remove(value)
+    elif target == "identity" and action == "resolve_known_failure":
+        if value in failure_list:
+            raise ValueError("stored resolved failure is still present")
+        failure_list.append(value)
+    elif target == "memory" and action == "link_stable_lesson":
+        if value not in lesson_list:
+            raise ValueError("stored linked lesson effect is absent")
+        lesson_list.remove(value)
+    elif target == "memory" and action == "unlink_stable_lesson":
+        if value in lesson_list:
+            raise ValueError("stored unlinked lesson is still present")
+        lesson_list.append(value)
+    elif target == "soul" and action == "add_principle":
+        if value not in principle_list:
+            raise ValueError("stored Soul principle effect is absent")
+        principle_list.remove(value)
+    elif target == "soul" and action == "retire_principle":
+        if value in principle_list:
+            raise ValueError("stored retired Soul principle is still present")
+        principle_list.append(value)
+    else:
+        raise ValueError("stored self-revision action is unsupported")
+    return tuple(failure_list), tuple(lesson_list), tuple(principle_list)
+
+
+def _validate_complete_profile_history(profile: AgentIdentityProfile) -> None:
+    """Prove all stored history can reconstruct the current governed state."""
+    from .promotion_policy import next_gate_for
+    from .self_revision import replay_revision_entry
+
+    expected_gate = next_gate_for(profile.identity_version)
+    expected_gate_id = expected_gate.gate_id if expected_gate else None
+    if profile.next_gate != expected_gate_id:
+        raise ValueError("identity next_gate does not match identity_version")
+
+    current_version = profile.identity_version
+    current_status = profile.promotion_status
+    for entry in reversed(profile.version_history):
+        if not isinstance(entry, Mapping):
+            raise ValueError("identity version_history entries must be mappings")
+        has_version = "from_version" in entry or "to_version" in entry
+        has_status = "from_status" in entry or "to_status" in entry
+        if has_version == has_status:
+            raise ValueError(
+                "each stored identity-history entry must describe exactly one "
+                "version or stage transition")
+        if has_version:
+            current_version = _reverse_version_transition(
+                entry, current_version, profile.agent_id)
+        else:
+            current_status = _reverse_stage_transition(
+                entry, current_status, profile.agent_id)
+
+    failures = tuple(profile.known_failures)
+    lessons = tuple(profile.stable_lessons)
+    principles = tuple(profile.soul_principles)
+    seen_proposals = set()
+    for entry in reversed(profile.revision_history):
+        if not isinstance(entry, Mapping):
+            raise ValueError("identity revision_history entries must be mappings")
+        proposal_id = str(entry.get("proposal_id", ""))
+        if not proposal_id or proposal_id in seen_proposals:
+            raise ValueError("stored self-revision proposal IDs must be unique")
+        current_state = (failures, lessons, principles)
+        prior_state = _reverse_revision_state(
+            failures, lessons, principles, entry)
+        replayed = replay_revision_entry(
+            *prior_state,
+            entry,
+            agent_id=profile.agent_id,
+        )
+        if replayed != current_state:
+            raise ValueError(
+                "stored self-revision history does not reconstruct current state")
+        failures, lessons, principles = prior_state
+        seen_proposals.add(proposal_id)
 
 
 def _validate_appended_revisions(
@@ -253,7 +455,9 @@ class IdentityRegistry:
             if violation:
                 raise ValueError(
                     f"identity profile contains secret-shaped data at {violation}")
-            return from_record(record)
+            profile = from_record(record)
+            _validate_complete_profile_history(profile)
+            return profile
         except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             raise ValueError(
                 f"identity profile {path} is unreadable or corrupt") from exc
@@ -265,6 +469,7 @@ class IdentityRegistry:
         validated = from_record(record)
         if validated != profile:
             raise ValueError("identity profile is not canonical or type-safe")
+        _validate_complete_profile_history(profile)
         violation = _find_secret(record)
         if violation:
             raise ValueError(
