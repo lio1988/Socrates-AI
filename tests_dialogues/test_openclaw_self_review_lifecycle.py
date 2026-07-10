@@ -667,6 +667,52 @@ def test_revert_requires_existing_canonical_reversal_bound_to_current_profile(
         applied, evidence_manifest=reversal_manifest)
     registry.submit(reversal, snapshot=reversal_snapshot)
 
+    # Governed rollback semantics: the inverse must be applied AND confirmed
+    # by independent post-change evidence before the original is reverted —
+    # a merely submitted inverse would let the ledger claim "reverted" while
+    # the identity still carries the change.
+    evaluation = _evaluate_and_approve(
+        registry, applied, reversal, reversal_manifest)
+    restored = approve_and_apply_self_revision(
+        applied,
+        reversal,
+        evaluation,
+        evidence_manifest=reversal_manifest,
+        stable_lesson_ids=("LESSON-0001",),
+        approved_by="operator",
+        approval_reference="review/approved",
+        approved_on="2026-07-10",
+    )
+    registry.record_application(
+        AGENT,
+        reversal.proposal_id,
+        previous_profile=applied,
+        updated_profile=restored,
+        evidence_manifest=reversal_manifest,
+        stable_lesson_ids=("LESSON-0001",),
+        applied_by="operator",
+        application_reference="identity/revision/1",
+        applied_on="2026-07-10",
+    )
+    reversal_confirm_reference = "post-window/reversal-confirm"
+    confirm_manifest = dict(reversal_manifest)
+    confirm_manifest.update(_evidence(
+        reversal,
+        reference=reversal_confirm_reference,
+        outcomes=("confirmed",),
+        source="post-change-harness",
+        verified_by="post-change-verifier",
+    ))
+    registry.record_outcome(
+        AGENT,
+        reversal.proposal_id,
+        current_profile=restored,
+        outcome="confirmed",
+        evidence_manifest=confirm_manifest,
+        recorded_by="post-change-reviewer",
+        evidence_reference=reversal_confirm_reference,
+    )
+
     outcome_manifest = dict(manifest)
     outcome_manifest.update(_evidence(
         original,
@@ -678,7 +724,7 @@ def test_revert_requires_existing_canonical_reversal_bound_to_current_profile(
     registry.record_outcome(
         AGENT,
         original.proposal_id,
-        current_profile=applied,
+        current_profile=restored,
         outcome="reverted",
         evidence_manifest=outcome_manifest,
         recorded_by="post-change-reviewer",
@@ -686,6 +732,7 @@ def test_revert_requires_existing_canonical_reversal_bound_to_current_profile(
         linked_proposal_id=reversal.proposal_id,
     )
     assert registry.load(AGENT, original.proposal_id)["status"] == "reverted"
+    assert registry.load(AGENT, reversal.proposal_id)["status"] == "confirmed"
     assert len(registry.all_records(AGENT)) == 2
 
 

@@ -519,6 +519,11 @@ class SelfRevisionTransactionCoordinator:
         record: Dict[str, Any],
     ) -> AgentIdentityProfile:
         """Complete a prepared transaction while the transaction lock is held."""
+        # _load_path decorates records with a derived "state" for readers;
+        # validation must see the exact on-disk schema (the recover path is
+        # the one that arrives here with a decorated record).
+        record = dict(record)
+        record.pop("state", None)
         state = _validate_record(record)
         payload = record["payload"]
         agent_id = record["agent_id"]

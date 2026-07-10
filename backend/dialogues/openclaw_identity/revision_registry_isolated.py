@@ -230,7 +230,7 @@ class SelfRevisionRegistry(_BoundRegistry):
                         "confirmed outcome must not link a reversal proposal")
                 if current_fingerprint != current_applied["profile_fingerprint"]:
                     raise ValueError(
-                        "governed identity changed before confirmation review")
+                        "governed identity state changed before confirmation review")
                 for candidate in self._probationary_records(
                         agent_id, exclude_proposal_id=proposal_id):
                     if not (_canonical_pair(record, candidate)

@@ -45,7 +45,7 @@ SELF_REVIEW_BOUNDARIES: Tuple[str, ...] = (
     "Use only the evidence references included in this snapshot.",
     "Every visible evidence item has a named non-self verifier.",
     "The agent may propose one revision but cannot approve or activate it.",
-    "Do not infer facts about other agents or hidden scorecards.",
+    "Do not infer facts about other agents or hidden evaluation records.",
     "A proposal must state risk and may be rejected without changing identity.",
 )
 

@@ -54,6 +54,16 @@ class SelfRevisionRegistry(_IsolatedRegistry):
         snapshot,
         submitted_on: str = "",
     ):
+        # Identity collision outranks admission control: resubmitting an
+        # existing proposal_id must fail as an ID conflict (the base
+        # registry's own refusal), never as a semantic duplicate of itself.
+        existing_ids = {
+            record["proposal_id"]
+            for record in self.all_records(proposal.agent_id)
+        }
+        if proposal.proposal_id in existing_ids:
+            raise ValueError(
+                "self-revision proposal_id already exists in registry")
         active = self._active_records(proposal.agent_id)
         if len(active) >= MAX_ACTIVE_PROPOSALS_PER_AGENT:
             raise ValueError(

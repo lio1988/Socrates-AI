@@ -119,16 +119,22 @@ def test_shadow_runs_accumulate_across_invocations(shadow_script, tmp_path,
 
 def test_earned_identity_survives_rebuild(shadow_script, tmp_path, capsys):
     from backend.dialogues.openclaw_identity import (
-        AgentIdentityProfile, IdentityRegistry)
+        AgentIdentityProfile, IdentityRegistry, evaluate_gate, next_gate_for,
+        record_promotion)
     registry = IdentityRegistry(tmp_path / "identity")
-    registry.save_profile(AgentIdentityProfile(
+    # Governed seeding: bootstrap first (curated fields, no history), then a
+    # REAL evidence-backed promotion — a profile born already promoted is a
+    # forgery vector the registry rightly refuses.
+    base = AgentIdentityProfile(
         agent_id="local_apprentice_001",
-        identity_version="v0.4",
+        identity_version="v0.3",
         promotion_status="self_learning",
-        known_failures=("over-explains exact-output tasks",),
-        version_history=({"from_version": "v0.3", "to_version": "v0.4",
-                          "gate_id": "gate_v0_3_to_v0_4",
-                          "approved_by": "operator"},)))
+        known_failures=("over-explains exact-output tasks",))
+    registry.save_profile(base)
+    gate = next_gate_for("v0.3")
+    result = evaluate_gate(gate, {"shadow_blind_spots_wins": 3})
+    registry.save_profile(record_promotion(
+        base, result, approved_by="operator", approved_on="2026-07-10"))
     env = {"CED_SHADOW_SESSIONS": "1",
            "CED_SHADOW_DIR": str(tmp_path / "shadow"),
            "CED_IDENTITY_DIR": str(tmp_path / "identity")}

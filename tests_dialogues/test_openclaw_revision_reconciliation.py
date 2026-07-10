@@ -22,6 +22,7 @@ VALUE = "rushes exact-output tasks"
 ORIGINAL_REF = "trace/original"
 REVERSAL_REF = "trace/reversal"
 ORIGINAL_OUTCOME_REF = "outcome/original"
+REVERSAL_OUTCOME_REF = "outcome/reversal"
 STABLE_IDS = ("LESSON-0001",)
 
 
@@ -156,6 +157,24 @@ def _prepare_applied_reversal(registry, original, applied):
         approver="reversal-approver",
         application_reference="identity/revision/1",
     )
+    # Governed rollback semantics: the inverse must be CONFIRMED by
+    # independent post-change evidence before the original may be reverted.
+    confirm_manifest = dict(reversal_manifest)
+    confirm_manifest.update(_evidence(
+        reversal,
+        REVERSAL_OUTCOME_REF,
+        outcomes=("confirmed",),
+        verifier="post-change-verifier",
+    ))
+    registry.record_outcome(
+        AGENT,
+        reversal.proposal_id,
+        current_profile=restored,
+        outcome="confirmed",
+        evidence_manifest=confirm_manifest,
+        recorded_by="reversal-final-reviewer",
+        evidence_reference=REVERSAL_OUTCOME_REF,
+    )
     return reversal, restored
 
 
@@ -265,7 +284,7 @@ def test_applied_rollback_reconciles_both_registries(tmp_path):
     records = registry.all_records(AGENT)
     by_id = {record["proposal_id"]: record for record in records}
     assert by_id[original.proposal_id]["status"] == "reverted"
-    assert by_id[reversal.proposal_id]["status"] == "probationary"
+    assert by_id[reversal.proposal_id]["status"] == "confirmed"
     assert VALUE not in restored.known_failures
 
     report = reconcile_revision_state(restored, records)

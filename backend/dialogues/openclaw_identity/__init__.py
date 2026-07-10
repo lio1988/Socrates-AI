@@ -74,6 +74,7 @@ from .revision_registry import (
 from .revision_registry_governed import (
     MAX_ACTIVE_PROPOSALS_PER_AGENT,
     SelfRevisionRegistry,
+    SelfRevisionRegistry as GovernedSelfRevisionRegistry,
 )
 from .revision_transaction_governed import SelfRevisionTransactionCoordinator
 from .governed_system_transactional import GovernedSelfRevisionSystem
@@ -151,6 +152,7 @@ __all__ = [
     "REGISTRY_SCHEMA_VERSION",
     "BaseSelfRevisionRegistry",
     "SelfRevisionRegistry",
+    "GovernedSelfRevisionRegistry",
     "MAX_ACTIVE_PROPOSALS_PER_AGENT",
     "SelfRevisionTransactionCoordinator",
     "GovernedSelfRevisionSystem",

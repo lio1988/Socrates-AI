@@ -1,4 +1,4 @@
-"""
+r"""
 OpenClaw status — one command that answers "what is going on?".
 
 Offline and read-only: counts what exists on disk, shows the env gates, checks
@@ -7,7 +7,7 @@ network touch is a probe of the LOCAL server, and only when the local-apprentice
 gate is already ON.
 
     .\.venv\Scripts\python.exe scripts\openclaw_status.py
-    .\.venv\Scripts\python.exe scripts\openclaw_status.py --json
+    .\.\.venv\Scripts\python.exe scripts\openclaw_status.py --json
 
 No cloud calls, no API keys read beyond gate presence, nothing promoted,
 nothing mutated. See docs/openclaw_memory_lessons/OPERATOR_GUIDE.md.

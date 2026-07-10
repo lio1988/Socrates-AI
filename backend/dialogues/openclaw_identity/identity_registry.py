@@ -469,7 +469,6 @@ class IdentityRegistry:
         validated = from_record(record)
         if validated != profile:
             raise ValueError("identity profile is not canonical or type-safe")
-        _validate_complete_profile_history(profile)
         violation = _find_secret(record)
         if violation:
             raise ValueError(
@@ -479,6 +478,10 @@ class IdentityRegistry:
         with self._locked(path):
             existing = self._read_path(path)
             if existing is not None:
+                # Tamper detection outranks content validation: a rewritten
+                # stored history entry must be reported as an append-only
+                # violation, not as whatever semantic rule the forged
+                # content happens to break.
                 _validate_appended_history(existing, profile)
                 _validate_appended_revisions(existing, profile)
             elif profile.version_history or profile.revision_history:
@@ -486,6 +489,7 @@ class IdentityRegistry:
                     "a new identity profile must be saved before version or "
                     "self-revision history is appended; bootstrap fields may be "
                     "curated, history may not")
+            _validate_complete_profile_history(profile)
 
             payload = json.dumps(
                 record,

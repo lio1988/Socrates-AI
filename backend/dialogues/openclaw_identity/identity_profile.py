@@ -58,6 +58,17 @@ class AgentIdentityProfile:
     version_history: Tuple[Dict[str, Any], ...] = ()
     revision_history: Tuple[Dict[str, Any], ...] = ()
 
+    def __post_init__(self) -> None:
+        # next_gate is DERIVED from identity_version. A bare constructor call
+        # must never produce a profile the governed registry refuses on its
+        # first save, so an unset gate is filled from the version here (an
+        # explicitly supplied gate is kept and validated at save time).
+        if self.next_gate is None:
+            from .promotion_policy import next_gate_for
+            gate = next_gate_for(self.identity_version)
+            if gate is not None:
+                object.__setattr__(self, "next_gate", gate.gate_id)
+
     def to_record(self) -> Dict[str, Any]:
         """Return the complete JSON-ready identity record."""
         return {
