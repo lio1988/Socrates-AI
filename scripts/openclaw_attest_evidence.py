@@ -287,7 +287,7 @@ def _attest_resolution(records, registry, *, agent_id, section, window,
     prior = [
         evidence for evidence in registry.all_records(agent_id)
         if evidence.value == weakness
-        and "identity:add_known_failure" in evidence.supports
+        and evidence.supports == ("identity:add_known_failure",)
     ]
     if not prior:
         raise ValueError(
@@ -299,7 +299,7 @@ def _attest_resolution(records, registry, *, agent_id, section, window,
         shadow_path=shadow_path,
         verified_by=verified_by,
         observed_on=observed_on,
-        prior_evidence_reference=prior[-1].reference,
+        prior_evidence_reference=prior[0].reference,
     )
     evidence = build_identity_resolution_evidence(report, min_window=window)
     registry.register(evidence)
