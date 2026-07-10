@@ -9,6 +9,7 @@ from backend.dialogues.openclaw_identity.tree_revision_evidence import (
     extract_tree_revision_observations,
     summarize_tree_revision_observations,
 )
+from backend.dialogues.openclaw_identity.tree_revision_schema import digest
 
 
 def score(session, draft, author, voter, section, value):
@@ -102,49 +103,6 @@ def session(
     return state, final
 
 
-def test_extract_recomputes_matched_margin_and_ignores_cached_score():
-    state, final = session()
-    result = extract_tree_revision_observations(
-        state, final, min_matched_scores=4)
-    assert len(result) == 1
-    observation = result[0]
-    assert observation.agent_id == "agent_b"
-    assert observation.parent_score == 6
-    assert observation.child_score == 8
-    assert observation.margin == 2
-    assert observation.outcome == "improved"
-    assert observation.matched_score_count == 4
-    assert observation.judge_ids == ("j1", "j2")
-    assert TreeRevisionObservation.from_record(observation.to_record()) == observation
-
-
-def test_only_exact_matched_judge_section_pairs_count():
-    state, final = session(judges=("j1", "j2"))
-    state.draft_scorecards[-1].section_scores.pop()
-    assert extract_tree_revision_observations(
-        state, final, min_matched_scores=4) == ()
-    observation = extract_tree_revision_observations(
-        state, final, min_matched_scores=3)[0]
-    assert observation.matched_score_count == 3
-
-
-def test_tampered_observation_digest_refused():
-    state, final = session()
-    record = extract_tree_revision_observations(state, final)[0].to_record()
-    record["margin"] = 9
-    with pytest.raises(ValueError, match="margin"):
-        TreeRevisionObservation.from_record(record)
-
-
-def test_self_scoring_fails_closed():
-    state, final = session()
-    state.draft_scorecards[0].voter_agent_id = "agent_a"
-    state.draft_scorecards[0].section_scores[0].voter_agent_id = "agent_a"
-    state.draft_scorecards[0].section_scores[1].voter_agent_id = "agent_a"
-    with pytest.raises(ValueError, match="self-scored"):
-        extract_tree_revision_observations(state, final)
-
-
 def observation(
     sid,
     key,
@@ -166,6 +124,7 @@ def observation(
         parent_score=parent,
         child_score=child,
         margin=margin,
+        effect_margin=0.5,
         outcome=outcome,
         matched_score_count=4,
         judge_ids=judges,
@@ -175,6 +134,85 @@ def observation(
         scorecard_digest="b" * 64,
         source_trace=f"trace:{sid}",
     )
+
+
+def rebuild(record, **changes):
+    values = dict(record)
+    values.update(changes)
+    values.pop("schema_version", None)
+    values.pop("observation_digest", None)
+    values["judge_ids"] = tuple(values["judge_ids"])
+    values["matched_sections"] = tuple(values["matched_sections"])
+    return TreeRevisionObservation(**values)
+
+
+def test_extract_recomputes_matched_margin_and_ignores_cached_score():
+    state, final = session()
+    result = extract_tree_revision_observations(
+        state, final, min_matched_scores=4)
+    assert len(result) == 1
+    item = result[0]
+    assert item.agent_id == "agent_b"
+    assert item.parent_score == 6
+    assert item.child_score == 8
+    assert item.margin == 2
+    assert item.effect_margin == 0.5
+    assert item.outcome == "improved"
+    assert item.matched_score_count == 4
+    assert item.judge_ids == ("j1", "j2")
+    assert TreeRevisionObservation.from_record(item.to_record()) == item
+
+
+def test_only_exact_matched_judge_section_pairs_count():
+    state, final = session(judges=("j1", "j2"))
+    state.draft_scorecards[-1].section_scores.pop()
+    assert extract_tree_revision_observations(
+        state, final, min_matched_scores=4) == ()
+    item = extract_tree_revision_observations(
+        state, final, min_matched_scores=3)[0]
+    assert item.matched_score_count == 3
+
+
+def test_tampered_observation_digest_refused():
+    state, final = session()
+    record = extract_tree_revision_observations(state, final)[0].to_record()
+    record["margin"] = 9
+    with pytest.raises(ValueError, match="margin"):
+        TreeRevisionObservation.from_record(record)
+
+
+def test_observation_outcome_is_bound_to_effect_margin():
+    with pytest.raises(ValueError, match="outcome does not match"):
+        TreeRevisionObservation(
+            session_id="s1",
+            comparison_key="q1",
+            question_hash="a" * 64,
+            agent_id="agent_b",
+            provider_id="prov_b",
+            parent_draft_id="p",
+            child_draft_id="c",
+            parent_score=6,
+            child_score=6.2,
+            margin=0.2,
+            effect_margin=0.5,
+            outcome="improved",
+            matched_score_count=1,
+            judge_ids=("j1",),
+            matched_sections=("core_answer",),
+            tree_exploration=0.5,
+            tree_total_expansions=1,
+            scorecard_digest="b" * 64,
+            source_trace="trace:s1",
+        )
+
+
+def test_self_scoring_fails_closed():
+    state, final = session()
+    state.draft_scorecards[0].voter_agent_id = "agent_a"
+    state.draft_scorecards[0].section_scores[0].voter_agent_id = "agent_a"
+    state.draft_scorecards[0].section_scores[1].voter_agent_id = "agent_a"
+    with pytest.raises(ValueError, match="self-scored"):
+        extract_tree_revision_observations(state, final)
 
 
 def test_failure_evidence_requires_repeated_distinct_regressions():
@@ -222,6 +260,40 @@ def test_failure_evidence_refuses_improvement_or_same_session():
             weakness="w",
             verified_by="v",
             verification_reference="r",
+        )
+
+
+def test_failure_evidence_is_order_independent_and_rejects_self_verifier():
+    first = observation("s1", "q1", -1, "regressed")
+    second = observation("s2", "q2", -2, "regressed")
+    left = build_tree_revision_failure_evidence(
+        [first, second],
+        reference="tree/fail/order",
+        agent_id="agent_b",
+        pattern_key="tree_revision_regression",
+        weakness="w",
+        verified_by="reviewer",
+        verification_reference="report.json",
+    )
+    right = build_tree_revision_failure_evidence(
+        [second, first],
+        reference="tree/fail/order",
+        agent_id="agent_b",
+        pattern_key="tree_revision_regression",
+        weakness="w",
+        verified_by="reviewer",
+        verification_reference="report.json",
+    )
+    assert left == right
+    with pytest.raises(ValueError, match="cannot verify its own"):
+        build_tree_revision_failure_evidence(
+            [first, second],
+            reference="tree/fail/self",
+            agent_id="agent_b",
+            pattern_key="tree_revision_regression",
+            weakness="w",
+            verified_by="AGENT_B",
+            verification_reference="report.json",
         )
 
 
@@ -288,6 +360,56 @@ def test_resolution_refuses_changed_judges_and_unmatched_keys():
         )
 
 
+def test_resolution_refuses_changed_question_provider_or_effect_margin():
+    before = [
+        observation("b1", "q1", -1, "regressed"),
+        observation("b2", "q2", -1, "regressed"),
+    ]
+    after = [
+        observation("a1", "q1", 1, "improved"),
+        observation("a2", "q2", 1, "improved"),
+    ]
+
+    changed_question = rebuild(after[0].to_record(), question_hash="c" * 64)
+    with pytest.raises(ValueError, match="different questions"):
+        build_tree_revision_resolution_evidence(
+            before,
+            [changed_question, after[1]],
+            reference="x",
+            agent_id="agent_b",
+            pattern_key="p",
+            weakness="w",
+            verified_by="v",
+            verification_reference="r",
+        )
+
+    changed_provider = rebuild(after[0].to_record(), provider_id="prov_c")
+    with pytest.raises(ValueError, match="different providers"):
+        build_tree_revision_resolution_evidence(
+            before,
+            [changed_provider, after[1]],
+            reference="x",
+            agent_id="agent_b",
+            pattern_key="p",
+            weakness="w",
+            verified_by="v",
+            verification_reference="r",
+        )
+
+    changed_margin = rebuild(after[0].to_record(), effect_margin=0.75)
+    with pytest.raises(ValueError, match="different effect margins"):
+        build_tree_revision_resolution_evidence(
+            before,
+            [changed_margin, after[1]],
+            reference="x",
+            agent_id="agent_b",
+            pattern_key="p",
+            weakness="w",
+            verified_by="v",
+            verification_reference="r",
+        )
+
+
 def test_summary_is_agent_bound_and_deterministic():
     values = [
         observation("s2", "q2", -1, "regressed"),
@@ -345,32 +467,11 @@ def test_resolution_refuses_changed_tree_budget():
         observation("a1", "q1", 1, "improved"),
         observation("a2", "q2", 1, "improved"),
     ]
-    changed = after[0].to_record()
-    changed_observation = TreeRevisionObservation(
-        session_id=changed["session_id"],
-        comparison_key=changed["comparison_key"],
-        question_hash=changed["question_hash"],
-        agent_id=changed["agent_id"],
-        provider_id=changed["provider_id"],
-        parent_draft_id=changed["parent_draft_id"],
-        child_draft_id=changed["child_draft_id"],
-        parent_score=changed["parent_score"],
-        child_score=changed["child_score"],
-        margin=changed["margin"],
-        outcome=changed["outcome"],
-        matched_score_count=changed["matched_score_count"],
-        judge_ids=tuple(changed["judge_ids"]),
-        matched_sections=tuple(changed["matched_sections"]),
-        tree_exploration=changed["tree_exploration"],
-        tree_total_expansions=3,
-        scorecard_digest=changed["scorecard_digest"],
-        source_trace=changed["source_trace"],
-    )
-    after[0] = changed_observation
+    changed = rebuild(after[0].to_record(), tree_total_expansions=3)
     with pytest.raises(ValueError, match="different budgets"):
         build_tree_revision_resolution_evidence(
             before,
-            after,
+            [changed, after[1]],
             reference="x",
             agent_id="agent_b",
             pattern_key="p",
