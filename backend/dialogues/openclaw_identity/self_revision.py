@@ -164,6 +164,8 @@ def proposal_from_record(
     expected_agent_id: str = "",
 ) -> SelfRevisionProposal:
     """Parse an untrusted agent-emitted mapping into the strict proposal schema."""
+    if not isinstance(record, Mapping):
+        raise ValueError("self-revision proposal must be a mapping")
     allowed = {
         "proposal_id", "agent_id", "proposed_by", "target", "action", "value",
         "reason", "evidence_references", "risk", "status",
@@ -199,7 +201,7 @@ def evaluate_self_revision(
     evidence_manifest: Mapping[str, Mapping[str, Any]],
     stable_lesson_ids: Iterable[str] = (),
 ) -> RevisionEvaluation:
-    """Verify evidence ownership, provenance, and action-specific relevance."""
+    """Verify evidence ownership, provenance, action, and value relevance."""
     if not isinstance(evidence_manifest, Mapping):
         raise ValueError("evidence_manifest must be a mapping")
     if isinstance(stable_lesson_ids, (str, bytes)):
@@ -231,6 +233,10 @@ def evaluate_self_revision(
         if support_key not in {str(item).strip() for item in supports}:
             reasons.append(
                 f"evidence does not support {support_key}: {reference}")
+            continue
+        if str(evidence.get("value", "")).strip() != proposal.value:
+            reasons.append(
+                f"evidence value does not match proposal value: {reference}")
             continue
         matched.append(reference)
 
