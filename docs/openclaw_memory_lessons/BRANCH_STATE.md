@@ -83,7 +83,8 @@ OpenClaw remembers.
 | Goal 7 — Prompt registry (versioned lineage, runtime-inert) | `d6d4ee3` | `openclaw_prompts/prompt_registry.py` | 16 |
 | Goal 8 — Prompt patch generator (proposes into the registry) | `4672c80` | `openclaw_prompts/patch_proposer.py` | 9 |
 | Goal 11 — Shadow Apprentice Mode (Stage 1 runtime) | `cfe0624` | `openclaw_shadow/shadow_apprentice.py` | 13 |
-| Goal 10 — Local LLM provider (gated apprentice adapter) | see git log | `openclaw_local/local_provider.py` | 14 |
+| Goal 10 — Local LLM provider (gated apprentice adapter) | `27d796f` | `openclaw_local/local_provider.py` | 14 |
+| Shadow dialogue operator script (demo free / local gated) | see git log | `scripts/shadow_dialogue.py` | 8 |
 
 ## Learning arcs currently closed
 
@@ -208,8 +209,7 @@ This direction succeeds when agents can reliably:
   behind the Promotion Arena gate), Goal 12 (UI panel), Goal 13
   (fine-tuning dataset preparation beyond the Phase 22 corpus),
   prompt-registry runtime wiring (rendered prompts into live calls behind
-  an A/B gate), a live shadow session script (operator runs the gated
-  local apprentice against a real council and collects identity evidence).
+  an A/B gate).
 - Curriculum from the OpenQuestionLedger; Evidence Harness value grounding
   for the tree; an instrument that observes unsupported claims (until then
   identity gate v0.2→v0.3 honestly cannot pass); role-scoped apprentice
