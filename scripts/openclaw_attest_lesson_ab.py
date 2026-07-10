@@ -5,7 +5,7 @@ The command accepts only a strict attestation envelope containing:
 - an ``openclaw_agent_lesson_ab_v1`` instrument report;
 - the SHA-256 fingerprint of the exact curated lesson tested;
 - the governed Identity fingerprint of the exact target agent tested;
-- a SHA-256 experiment fingerprint covering the matched execution setup.
+- a retained experiment manifest and its verified canonical SHA-256 digest.
 
 It deliberately refuses the ordinary whole-council ``lesson_ab_v2`` report and
 unbound personal reports. The output is only an immutable evidence record; the
@@ -60,11 +60,21 @@ ATTESTATION_SCHEMA_VERSION = "openclaw_agent_lesson_ab_attestation_v1"
 _W = 78
 _MAX_REPORT_BYTES = 1_000_000
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+_SECRET_PATTERNS = (
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(
+        r"\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|"
+        r"client[_-]?secret)\s*[:=]\s*\S{8,}",
+        re.IGNORECASE,
+    ),
+)
 _ENVELOPE_FIELDS = {
     "schema_version",
     "lesson_fingerprint",
     "target_identity_fingerprint",
     "experiment_fingerprint",
+    "experiment_manifest",
     "instrument_report",
 }
 _ACTIONS = {
@@ -117,9 +127,43 @@ def _hex_digest(value: Any, *, field: str) -> str:
     return text
 
 
+def _find_secret(value: Any, path: str = "experiment_manifest") -> str:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            violation = _find_secret(child, f"{path}.{key}")
+            if violation:
+                return violation
+        return ""
+    if isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            violation = _find_secret(child, f"{path}[{index}]")
+            if violation:
+                return violation
+        return ""
+    if isinstance(value, str):
+        for pattern in _SECRET_PATTERNS:
+            if pattern.search(value):
+                return f"{path} contains secret-shaped data"
+    return ""
+
+
+def _canonical_digest(value: Any, *, field: str) -> str:
+    try:
+        payload = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be canonical JSON") from exc
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _unpack_envelope(
     envelope: Mapping[str, Any],
-) -> tuple[Mapping[str, Any], dict[str, str]]:
+) -> tuple[Mapping[str, Any], dict[str, str], Mapping[str, Any]]:
     if set(envelope) != _ENVELOPE_FIELDS:
         raise ValueError(
             "Lesson A/B attestation contains missing or unknown fields: "
@@ -131,6 +175,21 @@ def _unpack_envelope(
     report = envelope.get("instrument_report")
     if not isinstance(report, Mapping):
         raise ValueError("instrument_report must be one JSON object")
+    manifest = envelope.get("experiment_manifest")
+    if not isinstance(manifest, Mapping) or not manifest:
+        raise ValueError("experiment_manifest must be a non-empty JSON object")
+    violation = _find_secret(manifest)
+    if violation:
+        raise ValueError(violation)
+    supplied_experiment = _hex_digest(
+        envelope.get("experiment_fingerprint"),
+        field="experiment_fingerprint",
+    )
+    actual_experiment = _canonical_digest(
+        manifest, field="experiment_manifest")
+    if supplied_experiment != actual_experiment:
+        raise ValueError(
+            "experiment_fingerprint does not match experiment_manifest")
     bindings = {
         "lesson_fingerprint": _hex_digest(
             envelope.get("lesson_fingerprint"), field="lesson_fingerprint"),
@@ -138,12 +197,9 @@ def _unpack_envelope(
             envelope.get("target_identity_fingerprint"),
             field="target_identity_fingerprint",
         ),
-        "experiment_fingerprint": _hex_digest(
-            envelope.get("experiment_fingerprint"),
-            field="experiment_fingerprint",
-        ),
+        "experiment_fingerprint": supplied_experiment,
     }
-    return report, bindings
+    return report, bindings, manifest
 
 
 def _normalize_action(value: str) -> str:
@@ -208,11 +264,8 @@ def _bind_report(
 ) -> dict[str, Any]:
     """Commit all three external bindings into the builder's report digest."""
     source = str(report.get("source", "")).strip()
-    binding_digest = hashlib.sha256(json.dumps(
-        dict(bindings),
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")).hexdigest()
+    binding_digest = _canonical_digest(
+        dict(bindings), field="attestation bindings")
     suffix = f"#bindings-{binding_digest[:16]}"
     if len(source) + len(suffix) > 512:
         raise ValueError(
@@ -283,7 +336,7 @@ def main(argv=None, env=None) -> int:
 
     try:
         report_path, envelope = _load_envelope(_value(argv, "--report"))
-        report, bindings = _unpack_envelope(envelope)
+        report, bindings, _manifest = _unpack_envelope(envelope)
         action = _normalize_action(_value(argv, "--action"))
         _validate_report_identity(
             report, agent_id=agent_id, verified_by=verified_by)
