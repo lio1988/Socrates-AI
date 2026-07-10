@@ -216,6 +216,7 @@ def extract_tree_revision_observations(
             parent_score=round(parent_mean, 6),
             child_score=round(child_mean, 6),
             margin=round(margin, 6),
+            effect_margin=float(effect_margin),
             outcome=outcome,
             matched_score_count=len(matched),
             judge_ids=tuple(judge for judge, _ in matched),
