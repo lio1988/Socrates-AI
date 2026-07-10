@@ -22,7 +22,7 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 from .identity_profile import AgentIdentityProfile
 from .self_revision import REVISION_TARGET_ACTIONS, SelfRevisionProposal
 
-SNAPSHOT_VERSION = "openclaw_self_review_v3"
+SNAPSHOT_VERSION = "openclaw_self_review_v4"
 MAX_REVIEW_EVIDENCE = 64
 MAX_PENDING_PROPOSALS = 32
 MAX_KNOWN_FAILURES = 32
@@ -89,17 +89,17 @@ def _canonical_digest(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def profile_fingerprint(profile: AgentIdentityProfile) -> str:
-    """Digest every profile field, including observational performance metrics."""
+def observational_profile_fingerprint(profile: AgentIdentityProfile) -> str:
+    """Digest every profile field, including refreshable performance metrics."""
     return _canonical_digest(profile.to_record())
 
 
-def governed_profile_fingerprint(profile: AgentIdentityProfile) -> str:
-    """Digest only governed identity state, excluding refreshable observations.
+def profile_fingerprint(profile: AgentIdentityProfile) -> str:
+    """Digest the governed Identity/Memory/Soul state.
 
-    Role rates, counts, and session totals can legitimately refresh during a
-    probation window. Soul/Memory/Identity commitments and earned transitions
-    may not. This fingerprint lets post-change review distinguish those cases.
+    This is the canonical fingerprint used by revision lifecycle transitions.
+    Role rates, counts, and session totals are evidence observations that may
+    refresh without changing the agent's governed identity commitments.
     """
     return _canonical_digest({
         "agent_id": profile.agent_id,
@@ -112,6 +112,11 @@ def governed_profile_fingerprint(profile: AgentIdentityProfile) -> str:
         "version_history": [dict(entry) for entry in profile.version_history],
         "revision_history": [dict(entry) for entry in profile.revision_history],
     })
+
+
+def governed_profile_fingerprint(profile: AgentIdentityProfile) -> str:
+    """Explicit alias for the canonical governed ``profile_fingerprint``."""
+    return profile_fingerprint(profile)
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,7 @@ class SelfReviewSnapshot:
     agent_id: str
     profile_fingerprint: str
     governed_profile_fingerprint: str
+    observational_profile_fingerprint: str
     identity_version: str
     promotion_status: str
     role_strengths: Dict[str, Dict[str, Any]]
@@ -160,6 +166,8 @@ class SelfReviewSnapshot:
             "agent_id": self.agent_id,
             "profile_fingerprint": self.profile_fingerprint,
             "governed_profile_fingerprint": self.governed_profile_fingerprint,
+            "observational_profile_fingerprint": (
+                self.observational_profile_fingerprint),
             "identity_version": self.identity_version,
             "promotion_status": self.promotion_status,
             "role_strengths": {
@@ -304,10 +312,13 @@ def build_self_review_snapshot(
                 "pending self-revision proposals exceed the bounded snapshot "
                 f"limit of {MAX_PENDING_PROPOSALS}")
 
+    governed = profile_fingerprint(profile)
     return SelfReviewSnapshot(
         agent_id=_safe_text(profile.agent_id, field="agent_id", maximum=128),
-        profile_fingerprint=profile_fingerprint(profile),
-        governed_profile_fingerprint=governed_profile_fingerprint(profile),
+        profile_fingerprint=governed,
+        governed_profile_fingerprint=governed,
+        observational_profile_fingerprint=(
+            observational_profile_fingerprint(profile)),
         identity_version=_safe_text(
             profile.identity_version, field="identity_version", maximum=64),
         promotion_status=_safe_text(
@@ -378,8 +389,8 @@ def render_self_review_summary(snapshot: SelfReviewSnapshot) -> str:
         "=" * 49,
         f"Agent: {snapshot.agent_id}",
         f"Identity: {snapshot.identity_version} / {snapshot.promotion_status}",
-        f"Profile fingerprint: {snapshot.profile_fingerprint}",
-        f"Governed fingerprint: {snapshot.governed_profile_fingerprint}",
+        f"Governed fingerprint: {snapshot.profile_fingerprint}",
+        f"Observational fingerprint: {snapshot.observational_profile_fingerprint}",
         f"Snapshot fingerprint: {snapshot.snapshot_fingerprint}",
         f"Verified evidence records: {len(snapshot.verified_evidence)}",
         f"Pending proposals: {len(snapshot.pending_proposal_ids)}",
