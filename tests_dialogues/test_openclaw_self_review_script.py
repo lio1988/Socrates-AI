@@ -125,6 +125,7 @@ def test_happy_path_writes_bounded_artifacts_from_legacy_manifest(
     assert instruction_path.exists()
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot["agent_id"] == AGENT
+    assert snapshot["snapshot_version"] == "openclaw_self_review_v2"
     assert len(snapshot["verified_evidence"]) == 1
     assert snapshot["pending_proposal_ids"] == []
     assert "Return exactly one JSON object" in instruction_path.read_text(
@@ -179,7 +180,7 @@ def test_pending_registry_proposal_is_visible_but_not_activated(
         profile, evidence_manifest=manifest)
     SelfRevisionRegistry(env["CED_SELF_REVISION_DIR"]).submit(
         proposal,
-        snapshot_fingerprint=snapshot.snapshot_fingerprint,
+        snapshot=snapshot,
     )
 
     assert self_review_script.main(["prog", AGENT], env=env) == 0
