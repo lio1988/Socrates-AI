@@ -115,6 +115,17 @@ def _shadow(runner, ced, question="q", sid="sh_1"):
     return asyncio.run(runner.shadow_session(ced, question, session_id=sid))
 
 
+def _synthesis_ledger_ids(final):
+    ids = []
+    for injection in final.audit_summary["openclaw_lessons"]["injections"]:
+        if injection["phase"] != "synthesis":
+            continue
+        for lesson_id in injection["lesson_ids"]:
+            if lesson_id not in ids:
+                ids.append(lesson_id)
+    return ids
+
+
 # --------------------------------------------------------------------------- #
 # Record shape + separation
 # --------------------------------------------------------------------------- #
@@ -208,9 +219,11 @@ def test_lessons_reach_apprentice_context():
         _weak_council(lessons=lessons),
         question="deliberation scoring assembly",
     )
+    expected = _synthesis_ledger_ids(final)
+    assert expected
     assert record["lessons_selected"] > 0
     assert record["lesson_source"] == "council_injection_ledger"
-    assert record["lesson_ids"] == final.audit_summary["openclaw_lessons"]["selected"]
+    assert record["lesson_ids"] == expected
     draft_tasks = [t for t in appr.seen
                    if t["task_kind"] == "synthesis_draft"]
     assert draft_tasks
@@ -229,14 +242,10 @@ def test_keywordless_question_still_replays_phase_matched_lessons():
         _weak_council(lessons=lessons),
         question="xyzzy plugh",
     )
-    synthesis_ids = []
-    for injection in final.audit_summary["openclaw_lessons"]["injections"]:
-        if injection["phase"] == "synthesis":
-            synthesis_ids.extend(injection["lesson_ids"])
-    synthesis_ids = list(dict.fromkeys(synthesis_ids))
-    assert synthesis_ids
-    assert record["lesson_ids"] == synthesis_ids
-    assert record["lessons_selected"] == len(synthesis_ids)
+    expected = _synthesis_ledger_ids(final)
+    assert expected
+    assert record["lesson_ids"] == expected
+    assert record["lessons_selected"] == len(expected)
     draft_tasks = [t for t in appr.seen
                    if t["task_kind"] == "synthesis_draft"]
     assert "openclaw_memory_lessons" in draft_tasks[0]["context"]
