@@ -8,10 +8,11 @@ the complete proposal lifecycle around those effects:
 Security properties:
 
 - submission is bound to one exact bounded self-review snapshot;
+- proposal and snapshot metadata are committed into the first event hash;
 - evaluation is recomputed from trusted evidence, never caller-supplied;
 - decisions are bound to the same evidence digest and unchanged profile state;
 - application is recomputed and must exactly equal the supplied new profile;
-- post-change outcomes require trusted, outcome-specific evidence;
+- post-change outcomes require trusted, action- and outcome-specific evidence;
 - events are append-only, hash-chained, atomically written, and non-self governed;
 - a per-proposal exclusive lock prevents concurrent lost updates.
 
@@ -42,7 +43,7 @@ from .self_revision import (
     proposal_from_record,
 )
 
-REGISTRY_SCHEMA_VERSION = "openclaw_self_revision_registry_v2"
+REGISTRY_SCHEMA_VERSION = "openclaw_self_revision_registry_v3"
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -64,7 +65,10 @@ _BASE_EVENT_FIELDS = {
     "event_index", "event_type", "actor", "on", "prev_event_hash", "event_hash",
 }
 _EVENT_FIELDS = {
-    "submitted": _BASE_EVENT_FIELDS,
+    "submitted": _BASE_EVENT_FIELDS | {
+        "proposal_digest", "snapshot_fingerprint", "profile_fingerprint",
+        "snapshot_evidence_digest",
+    },
     "evaluated": _BASE_EVENT_FIELDS | {
         "passed", "reasons", "evidence_used", "evidence_digest",
     },
@@ -102,9 +106,7 @@ def _clean_text(value: Any, *, field: str, maximum: int = 1000) -> str:
 
 def _clean_optional_text(value: Any, *, field: str, maximum: int) -> str:
     text = str(value or "").strip()
-    if not text:
-        return ""
-    return _clean_text(text, field=field, maximum=maximum)
+    return _clean_text(text, field=field, maximum=maximum) if text else ""
 
 
 def _clean_sequence(
@@ -125,6 +127,15 @@ def _clean_sequence(
             f"{field} contains {len(cleaned)} entries; maximum is "
             f"{maximum_entries}")
     return cleaned
+
+
+def _stable_tuple(values: Iterable[str]) -> Tuple[str, ...]:
+    return _clean_sequence(
+        values,
+        field="stable_lesson_ids",
+        maximum_entries=256,
+        maximum_text=128,
+    )
 
 
 def _canonical_json(value: Any) -> str:
@@ -185,12 +196,13 @@ def _build_event(
     }
     event.update(fields)
     expected = _EVENT_FIELDS.get(event_type)
+    actual = set(event) | {"event_hash"}
     if expected is None:
         raise ValueError(f"unknown lifecycle event type {event_type!r}")
-    if set(event) | {"event_hash"} != expected:
+    if actual != expected:
         raise ValueError(
             f"lifecycle event {event_type!r} has invalid fields: "
-            f"{sorted((set(event) | {'event_hash'}) ^ expected)}")
+            f"{sorted(actual ^ expected)}")
     event["event_hash"] = _event_hash(event)
     return event
 
@@ -203,16 +215,10 @@ def _validate_non_self(actor: str, agent_id: str, *, action: str) -> None:
 def _evaluation_digest(
     proposal: SelfRevisionProposal,
     evidence_manifest: Mapping[str, Mapping[str, Any]],
-    stable_lesson_ids: Iterable[str],
+    stable_lesson_ids: Tuple[str, ...],
 ) -> str:
     if not isinstance(evidence_manifest, Mapping):
         raise ValueError("evidence_manifest must be a mapping")
-    stable = _clean_sequence(
-        stable_lesson_ids,
-        field="stable_lesson_ids",
-        maximum_entries=256,
-        maximum_text=128,
-    )
     cited = {}
     for reference in proposal.evidence_references:
         record = evidence_manifest.get(reference)
@@ -226,7 +232,7 @@ def _evaluation_digest(
     return _digest({
         "proposal_id": proposal.proposal_id,
         "cited_evidence": cited,
-        "stable_lesson_ids": sorted(set(stable)),
+        "stable_lesson_ids": sorted(set(stable_lesson_ids)),
     })
 
 
@@ -423,6 +429,18 @@ def _validate_record(record: Mapping[str, Any]) -> Tuple[SelfRevisionProposal, s
     if not isinstance(events, list):
         raise ValueError("revision registry events must be a list")
     _validate_event_sequence(events, proposal=proposal)
+
+    submitted = events[0]
+    expected_bindings = {
+        "proposal_digest": _digest(proposal.to_record()),
+        "snapshot_fingerprint": str(record["snapshot_fingerprint"]),
+        "profile_fingerprint": str(record["profile_fingerprint"]),
+        "snapshot_evidence_digest": _digest(list(snapshot_references)),
+    }
+    for field, expected in expected_bindings.items():
+        if submitted.get(field) != expected:
+            raise ValueError(
+                f"submitted event does not bind current {field}")
     return proposal, _record_status(events)
 
 
@@ -452,7 +470,7 @@ def _validate_outcome_evidence(
     outcome: str,
     reference: str,
     evidence_manifest: Mapping[str, Mapping[str, Any]],
-) -> str:
+) -> Tuple[str, str]:
     if not isinstance(evidence_manifest, Mapping):
         raise ValueError("evidence_manifest must be a mapping")
     evidence = evidence_manifest.get(reference)
@@ -463,8 +481,25 @@ def _validate_outcome_evidence(
     if str(evidence.get("agent_id", "")).strip() != proposal.agent_id:
         raise ValueError("outcome evidence belongs to another agent")
     _clean_text(evidence.get("source", ""), field="outcome source", maximum=512)
+    verifier = _clean_text(
+        evidence.get("verified_by", ""),
+        field="outcome evidence verifier",
+        maximum=128,
+    )
+    _validate_non_self(verifier, proposal.agent_id, action="verify")
     if str(evidence.get("value", "")).strip() != proposal.value:
         raise ValueError("outcome evidence value does not match proposal value")
+    raw_supports = evidence.get("supports") or ()
+    supports = _clean_sequence(
+        raw_supports,
+        field="outcome action support",
+        maximum_entries=16,
+        maximum_text=128,
+    )
+    support_key = f"{proposal.target}:{proposal.action}"
+    if support_key not in supports:
+        raise ValueError(
+            f"outcome evidence does not support {support_key}")
     raw_outcomes = evidence.get("outcomes") or ()
     outcomes = _clean_sequence(
         raw_outcomes,
@@ -475,7 +510,10 @@ def _validate_outcome_evidence(
     if outcome not in outcomes:
         raise ValueError(
             f"outcome evidence does not support {outcome!r}")
-    return _outcome_evidence_digest(proposal, outcome, reference, evidence)
+    return (
+        _outcome_evidence_digest(proposal, outcome, reference, evidence),
+        verifier,
+    )
 
 
 class SelfRevisionRegistry:
@@ -589,12 +627,19 @@ class SelfRevisionRegistry:
         with self._locked(path):
             if path.exists():
                 raise ValueError("self-revision proposal_id already exists in registry")
+            snapshot_references = [
+                evidence.reference for evidence in snapshot.verified_evidence
+            ]
             events: List[Dict[str, Any]] = []
             events.append(_build_event(
                 events,
                 event_type="submitted",
                 actor=proposal.agent_id,
                 on=submitted_on,
+                proposal_digest=_digest(proposal.to_record()),
+                snapshot_fingerprint=snapshot.snapshot_fingerprint,
+                profile_fingerprint=snapshot.profile_fingerprint,
+                snapshot_evidence_digest=_digest(snapshot_references),
             ))
             record = {
                 "schema_version": REGISTRY_SCHEMA_VERSION,
@@ -603,9 +648,7 @@ class SelfRevisionRegistry:
                 "snapshot_version": snapshot.snapshot_version,
                 "snapshot_fingerprint": snapshot.snapshot_fingerprint,
                 "profile_fingerprint": snapshot.profile_fingerprint,
-                "snapshot_evidence_references": [
-                    evidence.reference for evidence in snapshot.verified_evidence
-                ],
+                "snapshot_evidence_references": snapshot_references,
                 "proposal": proposal.to_record(),
                 "events": events,
             }
@@ -663,6 +706,7 @@ class SelfRevisionRegistry:
         evaluated_on: str = "",
     ) -> RevisionEvaluation:
         """Recompute trusted evidence and append the resulting evaluation."""
+        stable_ids = _stable_tuple(stable_lesson_ids)
         path = self._path_for(agent_id, proposal_id)
         with self._locked(path):
             record = self._load_path(path)
@@ -680,7 +724,7 @@ class SelfRevisionRegistry:
             evaluation = evaluate_self_revision(
                 proposal,
                 evidence_manifest=evidence_manifest,
-                stable_lesson_ids=stable_lesson_ids,
+                stable_lesson_ids=stable_ids,
             )
             actor = _clean_text(
                 evaluated_by, field="evaluated_by", maximum=128)
@@ -694,7 +738,7 @@ class SelfRevisionRegistry:
                 reasons=list(evaluation.reasons),
                 evidence_used=list(evaluation.evidence_used),
                 evidence_digest=_evaluation_digest(
-                    proposal, evidence_manifest, stable_lesson_ids),
+                    proposal, evidence_manifest, stable_ids),
             )
             record.pop("status", None)
             record["events"].append(event)
@@ -715,6 +759,7 @@ class SelfRevisionRegistry:
         decided_on: str = "",
     ) -> Path:
         """Record a segregated non-self decision against unchanged evidence/state."""
+        stable_ids = _stable_tuple(stable_lesson_ids)
         path = self._path_for(agent_id, proposal_id)
         with self._locked(path):
             record = self._load_path(path)
@@ -733,10 +778,10 @@ class SelfRevisionRegistry:
             fresh = evaluate_self_revision(
                 proposal,
                 evidence_manifest=evidence_manifest,
-                stable_lesson_ids=stable_lesson_ids,
+                stable_lesson_ids=stable_ids,
             )
             digest = _evaluation_digest(
-                proposal, evidence_manifest, stable_lesson_ids)
+                proposal, evidence_manifest, stable_ids)
             if digest != evaluation_event["evidence_digest"]:
                 raise ValueError("evidence changed after lifecycle evaluation")
             if fresh.passed != evaluation_event["passed"] or \
@@ -782,6 +827,7 @@ class SelfRevisionRegistry:
         applied_on: str = "",
     ) -> Path:
         """Recompute the approved change and require exact resulting profile state."""
+        stable_ids = _stable_tuple(stable_lesson_ids)
         path = self._path_for(agent_id, proposal_id)
         with self._locked(path):
             record = self._load_path(path)
@@ -803,10 +849,10 @@ class SelfRevisionRegistry:
             fresh = evaluate_self_revision(
                 proposal,
                 evidence_manifest=evidence_manifest,
-                stable_lesson_ids=stable_lesson_ids,
+                stable_lesson_ids=stable_ids,
             )
             digest = _evaluation_digest(
-                proposal, evidence_manifest, stable_lesson_ids)
+                proposal, evidence_manifest, stable_ids)
             if not fresh.passed or digest != evaluation_event["evidence_digest"]:
                 raise ValueError("application evidence no longer matches approval")
             if decision_event["decision"] != "approved":
@@ -817,7 +863,7 @@ class SelfRevisionRegistry:
                 proposal,
                 fresh,
                 evidence_manifest=evidence_manifest,
-                stable_lesson_ids=stable_lesson_ids,
+                stable_lesson_ids=stable_ids,
                 approved_by=decision_event["actor"],
                 approval_reference=decision_event["decision_reference"],
                 approved_on=decision_event["on"],
@@ -887,12 +933,16 @@ class SelfRevisionRegistry:
             _validate_non_self(actor, agent_id, action="confirm or revert")
             evidence_ref = _clean_text(
                 evidence_reference, field="evidence_reference", maximum=512)
-            outcome_digest = _validate_outcome_evidence(
+            outcome_digest, evidence_verifier = _validate_outcome_evidence(
                 proposal,
                 outcome=outcome,
                 reference=evidence_ref,
                 evidence_manifest=evidence_manifest,
             )
+            if actor == evidence_verifier:
+                raise ValueError(
+                    "outcome evidence verification and final outcome review must "
+                    "be performed by different actors")
 
             linked = str(linked_proposal_id or "").strip()
             if outcome == "reverted":
