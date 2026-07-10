@@ -1,6 +1,7 @@
 # Single-Agent Lesson A/B Attestation
 
 **Attestation envelope:** `openclaw_agent_lesson_ab_attestation_v1`  
+**Experiment manifest:** `openclaw_agent_lesson_ab_experiment_v1`  
 **Nested instrument report:** `openclaw_agent_lesson_ab_v1`  
 **Operator command:** `scripts/openclaw_attest_lesson_ab.py`
 
@@ -13,14 +14,15 @@ agent.
 
 Personal Memory evidence therefore requires a separate matched experiment where
 the treatment applies the lesson only to one named `target_agent_id`. The
-attestation file must also bind the result to:
+attestation file binds the result to:
 
 1. the exact curated lesson record tested;
 2. the exact governed Identity state tested;
-3. the exact matched experiment configuration.
+3. a retained, self-verifying matched experiment manifest.
 
-A lesson edited under the same `LESSON-*` ID, a later Identity state, or a
-changed compute/configuration setup cannot inherit the old result.
+A lesson edited under the same `LESSON-*` ID, a later Identity state, a changed
+question set, contaminated control arm, changed provider/judge set, or changed
+compute budget cannot inherit the old result.
 
 The command does not run the experiment. It validates and registers an
 already-produced, human-reviewed attestation envelope.
@@ -57,7 +59,51 @@ report. The agent cannot verify itself, including through capitalization changes
   "schema_version": "openclaw_agent_lesson_ab_attestation_v1",
   "lesson_fingerprint": "64 lowercase SHA-256 hex characters",
   "target_identity_fingerprint": "64 lowercase SHA-256 hex characters",
-  "experiment_fingerprint": "64 lowercase SHA-256 hex characters",
+  "experiment_fingerprint": "SHA-256 of the exact experiment_manifest below",
+  "experiment_manifest": {
+    "schema_version": "openclaw_agent_lesson_ab_experiment_v1",
+    "target_agent_id": "local_apprentice_001",
+    "lesson_id": "LESSON-0007",
+    "treatment_scope": "single_agent",
+    "question_hashes": [
+      "64-char SHA-256 of question 1",
+      "64-char SHA-256 of question 2",
+      "64-char SHA-256 of question 3",
+      "64-char SHA-256 of question 4"
+    ],
+    "control_configuration": {
+      "base_configuration_fingerprint": "64-char SHA-256",
+      "injected_lesson_fingerprints": [],
+      "injection_target_agent_id": ""
+    },
+    "treatment_configuration": {
+      "base_configuration_fingerprint": "same SHA-256 as control",
+      "injected_lesson_fingerprints": [
+        "exact lesson_fingerprint from the envelope"
+      ],
+      "injection_target_agent_id": "local_apprentice_001"
+    },
+    "execution_mode": "deterministic-local-or-mock-mode",
+    "provider_ids": ["provider-a", "provider-b"],
+    "judge_configuration": {
+      "judge_set_fingerprint": "64-char SHA-256",
+      "self_judging_allowed": false
+    },
+    "random_seeds": [101, 102, 103, 104],
+    "arm_orders": [
+      ["control", "treatment"],
+      ["treatment", "control"],
+      ["control", "treatment"],
+      ["treatment", "control"]
+    ],
+    "counterbalanced": true,
+    "compute_budget": {
+      "token_limit": 1000,
+      "timeout_seconds": 30.0,
+      "retry_limit": 0
+    },
+    "producer_version": "agent-lesson-ab-runner-v1"
+  },
   "instrument_report": {
     "schema_version": "openclaw_agent_lesson_ab_v1",
     "reference": "agent-ab/local_apprentice_001/lesson-0007/helped-1",
@@ -83,8 +129,9 @@ report. The agent cannot verify itself, including through capitalization changes
 }
 ```
 
-The envelope field set is exact. A bare `openclaw_agent_lesson_ab_v1` report is
-refused because it is not bound to lesson, Identity, and experiment state.
+The envelope, manifest, arm configurations, judge configuration, compute budget,
+and nested report all use exact field sets. A bare
+`openclaw_agent_lesson_ab_v1` report is refused.
 
 ## Lesson fingerprint
 
@@ -99,8 +146,6 @@ refused because it is not bound to lesson, Identity, and experiment state.
 - exact lesson text;
 - risk text.
 
-Example:
-
 ```powershell
 .\.venv\Scripts\python.exe -c "
 from backend.dialogues.openclaw_memory import load_memory_lessons, memory_lesson_fingerprint
@@ -110,17 +155,15 @@ print(memory_lesson_fingerprint(lesson))
 "
 ```
 
-The operator bridge recomputes this fingerprint from the current curated
-catalogue before registering a new evidence reference.
+The bridge recomputes this fingerprint from the current curated catalogue before
+registering a new evidence reference.
 
 ## Target Identity fingerprint
 
-The report must carry `governed_profile_fingerprint(profile)`. This binds the
+The envelope carries `governed_profile_fingerprint(profile)`. This binds the
 experiment to version/stage, known failures, linked lessons, Soul principles,
 gates, and append-only governed histories while excluding refreshable
 observational counters.
-
-Example:
 
 ```powershell
 .\.venv\Scripts\python.exe -c "
@@ -134,47 +177,48 @@ The bridge recomputes it before registering new evidence. Exact reruns of an
 already-registered immutable reference remain idempotent after later governed
 state changes.
 
-## Experiment fingerprint
+## Self-verifying experiment manifest
 
-The experiment producer must compute a canonical SHA-256 digest over the matched
-execution manifest. At minimum that manifest should bind:
+The script computes canonical JSON using sorted keys, compact separators,
+UTF-8, and `allow_nan=false`, then SHA-256 hashes the complete retained manifest.
+The result must exactly equal `experiment_fingerprint`.
 
-- ordered question IDs or question-content hashes;
-- target agent ID and role;
-- control and treatment prompt fingerprints;
-- the single changed treatment: exact lesson injection into only the target;
-- model/provider identities and configured available-provider set;
-- execution mode and scoring/judging configuration;
-- judge eligibility and self-judging exclusions;
-- random seeds or deterministic replay identifiers;
-- arm execution order/counterbalancing;
-- token, timeout, retry, and compute budgets;
-- report producer/version.
+The manifest is also checked semantically:
 
-The bridge validates that `experiment_fingerprint` is canonical lowercase
-SHA-256 hex. The named verifier is responsible for confirming that the retained
-experiment manifest actually hashes to that value.
+- manifest agent, lesson, and `single_agent` scope match the nested report;
+- question hashes are unique lowercase SHA-256 values;
+- seeds and arm orders align one-to-one with the question set;
+- every arm order contains control and treatment exactly once;
+- a counterbalanced multi-question run exercises both arm orders;
+- control and treatment share one base configuration fingerprint;
+- control contains no lesson injection and no injection target;
+- treatment injects exactly the bound lesson into only the target agent;
+- provider IDs are non-empty and distinct;
+- the judge-set fingerprint is present and self-judging is false;
+- token limit and timeout are positive, retry count is non-negative;
+- instrument `tested` count cannot exceed the manifest question count;
+- all fields are secret-scanned and non-finite JSON values are refused.
 
-All three fingerprints are committed into the immutable evidence source digest.
-Changing any binding under the same evidence reference produces a conflict.
+All three external fingerprints are committed into the immutable evidence
+source digest. Changing the lesson, Identity, experiment manifest, or report
+under the same evidence reference produces a conflict.
 
 ## Helped result: Memory link evidence
 
 A link record is accepted only when:
 
-- the envelope and nested report exact schemas match;
-- the target agent and named verifier match the command;
-- `treatment_scope="single_agent"`;
-- the report observation date is valid ISO `YYYY-MM-DD` and not in the future;
+- envelope, manifest, and nested report exact schemas match;
+- target agent and named verifier match the command;
+- the observation date is ISO `YYYY-MM-DD` and not in the future;
+- the instrument source is non-empty;
 - `tested >= min_tested`;
 - verdict is `helped` and `helped=true`;
 - mean score delta is positive and finite;
 - harm rate is within its configured bound;
 - there are no ratification, unresolved, catastrophic, or configuration
   regressions;
-- the exact lesson fingerprint matches one curated lesson;
-- lesson status is `stable` or `verified`;
-- the exact governed target Identity fingerprint matches.
+- exact lesson and Identity fingerprints match current governed state;
+- lesson status is `stable` or `verified`.
 
 The resulting evidence supports:
 
@@ -200,9 +244,8 @@ result such as:
 }
 ```
 
-The unchanged required fields remain present in the full nested report. For a
-new unlink evidence reference, the lesson must currently be linked in the exact
-target profile bound by the envelope.
+For a new unlink evidence reference, the lesson must currently be linked in the
+exact target profile bound by the envelope.
 
 The resulting evidence supports:
 
@@ -218,13 +261,13 @@ and a separate canonical unlink proposal.
 ## Idempotency and immutability
 
 - Exact reruns of the same envelope are idempotent.
-- Reusing an evidence reference with changed report content or any changed
-  fingerprint is refused.
+- Reusing an evidence reference with changed report, manifest, or fingerprint is
+  refused.
 - Existing exact evidence remains replayable after later governed application.
 - Attestation files must be local UTF-8 JSON objects and are bounded to 1 MB.
 - URLs, malformed JSON, non-finite metrics, unknown fields, future dates,
-  invalid hashes, unsafe lesson IDs, anonymous verification, and secret-shaped
-  values fail closed.
+  invalid hashes, replayed question hashes, self-judging, unsafe lesson IDs,
+  anonymous verification, and secret-shaped values fail closed.
 
 ## Authority boundary
 
@@ -241,7 +284,8 @@ This bridge creates immutable evidence only. It does not:
 The governed path remains:
 
 ```text
-single-agent matched A/B experiment + retained manifest
+single-agent matched A/B experiment
+→ retained self-verifying manifest
 → bound attestation envelope
 → named non-self attestation
 → immutable Memory evidence
