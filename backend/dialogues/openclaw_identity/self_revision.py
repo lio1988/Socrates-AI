@@ -12,7 +12,8 @@ Lifecycle:
 
 The proposal is untrusted input. The apply path recomputes validation against a
 trusted evidence manifest and the stable lesson catalogue; a caller-supplied
-``passed=True`` is never sufficient.
+``passed=True`` is never sufficient. Secret-shaped text is rejected before it
+can enter an identity artifact.
 """
 
 from __future__ import annotations
@@ -32,6 +33,11 @@ REVISION_TARGET_ACTIONS: Mapping[str, Tuple[str, ...]] = {
 
 _PROPOSAL_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,96}$")
 _LESSON_ID_RE = re.compile(r"^LESSON-[A-Za-z0-9._-]+$")
+_SECRET_PATTERNS = (
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(r"\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret)\s*[:=]\s*\S{8,}", re.IGNORECASE),
+)
 _MAX_VALUE_LENGTH = 500
 _MAX_REASON_LENGTH = 2000
 _MAX_RISK_LENGTH = 2000
@@ -45,6 +51,10 @@ def _clean_text(value: Any, *, field: str, maximum: int) -> str:
         raise ValueError(f"{field} exceeds {maximum} characters")
     if any(ord(char) < 32 and char not in "\t\n\r" for char in text):
         raise ValueError(f"{field} contains control characters")
+    for pattern in _SECRET_PATTERNS:
+        if pattern.search(text):
+            raise ValueError(
+                f"{field} contains secret-shaped data matching {pattern.pattern!r}")
     return text
 
 
@@ -190,6 +200,11 @@ def evaluate_self_revision(
     stable_lesson_ids: Iterable[str] = (),
 ) -> RevisionEvaluation:
     """Verify evidence ownership, provenance, and action-specific relevance."""
+    if not isinstance(evidence_manifest, Mapping):
+        raise ValueError("evidence_manifest must be a mapping")
+    if isinstance(stable_lesson_ids, (str, bytes)):
+        raise ValueError("stable_lesson_ids must be a sequence, not text")
+
     support_key = _support_key(proposal.target, proposal.action)
     reasons = []
     matched = []
@@ -210,7 +225,7 @@ def evaluate_self_revision(
             reasons.append(f"evidence has no auditable source: {reference}")
             continue
         supports = evidence.get("supports") or ()
-        if isinstance(supports, (str, bytes)):
+        if not isinstance(supports, (list, tuple, set, frozenset)):
             reasons.append(f"evidence supports field is invalid: {reference}")
             continue
         if support_key not in {str(item).strip() for item in supports}:
