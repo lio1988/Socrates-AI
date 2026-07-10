@@ -47,14 +47,17 @@ def _manifest(
     verified=True,
     supports=None,
     source="test-instrument",
+    value=None,
 ):
     support = supports or (f"{proposal.target}:{proposal.action}",)
+    evidence_value = proposal.value if value is None else value
     return {
         reference: {
             "agent_id": agent_id,
             "verified": verified,
             "source": source,
             "supports": tuple(support),
+            "value": evidence_value,
         }
         for reference in EVIDENCE
     }
@@ -88,6 +91,8 @@ def test_agent_output_parser_is_strict_and_seat_bound():
     record = _proposal().to_record()
     assert proposal_from_record(record, expected_agent_id=AGENT) == _proposal()
 
+    with pytest.raises(ValueError, match="must be a mapping"):
+        proposal_from_record([])
     with pytest.raises(ValueError, match="unknown fields"):
         proposal_from_record({**record, "authority": "grant"})
     with pytest.raises(ValueError, match="reviewed seat"):
@@ -113,6 +118,24 @@ def test_target_action_pairs_and_memory_ids_are_validated():
         )
 
 
+def test_secret_shaped_text_is_rejected_before_proposal_creation():
+    with pytest.raises(ValueError, match="secret-shaped"):
+        _proposal(value="Bearer abcdefghijklmnop")
+    with pytest.raises(ValueError, match="secret-shaped"):
+        dataclasses.replace(_proposal(), reason="api_key=abcdefghijklmnop")
+
+
+def test_malformed_evidence_manifest_fails_closed():
+    with pytest.raises(ValueError, match="must be a mapping"):
+        evaluate_self_revision(_proposal(), evidence_manifest=[])
+    with pytest.raises(ValueError, match="sequence, not text"):
+        evaluate_self_revision(
+            _proposal(),
+            evidence_manifest=_manifest(_proposal()),
+            stable_lesson_ids="LESSON-0007",
+        )
+
+
 def test_missing_evidence_fails_closed():
     proposal = _proposal()
     manifest = _manifest(proposal)
@@ -129,6 +152,8 @@ def test_missing_evidence_fails_closed():
         ({"agent_id": "other_agent"}, "another agent"),
         ({"source": ""}, "no auditable source"),
         ({"supports": ("soul:add_principle",)}, "does not support"),
+        ({"supports": 7}, "supports field is invalid"),
+        ({"value": "different value"}, "value does not match"),
     ],
 )
 def test_evidence_must_be_verified_owned_sourced_and_action_specific(
