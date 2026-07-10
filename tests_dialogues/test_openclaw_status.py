@@ -66,7 +66,7 @@ def test_empty_state_is_clean_and_offline(status_script, tmp_path, capsys):
     assert "shadow records   : 0" in out
     assert "identity registry: empty" in out
     assert "self-revisions   : total=0" in out
-    assert "shadow_dialogue.py" in out          # next: collect first evidence
+    assert "shadow_dialogue.py" in out
 
 
 def test_json_mode_is_machine_readable(status_script, tmp_path, capsys):
@@ -84,7 +84,7 @@ def test_json_mode_is_machine_readable(status_script, tmp_path, capsys):
         "dir": str(tmp_path / "self_revisions"),
     }
     assert status["gates"]["local_apprentice"] is False
-    assert status["local_server"] is None       # gate off -> no probe
+    assert status["local_server"] is None
 
 
 # --------------------------------------------------------------------------- #
@@ -102,7 +102,6 @@ def test_detects_accumulated_evidence(status_script, shadow_script, tmp_path,
     assert status["identity"][0]["agent_id"] == "local_apprentice_001"
     assert status["identity"][0]["sessions_analyzed"] == 2
     assert status["identity"][0]["self_revisions_recorded"] == 0
-    # Evidence exists but no proposals yet -> recommend the review step.
     assert "openclaw_review" in status["next_command"]
 
 
@@ -158,7 +157,7 @@ def test_self_revision_lifecycle_outranks_collecting_more_data(
         evidence_manifest=manifest,
     )
     SelfRevisionRegistry(tmp_path / "self_revisions").submit(
-        proposal, snapshot_fingerprint=snapshot.snapshot_fingerprint)
+        proposal, snapshot=snapshot)
 
     status = status_script.collect_status(_env(tmp_path), probe=_no_probe)
     assert status["self_revisions"]["count"] == 1
