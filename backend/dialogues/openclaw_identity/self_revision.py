@@ -10,8 +10,8 @@ Lifecycle:
     agent proposal -> deterministic validation -> evidence check
     -> named non-self approval -> append-only profile revision
 
-The proposal is untrusted input. The apply path recomputes validation from the
-available evidence references and stable lesson catalogue; a caller-supplied
+The proposal is untrusted input. The apply path recomputes validation against a
+trusted evidence manifest and the stable lesson catalogue; a caller-supplied
 ``passed=True`` is never sufficient.
 """
 
@@ -62,6 +62,10 @@ def _clean_references(values: Iterable[Any]) -> Tuple[str, ...]:
     if not refs:
         raise ValueError("self-revision proposal requires evidence references")
     return tuple(refs)
+
+
+def _support_key(target: str, action: str) -> str:
+    return f"{target}:{action}"
 
 
 @dataclass(frozen=True)
@@ -182,23 +186,38 @@ def proposal_from_record(
 def evaluate_self_revision(
     proposal: SelfRevisionProposal,
     *,
-    available_evidence_references: Iterable[str],
+    evidence_manifest: Mapping[str, Mapping[str, Any]],
     stable_lesson_ids: Iterable[str] = (),
 ) -> RevisionEvaluation:
-    """Check that cited evidence exists and linked memory is already curated."""
-    available = {
-        str(reference).strip()
-        for reference in available_evidence_references
-        if str(reference).strip()
-    }
-    missing = tuple(
-        reference for reference in proposal.evidence_references
-        if reference not in available
-    )
+    """Verify evidence ownership, provenance, and action-specific relevance."""
+    support_key = _support_key(proposal.target, proposal.action)
     reasons = []
-    if missing:
-        reasons.append(
-            "missing evidence reference(s): " + ", ".join(missing))
+    matched = []
+
+    for reference in proposal.evidence_references:
+        evidence = evidence_manifest.get(reference)
+        if not isinstance(evidence, Mapping):
+            reasons.append(f"missing evidence reference: {reference}")
+            continue
+        if evidence.get("verified") is not True:
+            reasons.append(f"evidence is not verified: {reference}")
+            continue
+        if str(evidence.get("agent_id", "")).strip() != proposal.agent_id:
+            reasons.append(f"evidence belongs to another agent: {reference}")
+            continue
+        source = str(evidence.get("source", "")).strip()
+        if not source:
+            reasons.append(f"evidence has no auditable source: {reference}")
+            continue
+        supports = evidence.get("supports") or ()
+        if isinstance(supports, (str, bytes)):
+            reasons.append(f"evidence supports field is invalid: {reference}")
+            continue
+        if support_key not in {str(item).strip() for item in supports}:
+            reasons.append(
+                f"evidence does not support {support_key}: {reference}")
+            continue
+        matched.append(reference)
 
     stable = {
         str(lesson_id).strip()
@@ -211,17 +230,15 @@ def evaluate_self_revision(
         reasons.append(
             f"lesson {proposal.value!r} is not in the stable/verified catalogue")
 
-    passed = not reasons
+    passed = not reasons and len(matched) == len(proposal.evidence_references)
     if passed:
         reasons.append(
-            f"{len(proposal.evidence_references)} evidence reference(s) verified")
+            f"{len(matched)} action-specific evidence record(s) verified")
     return RevisionEvaluation(
         proposal_id=proposal.proposal_id,
         passed=passed,
         reasons=tuple(reasons),
-        evidence_used=tuple(
-            reference for reference in proposal.evidence_references
-            if reference in available),
+        evidence_used=tuple(matched),
     )
 
 
@@ -274,7 +291,7 @@ def approve_and_apply_self_revision(
     proposal: SelfRevisionProposal,
     evaluation: RevisionEvaluation,
     *,
-    available_evidence_references: Iterable[str],
+    evidence_manifest: Mapping[str, Mapping[str, Any]],
     approved_by: str,
     approval_reference: str,
     stable_lesson_ids: Iterable[str] = (),
@@ -293,7 +310,7 @@ def approve_and_apply_self_revision(
 
     verified = evaluate_self_revision(
         proposal,
-        available_evidence_references=available_evidence_references,
+        evidence_manifest=evidence_manifest,
         stable_lesson_ids=stable_lesson_ids,
     )
     if not verified.passed:
@@ -324,6 +341,7 @@ def approve_and_apply_self_revision(
         "proposed_by": proposal.proposed_by,
         "reason": proposal.reason,
         "risk": proposal.risk,
+        "evidence_support": _support_key(proposal.target, proposal.action),
         "evidence_references": list(verified.evidence_used),
         "approved_by": approver,
         "approved_on": approved_on,
@@ -351,12 +369,16 @@ def replay_revision_entry(
         raise ValueError("revision history entry must be type 'self_revision'")
     required = {
         "proposal_id", "target", "action", "value", "proposed_by", "reason",
-        "risk", "evidence_references", "approved_by", "approval_reference",
+        "risk", "evidence_support", "evidence_references", "approved_by",
+        "approval_reference",
     }
     if not required.issubset(entry):
         missing = sorted(required - set(entry))
         raise ValueError(
             f"revision history entry is missing fields: {missing}")
+    raw_references = entry["evidence_references"]
+    if isinstance(raw_references, (str, bytes)):
+        raise ValueError("evidence_references must be a sequence, not text")
 
     proposal = SelfRevisionProposal(
         proposal_id=entry["proposal_id"],
@@ -366,9 +388,12 @@ def replay_revision_entry(
         action=entry["action"],
         value=entry["value"],
         reason=entry["reason"],
-        evidence_references=tuple(entry["evidence_references"] or ()),
+        evidence_references=tuple(raw_references or ()),
         risk=entry["risk"],
     )
+    expected_support = _support_key(proposal.target, proposal.action)
+    if str(entry["evidence_support"]).strip() != expected_support:
+        raise ValueError("revision evidence_support does not match its action")
     approver = _clean_text(entry["approved_by"], field="approved_by", maximum=128)
     if approver == agent_id:
         raise ValueError("an agent cannot approve its own self-revision")
