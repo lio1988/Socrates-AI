@@ -62,26 +62,25 @@ def _clean_fingerprint_map(values: Mapping[str, str] | None) -> dict[str, str]:
     if values is None:
         return {}
     if not isinstance(values, Mapping):
-        raise ValueError("stable_lesson_fingerprints must be a mapping")
+        raise ValueError("lesson_fingerprints must be a mapping")
     cleaned: dict[str, str] = {}
     for raw_lesson_id, raw_fingerprint in values.items():
         lesson_id = str(raw_lesson_id or "").strip()
         fingerprint = str(raw_fingerprint or "").strip()
         if not lesson_id.startswith("LESSON-"):
-            raise ValueError(
-                "stable_lesson_fingerprints keys must use LESSON-* format")
+            raise ValueError("lesson_fingerprints keys must use LESSON-* format")
         if not _HEX64_RE.fullmatch(fingerprint):
             raise ValueError(
-                "stable_lesson_fingerprints values must be lowercase SHA-256")
+                "lesson_fingerprints values must be lowercase SHA-256")
         if lesson_id in cleaned and cleaned[lesson_id] != fingerprint:
-            raise ValueError("stable lesson fingerprint mapping is conflicting")
+            raise ValueError("lesson fingerprint mapping is conflicting")
         cleaned[lesson_id] = fingerprint
     if len(cleaned) > 256:
-        raise ValueError("stable_lesson_fingerprints exceeds 256 entries")
+        raise ValueError("lesson_fingerprints exceeds 256 entries")
     return cleaned
 
 
-def stable_lesson_fingerprint_map(
+def lesson_fingerprint_map(
     values: Mapping[str, str] | None,
 ) -> dict[str, str]:
     """Public strict normalizer used by lifecycle and transaction layers."""
@@ -93,14 +92,14 @@ def memory_binding_reasons(
     *,
     current_profile: AgentIdentityProfile,
     evidence_manifest: Mapping[str, Mapping[str, Any]],
-    stable_lesson_fingerprints: Mapping[str, str] | None,
+    lesson_fingerprints: Mapping[str, str] | None,
 ) -> tuple[str, ...]:
     """Return fail-closed reasons for personal Memory evidence bindings."""
     if proposal.target != "memory":
         return ()
     if current_profile.agent_id != proposal.agent_id:
         raise ValueError("current profile belongs to another agent")
-    fingerprints = _clean_fingerprint_map(stable_lesson_fingerprints)
+    fingerprints = _clean_fingerprint_map(lesson_fingerprints)
     current_lesson = fingerprints.get(proposal.value)
     reasons = []
     current_identity = profile_fingerprint(current_profile)
@@ -117,7 +116,8 @@ def memory_binding_reasons(
             continue
         binding = parse_memory_ab_binding(source)
         if binding is None:
-            reasons.append(f"Memory evidence is not bound to governed state: {reference}")
+            reasons.append(
+                f"Memory evidence is not bound to governed state: {reference}")
             continue
         lesson_fingerprint, identity_fingerprint, _experiment = binding
         if identity_fingerprint != current_identity:
@@ -140,7 +140,7 @@ def evaluate_governed_self_revision(
     current_profile: AgentIdentityProfile,
     evidence_manifest: Mapping[str, Mapping[str, Any]],
     stable_lesson_ids=(),
-    stable_lesson_fingerprints: Mapping[str, str] | None = None,
+    lesson_fingerprints: Mapping[str, str] | None = None,
 ) -> RevisionEvaluation:
     """Run generic validation plus current-state Memory binding checks."""
     base = evaluate_self_revision(
@@ -152,7 +152,7 @@ def evaluate_governed_self_revision(
         proposal,
         current_profile=current_profile,
         evidence_manifest=evidence_manifest,
-        stable_lesson_fingerprints=stable_lesson_fingerprints,
+        lesson_fingerprints=lesson_fingerprints,
     )
     if not binding_reasons:
         return base
@@ -171,8 +171,8 @@ def evaluate_governed_self_revision(
 __all__ = [
     "MEMORY_AB_BINDING_VERSION",
     "evaluate_governed_self_revision",
+    "lesson_fingerprint_map",
     "memory_ab_binding_marker",
     "memory_binding_reasons",
     "parse_memory_ab_binding",
-    "stable_lesson_fingerprint_map",
 ]
