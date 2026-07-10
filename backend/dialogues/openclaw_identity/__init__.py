@@ -71,9 +71,12 @@ from .revision_registry import (
     REGISTRY_SCHEMA_VERSION,
     SelfRevisionRegistry,
 )
-from .strict_revision_registry import (
-    SelfRevisionRegistry as StrictSelfRevisionRegistry,
+from .revision_registry_governed import (
+    MAX_ACTIVE_PROPOSALS_PER_AGENT,
+    SelfRevisionRegistry as GovernedSelfRevisionRegistry,
 )
+from .revision_transaction_governed import SelfRevisionTransactionCoordinator
+from .governed_system_transactional import GovernedSelfRevisionSystem
 from .revision_reconciliation import (
     RevisionConsistencyReport,
     assert_revision_state_consistent,
@@ -146,7 +149,10 @@ __all__ = [
     "render_self_review_summary",
     "REGISTRY_SCHEMA_VERSION",
     "SelfRevisionRegistry",
-    "StrictSelfRevisionRegistry",
+    "MAX_ACTIVE_PROPOSALS_PER_AGENT",
+    "GovernedSelfRevisionRegistry",
+    "SelfRevisionTransactionCoordinator",
+    "GovernedSelfRevisionSystem",
     "RevisionConsistencyReport",
     "assert_revision_state_consistent",
     "reconcile_revision_state",
