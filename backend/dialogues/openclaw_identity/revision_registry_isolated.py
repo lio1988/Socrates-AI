@@ -7,9 +7,9 @@ Soul/Memory/Identity edits.
 
 The only permitted overlap is a canonical inverse proposal applied while its
 original revision is probationary. This creates a temporary two-record reversal
-pair. The original may be marked ``reverted`` only after the inverse proposal has
-an actual ``applied`` event and the current governed profile equals that inverse
-application. Thus ``reverted`` means applied rollback, not merely rollback intent.
+pair. The later inverse must be independently confirmed before the original may
+be marked ``reverted``. Thus rollback means an applied and verified inverse, not
+merely rollback intent.
 """
 
 from __future__ import annotations
@@ -56,6 +56,13 @@ def _canonical_pair(
     return is_canonical_reversal(_proposal(original), _proposal(inverse))
 
 
+def _application_order(record: Mapping[str, Any]) -> int:
+    index = _applied_event(record).get("revision_index")
+    if not isinstance(index, int) or index < 0:
+        raise ValueError("applied lifecycle has an invalid revision index")
+    return index
+
+
 class SelfRevisionRegistry(_BoundRegistry):
     """Lifecycle registry with one-change-at-a-time causal isolation."""
 
@@ -75,7 +82,7 @@ class SelfRevisionRegistry(_BoundRegistry):
         self,
         agent_id: str = "",
     ) -> Tuple[Tuple[str, str], ...]:
-        """Return temporary original/inverse probation pairs awaiting finalization."""
+        """Return original/inverse pairs while both revisions are probationary."""
         records = self.all_records(agent_id)
         by_agent: Dict[str, List[Dict[str, Any]]] = {}
         for record in records:
@@ -83,13 +90,41 @@ class SelfRevisionRegistry(_BoundRegistry):
                 by_agent.setdefault(record["agent_id"], []).append(record)
         pairs = []
         for records_for_agent in by_agent.values():
-            if len(records_for_agent) == 2:
-                first, second = records_for_agent
-                if _canonical_pair(first, second):
-                    pairs.append((first["proposal_id"], second["proposal_id"]))
-                elif _canonical_pair(second, first):
-                    pairs.append((second["proposal_id"], first["proposal_id"]))
+            if len(records_for_agent) != 2:
+                continue
+            first, second = records_for_agent
+            if _canonical_pair(first, second):
+                original, inverse = first, second
+            elif _canonical_pair(second, first):
+                original, inverse = second, first
+            else:
+                continue
+            if _application_order(original) > _application_order(inverse):
+                original, inverse = inverse, original
+            pairs.append((original["proposal_id"], inverse["proposal_id"]))
         return tuple(sorted(pairs))
+
+    def ready_reversion_pairs(
+        self,
+        agent_id: str = "",
+    ) -> Tuple[Tuple[str, str], ...]:
+        """Return probationary originals whose later inverse is confirmed."""
+        records = self.all_records(agent_id)
+        pairs = []
+        for original in records:
+            if original["status"] != "probationary":
+                continue
+            for inverse in records:
+                if inverse["agent_id"] != original["agent_id"]:
+                    continue
+                if inverse["status"] != "confirmed":
+                    continue
+                if not _canonical_pair(original, inverse):
+                    continue
+                if _application_order(original) < _application_order(inverse):
+                    pairs.append(
+                        (original["proposal_id"], inverse["proposal_id"]))
+        return tuple(sorted(set(pairs)))
 
     def record_application(
         self,
@@ -156,7 +191,7 @@ class SelfRevisionRegistry(_BoundRegistry):
         linked_proposal_id: str = "",
         recorded_on: str = "",
     ):
-        """Record confirmation or a rollback that has actually been applied."""
+        """Record confirmation or a rollback completed by a confirmed inverse."""
         path = self._path_for(agent_id, proposal_id)
         with self._locked(path):
             record = self._load_path(path)
@@ -188,23 +223,24 @@ class SelfRevisionRegistry(_BoundRegistry):
 
             linked = str(linked_proposal_id or "").strip()
             current_fingerprint = profile_fingerprint(current_profile)
+            current_applied = _applied_event(record)
             if outcome == "confirmed":
                 if linked:
                     raise ValueError(
                         "confirmed outcome must not link a reversal proposal")
-                original_applied = _applied_event(record)
-                if current_fingerprint != original_applied["profile_fingerprint"]:
+                if current_fingerprint != current_applied["profile_fingerprint"]:
                     raise ValueError(
                         "governed identity changed before confirmation review")
-                inverse_records = [
-                    candidate
-                    for candidate in self._probationary_records(
-                        agent_id, exclude_proposal_id=proposal_id)
-                    if _canonical_pair(record, candidate)
-                ]
-                if inverse_records:
-                    raise ValueError(
-                        "cannot confirm a revision after its inverse was applied")
+                for candidate in self._probationary_records(
+                        agent_id, exclude_proposal_id=proposal_id):
+                    if not (_canonical_pair(record, candidate)
+                            or _canonical_pair(candidate, record)):
+                        continue
+                    if _application_order(candidate) > \
+                            _application_order(record):
+                        raise ValueError(
+                            "cannot confirm a revision after its later inverse "
+                            "was applied")
             else:
                 if not _SAFE_ID_RE.fullmatch(linked) or linked == proposal_id:
                     raise ValueError(
@@ -212,22 +248,25 @@ class SelfRevisionRegistry(_BoundRegistry):
                 inverse = self._load_path(self._path_for(agent_id, linked))
                 if inverse is None:
                     raise ValueError("linked reversal proposal does not exist")
-                if inverse["status"] not in {"probationary", "confirmed"}:
+                if inverse["status"] != "confirmed":
                     raise ValueError(
-                        "linked reversal must be applied before original is reverted")
+                        "linked reversal must be applied and confirmed before "
+                        "the original is reverted")
                 if not _canonical_pair(record, inverse):
                     raise ValueError(
                         "linked proposal is not a canonical reversal")
-                original_applied = _applied_event(record)
+                if _application_order(inverse) <= _application_order(record):
+                    raise ValueError(
+                        "linked reversal was not applied after the original")
                 if inverse["profile_fingerprint"] != \
-                        original_applied["profile_fingerprint"]:
+                        current_applied["profile_fingerprint"]:
                     raise ValueError(
                         "inverse proposal was not authored from the original "
                         "probationary state")
                 inverse_applied = _applied_event(inverse)
                 if current_fingerprint != inverse_applied["profile_fingerprint"]:
                     raise ValueError(
-                        "current governed profile does not contain the applied "
+                        "current governed profile does not contain the confirmed "
                         "inverse revision")
 
             event = _build_event(
@@ -260,6 +299,9 @@ class SelfRevisionRegistry(_BoundRegistry):
                 if linked is None or not _canonical_pair(record, linked):
                     raise ValueError(
                         "reverted lifecycle does not reference a canonical inverse")
+                if linked["status"] != "confirmed":
+                    raise ValueError(
+                        "reverted lifecycle requires a confirmed inverse")
                 _applied_event(linked)
 
         for records_for_agent in by_agent.values():
