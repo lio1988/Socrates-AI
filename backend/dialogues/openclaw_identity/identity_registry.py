@@ -143,9 +143,15 @@ def _validate_appended_revisions(
     failures = tuple(existing.known_failures)
     lessons = tuple(existing.stable_lessons)
     principles = tuple(existing.soul_principles)
+    seen_proposals = {
+        str(entry.get("proposal_id", "")) for entry in old_history
+    }
     from .self_revision import replay_revision_entry
 
     for entry in new_history[len(old_history):]:
+        proposal_id = str(entry.get("proposal_id", ""))
+        if proposal_id in seen_proposals:
+            raise ValueError("self-revision proposal_id cannot be replayed")
         failures, lessons, principles = replay_revision_entry(
             failures,
             lessons,
@@ -153,6 +159,7 @@ def _validate_appended_revisions(
             entry,
             agent_id=profile.agent_id,
         )
+        seen_proposals.add(proposal_id)
 
     if failures != tuple(profile.known_failures):
         raise ValueError(
@@ -189,6 +196,10 @@ class IdentityRegistry:
                 raise ValueError("existing identity profile could not be loaded")
             _validate_appended_history(existing, profile)
             _validate_appended_revisions(existing, profile)
+        elif profile.revision_history:
+            raise ValueError(
+                "a new identity profile must be saved before self-revisions are "
+                "appended; bootstrap fields may be curated, history may not")
 
         payload = json.dumps(
             profile.to_record(),
