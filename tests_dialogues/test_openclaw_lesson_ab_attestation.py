@@ -1,4 +1,4 @@
-"""Tests for single-agent Lesson A/B -> governed Memory evidence."""
+"""Tests for bound single-agent Lesson A/B -> governed Memory evidence."""
 
 import importlib.util
 import json
@@ -11,11 +11,17 @@ from backend.dialogues.openclaw_identity import (
     AgentIdentityProfile,
     IdentityRegistry,
     RevisionEvidenceRegistry,
+    governed_profile_fingerprint,
+)
+from backend.dialogues.openclaw_memory import (
+    load_memory_lessons,
+    memory_lesson_fingerprint,
 )
 
 _ROOT = Path(__file__).resolve().parents[1]
 AGENT = "local_apprentice_001"
 LESSON = "LESSON-0007"
+ATTESTATION_VERSION = "openclaw_agent_lesson_ab_attestation_v1"
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +35,9 @@ def attest_script():
     return module
 
 
-def _lesson_markdown(status="stable"):
+def _lesson_markdown(status="stable", lesson_text=None):
+    lesson_text = lesson_text or \
+        "Verify every exact-output constraint before finalizing."
     return f"""# Test catalogue
 
 ### {LESSON} — Exact-output discipline
@@ -41,7 +49,7 @@ def _lesson_markdown(status="stable"):
 **Problem pattern:** Agent rushes exact-output tasks.
 **Bad pattern:** Ignore exact constraints.
 **Good pattern:** Check every exact constraint.
-**Lesson:** Verify every exact-output constraint before finalizing.
+**Lesson:** {lesson_text}
 **Risk:** May over-constrain open-ended tasks.
 
 ---
@@ -75,12 +83,6 @@ def _report(**updates):
     return report
 
 
-def _write_report(tmp_path, report=None):
-    path = tmp_path / "report.json"
-    path.write_text(json.dumps(report or _report()), encoding="utf-8")
-    return path
-
-
 def _env(tmp_path):
     lessons_path = tmp_path / "MEMORY_LESSONS.md"
     if not lessons_path.exists():
@@ -94,21 +96,48 @@ def _env(tmp_path):
 
 def _save_profile(tmp_path, *, linked=()):
     env = _env(tmp_path)
-    IdentityRegistry(env["CED_IDENTITY_DIR"]).save_profile(
-        AgentIdentityProfile(
-            agent_id=AGENT,
-            identity_version="v0.3",
-            promotion_status="shadow_apprentice",
-            stable_lessons=tuple(linked),
-        )
+    profile = AgentIdentityProfile(
+        agent_id=AGENT,
+        identity_version="v0.3",
+        promotion_status="shadow_apprentice",
+        stable_lessons=tuple(linked),
     )
-    return env
+    IdentityRegistry(env["CED_IDENTITY_DIR"]).save_profile(profile)
+    return env, profile
+
+
+def _envelope(tmp_path, report=None, **updates):
+    env = _env(tmp_path)
+    lessons = load_memory_lessons(
+        env["CED_MEMORY_LESSONS_PATH"], include_deprecated=True)
+    lesson = next(item for item in lessons if item.lesson_id == LESSON)
+    profile = IdentityRegistry(env["CED_IDENTITY_DIR"]).load_profile(AGENT)
+    envelope = {
+        "schema_version": ATTESTATION_VERSION,
+        "lesson_fingerprint": memory_lesson_fingerprint(lesson),
+        "target_identity_fingerprint": (
+            governed_profile_fingerprint(profile) if profile is not None
+            else "b" * 64
+        ),
+        "experiment_fingerprint": "c" * 64,
+        "instrument_report": report or _report(),
+    }
+    envelope.update(updates)
+    return envelope
+
+
+def _write_report(tmp_path, report=None, **envelope_updates):
+    path = tmp_path / "attestation.json"
+    path.write_text(json.dumps(
+        _envelope(tmp_path, report, **envelope_updates)), encoding="utf-8")
+    return path
 
 
 def _run(attest_script, tmp_path, *, action="link", report=None,
-         verifier="Operator"):
+         verifier="Operator", envelope_updates=None):
     env = _env(tmp_path)
-    report_path = _write_report(tmp_path, report)
+    report_path = _write_report(
+        tmp_path, report, **(envelope_updates or {}))
     argv = [
         "prog", AGENT,
         "--report", str(report_path),
@@ -125,6 +154,9 @@ def test_helped_single_agent_report_builds_memory_link_evidence(
     assert _run(attest_script, tmp_path) == 0
     out = capsys.readouterr().out
     assert "action         : link_stable_lesson" in out
+    assert "lesson bind" in out
+    assert "identity bind" in out
+    assert "experiment bind" in out
     assert "Nothing was linked or unlinked" in out
 
     records = RevisionEvidenceRegistry(tmp_path / "evidence").all_records(AGENT)
@@ -134,13 +166,22 @@ def test_helped_single_agent_report_builds_memory_link_evidence(
     assert evidence.supports == ("memory:link_stable_lesson",)
     assert evidence.outcomes == ("confirmed",)
     assert evidence.verified_by == "Operator"
+    assert "bindings-" in evidence.source
 
 
-def test_generic_council_report_cannot_become_personal_memory_evidence(
+def test_unbound_or_generic_council_report_cannot_become_personal_memory(
         attest_script, tmp_path, capsys):
     _save_profile(tmp_path)
-    report = _report(schema_version="lesson_ab_v2")
+    env = _env(tmp_path)
+    path = tmp_path / "unbound.json"
+    path.write_text(json.dumps(_report()), encoding="utf-8")
+    argv = ["prog", AGENT, "--report", str(path), "--action", "link",
+            "--verified-by", "Operator"]
+    assert attest_script.main(argv, env=env) == 1
+    assert "attestation contains missing or unknown fields" in \
+        capsys.readouterr().out
 
+    report = _report(schema_version="lesson_ab_v2")
     assert _run(attest_script, tmp_path, report=report) == 1
     assert "only openclaw_agent_lesson_ab_v1" in capsys.readouterr().out
     assert not (tmp_path / "evidence").exists()
@@ -182,6 +223,45 @@ def test_missing_identity_profile_fails_before_registration(
     assert _run(attest_script, tmp_path) == 1
     assert "no governed identity profile exists" in capsys.readouterr().out
     assert not (tmp_path / "evidence").exists()
+
+
+def test_lesson_and_identity_fingerprints_must_match_current_state(
+        attest_script, tmp_path, capsys):
+    _save_profile(tmp_path)
+
+    assert _run(
+        attest_script,
+        tmp_path,
+        envelope_updates={"lesson_fingerprint": "d" * 64},
+    ) == 1
+    assert "lesson_fingerprint does not match" in capsys.readouterr().out
+
+    assert _run(
+        attest_script,
+        tmp_path,
+        envelope_updates={"target_identity_fingerprint": "e" * 64},
+    ) == 1
+    assert "target_identity_fingerprint does not match" in \
+        capsys.readouterr().out
+    assert not (tmp_path / "evidence").exists()
+
+
+def test_same_lesson_id_with_changed_content_cannot_reuse_old_result(
+        attest_script, tmp_path, capsys):
+    _save_profile(tmp_path)
+    old_envelope = _envelope(tmp_path)
+    (tmp_path / "MEMORY_LESSONS.md").write_text(
+        _lesson_markdown(
+            lesson_text="A materially changed rule under the same identifier."),
+        encoding="utf-8",
+    )
+    path = tmp_path / "attestation.json"
+    path.write_text(json.dumps(old_envelope), encoding="utf-8")
+    argv = ["prog", AGENT, "--report", str(path), "--action", "link",
+            "--verified-by", "Operator"]
+
+    assert attest_script.main(argv, env=_env(tmp_path)) == 1
+    assert "lesson_fingerprint does not match" in capsys.readouterr().out
 
 
 def test_harmful_report_builds_dual_unlink_and_revert_evidence(
@@ -243,7 +323,7 @@ def test_helped_report_cannot_attest_unlink_and_harmed_cannot_attest_link(
     assert "verdict='helped'" in capsys.readouterr().out
 
 
-def test_exact_rerun_is_idempotent_and_conflicting_reference_is_visible(
+def test_exact_rerun_is_idempotent_and_changed_binding_conflicts(
         attest_script, tmp_path, capsys):
     _save_profile(tmp_path)
     assert _run(attest_script, tmp_path) == 0
@@ -256,10 +336,17 @@ def test_exact_rerun_is_idempotent_and_conflicting_reference_is_visible(
     conflict = _report(mean_score_delta=0.5)
     assert _run(attest_script, tmp_path, report=conflict) == 1
     assert "conflicting content" in capsys.readouterr().out
+
+    assert _run(
+        attest_script,
+        tmp_path,
+        envelope_updates={"experiment_fingerprint": "f" * 64},
+    ) == 1
+    assert "conflicting content" in capsys.readouterr().out
     assert len(registry.all_records(AGENT)) == 1
 
 
-def test_invalid_json_url_and_non_object_reports_fail_closed(
+def test_invalid_envelope_json_url_and_digest_fail_closed(
         attest_script, tmp_path, capsys):
     _save_profile(tmp_path)
     env = _env(tmp_path)
@@ -278,6 +365,13 @@ def test_invalid_json_url_and_non_object_reports_fail_closed(
     argv[3] = "https://example.test/report.json"
     assert attest_script.main(argv, env=env) == 1
     assert "local file, not a URL" in capsys.readouterr().out
+
+    assert _run(
+        attest_script,
+        tmp_path,
+        envelope_updates={"experiment_fingerprint": "not-a-digest"},
+    ) == 1
+    assert "lowercase SHA-256" in capsys.readouterr().out
 
 
 def test_secret_or_non_finite_report_values_are_refused(
