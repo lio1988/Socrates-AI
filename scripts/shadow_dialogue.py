@@ -2,10 +2,11 @@
 Shadow Apprentice runner — watch a local model learn beside the council.
 
 The council answers normally (mock by default — free, deterministic). AFTER
-each final answer exists, the apprentice gets the same question plus the same
-selected memory lessons, is judged blind by the council's own seats, and is
-compared per section against the council's assembled winners. Nothing the
-apprentice does can change a final answer (Goal 11, Stage 1).
+each final answer exists, the apprentice gets the same question plus the exact
+synthesis memory lessons recorded by the council's injected-context ledger, is
+judged blind by the council's own seats, and is compared per section against
+the council's assembled winners. Nothing the apprentice does can change a
+final answer (Goal 11, Stage 1).
 
 Demo (free, mock apprentice — see the whole flow with zero setup):
     python scripts/shadow_dialogue.py
@@ -19,8 +20,8 @@ no cloud credits, in PowerShell):
     python scripts/shadow_dialogue.py
 
 Optional switches (env-only):
-    CED_OPENCLAW_LESSONS=0    # OFF switch - stable lessons reach the
-                              # apprentice by default (same key as the council)
+    CED_OPENCLAW_LESSONS=0    # OFF switch - stable lessons reach both the
+                              # council and apprentice by default
     CED_SHADOW_SESSIONS=3     # how many questions in a batch run (default 3)
     CED_SHADOW_DIR=path       # where shadow records go
                               # (default runs/openclaw_shadow)
@@ -174,18 +175,25 @@ def main(argv=None, env=None) -> int:
     print("=" * _W)
     print(f"  apprentice : {apprentice_note}")
     print(f"  features   : {lessons_note} | sessions: {len(questions)}")
-    print(f"  rule       : the apprentice observes and is judged - it can")
-    print(f"               NEVER change a council answer (Stage 1).")
+    print("  rule       : the apprentice observes and is judged - it can")
+    print("               NEVER change a council answer (Stage 1).")
     print("-" * _W)
 
     for qi, question in enumerate(questions):
         # A fresh council per question; the runner accumulates the records.
+        # The same stable pool is passed to both sides. The apprentice then
+        # replays the exact SYNTHESIS ids from this council's injection ledger.
         ced, council_mode = build_council(
-            council_size=2, shadow_scoring_mode=ShadowScoringMode.OFF)
+            council_size=2,
+            shadow_scoring_mode=ShadowScoringMode.OFF,
+            openclaw_lessons=lessons,
+        )
         if qi == 0:
-            runner = ShadowApprentice(apprentice,
-                                      ced.registry.all_adapters(),
-                                      lessons=lessons)
+            runner = ShadowApprentice(
+                apprentice,
+                ced.registry.all_adapters(),
+                lessons=lessons,
+            )
         final, record = asyncio.run(runner.shadow_session(
             ced, question, session_id=f"shadow_dialogue_{qi}"))
         print(f"  [{qi + 1}/{len(questions)}] {question[:56]}")
@@ -235,7 +243,7 @@ def main(argv=None, env=None) -> int:
     print("    python scripts/openclaw_status.py   (the joined-up view)")
     print("=" * _W)
     print(f"  Done. mode = {mode}. The apprentice earned evidence, "
-          f"not authority.")
+          "not authority.")
     print("=" * _W)
     return 0
 
