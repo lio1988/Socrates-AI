@@ -1,28 +1,17 @@
 """
 OpenClaw Agent Identity — instrument-fed gate evidence (Goal 13.1).
 
-Version gates consume an evidence dict. In v0 the operator assembled that
-dict by hand; this module derives it mechanically from instruments that
-already exist on this branch:
+Version gates consume evidence derived mechanically from existing instruments:
+  - trace windows + failure detectors -> failure-count deltas
+  - verified Shadow Apprentice records -> shadow section wins
+  - Promotion Arena reports -> informational metrics
 
-  - Goal 5 traces + Goal 6 failure detectors → failure-count deltas between
-    a BEFORE and an AFTER window (gates v0.1→v0.2, v0.2→v0.3)
-  - a profile built from declared SHADOW-run traces → shadow section wins
-    (gate v0.3→v0.4)
-  - a Promotion Arena report → informational arena metrics (future gates)
-
-Honesty rules, mechanically kept:
-  - A metric no instrument can compute is simply ABSENT — and an absent
-    metric fails its gate honestly (evaluate_gate). Today no detector
-    observes unsupported claims from traces alone, so
-    ``unsupported_claim_failures_delta`` is never emitted; that gate cannot
-    pass until a real instrument exists. This is by design.
-  - Deltas need both windows non-empty: comparing something to nothing is
-    not evidence of improvement.
-  - Shadow semantics are DECLARED by the caller (the trace format does not
-    yet mark shadow runs): pass only shadow-run traces as the shadow
-    profile. The function cannot verify the declaration — the approver can,
-    because session ids travel with the profile.
+Honesty rules:
+  - a metric no instrument can compute remains absent
+  - before/after deltas require two non-empty windows
+  - shadow promotion evidence requires a capture-time shadow marker, no explicit
+    run failure, and a ratified council target; unratified/failed records remain
+    available for analysis but cannot make promotion easier
 
 Pure, deterministic, offline. No provider calls, no network, no keys.
 """
@@ -35,16 +24,15 @@ from backend.dialogues.openclaw_memory import detect_trace_failures
 
 from .identity_profile import AgentIdentityProfile
 
-#: evidence key template shared with promotion_policy gate metrics.
 _DELTA_KEY = "{lesson_type}_failures_delta"
 
 
 def _failure_counts(traces: Sequence[Dict[str, Any]]) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     for trace in traces:
-        for obs in detect_trace_failures(trace):
-            lt = obs["lesson_type"]
-            counts[lt] = counts.get(lt, 0) + 1
+        for observation in detect_trace_failures(trace):
+            lesson_type = observation["lesson_type"]
+            counts[lesson_type] = counts.get(lesson_type, 0) + 1
     return counts
 
 
@@ -52,10 +40,7 @@ def evidence_from_trace_windows(
     traces_before: Sequence[Dict[str, Any]],
     traces_after: Sequence[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Failure-count deltas per lesson type: after − before (negative = the
-    failures went DOWN, which is what the reduction gates require). Emits a
-    delta only for lesson types observed in at least one window; emits
-    nothing at all when either window is empty."""
+    """Failure-count deltas: after minus before; negative is improvement."""
     if not traces_before or not traces_after:
         return {}
     before = _failure_counts(traces_before)
@@ -70,12 +55,7 @@ def evidence_from_trace_windows(
 def evidence_from_shadow_profile(
     shadow_profile: AgentIdentityProfile,
 ) -> Dict[str, Any]:
-    """Shadow-mode evidence from a profile the CALLER built over declared
-    shadow-run traces. Session ids stay auditable inside the profile.
-
-    Prefer :func:`evidence_from_shadow_traces` when traces carry the
-    capture-time ``shadow_run`` marker — there the shadow claim is verified
-    mechanically instead of trusted."""
+    """Caller-declared shadow evidence; prefer marker-verified trace evidence."""
     return {
         "shadow_blind_spots_wins": shadow_profile.section_wins.get(
             "blind_spots", 0),
@@ -83,35 +63,73 @@ def evidence_from_shadow_profile(
     }
 
 
+def _is_ratified(trace: Dict[str, Any]) -> bool:
+    ratification = trace.get("ratification") or {}
+    return ratification.get("ratified") is True
+
+
+def _is_explicit_success(trace: Dict[str, Any]) -> bool:
+    # Legacy TraceCapturer shadow records did not carry ``ok``. Absence is
+    # accepted for backward compatibility; an explicit False is never eligible.
+    return trace.get("ok", True) is True
+
+
 def evidence_from_shadow_traces(
     agent_id: str,
     traces: Sequence[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Shadow-mode evidence VERIFIED by the capture-time marker.
+    """Derive promotion evidence from mechanically eligible shadow records.
 
-    Filters to traces whose ``shadow_run`` field is exactly True (set by
-    ``TraceCapturer(shadow_run=True)`` when the session ran) — an unmarked
-    trace is never counted as shadow, no matter what the caller believes.
-    The counted session ids travel with the evidence so the approver can
-    audit precisely which shadow runs backed a promotion. Empty when no
-    marked traces exist (the gate then fails honestly)."""
-    shadow = [t for t in traces if t.get("shadow_run") is True]
-    if not shadow:
+    Eligibility requires:
+      - ``shadow_run is True`` at capture time
+      - the run is not explicitly failed
+      - the council target was ratified
+
+    Diagnostics include every excluded marked record so a human can audit why a
+    run did not count. Gate metrics are absent when no eligible record exists.
+    """
+    marked = [trace for trace in traces if trace.get("shadow_run") is True]
+    if not marked:
         return {}
+
+    failed = [trace for trace in marked if not _is_explicit_success(trace)]
+    unratified = [
+        trace for trace in marked
+        if _is_explicit_success(trace) and not _is_ratified(trace)
+    ]
+    eligible = [
+        trace for trace in marked
+        if _is_explicit_success(trace) and _is_ratified(trace)
+    ]
+
+    diagnostics: Dict[str, Any] = {
+        "shadow_records_marked": len(marked),
+        "shadow_records_eligible": len(eligible),
+        "shadow_records_excluded_failed": len(failed),
+        "shadow_records_excluded_unratified": len(unratified),
+        "shadow_excluded_session_ids": sorted(
+            str(trace.get("session_id", ""))
+            for trace in failed + unratified
+        ),
+    }
+    if not eligible:
+        return diagnostics
+
     from .identity_profile import build_identity_profile
-    profile = build_identity_profile(agent_id, shadow)
-    return {
-        "shadow_blind_spots_wins": profile.section_wins.get("blind_spots", 0),
+
+    profile = build_identity_profile(agent_id, eligible)
+    diagnostics.update({
+        "shadow_blind_spots_wins": profile.section_wins.get(
+            "blind_spots", 0),
         "shadow_sessions_analyzed": profile.sessions_analyzed,
         "shadow_session_ids": sorted(
-            str(t.get("session_id", "")) for t in shadow),
-    }
+            str(trace.get("session_id", "")) for trace in eligible),
+    })
+    return diagnostics
 
 
 def evidence_from_arena(report: Dict[str, Any]) -> Dict[str, Any]:
-    """Informational metrics from a Promotion Arena report (arena_v0 schema).
-    No current version gate consumes these; they travel with the evidence so
-    the approver sees the whole picture."""
+    """Informational metrics from a Promotion Arena report."""
     return {
         "arena_win_rate": float(report.get("win_rate", 0.0)),
         "arena_decided": int(report.get("decided", 0)),
@@ -128,22 +146,23 @@ def collect_gate_evidence(
     shadow_agent_id: Optional[str] = None,
     arena_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Merge every available instrument into one gate-evidence dict.
-
-    Only computable metrics appear; whatever no instrument produced stays
-    absent and its gate fails honestly. The key spaces of the sources are
-    disjoint by construction — except the two shadow sources, where the
-    marker-VERIFIED ``shadow_traces`` path wins over the caller-declared
-    ``shadow_profile`` path (it is applied last on purpose)."""
+    """Merge available instruments; marker-verified traces override profile data."""
     if (shadow_traces is None) != (shadow_agent_id is None):
         raise ValueError("shadow_traces and shadow_agent_id go together")
+
     evidence: Dict[str, Any] = {}
     if traces_before is not None and traces_after is not None:
-        evidence.update(evidence_from_trace_windows(traces_before, traces_after))
+        evidence.update(evidence_from_trace_windows(
+            traces_before, traces_after))
     if shadow_profile is not None:
         evidence.update(evidence_from_shadow_profile(shadow_profile))
     if shadow_traces is not None and shadow_agent_id is not None:
-        evidence.update(evidence_from_shadow_traces(shadow_agent_id, shadow_traces))
+        verified = evidence_from_shadow_traces(shadow_agent_id, shadow_traces)
+        # Remove caller-declared shadow gate metrics before applying the verified
+        # path. If no eligible trace exists, the gate metric must remain absent.
+        evidence.pop("shadow_blind_spots_wins", None)
+        evidence.pop("shadow_sessions_analyzed", None)
+        evidence.update(verified)
     if arena_report is not None:
         evidence.update(evidence_from_arena(arena_report))
     return evidence
