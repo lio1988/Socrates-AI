@@ -66,6 +66,20 @@ from .lesson_ab import (
     run_lesson_ab,
 )
 
+
+def load_stable_lesson_fingerprints(path=None):
+    """Return the trusted ``LESSON-* -> SHA-256`` map for governed Memory.
+
+    Only current ``stable`` / ``verified`` lessons are included. The map is the
+    canonical context passed to Memory proposal evaluation, decision, and
+    application so evidence produced for an older lesson revision fails closed.
+    """
+    return {
+        lesson.lesson_id: memory_lesson_fingerprint(lesson)
+        for lesson in load_stable_lessons(path)
+    }
+
+
 __all__ = [
     "LESSON_STATUSES",
     "STABLE_OR_VERIFIED",
@@ -74,6 +88,7 @@ __all__ = [
     "default_lessons_path",
     "load_memory_lessons",
     "load_stable_lessons",
+    "load_stable_lesson_fingerprints",
     "memory_lesson_fingerprint",
     "parse_memory_lessons",
     "DEFAULT_MAX_LESSONS",
