@@ -38,7 +38,7 @@ import os
 import pathlib
 import re
 import sys
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
@@ -50,6 +50,9 @@ from backend.dialogues.openclaw_identity import (                       # noqa: 
     RevisionEvidenceRegistry,
     build_agent_lesson_ab_evidence,
     governed_profile_fingerprint,
+)
+from backend.dialogues.openclaw_identity.memory_evidence_binding import (  # noqa: E402
+    memory_ab_binding_marker,
 )
 from backend.dialogues.openclaw_memory import (                         # noqa: E402
     default_lessons_path,
@@ -530,11 +533,13 @@ def _bind_report(
     report: Mapping[str, Any],
     bindings: Mapping[str, str],
 ) -> dict[str, Any]:
-    """Commit all three external bindings into the builder's report digest."""
+    """Commit full lesson/Identity/experiment bindings into evidence source."""
     source = str(report.get("source", "")).strip()
-    binding_digest = _canonical_digest(
-        dict(bindings), field="attestation bindings")
-    suffix = f"#bindings-{binding_digest[:16]}"
+    suffix = memory_ab_binding_marker(
+        lesson_fingerprint=bindings["lesson_fingerprint"],
+        identity_fingerprint=bindings["target_identity_fingerprint"],
+        experiment_fingerprint=bindings["experiment_fingerprint"],
+    )
     if len(source) + len(suffix) > 512:
         raise ValueError(
             "Lesson A/B report source is too long to bind provenance safely")
@@ -614,9 +619,8 @@ def main(argv=None, env=None) -> int:
             bindings=bindings,
         )
 
-        # The strict builder remains the only conversion path. The binding
-        # suffix becomes part of its canonical report digest and immutable
-        # evidence source, so changed lesson/Identity/experiment state conflicts.
+        # The strict builder remains the only conversion path. The full binding
+        # marker becomes part of its immutable source and report digest.
         bound_report = _bind_report(report, bindings)
         evidence = build_agent_lesson_ab_evidence(
             bound_report, action=action)
