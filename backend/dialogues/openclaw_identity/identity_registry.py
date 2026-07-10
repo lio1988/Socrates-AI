@@ -2,12 +2,11 @@
 OpenClaw Agent Identity — persistent, auditable identity profiles.
 
 One human-readable JSON file is stored per agent. Persistence grants no runtime
-authority, but earned history is protected mechanically:
-  - an existing version_history must remain an exact prefix of the new history
-  - appended version transitions must match a canonical VersionGate
-  - appended stage transitions must advance exactly one canonical ladder rung
-  - every transition needs a named, non-self approver
-  - earned version or ladder status cannot change without corresponding history
+authority, but earned history and approved self-revisions are protected:
+  - version_history and revision_history remain exact append-only prefixes
+  - version/stage transitions remain canonical and non-self-approved
+  - known failures, stable lessons, and soul principles cannot change without a
+    matching approved revision entry
   - writes are atomic (temp file + fsync + os.replace)
 
 Evidence-derived descriptive fields may be recomputed between saves. Pure
@@ -28,10 +27,7 @@ from .identity_profile import AgentIdentityProfile, from_record
 _AGENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
-def _history_prefix(
-    old: Sequence[Dict],
-    new: Sequence[Dict],
-) -> bool:
+def _history_prefix(old: Sequence[Dict], new: Sequence[Dict]) -> bool:
     return len(new) >= len(old) and tuple(new[:len(old)]) == tuple(old)
 
 
@@ -132,6 +128,43 @@ def _validate_appended_history(
             "promotion_status changed without a matching append-only transition")
 
 
+def _validate_appended_revisions(
+    existing: AgentIdentityProfile,
+    profile: AgentIdentityProfile,
+) -> None:
+    """Replay appended self-revisions and bind them to the resulting profile."""
+    old_history = tuple(existing.revision_history)
+    new_history = tuple(profile.revision_history)
+    if not _history_prefix(old_history, new_history):
+        raise ValueError(
+            "identity revision_history is append-only; existing entries cannot "
+            "be removed or rewritten")
+
+    failures = tuple(existing.known_failures)
+    lessons = tuple(existing.stable_lessons)
+    principles = tuple(existing.soul_principles)
+    from .self_revision import replay_revision_entry
+
+    for entry in new_history[len(old_history):]:
+        failures, lessons, principles = replay_revision_entry(
+            failures,
+            lessons,
+            principles,
+            entry,
+            agent_id=profile.agent_id,
+        )
+
+    if failures != tuple(profile.known_failures):
+        raise ValueError(
+            "known_failures changed without matching approved self-revisions")
+    if lessons != tuple(profile.stable_lessons):
+        raise ValueError(
+            "stable_lessons changed without matching approved self-revisions")
+    if principles != tuple(profile.soul_principles):
+        raise ValueError(
+            "soul_principles changed without matching approved self-revisions")
+
+
 class IdentityRegistry:
     """One atomic, monotonic JSON profile per filesystem-safe agent id."""
 
@@ -146,7 +179,7 @@ class IdentityRegistry:
         return self.directory / f"{agent_id}.json"
 
     def save_profile(self, profile: AgentIdentityProfile) -> Path:
-        """Atomically save a profile without permitting earned-history rollback."""
+        """Atomically save a profile without permitting history rollback."""
         path = self._path_for(profile.agent_id)
         self.directory.mkdir(parents=True, exist_ok=True)
 
@@ -155,6 +188,7 @@ class IdentityRegistry:
             if existing is None:
                 raise ValueError("existing identity profile could not be loaded")
             _validate_appended_history(existing, profile)
+            _validate_appended_revisions(existing, profile)
 
         payload = json.dumps(
             profile.to_record(),
