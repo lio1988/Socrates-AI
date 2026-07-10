@@ -4,17 +4,18 @@ The generic OpenClaw failure detector observes session-level protocol facts and
 the existing Lesson A/B harness measures a whole council treatment. Neither is,
 by itself, sufficient to assign a weakness or lesson effect to one agent.
 
-This module therefore accepts only explicit, versioned reports that include the
-missing causal attribution:
+This module accepts only explicit, versioned reports carrying the missing causal
+attribution:
 
 - repeated failure observations attributed to one agent;
 - matched before/after evidence resolving one attributed weakness;
 - single-agent lesson A/B evidence;
 - explicit constitutional review for Soul principles.
 
-Malformed, council-wide, un-attributed, undersampled, harmful, self-verified, or
-secret-shaped reports fail closed. Builders create evidence records only; they
-never approve or apply a revision.
+Reversal evidence supports both the original action and its canonical inverse.
+That lets the same verified regression report justify the original probation
+outcome (`reverted`) and the separate inverse proposal, without weakening exact
+agent/value matching.
 """
 
 from __future__ import annotations
@@ -125,33 +126,29 @@ def _sequence(
 
 
 def _integer(value: Any, *, field: str, minimum: int = 0) -> int:
-    if isinstance(value, bool):
-        raise ValueError(f"{field} must be an integer, not boolean")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} must be an integer") from exc
-    if parsed != value or parsed < minimum:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be an integer")
+    if value < minimum:
         raise ValueError(f"{field} must be an integer >= {minimum}")
-    return parsed
+    return value
 
 
 def _number(value: Any, *, field: str) -> float:
-    if isinstance(value, bool):
-        raise ValueError(f"{field} must be numeric, not boolean")
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} must be numeric") from exc
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be numeric")
+    return float(value)
 
 
 def _digest(value: Any) -> str:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    try:
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("instrument report must be canonical JSON") from exc
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -159,7 +156,7 @@ def _base_record(
     report: Mapping[str, Any],
     *,
     agent_field: str,
-    support: str,
+    supports: Sequence[str],
     value: str,
     outcomes: Sequence[str] = (),
     source_suffix: str = "",
@@ -173,7 +170,7 @@ def _base_record(
         agent_id=_clean_text(
             report[agent_field], field=agent_field, maximum=128),
         source=source,
-        supports=(support,),
+        supports=tuple(supports),
         value=value,
         verified_by=_clean_text(
             report["verified_by"], field="verified_by", maximum=128),
@@ -192,12 +189,7 @@ def build_identity_failure_evidence(
     *,
     min_occurrences: int = 2,
 ) -> RevisionEvidenceRecord:
-    """Build `add_known_failure` evidence from repeated agent attribution.
-
-    Each observation must explicitly name the same agent, carry a distinct
-    session ID and source trace, and set ``attribution_verified`` to true. Raw
-    session-level failure observations without agent attribution are refused.
-    """
+    """Build `add_known_failure` evidence from repeated agent attribution."""
     data = _strict_report(
         report,
         fields=_IDENTITY_FAILURE_FIELDS,
@@ -219,13 +211,13 @@ def build_identity_failure_evidence(
 
     sessions = []
     sources = []
+    required = {
+        "session_id", "attributed_agent_id", "pattern_key",
+        "attribution_verified", "source_trace",
+    }
     for observation in observations:
         if not isinstance(observation, Mapping):
             raise ValueError("each identity failure observation must be a mapping")
-        required = {
-            "session_id", "attributed_agent_id", "pattern_key",
-            "attribution_verified", "source_trace",
-        }
         if set(observation) != required:
             raise ValueError(
                 "identity failure observation contains missing or unknown fields")
@@ -253,7 +245,7 @@ def build_identity_failure_evidence(
     return _base_record(
         data,
         agent_field="agent_id",
-        support="identity:add_known_failure",
+        supports=("identity:add_known_failure",),
         value=weakness,
         source_suffix=f"attribution-{attribution_digest[:16]}",
     )
@@ -264,7 +256,7 @@ def build_identity_resolution_evidence(
     *,
     min_window: int = 2,
 ) -> RevisionEvidenceRecord:
-    """Build `resolve_known_failure` evidence from matched before/after windows."""
+    """Build resolution evidence from matched before/after agent windows."""
     data = _strict_report(
         report,
         fields=_IDENTITY_RESOLUTION_FIELDS,
@@ -303,8 +295,12 @@ def build_identity_resolution_evidence(
     return _base_record(
         data,
         agent_field="agent_id",
-        support="identity:resolve_known_failure",
+        supports=(
+            "identity:add_known_failure",
+            "identity:resolve_known_failure",
+        ),
         value=weakness,
+        outcomes=("reverted",),
         source_suffix=f"matched-{comparison_digest[:16]}",
     )
 
@@ -314,11 +310,7 @@ def build_agent_lesson_ab_evidence(
     *,
     action: str,
 ) -> RevisionEvidenceRecord:
-    """Build Memory evidence only from a single-agent, matched Lesson A/B report.
-
-    A normal council-wide ``lesson_ab_v2`` report is deliberately rejected. It
-    cannot establish that one particular agent benefited from a lesson.
-    """
+    """Build Memory evidence only from a single-agent, matched Lesson A/B report."""
     data = _strict_report(
         report,
         fields=_AGENT_LESSON_AB_FIELDS,
@@ -361,6 +353,7 @@ def build_agent_lesson_ab_evidence(
             raise ValueError("link evidence requires positive mean_score_delta")
         if regressions != 0 or harm_rate > max_harm_rate:
             raise ValueError("link evidence contains harm or configuration regressions")
+        supports = ("memory:link_stable_lesson",)
         outcomes: Tuple[str, ...] = ("confirmed",)
     else:
         harmed = (
@@ -370,6 +363,10 @@ def build_agent_lesson_ab_evidence(
         )
         if not harmed:
             raise ValueError("unlink evidence requires a concrete harmed verdict")
+        supports = (
+            "memory:link_stable_lesson",
+            "memory:unlink_stable_lesson",
+        )
         outcomes = ("reverted",)
 
     report_digest = _digest({
@@ -380,7 +377,7 @@ def build_agent_lesson_ab_evidence(
     return _base_record(
         data,
         agent_field="target_agent_id",
-        support=f"memory:{action}",
+        supports=supports,
         value=lesson_id,
         outcomes=outcomes,
         source_suffix=f"agent-ab-{report_digest[:16]}",
@@ -390,11 +387,7 @@ def build_agent_lesson_ab_evidence(
 def build_soul_attestation_evidence(
     report: Mapping[str, Any],
 ) -> RevisionEvidenceRecord:
-    """Build Soul evidence only from explicit non-self constitutional review.
-
-    Soul principles are normative commitments, not facts inferable from traces.
-    This builder therefore refuses automatic or unreviewed principle generation.
-    """
+    """Build Soul evidence only from explicit non-self constitutional review."""
     data = _strict_report(
         report,
         fields=_SOUL_ATTESTATION_FIELDS,
@@ -434,10 +427,17 @@ def build_soul_attestation_evidence(
         "verification_reference": review_reference,
         "observed_on": data["observed_on"],
     }
+    if action == "add_principle":
+        supports = ("soul:add_principle",)
+        outcomes: Tuple[str, ...] = ()
+    else:
+        supports = ("soul:add_principle", "soul:retire_principle")
+        outcomes = ("reverted",)
     return _base_record(
         shaped,
         agent_field="agent_id",
-        support=f"soul:{action}",
+        supports=supports,
         value=principle,
+        outcomes=outcomes,
         source_suffix=f"attestation-{attestation_digest[:16]}",
     )
