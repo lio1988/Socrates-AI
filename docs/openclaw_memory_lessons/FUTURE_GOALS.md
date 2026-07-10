@@ -321,6 +321,20 @@ Acceptance criteria:
 
 ## Goal 8 — Prompt patch generator
 
+**Status: DONE (v0).** Implemented as
+`backend/dialogues/openclaw_prompts/patch_proposer.py` with tests in
+`tests_dialogues/test_patch_proposer.py`. The mirror image of the lesson
+proposer: the SAME Goal 6 failure detectors over Goal 5 traces,
+repeated-only gating (min 2 sessions), deterministic ids in the reserved
+PATCH-9001+ provisional range. Every proposal is `status="proposed"` with
+the policy audit fields filled (reason carries the observed session ids,
+expected effect, risk) — and the Goal 7 registry mechanically blocks
+proposals from default renders (test-locked), so a proposal reaches a
+rendered prompt only through an explicitly NAMED candidate A/B run and a
+human promotion. `attach_proposals(spec, patches)` is non-mutating. No
+detector observes unsupported claims yet, so that example patch cannot be
+proposed until a real instrument exists (same honest gap as the lessons).
+
 Later, after enough traces exist, build a Prompt Patch Generator.
 
 It should not rewrite prompts from scratch.
@@ -411,6 +425,24 @@ Acceptance criteria:
 ---
 
 ## Goal 11 — OpenClaw Shadow Apprentice Mode
+
+**Status: DONE (v0, Stage 1).** Implemented as
+`backend/dialogues/openclaw_shadow/shadow_apprentice.py` with tests in
+`tests_dialogues/test_shadow_apprentice.py`. The `ShadowApprentice` runner:
+the council runs normally FIRST (final answer exists before the apprentice
+moves); the apprentice receives the same question plus the same selected
+memory lessons (identical context key as the CED wiring); a judge panel
+(never the apprentice) scores its five-section draft blind under a neutral
+label; each section is compared against the council's actual assembled
+winner — a shadow win requires STRICTLY beating the council score (ties
+earn nothing). Every session emits a marked shadow record
+(`shadow_run=True`, the Goal 13.2 capture-time marker) that the existing
+identity evidence path consumes unchanged: 3 verified shadow blind-spot
+wins pass identity gate v0.3→v0.4 end-to-end (test-locked). Mechanically
+guaranteed: an apprentice sitting in the council it shadows is refused; a
+failed draft is an honest `ok=False`; the council final is byte-identical
+with and without shadowing. Stage 2+ (contributing low-risk sections)
+remains future work behind the Promotion Arena gate.
 
 Create a safe training mode where the local agent observes and compares before it becomes a full council member.
 

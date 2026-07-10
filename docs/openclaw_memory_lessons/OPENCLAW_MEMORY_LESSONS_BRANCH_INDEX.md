@@ -122,8 +122,12 @@ backend/dialogues/openclaw_identity/   # landed: identity_profile, promotion_pol
 backend/dialogues/openclaw_tree/       # reserved (tree runtime landed CED-side as
                                        # backend/dialogues/deliberation_tree.py)
 backend/dialogues/openclaw_prompts/    # landed: prompt_registry (versioned specs,
-                                       # provider patches, fingerprints —
-                                       # runtime-inert until explicitly wired)
+                                       # provider patches, fingerprints) +
+                                       # patch_proposer (failures -> PROPOSED
+                                       # patches) — runtime-inert until wired
+backend/dialogues/openclaw_shadow/     # landed: shadow_apprentice (Stage 1
+                                       # runner — observes, gets judged,
+                                       # never touches the council)
 ```
 
 Avoid vague names such as:

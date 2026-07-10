@@ -80,7 +80,9 @@ OpenClaw remembers.
 | Identity registry + instrument-fed gate evidence | `845bcf9` | `openclaw_identity/` (+2 modules) | 14 |
 | Shadow-run markers (capture-time, verified evidence) | `196a892` | `trace_capture.py` + `evidence_collection.py` | 9 |
 | Goal 6.1 — Lesson effectiveness A/B harness (poisoning detector) | `7a31805` | `openclaw_memory/lesson_ab.py` | 7 |
-| Goal 7 — Prompt registry (versioned lineage, runtime-inert) | see git log | `openclaw_prompts/prompt_registry.py` | 16 |
+| Goal 7 — Prompt registry (versioned lineage, runtime-inert) | `d6d4ee3` | `openclaw_prompts/prompt_registry.py` | 16 |
+| Goal 8 — Prompt patch generator (proposes into the registry) | see git log | `openclaw_prompts/patch_proposer.py` | 9 |
+| Goal 11 — Shadow Apprentice Mode (Stage 1 runtime) | see git log | `openclaw_shadow/shadow_apprentice.py` | 13 |
 
 ## Learning arcs currently closed
 
@@ -200,13 +202,13 @@ This direction succeeds when agents can reliably:
 
 ## Not yet built (see FUTURE_GOALS.md)
 
-- Goal 2 (machine-readable lesson store), Goal 8 (prompt patch generator —
-  will PROPOSE into the Goal 7 registry lifecycle), Goal 9 (Proof Sprint
-  v0.3), Goal 10 (local LLM provider), Goal 11 runtime (Shadow Apprentice
-  Mode — the trace markers and identity evidence exist; the shadow runner
-  itself does not), Goal 12 (UI panel), Goal 13 (fine-tuning dataset
-  preparation beyond the Phase 22 corpus), prompt-registry runtime wiring
-  (rendered prompts into live calls behind an A/B gate).
+- Goal 2 (machine-readable lesson store), Goal 9 (Proof Sprint v0.3),
+  Goal 10 (local LLM provider — the Shadow Apprentice runner is ready to
+  host it as the apprentice adapter), Goal 11 Stages 2-4 (apprentice
+  contribution of low-risk sections — behind the Promotion Arena gate),
+  Goal 12 (UI panel), Goal 13 (fine-tuning dataset preparation beyond the
+  Phase 22 corpus), prompt-registry runtime wiring (rendered prompts into
+  live calls behind an A/B gate).
 - Curriculum from the OpenQuestionLedger; Evidence Harness value grounding
   for the tree; an instrument that observes unsupported claims (until then
   identity gate v0.2→v0.3 honestly cannot pass); role-scoped apprentice
