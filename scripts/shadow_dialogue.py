@@ -266,7 +266,7 @@ def main(argv=None, env=None) -> int:
         print(f"  gate {gate.gate_id}: "
               f"{'PASSED (a human may now record the promotion)' if result.passed else 'not yet'}")
         print(f"    {result.reasons[0]}")
-    print(f"  raw history      : {len(all_records)} shadow record(s) -> {path}")
+    print(f"  raw history      : {len(all_records)} shadow record(s) across all runs -> {path}")
     print(f"  eligible identity: {len(identity_records)} unique ratified session(s)")
     print(f"  identity registry-> {registry_path}")
     print("-" * _W)
