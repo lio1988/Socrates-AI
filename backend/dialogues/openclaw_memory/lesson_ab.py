@@ -1,26 +1,28 @@
 """
 OpenClaw Memory Lessons — lesson effectiveness A/B harness (Goal 6.1).
 
-Matched-pair experiment per question:
-  control   = fresh council without the candidate lessons
-  treatment = identically built council with the candidate lessons
-  same question + same session id on separate orchestrators
+Each question runs two fresh, matched councils:
+  control   = without candidate lessons
+  treatment = with candidate lessons
 
-A lesson is not "helpful" merely because the mean score rose. Coverage and
-harm are first-class:
-  - a treatment with more unresolved sections is a regression
-  - any ratification regression is a veto
-  - the tested sample must meet ``min_tested``
-  - the per-question harm rate must stay within ``max_harm_rate``
+Evidence rules:
+  - same question and session id, separate orchestrators
+  - arm execution order is counterbalanced across questions
+  - execution mode and configured available-provider set must match
+  - no-injection treatment rows are UNTESTED
+  - treatment assembly collapse after real injection is catastrophic HARM,
+    not an INVALID row that disappears from the verdict
+  - positive mean alone is insufficient: ratification, coverage, sample size,
+    and per-question harm veto false improvement
 
-The harness only reports. A human controls lifecycle promotion.
+The harness reports; a human controls lifecycle promotion.
 """
 
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-AB_SCHEMA_VERSION = "lesson_ab_v1"
+AB_SCHEMA_VERSION = "lesson_ab_v2"
 
 
 def _default_council_factory(openclaw_lessons):
@@ -44,7 +46,9 @@ def _arm_outcome(ced, session_id: str, final) -> Dict[str, Any]:
         sum(section.average_score for section in resolved) / len(resolved)
         if resolved else None
     )
-    openclaw = (final.audit_summary or {}).get("openclaw_lessons") or {}
+    audit = final.audit_summary or {}
+    openclaw = audit.get("openclaw_lessons") or {}
+    provider_status = audit.get("provider_status_summary") or {}
     return {
         "ratified": bool(final.ratified),
         "mean_section_score": (
@@ -53,9 +57,43 @@ def _arm_outcome(ced, session_id: str, final) -> Dict[str, Any]:
         "unresolved_sections": (
             len(assembled.sections) - len(resolved)
             if assembled is not None else 0),
+        "has_assembly": assembled is not None and bool(resolved),
         "lessons_selected": int(openclaw.get("selected_count", 0)),
         "lesson_ids": list(openclaw.get("selected", []) or []),
+        "available_providers": sorted(
+            str(provider_id)
+            for provider_id in provider_status.get("available_providers", [])
+        ),
+        "unavailable_providers": sorted(
+            str(provider_id)
+            for provider_id in provider_status.get("unavailable_providers", [])
+        ),
     }
+
+
+async def _execute_arm(factory, lessons, question: str, session_id: str):
+    ced, mode = factory(openclaw_lessons=lessons)
+    final = await ced.run_registry_session(question, session_id=session_id)
+    return ced, str(mode), final
+
+
+def _configuration_mismatch(
+    control_mode: str,
+    treatment_mode: str,
+    control: Dict[str, Any],
+    treatment: Dict[str, Any],
+) -> Optional[str]:
+    if control_mode != treatment_mode:
+        return "execution_mode_mismatch"
+    control_available = control.get("available_providers")
+    treatment_available = treatment.get("available_providers")
+    if (
+        control_available is not None
+        and treatment_available is not None
+        and control_available != treatment_available
+    ):
+        return "available_provider_set_mismatch"
+    return None
 
 
 async def run_lesson_ab(
@@ -66,17 +104,19 @@ async def run_lesson_ab(
     min_delta: float = 0.0,
     min_tested: int = 1,
     max_harm_rate: float = 0.0,
+    counterbalance: bool = True,
 ) -> Dict[str, Any]:
-    """Run a matched-pair lesson experiment and return an auditable report.
+    """Run a conservative matched-pair lesson experiment.
 
-    ``helped`` requires all of:
-      - at least ``min_tested`` valid questions
-      - mean score delta greater than ``min_delta``
+    ``helped`` requires:
+      - enough comparable score rows
+      - positive mean delta above threshold
       - no ratification regression
       - no unresolved-section regression
-      - per-question negative-delta rate <= ``max_harm_rate``
+      - no catastrophic treatment collapse
+      - harm rate within the configured bound
 
-    Invalid/no-injection rows never enter the denominator.
+    Operationally incomparable arms are invalid, never forced into a verdict.
     """
     if not lessons:
         raise ValueError("run_lesson_ab needs at least one lesson to test")
@@ -86,64 +126,111 @@ async def run_lesson_ab(
         raise ValueError("max_harm_rate must be between 0 and 1")
 
     factory = council_factory or _default_council_factory
-
     rows: List[Dict[str, Any]] = []
     deltas: List[float] = []
     untested = invalid = 0
     ratification_gains = ratification_regressions = 0
     unresolved_gains = unresolved_regressions = 0
+    catastrophic_regressions = 0
+    configuration_mismatches = 0
 
     for question_index, question in enumerate(questions):
         session_id = f"lesson_ab_q{question_index}"
+        treatment_first = bool(counterbalance and question_index % 2 == 1)
+        arm_order = ["treatment", "control"] if treatment_first \
+            else ["control", "treatment"]
 
-        ced_control, _ = factory(openclaw_lessons=None)
-        final_control = await ced_control.run_registry_session(
-            question, session_id=session_id)
+        results: Dict[str, Tuple[Any, str, Any]] = {}
+        for arm in arm_order:
+            arm_lessons = list(lessons) if arm == "treatment" else None
+            results[arm] = await _execute_arm(
+                factory, arm_lessons, question, session_id)
 
-        ced_treatment, _ = factory(openclaw_lessons=list(lessons))
-        final_treatment = await ced_treatment.run_registry_session(
-            question, session_id=session_id)
-
+        ced_control, control_mode, final_control = results["control"]
+        ced_treatment, treatment_mode, final_treatment = results["treatment"]
         control = _arm_outcome(ced_control, session_id, final_control)
         treatment = _arm_outcome(ced_treatment, session_id, final_treatment)
+
         row: Dict[str, Any] = {
             "question": question,
             "session_id": session_id,
+            "arm_order": arm_order,
+            "control_mode": control_mode,
+            "treatment_mode": treatment_mode,
             "control": control,
             "treatment": treatment,
         }
 
-        if (control["mean_section_score"] is None
-                or treatment["mean_section_score"] is None):
-            row.update({"valid": False, "reason": "no_assembly"})
+        mismatch = _configuration_mismatch(
+            control_mode, treatment_mode, control, treatment)
+        if mismatch:
+            row.update({"valid": False, "reason": mismatch})
             invalid += 1
-        elif treatment["lessons_selected"] == 0:
+            configuration_mismatches += 1
+            rows.append(row)
+            continue
+
+        if treatment["lessons_selected"] == 0:
             row.update({"valid": False, "reason": "no_lessons_selected"})
             untested += 1
-        else:
-            score_delta = (
-                treatment["mean_section_score"]
-                - control["mean_section_score"])
-            unresolved_delta = (
-                treatment["unresolved_sections"]
-                - control["unresolved_sections"])
+            rows.append(row)
+            continue
+
+        control_has = bool(control.get("has_assembly",
+                                       control["mean_section_score"] is not None))
+        treatment_has = bool(treatment.get(
+            "has_assembly", treatment["mean_section_score"] is not None))
+
+        if control_has and not treatment_has:
             row.update({
                 "valid": True,
-                "score_delta": round(score_delta, 4),
-                "unresolved_delta": unresolved_delta,
+                "reason": "treatment_no_assembly",
+                "catastrophic_regression": True,
             })
-            deltas.append(score_delta)
-
-            if treatment["ratified"] and not control["ratified"]:
-                ratification_gains += 1
-            elif control["ratified"] and not treatment["ratified"]:
+            catastrophic_regressions += 1
+            if control["ratified"] and not treatment["ratified"]:
                 ratification_regressions += 1
+            rows.append(row)
+            continue
 
-            if unresolved_delta < 0:
-                unresolved_gains += 1
-            elif unresolved_delta > 0:
-                unresolved_regressions += 1
+        if not control_has and treatment_has:
+            row.update({
+                "valid": False,
+                "reason": "control_no_assembly",
+            })
+            invalid += 1
+            rows.append(row)
+            continue
 
+        if not control_has and not treatment_has:
+            row.update({
+                "valid": False,
+                "reason": "neither_arm_assembled",
+            })
+            invalid += 1
+            rows.append(row)
+            continue
+
+        score_delta = (
+            treatment["mean_section_score"] - control["mean_section_score"])
+        unresolved_delta = (
+            treatment["unresolved_sections"] - control["unresolved_sections"])
+        row.update({
+            "valid": True,
+            "score_delta": round(score_delta, 4),
+            "unresolved_delta": unresolved_delta,
+        })
+        deltas.append(score_delta)
+
+        if treatment["ratified"] and not control["ratified"]:
+            ratification_gains += 1
+        elif control["ratified"] and not treatment["ratified"]:
+            ratification_regressions += 1
+
+        if unresolved_delta < 0:
+            unresolved_gains += 1
+        elif unresolved_delta > 0:
+            unresolved_regressions += 1
         rows.append(row)
 
     tested = len(deltas)
@@ -161,17 +248,24 @@ async def run_lesson_ab(
     improved = sum(1 for delta in deltas if delta > 0)
     worsened = sum(1 for delta in deltas if delta < 0)
     unchanged = tested - improved - worsened
-    harm_rate = (worsened / tested) if tested else 0.0
+    harm_denominator = tested + catastrophic_regressions
+    harm_rate = (
+        (worsened + catastrophic_regressions) / harm_denominator
+        if harm_denominator else 0.0
+    )
 
     helped = (
         tested >= min_tested
         and mean_delta > min_delta
         and ratification_regressions == 0
         and unresolved_regressions == 0
+        and catastrophic_regressions == 0
         and harm_rate <= float(max_harm_rate)
     )
 
-    if tested == 0:
+    if catastrophic_regressions > 0:
+        verdict = "harmed"
+    elif tested == 0:
         verdict = "untested"
     elif helped:
         verdict = "helped"
@@ -192,10 +286,13 @@ async def run_lesson_ab(
         "min_delta": float(min_delta),
         "min_tested": int(min_tested),
         "max_harm_rate": float(max_harm_rate),
+        "counterbalance": bool(counterbalance),
         "questions": rows,
         "tested": tested,
         "untested": untested,
         "invalid": invalid,
+        "configuration_mismatches": configuration_mismatches,
+        "catastrophic_regressions": catastrophic_regressions,
         "mean_score_delta": round(mean_delta, 4),
         "median_score_delta": round(median_delta, 4),
         "improved": improved,
