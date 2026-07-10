@@ -22,13 +22,24 @@ def _module():
     return module
 
 
-def _report(observed_on):
+def _report(observed_on, *, source="AgentLessonAB/report-1"):
     return {
         "schema_version": AGENT_LESSON_AB_REPORT_VERSION,
         "target_agent_id": AGENT,
+        "source": source,
         "verified_by": "Operator",
         "observed_on": observed_on,
     }
+
+
+def test_report_requires_nonempty_instrument_source():
+    module = _module()
+    with pytest.raises(ValueError, match="non-empty instrument source"):
+        module._validate_report_identity(
+            _report(dt.date.today().isoformat(), source=""),
+            agent_id=AGENT,
+            verified_by="Operator",
+        )
 
 
 def test_report_requires_nonempty_observation_date():
