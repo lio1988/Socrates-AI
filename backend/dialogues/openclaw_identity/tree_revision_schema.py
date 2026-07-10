@@ -27,7 +27,7 @@ _OUTCOMES = frozenset({"improved", "regressed", "neutral"})
 _FIELDS = {
     "schema_version", "session_id", "comparison_key", "question_hash",
     "agent_id", "provider_id", "parent_draft_id", "child_draft_id",
-    "parent_score", "child_score", "margin", "outcome",
+    "parent_score", "child_score", "margin", "effect_margin", "outcome",
     "matched_score_count", "judge_ids", "matched_sections",
     "tree_exploration", "tree_total_expansions", "scorecard_digest",
     "source_trace", "observation_digest",
@@ -104,6 +104,7 @@ class TreeRevisionObservation:
     parent_score: float
     child_score: float
     margin: float
+    effect_margin: float
     outcome: str
     matched_score_count: int
     judge_ids: Tuple[str, ...]
@@ -150,9 +151,23 @@ class TreeRevisionObservation:
         object.__setattr__(self, "child_score", child)
         object.__setattr__(self, "margin", margin)
 
+        if isinstance(self.effect_margin, bool) or not isinstance(
+                self.effect_margin, (int, float)):
+            raise ValueError("effect_margin must be numeric")
+        effect_margin = float(self.effect_margin)
+        if not math.isfinite(effect_margin) or effect_margin <= 0:
+            raise ValueError("effect_margin must be finite and positive")
+        object.__setattr__(self, "effect_margin", effect_margin)
         outcome = clean_text(self.outcome, field="outcome", maximum=16)
         if outcome not in _OUTCOMES:
             raise ValueError(f"unknown tree revision outcome {outcome!r}")
+        expected_outcome = (
+            "improved" if margin >= effect_margin
+            else "regressed" if margin <= -effect_margin
+            else "neutral"
+        )
+        if outcome != expected_outcome:
+            raise ValueError("tree revision outcome does not match margin threshold")
         object.__setattr__(self, "outcome", outcome)
         if (
             isinstance(self.matched_score_count, bool)
@@ -201,6 +216,7 @@ class TreeRevisionObservation:
             "parent_score": round(self.parent_score, 6),
             "child_score": round(self.child_score, 6),
             "margin": round(self.margin, 6),
+            "effect_margin": self.effect_margin,
             "outcome": self.outcome,
             "matched_score_count": self.matched_score_count,
             "judge_ids": list(self.judge_ids),
@@ -241,6 +257,7 @@ class TreeRevisionObservation:
             parent_score=record["parent_score"],
             child_score=record["child_score"],
             margin=record["margin"],
+            effect_margin=record["effect_margin"],
             outcome=record["outcome"],
             matched_score_count=record["matched_score_count"],
             judge_ids=tuple(record["judge_ids"]),
