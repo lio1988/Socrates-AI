@@ -129,9 +129,11 @@ def test_happy_path_writes_bounded_artifacts_from_named_legacy_manifest(
     assert instruction_path.exists()
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot["agent_id"] == AGENT
-    assert snapshot["snapshot_version"] == "openclaw_self_review_v3"
+    assert snapshot["snapshot_version"] == "openclaw_self_review_v4"
     assert snapshot["profile_fingerprint"]
-    assert snapshot["governed_profile_fingerprint"]
+    assert snapshot["governed_profile_fingerprint"] == \
+        snapshot["profile_fingerprint"]
+    assert snapshot["observational_profile_fingerprint"]
     assert len(snapshot["verified_evidence"]) == 1
     assert snapshot["verified_evidence"][0]["verified_by"] == \
         "evidence-harness"
@@ -140,7 +142,9 @@ def test_happy_path_writes_bounded_artifacts_from_named_legacy_manifest(
     assert snapshot["pending_proposal_ids"] == []
     assert "Return exactly one JSON object" in instruction_path.read_text(
         encoding="utf-8")
-    assert "Evidence provenance:" in summary_path.read_text(encoding="utf-8")
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "Evidence provenance:" in summary
+    assert "Observational fingerprint:" in summary
     assert "Nothing was activated" in out
     assert list(review_dir.glob("*.tmp")) == []
     assert list(review_dir.glob(".*.tmp")) == []
