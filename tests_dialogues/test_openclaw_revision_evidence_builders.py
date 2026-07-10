@@ -165,9 +165,13 @@ def test_attribution_requires_distinct_sessions_and_non_self_verifier():
         build_identity_failure_evidence(report)
 
 
-def test_matched_zero_failure_window_builds_resolution_evidence():
+def test_matched_zero_failure_window_builds_dual_resolution_evidence():
     evidence = build_identity_resolution_evidence(_resolution_report())
-    assert evidence.supports == ("identity:resolve_known_failure",)
+    assert evidence.supports == (
+        "identity:add_known_failure",
+        "identity:resolve_known_failure",
+    )
+    assert evidence.outcomes == ("reverted",)
     assert evidence.value == WEAKNESS
     assert "matched-" in evidence.source
 
@@ -224,7 +228,7 @@ def test_council_wide_or_harmful_ab_cannot_link_agent_memory():
             report, action="link_stable_lesson")
 
 
-def test_concrete_harmed_ab_builds_memory_unlink_and_revert_evidence():
+def test_harmed_ab_builds_dual_memory_reversal_evidence():
     report = _lesson_report()
     report.update({
         "reference": "agent-ab/lesson-0007-harm-1",
@@ -237,7 +241,10 @@ def test_concrete_harmed_ab_builds_memory_unlink_and_revert_evidence():
     })
     evidence = build_agent_lesson_ab_evidence(
         report, action="unlink_stable_lesson")
-    assert evidence.supports == ("memory:unlink_stable_lesson",)
+    assert evidence.supports == (
+        "memory:link_stable_lesson",
+        "memory:unlink_stable_lesson",
+    )
     assert evidence.outcomes == ("reverted",)
 
 
@@ -260,6 +267,21 @@ def test_explicit_constitutional_review_builds_soul_evidence():
     assert evidence.value == PRINCIPLE
     assert evidence.verified_by == "constitutional-reviewer"
     assert "attestation-" in evidence.source
+
+
+def test_retirement_attestation_builds_dual_soul_reversal_evidence():
+    report = _soul_report()
+    report.update({
+        "reference": "soul-review/uncertainty-retire-1",
+        "action": "retire_principle",
+        "rationale": "Post-change review found the principle over-constraining.",
+    })
+    evidence = build_soul_attestation_evidence(report)
+    assert evidence.supports == (
+        "soul:add_principle",
+        "soul:retire_principle",
+    )
+    assert evidence.outcomes == ("reverted",)
 
 
 def test_soul_cannot_be_inferred_without_review_risk_or_external_actor():
@@ -305,6 +327,7 @@ def test_builder_output_registers_and_drives_exact_proposal_evaluation(tmp_path)
     snapshot = build_self_review_snapshot(profile, evidence_manifest=manifest)
     evaluation = evaluate_self_revision(proposal, evidence_manifest=manifest)
     assert snapshot.verified_evidence[0].reference == evidence.reference
+    assert snapshot.verified_evidence[0].verified_by == "evidence-harness"
     assert evaluation.passed is True
 
 
