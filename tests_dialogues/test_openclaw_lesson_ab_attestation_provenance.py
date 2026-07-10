@@ -1,5 +1,6 @@
 """Focused provenance tests for the single-agent Lesson A/B bridge."""
 
+import datetime as dt
 import importlib.util
 from pathlib import Path
 
@@ -44,4 +45,15 @@ def test_report_requires_iso_observation_date():
             _report("10/07/2026"), agent_id=AGENT, verified_by="Operator")
 
     module._validate_report_identity(
-        _report("2026-07-10"), agent_id=AGENT, verified_by="operator")
+        _report(dt.date.today().isoformat()),
+        agent_id=AGENT,
+        verified_by="operator",
+    )
+
+
+def test_report_cannot_claim_future_observation():
+    module = _module()
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    with pytest.raises(ValueError, match="cannot be in the future"):
+        module._validate_report_identity(
+            _report(tomorrow), agent_id=AGENT, verified_by="Operator")
