@@ -24,6 +24,12 @@ from .prompt_registry import (
     prompt_metadata,
     render_prompt,
 )
+from .patch_proposer import (
+    PATCH_PROPOSAL_ID_START,
+    attach_proposals,
+    propose_patches_from_capturer,
+    propose_prompt_patches,
+)
 
 __all__ = [
     "ALL_PROVIDERS",
@@ -36,4 +42,8 @@ __all__ = [
     "prompt_fingerprint",
     "prompt_metadata",
     "render_prompt",
+    "PATCH_PROPOSAL_ID_START",
+    "attach_proposals",
+    "propose_patches_from_capturer",
+    "propose_prompt_patches",
 ]
