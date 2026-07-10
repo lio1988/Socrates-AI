@@ -1,9 +1,9 @@
-"""Transaction coordinator with causal-isolation preflight.
+"""Transaction coordinator with causal-isolation and Memory-binding preflight.
 
 A lifecycle registry may refuse an unrelated second probationary application.
-That refusal must happen before the transaction journal or Identity file changes,
-not after `identity_saved`. This coordinator validates admission before creating
-or resuming a `prepared` transaction.
+That refusal, and every personal Memory evidence binding failure, must happen
+before the transaction journal or Identity file changes—not after
+``identity_saved``.
 """
 
 from __future__ import annotations
@@ -11,6 +11,10 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from .identity_profile import AgentIdentityProfile, from_record
+from .memory_evidence_binding import (
+    memory_binding_reasons,
+    stable_lesson_fingerprint_map,
+)
 from .revision_reversal import is_canonical_reversal
 from .revision_transaction_recovery import (
     SelfRevisionTransactionCoordinator as _RecoveryCoordinator,
@@ -70,6 +74,31 @@ class SelfRevisionTransactionCoordinator(_RecoveryCoordinator):
             raise ValueError(
                 "inverse proposal is not bound to current governed identity")
 
+    def _preflight_memory_binding(
+        self,
+        agent_id: str,
+        proposal_id: str,
+        previous_profile: AgentIdentityProfile,
+        *,
+        evidence_manifest,
+        stable_lesson_fingerprints=None,
+    ) -> None:
+        lifecycle = self.lifecycle_registry.load(agent_id, proposal_id)
+        if lifecycle is None:
+            raise ValueError("self-revision lifecycle is missing")
+        proposal = proposal_from_record(
+            lifecycle["proposal"], expected_agent_id=agent_id)
+        fingerprints = stable_lesson_fingerprint_map(
+            stable_lesson_fingerprints)
+        reasons = memory_binding_reasons(
+            proposal,
+            current_profile=previous_profile,
+            evidence_manifest=evidence_manifest,
+            stable_lesson_fingerprints=fingerprints,
+        )
+        if reasons:
+            raise ValueError(reasons[0])
+
     def apply_approved(
         self,
         agent_id: str,
@@ -77,6 +106,7 @@ class SelfRevisionTransactionCoordinator(_RecoveryCoordinator):
         *,
         evidence_manifest,
         stable_lesson_ids=(),
+        stable_lesson_fingerprints=None,
         applied_by: str,
         application_reference: str,
         applied_on: str = "",
@@ -84,6 +114,13 @@ class SelfRevisionTransactionCoordinator(_RecoveryCoordinator):
         previous = self.identity_registry.load_profile(agent_id)
         if previous is None:
             raise ValueError("identity profile does not exist")
+        self._preflight_memory_binding(
+            agent_id,
+            proposal_id,
+            previous,
+            evidence_manifest=evidence_manifest,
+            stable_lesson_fingerprints=stable_lesson_fingerprints,
+        )
         self._preflight_application(agent_id, proposal_id, previous)
         return super().apply_approved(
             agent_id,
