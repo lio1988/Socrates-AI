@@ -231,7 +231,7 @@ class ShadowApprentice:
         self,
         question: str,
         apprentice_sections: Dict[str, str],
-        assembled,
+        state,
         session_id: str,
     ) -> Dict[str, Dict[str, Any]]:
         """Re-score apprentice and council winner with the same eligible judges.
@@ -240,8 +240,13 @@ class ShadowApprentice:
         pair is missing, that pair contributes nothing. This prevents comparing
         two unrelated score distributions.
         """
+        assembled = state.assembled_answer
         if assembled is None:
             return {}
+        provider_by_draft = {
+            draft.draft_id: draft.provider_id
+            for draft in state.section_drafts
+        }
         outcomes: Dict[str, Dict[str, Any]] = {}
         for section_index, sec in enumerate(assembled.sections):
             if sec.unresolved or not sec.selected_draft_id:
@@ -256,7 +261,8 @@ class ShadowApprentice:
             council_scores: List[float] = []
             for judge_index, judge in enumerate(self.judges):
                 # A provider must not score its own winning council section.
-                if judge.provider_id == sec.selected_author_agent_id:
+                winning_provider = provider_by_draft.get(sec.selected_draft_id)
+                if judge.provider_id == winning_provider:
                     continue
                 candidates = [
                     ("apprentice", apprentice_text),
@@ -342,7 +348,7 @@ class ShadowApprentice:
             return final, record
 
         matched = await self._judge_matched_pairs(
-            question, draft["sections"], state.assembled_answer, session_id)
+            question, draft["sections"], state, session_id)
         move_id = f"shadow_{session_id}"
         draft_id = f"draft_{move_id}"
         comparison: List[Dict[str, Any]] = []
