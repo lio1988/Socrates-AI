@@ -74,7 +74,7 @@ SELF_REVISION_PIPELINE.md
 The pipeline report shows each agent’s verified evidence, proposal status, and
 next governed action. Nothing becomes active merely because it appears there.
 
-## Mode E — Lesson A/B test (before promoting a lesson)
+## Mode E — Whole-council Lesson A/B test
 
 ```powershell
 .\.venv\Scripts\python.exe -c "
@@ -87,8 +87,9 @@ print(report['verdict'], report['mean_score_delta'])
 ```
 
 Matched-pair: same question, councils with vs without the lesson. Verdicts:
-`helped` / `harmed` / `no_effect` / `untested`. The harness reports; you
-decide.
+`helped` / `harmed` / `no_effect` / `untested`. This `lesson_ab_v2` report may
+support global curation, but it is deliberately insufficient for personal agent
+Memory because the treatment covers a whole council.
 
 ## Mode F — Human promotion checklist (the only step that changes status)
 
@@ -164,6 +165,41 @@ and names a review artifact. Use `--action retire_principle` for a reviewed
 retirement. Evidence still requires a separate agent proposal, evaluation,
 non-self approval, and recoverable application.
 
+## Mode G4 — Attest single-agent Lesson A/B Memory evidence
+
+The ordinary Mode E report is whole-council evidence and cannot enter one
+agent's Memory. Mode G4 accepts only an explicit
+`openclaw_agent_lesson_ab_v1` report where the treatment scope is
+`single_agent`.
+
+Helped result → link evidence:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_lesson_ab.py `
+  local_apprentice_001 `
+  --report runs\agent_lesson_ab\lesson-0007-helped.json `
+  --action link `
+  --verified-by "Your Name"
+```
+
+Harmful post-link result → unlink/revert evidence:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_lesson_ab.py `
+  local_apprentice_001 `
+  --report runs\agent_lesson_ab\lesson-0007-harmed.json `
+  --action unlink `
+  --verified-by "Your Name"
+```
+
+The verifier named on the command must match the verifier inside the report.
+Link evidence requires a curated `stable`/`verified` lesson and a clean helped
+verdict with no regressions. Unlink evidence requires a concrete harmed verdict
+and a lesson currently linked to that agent. The command writes only immutable
+evidence; it never edits `MEMORY_LESSONS.md` or the agent profile. See
+[AGENT_LESSON_AB_ATTESTATION.md](AGENT_LESSON_AB_ATTESTATION.md) for the exact
+report schema.
+
 ## Mode H — Bounded self-review package (agent proposes, nothing activates)
 
 ```powershell
@@ -172,8 +208,8 @@ non-self approval, and recoverable application.
 
 Builds the snapshot/summary/instruction artifacts an agent may use to author
 one descriptive proposal. Evidence comes only from the trusted registry
-(Mode G1/G2/G3). Evaluation, named non-self approval, recoverable application,
-probation, and confirmation/rollback all still follow — see
+(Mode G1/G2/G3/G4). Evaluation, named non-self approval, recoverable
+application, probation, and confirmation/rollback all still follow — see
 [SELF_REVISION_GOVERNANCE.md](SELF_REVISION_GOVERNANCE.md).
 
 ## Mode I — Recover an interrupted revision transaction
@@ -209,6 +245,9 @@ view and the audit files above are the ground truth.
   adjacent loss→win window of the requested size.
 - **Soul refused** — confirm both review flags and cite existing evidence for
   the same agent.
+- **Lesson A/B Memory attestation refused** — confirm the report uses
+  `openclaw_agent_lesson_ab_v1`, targets the same agent, names the same verifier,
+  and references a curated lesson with a compatible helped/harmed verdict.
 
 ## The constitution (what no mode can do)
 
