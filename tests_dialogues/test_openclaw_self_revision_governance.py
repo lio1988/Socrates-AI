@@ -16,12 +16,17 @@ from backend.dialogues.openclaw_identity import (
     render_soul_card,
 )
 
-
 AGENT = "local_apprentice_001"
 EVIDENCE = ("trace/session-1", "report/ab-1")
 
 
-def _proposal(*, target="identity", action="add_known_failure", value="rushes exact-output tasks", proposal_id="REV-001"):
+def _proposal(
+    *,
+    target="identity",
+    action="add_known_failure",
+    value="rushes exact-output tasks",
+    proposal_id="REV-001",
+):
     return SelfRevisionProposal(
         proposal_id=proposal_id,
         agent_id=AGENT,
@@ -65,6 +70,8 @@ def test_agent_output_parser_is_strict_and_seat_bound():
         proposal_from_record({**record, "authority": "grant"})
     with pytest.raises(ValueError, match="reviewed seat"):
         proposal_from_record(record, expected_agent_id="different_agent")
+    with pytest.raises(ValueError, match="sequence, not text"):
+        proposal_from_record({**record, "evidence_references": "trace/1"})
 
 
 def test_self_revision_must_be_authored_by_the_same_agent():
@@ -74,9 +81,14 @@ def test_self_revision_must_be_authored_by_the_same_agent():
 
 def test_target_action_pairs_and_memory_ids_are_validated():
     with pytest.raises(ValueError, match="not valid"):
-        dataclasses.replace(_proposal(), target="soul", action="add_known_failure")
+        dataclasses.replace(
+            _proposal(), target="soul", action="add_known_failure")
     with pytest.raises(ValueError, match="LESSON"):
-        _proposal(target="memory", action="link_stable_lesson", value="not-a-lesson")
+        _proposal(
+            target="memory",
+            action="link_stable_lesson",
+            value="not-a-lesson",
+        )
 
 
 def test_missing_evidence_fails_closed():
@@ -116,7 +128,11 @@ def test_forged_passing_evaluation_is_recomputed():
 
 def test_agent_can_never_approve_its_own_revision():
     with pytest.raises(ValueError, match="own self-revision"):
-        _apply(AgentIdentityProfile(agent_id=AGENT), _proposal(), approver=AGENT)
+        _apply(
+            AgentIdentityProfile(agent_id=AGENT),
+            _proposal(),
+            approver=AGENT,
+        )
 
 
 def test_approved_identity_revision_updates_profile_and_history():
@@ -148,6 +164,17 @@ def test_approved_soul_revision_is_descriptive_not_authority():
     updated = _apply(AgentIdentityProfile(agent_id=AGENT), proposal)
     assert updated.soul_principles == (principle,)
     assert "authority" not in updated.to_record()
+
+
+def test_proposal_id_cannot_be_applied_twice():
+    first = _apply(AgentIdentityProfile(agent_id=AGENT), _proposal())
+    second = _proposal(
+        target="soul",
+        action="add_principle",
+        value="State uncertainty.",
+    )
+    with pytest.raises(ValueError, match="already been applied"):
+        _apply(first, second)
 
 
 def test_duplicate_and_missing_reverse_operations_are_refused():
@@ -216,20 +243,35 @@ def test_registry_accepts_and_round_trips_approved_revision(tmp_path):
     assert registry.load_profile(AGENT) == updated
 
 
-def test_registry_rejects_revision_history_truncation_and_self_approval(tmp_path):
+def test_registry_rejects_revision_history_truncation(tmp_path):
     registry = IdentityRegistry(tmp_path)
     original = AgentIdentityProfile(agent_id=AGENT)
+    registry.save_profile(original)
     updated = _apply(original, _proposal())
     registry.save_profile(updated)
 
     with pytest.raises(ValueError, match="append-only"):
         registry.save_profile(dataclasses.replace(updated, revision_history=()))
 
+
+def test_registry_rejects_self_approved_appended_revision(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    original = AgentIdentityProfile(agent_id=AGENT)
+    registry.save_profile(original)
+    updated = _apply(original, _proposal())
     entry = dict(updated.revision_history[0])
     entry["approved_by"] = AGENT
     forged = dataclasses.replace(updated, revision_history=(entry,))
-    with pytest.raises(ValueError, match="append-only"):
+
+    with pytest.raises(ValueError, match="own self-revision"):
         registry.save_profile(forged)
+
+
+def test_registry_rejects_revision_history_on_first_save(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    updated = _apply(AgentIdentityProfile(agent_id=AGENT), _proposal())
+    with pytest.raises(ValueError, match="must be saved before"):
+        registry.save_profile(updated)
 
 
 def test_old_identity_records_load_with_empty_revision_defaults():
