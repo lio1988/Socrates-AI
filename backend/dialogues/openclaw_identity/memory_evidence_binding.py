@@ -49,6 +49,7 @@ def memory_ab_binding_marker(
     return (
         f"#{MEMORY_AB_BINDING_VERSION}:{lesson_fingerprint}:"
         f"{identity_fingerprint}:{experiment_fingerprint}"
+        f"#bindings-{experiment_fingerprint[:16]}"
     )
 
 
