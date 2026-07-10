@@ -152,7 +152,7 @@ class IdentityRegistry:
 
         if path.exists():
             existing = self.load_profile(profile.agent_id)
-            if existing is None:  # defensive; path existence already checked
+            if existing is None:
                 raise ValueError("existing identity profile could not be loaded")
             _validate_appended_history(existing, profile)
 
@@ -191,10 +191,10 @@ class IdentityRegistry:
             return None
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            return from_record(record)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             raise ValueError(
                 f"identity profile {path} is unreadable or corrupt") from exc
-        return from_record(record)
 
     def all_profiles(self) -> List[AgentIdentityProfile]:
         """Load every profile in deterministic order; corruption is never hidden."""
