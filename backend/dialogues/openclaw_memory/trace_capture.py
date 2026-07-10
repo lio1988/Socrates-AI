@@ -11,6 +11,7 @@ No provider calls, no network, no API keys.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -28,7 +29,10 @@ _SECRET_KEYS = frozenset({
     "password",
     "secret",
 })
-_SECRET_VALUE_PATTERNS = ("sk-ant-", "Bearer ")
+_SECRET_VALUE_PATTERNS = (
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+)
 
 
 def _utcnow() -> datetime:
@@ -161,8 +165,10 @@ def _find_secret(value: Any, path: str = "trace") -> Optional[str]:
         return None
     if isinstance(value, str):
         for pattern in _SECRET_VALUE_PATTERNS:
-            if pattern.lower() in value.lower():
-                return f"{path} contains {pattern!r}"
+            if pattern.search(value):
+                return (
+                    f"{path} contains token-shaped data matching "
+                    f"{pattern.pattern!r}")
     return None
 
 
