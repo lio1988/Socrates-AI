@@ -181,6 +181,9 @@ def _validate_report_identity(
             "personal Memory evidence")
     if str(report.get("target_agent_id", "")).strip() != agent_id:
         raise ValueError("Lesson A/B report targets another agent")
+    source = str(report.get("source", "")).strip()
+    if not source:
+        raise ValueError("Lesson A/B report requires a non-empty instrument source")
     report_verifier = str(report.get("verified_by", "")).strip()
     if not report_verifier:
         raise ValueError("Lesson A/B report requires a named verifier")
