@@ -40,21 +40,43 @@ def _proposal(
     )
 
 
-def _evaluate(proposal, *, stable=()):
+def _manifest(
+    proposal,
+    *,
+    agent_id=AGENT,
+    verified=True,
+    supports=None,
+    source="test-instrument",
+):
+    support = supports or (f"{proposal.target}:{proposal.action}",)
+    return {
+        reference: {
+            "agent_id": agent_id,
+            "verified": verified,
+            "source": source,
+            "supports": tuple(support),
+        }
+        for reference in EVIDENCE
+    }
+
+
+def _evaluate(proposal, *, stable=(), manifest=None):
     return evaluate_self_revision(
         proposal,
-        available_evidence_references=EVIDENCE,
+        evidence_manifest=manifest or _manifest(proposal),
         stable_lesson_ids=stable,
     )
 
 
-def _apply(profile, proposal, *, stable=(), approver="operator"):
-    evaluation = _evaluate(proposal, stable=stable)
+def _apply(profile, proposal, *, stable=(), approver="operator", manifest=None):
+    evidence_manifest = manifest or _manifest(proposal)
+    evaluation = _evaluate(
+        proposal, stable=stable, manifest=evidence_manifest)
     return approve_and_apply_self_revision(
         profile,
         proposal,
         evaluation,
-        available_evidence_references=EVIDENCE,
+        evidence_manifest=evidence_manifest,
         stable_lesson_ids=stable,
         approved_by=approver,
         approved_on="2026-07-10",
@@ -92,10 +114,32 @@ def test_target_action_pairs_and_memory_ids_are_validated():
 
 
 def test_missing_evidence_fails_closed():
-    result = evaluate_self_revision(
-        _proposal(), available_evidence_references=(EVIDENCE[0],))
+    proposal = _proposal()
+    manifest = _manifest(proposal)
+    manifest.pop(EVIDENCE[1])
+    result = _evaluate(proposal, manifest=manifest)
     assert result.passed is False
     assert "missing evidence" in result.reasons[0]
+
+
+@pytest.mark.parametrize(
+    "manifest,reason",
+    [
+        ({"verified": False}, "not verified"),
+        ({"agent_id": "other_agent"}, "another agent"),
+        ({"source": ""}, "no auditable source"),
+        ({"supports": ("soul:add_principle",)}, "does not support"),
+    ],
+)
+def test_evidence_must_be_verified_owned_sourced_and_action_specific(
+        manifest, reason):
+    proposal = _proposal()
+    evidence = _manifest(proposal)
+    for record in evidence.values():
+        record.update(manifest)
+    result = _evaluate(proposal, manifest=evidence)
+    assert result.passed is False
+    assert any(reason in item for item in result.reasons)
 
 
 def test_memory_link_requires_already_stable_lesson():
@@ -120,7 +164,7 @@ def test_forged_passing_evaluation_is_recomputed():
             AgentIdentityProfile(agent_id=AGENT),
             proposal,
             forged,
-            available_evidence_references=(),
+            evidence_manifest={},
             approved_by="operator",
             approval_reference="review/forged",
         )
@@ -143,6 +187,7 @@ def test_approved_identity_revision_updates_profile_and_history():
     assert entry["entry_type"] == "self_revision"
     assert entry["proposed_by"] == AGENT
     assert entry["approved_by"] == "operator"
+    assert entry["evidence_support"] == "identity:add_known_failure"
     assert entry["evidence_references"] == list(EVIDENCE)
 
 
