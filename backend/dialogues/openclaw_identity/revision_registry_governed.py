@@ -20,9 +20,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping, Tuple
 
 from .memory_evidence_binding import (
+    lesson_fingerprint_map,
     memory_binding_reasons,
     parse_memory_ab_binding,
-    stable_lesson_fingerprint_map,
 )
 from .revision_registry_isolated import (
     REGISTRY_SCHEMA_VERSION,
@@ -69,14 +69,14 @@ class SelfRevisionRegistry(_IsolatedRegistry):
         *,
         current_profile,
         evidence_manifest,
-        stable_lesson_fingerprints=None,
+        lesson_fingerprints=None,
     ) -> None:
         proposal = self._proposal_for(agent_id, proposal_id)
         reasons = memory_binding_reasons(
             proposal,
             current_profile=current_profile,
             evidence_manifest=evidence_manifest,
-            stable_lesson_fingerprints=stable_lesson_fingerprints,
+            lesson_fingerprints=lesson_fingerprints,
         )
         if reasons:
             raise ValueError(reasons[0])
@@ -148,18 +148,17 @@ class SelfRevisionRegistry(_IsolatedRegistry):
         current_profile,
         evidence_manifest,
         stable_lesson_ids=(),
-        stable_lesson_fingerprints=None,
+        lesson_fingerprints=None,
         evaluated_by: str = "evidence-harness",
         evaluated_on: str = "",
     ):
-        fingerprints = stable_lesson_fingerprint_map(
-            stable_lesson_fingerprints)
+        fingerprints = lesson_fingerprint_map(lesson_fingerprints)
         self._preflight_memory_binding(
             agent_id,
             proposal_id,
             current_profile=current_profile,
             evidence_manifest=evidence_manifest,
-            stable_lesson_fingerprints=fingerprints,
+            lesson_fingerprints=fingerprints,
         )
         return super().record_evaluation(
             agent_id,
@@ -179,20 +178,19 @@ class SelfRevisionRegistry(_IsolatedRegistry):
         current_profile,
         evidence_manifest,
         stable_lesson_ids=(),
-        stable_lesson_fingerprints=None,
+        lesson_fingerprints=None,
         decision: str,
         decided_by: str,
         decision_reference: str,
         decided_on: str = "",
     ):
-        fingerprints = stable_lesson_fingerprint_map(
-            stable_lesson_fingerprints)
+        fingerprints = lesson_fingerprint_map(lesson_fingerprints)
         self._preflight_memory_binding(
             agent_id,
             proposal_id,
             current_profile=current_profile,
             evidence_manifest=evidence_manifest,
-            stable_lesson_fingerprints=fingerprints,
+            lesson_fingerprints=fingerprints,
         )
         return super().record_decision(
             agent_id,
