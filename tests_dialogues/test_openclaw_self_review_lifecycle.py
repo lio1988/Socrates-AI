@@ -72,6 +72,7 @@ def _evidence(
     agent_id=AGENT,
     outcomes=(),
     source="trace-harness",
+    verified_by="evidence-harness",
 ):
     proposal = proposal or _proposal()
     return {
@@ -81,6 +82,9 @@ def _evidence(
             "source": source,
             "supports": (f"{proposal.target}:{proposal.action}",),
             "value": proposal.value,
+            "verified_by": verified_by,
+            "verification_reference": f"verification/{reference}",
+            "observed_on": "2026-07-10",
             "outcomes": tuple(outcomes),
         }
     }
@@ -96,6 +100,9 @@ def _manifest(proposal=None, **kwargs):
             "source": "trace-harness",
             "supports": ("identity:add_known_failure",),
             "value": "other agent failure",
+            "verified_by": "evidence-harness",
+            "verification_reference": "verification/other",
+            "observed_on": "2026-07-10",
             "outcomes": (),
         },
         "trace/unverified": {
@@ -104,6 +111,9 @@ def _manifest(proposal=None, **kwargs):
             "source": "trace-harness",
             "supports": ("identity:add_known_failure",),
             "value": "unverified value",
+            "verified_by": "evidence-harness",
+            "verification_reference": "verification/unverified",
+            "observed_on": "2026-07-10",
             "outcomes": (),
         },
     })
@@ -201,7 +211,7 @@ def _apply(registry, profile, proposal, manifest):
 
 
 # --------------------------------------------------------------------------- #
-# Bounded self-review snapshot
+# Bounded self-review
 # --------------------------------------------------------------------------- #
 
 
@@ -235,17 +245,23 @@ def test_snapshot_fingerprints_are_deterministic_and_state_bound():
     assert changed.snapshot_fingerprint != first.snapshot_fingerprint
 
 
-def test_pending_proposals_are_seat_bound_and_deduplicated():
+def test_pending_proposals_are_seat_bound_deduplicated_and_bounded():
     proposal = _proposal()
     snapshot = _snapshot(pending=(proposal, proposal))
     assert snapshot.pending_proposal_ids == (proposal.proposal_id,)
     with pytest.raises(ValueError, match="another agent"):
         _snapshot(pending=(_proposal(agent_id="agent_beta"),))
+    pending = tuple(
+        _proposal(proposal_id=f"REV-{index}") for index in range(33)
+    )
+    with pytest.raises(ValueError, match="bounded snapshot limit"):
+        _snapshot(pending=pending)
 
 
 def test_snapshot_limits_refuse_memory_and_prompt_flooding():
     with pytest.raises(ValueError, match="known_failures contains 33"):
-        _snapshot(_profile(known_failures=tuple(f"failure-{i}" for i in range(33))))
+        _snapshot(_profile(
+            known_failures=tuple(f"failure-{index}" for index in range(33))))
 
     proposal = _proposal()
     manifest = {}
@@ -256,6 +272,9 @@ def test_snapshot_limits_refuse_memory_and_prompt_flooding():
             "source": "trace-harness",
             "supports": ("identity:add_known_failure",),
             "value": proposal.value,
+            "verified_by": "evidence-harness",
+            "verification_reference": f"verification/{index}",
+            "observed_on": "2026-07-10",
             "outcomes": (),
         }
     with pytest.raises(ValueError, match="bounded snapshot limit"):
@@ -269,6 +288,9 @@ def test_snapshot_limits_refuse_memory_and_prompt_flooding():
             "source": "s" * 500,
             "supports": ("identity:add_known_failure",),
             "value": "v" * 490,
+            "verified_by": "evidence-harness",
+            "verification_reference": f"verification/{index}",
+            "observed_on": "2026-07-10",
             "outcomes": (),
         }
     snapshot = build_self_review_snapshot(
@@ -277,7 +299,7 @@ def test_snapshot_limits_refuse_memory_and_prompt_flooding():
         build_self_revision_instruction(snapshot)
 
 
-def test_verified_but_malformed_or_secret_evidence_fails_closed():
+def test_malformed_or_secret_evidence_fails_closed():
     manifest = _manifest()
     manifest[REFERENCE]["supports"] = "identity:add_known_failure"
     with pytest.raises(ValueError, match="must be a sequence"):
@@ -311,9 +333,9 @@ def test_instruction_is_proposal_only_and_exact_json_contract():
 # --------------------------------------------------------------------------- #
 
 
-def test_submit_round_trips_snapshot_binding_and_is_immutable(tmp_path):
+def test_submit_binds_proposal_snapshot_profile_and_evidence_metadata(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
-    profile, proposal, manifest, snapshot = _submit(registry)
+    profile, proposal, _, snapshot = _submit(registry)
     loaded = registry.load(AGENT, proposal.proposal_id)
 
     assert loaded["status"] == "submitted"
@@ -322,13 +344,19 @@ def test_submit_round_trips_snapshot_binding_and_is_immutable(tmp_path):
     assert loaded["profile_fingerprint"] == profile_fingerprint(profile)
     assert loaded["snapshot_evidence_references"] == [REFERENCE]
     assert loaded["proposal"] == proposal.to_record()
-    assert loaded["events"][0]["actor"] == AGENT
+    submitted = loaded["events"][0]
+    assert submitted["actor"] == AGENT
+    for field in (
+        "proposal_digest", "snapshot_fingerprint", "profile_fingerprint",
+        "snapshot_evidence_digest",
+    ):
+        assert submitted[field]
 
     with pytest.raises(ValueError, match="already exists"):
         registry.submit(proposal, snapshot=snapshot)
 
 
-def test_submit_rejects_evidence_absent_or_mismatched_in_snapshot(tmp_path):
+def test_submit_rejects_absent_mismatched_or_already_pending_evidence(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
     missing = _proposal(references=("trace/not-in-snapshot",))
     with pytest.raises(ValueError, match="absent"):
@@ -337,6 +365,22 @@ def test_submit_rejects_evidence_absent_or_mismatched_in_snapshot(tmp_path):
     mismatched = _proposal(value="different value")
     with pytest.raises(ValueError, match="target/action/value"):
         registry.submit(mismatched, snapshot=_snapshot())
+
+    proposal = _proposal()
+    pending_snapshot = _snapshot(pending=(proposal,))
+    with pytest.raises(ValueError, match="already pending"):
+        registry.submit(proposal, snapshot=pending_snapshot)
+
+
+def test_top_level_metadata_tampering_breaks_submission_binding(tmp_path):
+    registry = SelfRevisionRegistry(tmp_path)
+    _, proposal, _, _ = _submit(registry)
+    path = tmp_path / AGENT / f"{proposal.proposal_id}.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["proposal"]["reason"] = "rewritten after submission"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="corrupt"):
+        registry.load(AGENT, proposal.proposal_id)
 
 
 def test_exclusive_lock_refuses_concurrent_update(tmp_path):
@@ -544,6 +588,7 @@ def test_confirmation_requires_outcome_specific_verified_evidence(tmp_path):
         reference=OUTCOME_REFERENCE,
         outcomes=("confirmed",),
         source="post-change-harness",
+        verified_by="post-change-verifier",
     ))
     registry.record_outcome(
         AGENT,
@@ -559,7 +604,7 @@ def test_confirmation_requires_outcome_specific_verified_evidence(tmp_path):
     assert confirmed["events"][-1]["outcome_evidence_digest"]
 
 
-def test_post_change_profile_drift_blocks_outcome(tmp_path):
+def test_outcome_verifier_reviewer_separation_and_profile_stability(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
     profile, proposal, manifest, _ = _submit(registry)
     _evaluate_and_approve(registry, profile, proposal, manifest)
@@ -569,7 +614,19 @@ def test_post_change_profile_drift_blocks_outcome(tmp_path):
         proposal,
         reference=OUTCOME_REFERENCE,
         outcomes=("confirmed",),
+        verified_by="post-change-verifier",
     ))
+
+    with pytest.raises(ValueError, match="different actors"):
+        registry.record_outcome(
+            AGENT,
+            proposal.proposal_id,
+            current_profile=applied,
+            outcome="confirmed",
+            evidence_manifest=outcome_manifest,
+            recorded_by="post-change-verifier",
+            evidence_reference=OUTCOME_REFERENCE,
+        )
 
     with pytest.raises(ValueError, match="identity state changed"):
         registry.record_outcome(
@@ -604,6 +661,7 @@ def test_revert_requires_existing_canonical_reversal_bound_to_current_profile(
         reversal,
         reference=REVERSAL_REFERENCE,
         source="post-change-harness",
+        verified_by="post-change-verifier",
     )
     reversal_snapshot = build_self_review_snapshot(
         applied, evidence_manifest=reversal_manifest)
@@ -615,6 +673,7 @@ def test_revert_requires_existing_canonical_reversal_bound_to_current_profile(
         reference=OUTCOME_REFERENCE,
         outcomes=("reverted",),
         source="post-change-harness",
+        verified_by="post-change-verifier",
     ))
     registry.record_outcome(
         AGENT,
@@ -630,7 +689,7 @@ def test_revert_requires_existing_canonical_reversal_bound_to_current_profile(
     assert len(registry.all_records(AGENT)) == 2
 
 
-def test_noncanonical_or_missing_reversal_is_refused(tmp_path):
+def test_missing_reversal_is_refused(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
     profile, original, manifest, _ = _submit(registry)
     _evaluate_and_approve(registry, profile, original, manifest)
@@ -640,6 +699,7 @@ def test_noncanonical_or_missing_reversal_is_refused(tmp_path):
         original,
         reference=OUTCOME_REFERENCE,
         outcomes=("reverted",),
+        verified_by="post-change-verifier",
     ))
 
     with pytest.raises(ValueError, match="does not exist"):
@@ -655,7 +715,7 @@ def test_noncanonical_or_missing_reversal_is_refused(tmp_path):
         )
 
 
-def test_hash_chain_tampering_and_unknown_fields_are_visible(tmp_path):
+def test_event_hash_tampering_and_unknown_fields_are_visible(tmp_path):
     registry = SelfRevisionRegistry(tmp_path)
     _, proposal, _, _ = _submit(registry)
     path = tmp_path / AGENT / f"{proposal.proposal_id}.json"
