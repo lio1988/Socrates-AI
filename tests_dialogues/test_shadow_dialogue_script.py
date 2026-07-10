@@ -87,8 +87,11 @@ def test_session_count_env(script):
 # --------------------------------------------------------------------------- #
 
 def test_main_demo_run_end_to_end(script, tmp_path, capsys):
-    env = {"CED_SHADOW_SESSIONS": "2",
-           "CED_SHADOW_DIR": str(tmp_path / "shadow")}
+    env = {
+        "CED_SHADOW_SESSIONS": "2",
+        "CED_SHADOW_DIR": str(tmp_path / "shadow"),
+        "CED_IDENTITY_DIR": str(tmp_path / "identity"),
+    }
     rc = script.main(["prog"], env=env)
     assert rc == 0
     out = capsys.readouterr().out
@@ -96,13 +99,24 @@ def test_main_demo_run_end_to_end(script, tmp_path, capsys):
     assert "SOUL CARD" in out                        # identity is printed
     assert "gate gate_v0_3_to_v0_4" in out           # gate progress shown
     assert "earned evidence" in out
-    # Marked shadow records were persisted.
+
+    # Marked shadow records were persisted and are bound to the exact council
+    # synthesis ledger rather than a separate question-only retrieval.
     path = tmp_path / "shadow" / "shadow_records.jsonl"
-    records = [json.loads(l) for l in
+    records = [json.loads(line) for line in
                path.read_text(encoding="utf-8").splitlines()]
     assert len(records) == 2
-    assert all(r["shadow_run"] is True for r in records)
-    assert all(r["apprentice_id"] == "local_apprentice_001" for r in records)
+    assert all(record["shadow_run"] is True for record in records)
+    assert all(record["apprentice_id"] == "local_apprentice_001"
+               for record in records)
+    assert all(record["lesson_source"] == "council_injection_ledger"
+               for record in records)
+    assert all(record["lesson_ids"] for record in records)
+    assert all(record["lessons_selected"] == len(record["lesson_ids"])
+               for record in records)
+
+    # The identity test stays inside tmp_path and never pollutes repository state.
+    assert (tmp_path / "identity" / "local_apprentice_001.json").exists()
 
 
 def test_main_stops_cleanly_when_local_unavailable(script, capsys):
