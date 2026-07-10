@@ -1,4 +1,4 @@
-"""End-to-end tests for causally isolated probation and real rollback."""
+"""End-to-end tests for causally isolated probation and verified rollback."""
 
 import pytest
 
@@ -7,7 +7,6 @@ from backend.dialogues.openclaw_identity import (
     SelfRevisionProposal,
     approve_and_apply_self_revision,
     build_self_review_snapshot,
-    evaluate_self_revision,
 )
 from backend.dialogues.openclaw_identity.revision_registry_isolated import (
     SelfRevisionRegistry,
@@ -32,7 +31,7 @@ def _evidence(
             "verified": True,
             "agent_id": AGENT,
             "source": f"test-instrument/{reference}",
-            "supports": list(supports or (f"{action}",)),
+            "supports": list(supports or (action,)),
             "value": value,
             "verified_by": verifier,
             "verification_reference": f"verification/{reference}",
@@ -136,6 +135,52 @@ def _original_flow(tmp_path):
     return registry, profile, proposal, manifest, applied
 
 
+def _inverse_flow(registry, applied):
+    inverse = _proposal(
+        "REV-INVERSE",
+        target="identity",
+        action="resolve_known_failure",
+        value=FAILURE,
+        reference="evidence/inverse-proposal",
+    )
+    inverse_manifest = _evidence(
+        "evidence/inverse-proposal",
+        action="identity:resolve_known_failure",
+        value=FAILURE,
+        supports=(
+            "identity:add_known_failure",
+            "identity:resolve_known_failure",
+        ),
+        verifier="resolution-harness",
+    )
+    evaluation = _approve(registry, applied, inverse, inverse_manifest)
+    restored = _updated(applied, inverse, inverse_manifest, evaluation)
+    _apply(registry, applied, restored, inverse, inverse_manifest)
+    return inverse, inverse_manifest, restored
+
+
+def _confirm_inverse(registry, inverse, inverse_manifest, restored):
+    confirmation = _evidence(
+        "evidence/inverse-confirmed",
+        action="identity:resolve_known_failure",
+        value=FAILURE,
+        outcomes=("confirmed",),
+        verifier="post-change-verifier",
+    )
+    manifest = dict(inverse_manifest)
+    manifest.update(confirmation)
+    registry.record_outcome(
+        AGENT,
+        inverse.proposal_id,
+        current_profile=restored,
+        outcome="confirmed",
+        evidence_manifest=manifest,
+        recorded_by="inverse-outcome-reviewer",
+        evidence_reference="evidence/inverse-confirmed",
+    )
+    return manifest
+
+
 def test_unrelated_second_probationary_revision_is_refused(tmp_path):
     registry, _, _, _, applied = _original_flow(tmp_path)
     second = _proposal(
@@ -158,17 +203,17 @@ def test_unrelated_second_probationary_revision_is_refused(tmp_path):
     assert registry.load(AGENT, second.proposal_id)["status"] == "approved"
 
 
-def test_original_cannot_be_marked_reverted_before_inverse_is_applied(tmp_path):
+def test_original_cannot_be_reverted_before_inverse_is_applied(tmp_path):
     registry, _, original, original_manifest, applied = _original_flow(tmp_path)
-    reversal = _proposal(
+    inverse = _proposal(
         "REV-INVERSE",
         target="identity",
         action="resolve_known_failure",
         value=FAILURE,
-        reference="evidence/reversal",
+        reference="evidence/inverse-proposal",
     )
-    reversal_manifest = _evidence(
-        "evidence/reversal",
+    inverse_manifest = _evidence(
+        "evidence/inverse-proposal",
         action="identity:resolve_known_failure",
         value=FAILURE,
         outcomes=("reverted",),
@@ -178,95 +223,105 @@ def test_original_cannot_be_marked_reverted_before_inverse_is_applied(tmp_path):
         ),
         verifier="post-change-verifier",
     )
-    _approve(registry, applied, reversal, reversal_manifest)
+    _approve(registry, applied, inverse, inverse_manifest)
     outcome_manifest = dict(original_manifest)
-    outcome_manifest.update(reversal_manifest)
+    outcome_manifest.update(inverse_manifest)
 
-    with pytest.raises(ValueError, match="must be applied"):
+    with pytest.raises(ValueError, match="applied and confirmed"):
         registry.record_outcome(
             AGENT,
             original.proposal_id,
             current_profile=applied,
             outcome="reverted",
             evidence_manifest=outcome_manifest,
-            recorded_by="post-change-reviewer",
-            evidence_reference="evidence/reversal",
-            linked_proposal_id=reversal.proposal_id,
+            recorded_by="rollback-reviewer",
+            evidence_reference="evidence/inverse-proposal",
+            linked_proposal_id=inverse.proposal_id,
         )
 
 
-def test_applied_inverse_creates_controlled_pair_then_real_revert(tmp_path):
+def test_applied_but_unconfirmed_inverse_cannot_close_original(tmp_path):
     registry, _, original, original_manifest, applied = _original_flow(tmp_path)
-    reversal = _proposal(
-        "REV-INVERSE",
-        target="identity",
-        action="resolve_known_failure",
-        value=FAILURE,
-        reference="evidence/reversal",
-    )
-    reversal_manifest = _evidence(
-        "evidence/reversal",
-        action="identity:resolve_known_failure",
+    inverse, inverse_manifest, restored = _inverse_flow(registry, applied)
+
+    assert restored.known_failures == ()
+    assert registry.pending_reversal_pairs(AGENT) == (
+        (original.proposal_id, inverse.proposal_id),)
+
+    rollback_evidence = _evidence(
+        "evidence/original-reverted",
+        action="identity:add_known_failure",
         value=FAILURE,
         outcomes=("reverted",),
         supports=(
             "identity:add_known_failure",
             "identity:resolve_known_failure",
         ),
-        verifier="post-change-verifier",
+        verifier="rollback-verifier",
     )
-    evaluation = _approve(registry, applied, reversal, reversal_manifest)
-    restored = _updated(applied, reversal, reversal_manifest, evaluation)
-    _apply(registry, applied, restored, reversal, reversal_manifest)
-
-    assert restored.known_failures == ()
-    assert registry.pending_reversal_pairs(AGENT) == (
-        (original.proposal_id, reversal.proposal_id),)
-
     outcome_manifest = dict(original_manifest)
-    outcome_manifest.update(reversal_manifest)
+    outcome_manifest.update(inverse_manifest)
+    outcome_manifest.update(rollback_evidence)
+    with pytest.raises(ValueError, match="applied and confirmed"):
+        registry.record_outcome(
+            AGENT,
+            original.proposal_id,
+            current_profile=restored,
+            outcome="reverted",
+            evidence_manifest=outcome_manifest,
+            recorded_by="rollback-reviewer",
+            evidence_reference="evidence/original-reverted",
+            linked_proposal_id=inverse.proposal_id,
+        )
+
+
+def test_confirmed_inverse_then_original_revert_completes_rollback(tmp_path):
+    registry, _, original, original_manifest, applied = _original_flow(tmp_path)
+    inverse, inverse_manifest, restored = _inverse_flow(registry, applied)
+    confirmed_manifest = _confirm_inverse(
+        registry, inverse, inverse_manifest, restored)
+
+    assert registry.load(AGENT, inverse.proposal_id)["status"] == "confirmed"
+    assert registry.pending_reversal_pairs(AGENT) == ()
+    assert registry.ready_reversion_pairs(AGENT) == (
+        (original.proposal_id, inverse.proposal_id),)
+
+    rollback_evidence = _evidence(
+        "evidence/original-reverted",
+        action="identity:add_known_failure",
+        value=FAILURE,
+        outcomes=("reverted",),
+        supports=(
+            "identity:add_known_failure",
+            "identity:resolve_known_failure",
+        ),
+        verifier="rollback-verifier",
+    )
+    outcome_manifest = dict(original_manifest)
+    outcome_manifest.update(confirmed_manifest)
+    outcome_manifest.update(rollback_evidence)
     registry.record_outcome(
         AGENT,
         original.proposal_id,
         current_profile=restored,
         outcome="reverted",
         evidence_manifest=outcome_manifest,
-        recorded_by="post-change-reviewer",
-        evidence_reference="evidence/reversal",
-        linked_proposal_id=reversal.proposal_id,
+        recorded_by="rollback-reviewer",
+        evidence_reference="evidence/original-reverted",
+        linked_proposal_id=inverse.proposal_id,
     )
 
     assert registry.load(AGENT, original.proposal_id)["status"] == "reverted"
-    assert registry.load(AGENT, reversal.proposal_id)["status"] == "probationary"
-    assert registry.pending_reversal_pairs(AGENT) == ()
+    assert registry.load(AGENT, inverse.proposal_id)["status"] == "confirmed"
+    assert registry.ready_reversion_pairs(AGENT) == ()
 
 
 def test_original_cannot_be_confirmed_after_inverse_application(tmp_path):
     registry, _, original, original_manifest, applied = _original_flow(tmp_path)
-    reversal = _proposal(
-        "REV-INVERSE",
-        target="identity",
-        action="resolve_known_failure",
-        value=FAILURE,
-        reference="evidence/reversal",
-    )
-    reversal_manifest = _evidence(
-        "evidence/reversal",
-        action="identity:resolve_known_failure",
-        value=FAILURE,
-        outcomes=("reverted",),
-        supports=(
-            "identity:add_known_failure",
-            "identity:resolve_known_failure",
-        ),
-        verifier="post-change-verifier",
-    )
-    evaluation = _approve(registry, applied, reversal, reversal_manifest)
-    restored = _updated(applied, reversal, reversal_manifest, evaluation)
-    _apply(registry, applied, restored, reversal, reversal_manifest)
+    inverse, _, restored = _inverse_flow(registry, applied)
 
     confirmation = _evidence(
-        "evidence/confirmation",
+        "evidence/original-confirmed",
         action="identity:add_known_failure",
         value=FAILURE,
         outcomes=("confirmed",),
@@ -281,33 +336,15 @@ def test_original_cannot_be_confirmed_after_inverse_application(tmp_path):
             current_profile=restored,
             outcome="confirmed",
             evidence_manifest=outcome_manifest,
-            recorded_by="post-change-reviewer",
-            evidence_reference="evidence/confirmation",
+            recorded_by="original-outcome-reviewer",
+            evidence_reference="evidence/original-confirmed",
         )
+    assert registry.load(AGENT, inverse.proposal_id)["status"] == "probationary"
 
 
 def test_third_probationary_application_is_always_refused(tmp_path):
     registry, _, original, _, applied = _original_flow(tmp_path)
-    reversal = _proposal(
-        "REV-INVERSE",
-        target="identity",
-        action="resolve_known_failure",
-        value=FAILURE,
-        reference="evidence/reversal",
-    )
-    reversal_manifest = _evidence(
-        "evidence/reversal",
-        action="identity:resolve_known_failure",
-        value=FAILURE,
-        supports=(
-            "identity:add_known_failure",
-            "identity:resolve_known_failure",
-        ),
-        verifier="post-change-verifier",
-    )
-    evaluation = _approve(registry, applied, reversal, reversal_manifest)
-    restored = _updated(applied, reversal, reversal_manifest, evaluation)
-    _apply(registry, applied, restored, reversal, reversal_manifest)
+    inverse, _, restored = _inverse_flow(registry, applied)
 
     third = _proposal(
         "REV-THIRD",
@@ -327,8 +364,10 @@ def test_third_probationary_application_is_always_refused(tmp_path):
         _apply(registry, restored, third_updated, third, third_manifest)
 
     records = registry.all_records(AGENT)
-    assert len([record for record in records
-                if record["status"] == "probationary"]) == 2
-    assert original.proposal_id in {
+    assert len([
+        record for record in records
+        if record["status"] == "probationary"
+    ]) == 2
+    assert {original.proposal_id, inverse.proposal_id}.issubset({
         record["proposal_id"] for record in records
-    }
+    })
