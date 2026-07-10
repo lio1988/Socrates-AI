@@ -22,7 +22,7 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 from .identity_profile import AgentIdentityProfile
 from .self_revision import REVISION_TARGET_ACTIONS, SelfRevisionProposal
 
-SNAPSHOT_VERSION = "openclaw_self_review_v2"
+SNAPSHOT_VERSION = "openclaw_self_review_v3"
 MAX_REVIEW_EVIDENCE = 64
 MAX_PENDING_PROPOSALS = 32
 MAX_KNOWN_FAILURES = 32
@@ -43,6 +43,7 @@ _SECRET_PATTERNS = (
 SELF_REVIEW_BOUNDARIES: Tuple[str, ...] = (
     "This snapshot is descriptive and grants no runtime authority.",
     "Use only the evidence references included in this snapshot.",
+    "Every visible evidence item has a named non-self verifier.",
     "The agent may propose one revision but cannot approve or activate it.",
     "Do not infer facts about other agents or hidden scorecards.",
     "A proposal must state risk and may be rejected without changing identity.",
@@ -76,18 +77,41 @@ def _require_bounded_count(
 
 
 def _canonical_digest(payload: Mapping[str, Any]) -> str:
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    try:
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("self-review state must be canonical JSON") from exc
     return hashlib.sha256(encoded).hexdigest()
 
 
 def profile_fingerprint(profile: AgentIdentityProfile) -> str:
-    """Return a deterministic digest binding review to one exact profile state."""
+    """Digest every profile field, including observational performance metrics."""
     return _canonical_digest(profile.to_record())
+
+
+def governed_profile_fingerprint(profile: AgentIdentityProfile) -> str:
+    """Digest only governed identity state, excluding refreshable observations.
+
+    Role rates, counts, and session totals can legitimately refresh during a
+    probation window. Soul/Memory/Identity commitments and earned transitions
+    may not. This fingerprint lets post-change review distinguish those cases.
+    """
+    return _canonical_digest({
+        "agent_id": profile.agent_id,
+        "identity_version": profile.identity_version,
+        "promotion_status": profile.promotion_status,
+        "known_failures": list(profile.known_failures),
+        "stable_lessons": list(profile.stable_lessons),
+        "soul_principles": list(profile.soul_principles),
+        "next_gate": profile.next_gate,
+        "version_history": [dict(entry) for entry in profile.version_history],
+        "revision_history": [dict(entry) for entry in profile.revision_history],
+    })
 
 
 @dataclass(frozen=True)
@@ -98,6 +122,8 @@ class SelfReviewEvidence:
     source: str
     supports: Tuple[str, ...]
     value: str
+    verified_by: str
+    verification_reference: str
 
     def to_record(self) -> Dict[str, Any]:
         return {
@@ -105,6 +131,8 @@ class SelfReviewEvidence:
             "source": self.source,
             "supports": list(self.supports),
             "value": self.value,
+            "verified_by": self.verified_by,
+            "verification_reference": self.verification_reference,
         }
 
 
@@ -114,6 +142,7 @@ class SelfReviewSnapshot:
 
     agent_id: str
     profile_fingerprint: str
+    governed_profile_fingerprint: str
     identity_version: str
     promotion_status: str
     role_strengths: Dict[str, Dict[str, Any]]
@@ -130,6 +159,7 @@ class SelfReviewSnapshot:
             "snapshot_version": self.snapshot_version,
             "agent_id": self.agent_id,
             "profile_fingerprint": self.profile_fingerprint,
+            "governed_profile_fingerprint": self.governed_profile_fingerprint,
             "identity_version": self.identity_version,
             "promotion_status": self.promotion_status,
             "role_strengths": {
@@ -192,6 +222,19 @@ def _eligible_evidence(
             raw_reference, field="evidence reference", maximum=256)
         source = _safe_text(
             record.get("source", ""), field="evidence source", maximum=512)
+        verified_by = _safe_text(
+            record.get("verified_by", ""),
+            field="evidence verified_by",
+            maximum=128,
+        )
+        if verified_by == agent_id:
+            raise ValueError(
+                f"verified evidence {reference!r} was self-verified by the agent")
+        verification_reference = _safe_text(
+            record.get("verification_reference", ""),
+            field="evidence verification_reference",
+            maximum=512,
+        )
         raw_supports = record.get("supports") or ()
         if isinstance(raw_supports, (str, bytes)):
             raise ValueError(
@@ -211,6 +254,8 @@ def _eligible_evidence(
             source=source,
             supports=supports,
             value=value,
+            verified_by=verified_by,
+            verification_reference=verification_reference,
         ))
         if len(evidence_rows) > MAX_REVIEW_EVIDENCE:
             raise ValueError(
@@ -262,6 +307,7 @@ def build_self_review_snapshot(
     return SelfReviewSnapshot(
         agent_id=_safe_text(profile.agent_id, field="agent_id", maximum=128),
         profile_fingerprint=profile_fingerprint(profile),
+        governed_profile_fingerprint=governed_profile_fingerprint(profile),
         identity_version=_safe_text(
             profile.identity_version, field="identity_version", maximum=64),
         promotion_status=_safe_text(
@@ -333,22 +379,26 @@ def render_self_review_summary(snapshot: SelfReviewSnapshot) -> str:
         f"Agent: {snapshot.agent_id}",
         f"Identity: {snapshot.identity_version} / {snapshot.promotion_status}",
         f"Profile fingerprint: {snapshot.profile_fingerprint}",
+        f"Governed fingerprint: {snapshot.governed_profile_fingerprint}",
         f"Snapshot fingerprint: {snapshot.snapshot_fingerprint}",
         f"Verified evidence records: {len(snapshot.verified_evidence)}",
         f"Pending proposals: {len(snapshot.pending_proposal_ids)}",
         "Known failures:",
     ]
-    lines.extend(
-        f"  - {value}" for value in snapshot.known_failures
-    )
+    lines.extend(f"  - {value}" for value in snapshot.known_failures)
     if not snapshot.known_failures:
         lines.append("  - none recorded")
     lines.append("Approved soul principles:")
-    lines.extend(
-        f"  - {value}" for value in snapshot.soul_principles
-    )
+    lines.extend(f"  - {value}" for value in snapshot.soul_principles)
     if not snapshot.soul_principles:
         lines.append("  - none recorded")
+    lines.append("Evidence provenance:")
+    for evidence in snapshot.verified_evidence:
+        lines.append(
+            f"  - {evidence.reference}: {evidence.verified_by} "
+            f"({evidence.verification_reference})")
+    if not snapshot.verified_evidence:
+        lines.append("  - none available")
     lines.append("Boundaries:")
     lines.extend(f"  - {value}" for value in snapshot.boundaries)
     return "\n".join(lines)
