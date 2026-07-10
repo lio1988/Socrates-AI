@@ -62,6 +62,8 @@ from .self_review import (
     SelfReviewSnapshot,
     build_self_review_snapshot,
     build_self_revision_instruction,
+    governed_profile_fingerprint,
+    observational_profile_fingerprint,
     profile_fingerprint,
     render_self_review_summary,
 )
@@ -130,6 +132,8 @@ __all__ = [
     "SelfReviewSnapshot",
     "build_self_review_snapshot",
     "build_self_revision_instruction",
+    "governed_profile_fingerprint",
+    "observational_profile_fingerprint",
     "profile_fingerprint",
     "render_self_review_summary",
     "REGISTRY_SCHEMA_VERSION",
