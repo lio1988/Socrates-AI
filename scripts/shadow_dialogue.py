@@ -8,28 +8,27 @@ judged blind by the council's own seats, and is compared per section against
 the council's assembled winners. Nothing the apprentice does can change a
 final answer (Goal 11, Stage 1).
 
-Demo (free, mock apprentice — see the whole flow with zero setup):
+Demo:
     python scripts/shadow_dialogue.py
     python scripts/shadow_dialogue.py "your question"
 
-Real local apprentice (needs a local OpenAI-compatible server, e.g. Ollama;
-no cloud credits, in PowerShell):
+Real local apprentice:
     $env:CED_ENABLE_LOCAL_APPRENTICE = "1"
     $env:CED_LOCAL_LLM_MODEL = "llama3.1:8b"
-    # optional: $env:CED_LOCAL_LLM_URL = "http://localhost:11434/v1"
     python scripts/shadow_dialogue.py
 
-Optional switches (env-only):
-    CED_OPENCLAW_LESSONS=0    # OFF switch - lessons reach neither side
-    CED_SHADOW_SESSIONS=3     # questions in one batch (default 3)
-    CED_SHADOW_DIR=path       # shadow record directory
-    CED_IDENTITY_DIR=path     # identity registry directory
+Optional env switches:
+    CED_OPENCLAW_LESSONS=0
+    CED_SHADOW_SESSIONS=3
+    CED_SHADOW_DIR=path
+    CED_IDENTITY_DIR=path
     CED_SHADOW_BATCH_ID=id    # deterministic test/replay id; do not reuse for
                               # independent promotion evidence
 
-Every normal invocation creates a fresh random batch id, preventing repeated
-operator runs from reusing the same evidence session ids. The evidence collector
-also deduplicates identical replays and rejects conflicting duplicates.
+Normal invocations create a fresh random batch id. The evidence collector
+ignores identical replays and rejects conflicting duplicate session ids. The
+Soul Card is rebuilt from the exact same eligible session IDs as the promotion
+gate, so operator display and gate evidence cannot diverge.
 """
 
 from __future__ import annotations
@@ -137,8 +136,25 @@ def _save_records(records, env):
     return path
 
 
+def _identity_records_from_evidence(records, evidence):
+    """Return one raw record for every session admitted by gate evidence."""
+    eligible_ids = {
+        str(session_id)
+        for session_id in evidence.get("shadow_session_ids", [])
+    }
+    selected = []
+    seen = set()
+    for record in records:
+        session_id = str(record.get("session_id", ""))
+        if session_id not in eligible_ids or session_id in seen:
+            continue
+        selected.append(record)
+        seen.add(session_id)
+    return selected
+
+
 def _accumulated_profile(agent_id, records, registry):
-    """Recompute evidence while preserving previously earned identity fields."""
+    """Recompute eligible evidence while preserving earned identity fields."""
     import dataclasses
 
     fresh = build_identity_profile(
@@ -229,16 +245,18 @@ def main(argv=None, env=None) -> int:
 
     path = _save_records(runner.shadow_records, env)
     all_records = load_jsonl(path)
+    evidence = evidence_from_shadow_traces(
+        apprentice.provider_id, all_records)
+    identity_records = _identity_records_from_evidence(all_records, evidence)
+
     registry = IdentityRegistry(env.get(
         "CED_IDENTITY_DIR", str(_ROOT / "runs" / "openclaw_identity")))
     profile = _accumulated_profile(
-        apprentice.provider_id, all_records, registry)
+        apprentice.provider_id, identity_records, registry)
     registry_path = registry.save_profile(profile)
     print(render_soul_card(profile))
     print("-" * _W)
 
-    evidence = evidence_from_shadow_traces(
-        apprentice.provider_id, all_records)
     gate = next_gate_for(profile.identity_version)
     if gate is None:
         print(f"  gate: none - {profile.identity_version} is the end of the "
@@ -248,8 +266,8 @@ def main(argv=None, env=None) -> int:
         print(f"  gate {gate.gate_id}: "
               f"{'PASSED (a human may now record the promotion)' if result.passed else 'not yet'}")
         print(f"    {result.reasons[0]}")
-    print(f"  history          : {len(all_records)} shadow record(s) "
-          f"across all runs -> {path}")
+    print(f"  raw history      : {len(all_records)} shadow record(s) -> {path}")
+    print(f"  eligible identity: {len(identity_records)} unique ratified session(s)")
     print(f"  identity registry-> {registry_path}")
     print("-" * _W)
     print("  Next:")
