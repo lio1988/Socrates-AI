@@ -5,8 +5,8 @@ Offline and read-only: counts what exists on disk, shows the env gates, and
 recommends the next command. The ONLY optional network touch is a probe of
 the LOCAL server, and only when the local-apprentice gate is already ON.
 
-    .\\.venv\\Scripts\\python.exe scripts\\openclaw_status.py
-    .\\.venv\\Scripts\\python.exe scripts\\openclaw_status.py --json
+    .\.venv\Scripts\python.exe scripts\openclaw_status.py
+    .\.venv\Scripts\python.exe scripts\openclaw_status.py --json
 
 No cloud calls, no API keys read beyond gate presence, nothing promoted,
 nothing mutated. See docs/openclaw_memory_lessons/OPERATOR_GUIDE.md.
@@ -28,7 +28,10 @@ from backend.dialogues.openclaw_memory import (                       # noqa: E4
     load_traces,
     parse_memory_lessons,
 )
-from backend.dialogues.openclaw_identity import IdentityRegistry      # noqa: E402
+from backend.dialogues.openclaw_identity import (                     # noqa: E402
+    IdentityRegistry,
+    SelfRevisionRegistry,
+)
 from backend.dialogues.openclaw_local import (                        # noqa: E402
     LOCAL_GATE_ENV,
     LOCAL_MODEL_ENV,
@@ -62,6 +65,14 @@ def _count_proposals(proposals_dir: pathlib.Path):
     return lessons, patches
 
 
+def _self_revision_summary(records):
+    by_status = {}
+    for record in records:
+        status = str(record.get("status", "unknown"))
+        by_status[status] = by_status.get(status, 0) + 1
+    return {key: by_status[key] for key in sorted(by_status)}
+
+
 def collect_status(env=None, *, probe=probe_local_server):
     """Everything the operator needs to know, as one dict (offline)."""
     env = os.environ if env is None else env
@@ -73,11 +84,17 @@ def collect_status(env=None, *, probe=probe_local_server):
                            str(_ROOT / "runs" / "openclaw_identity"))
     proposals_dir = pathlib.Path(env.get(
         "CED_PROPOSALS_DIR", str(_ROOT / "runs" / "openclaw_proposals")))
+    self_revision_dir = pathlib.Path(env.get(
+        "CED_SELF_REVISION_DIR",
+        str(_ROOT / "runs" / "openclaw_self_revisions"),
+    ))
 
     traces = load_traces(trace_dir)
     shadow_records = load_jsonl(shadow_path)
     profiles = IdentityRegistry(identity_dir).all_profiles()
     lessons_pending, patches_pending = _count_proposals(proposals_dir)
+    self_revision_records = SelfRevisionRegistry(
+        self_revision_dir).all_records()
 
     local_gate = env.get(LOCAL_GATE_ENV, "").strip() == "1"
     local_model = env.get(LOCAL_MODEL_ENV, "").strip()
@@ -98,10 +115,17 @@ def collect_status(env=None, *, probe=probe_local_server):
             "promotion_status": p.promotion_status,
             "sessions_analyzed": p.sessions_analyzed,
             "promotions_recorded": len(p.version_history),
+            "self_revisions_recorded": len(p.revision_history),
+            "soul_principles": len(p.soul_principles),
             "next_gate": p.next_gate,
         } for p in profiles],
         "proposals": {"lessons": lessons_pending, "patches": patches_pending,
                       "dir": str(proposals_dir)},
+        "self_revisions": {
+            "count": len(self_revision_records),
+            "by_status": _self_revision_summary(self_revision_records),
+            "dir": str(self_revision_dir),
+        },
         "gates": {
             "live_providers": env.get("CED_ENABLE_LIVE_PROVIDERS", "").strip() == "1",
             "local_apprentice": local_gate,
@@ -118,6 +142,22 @@ def _next_command(status) -> str:
     if status["local_server"] is not None and not status["local_server"]["reachable"]:
         return ("start your local server (e.g. `ollama serve`), then: "
                 "python scripts/shadow_dialogue.py")
+
+    revision_counts = status["self_revisions"]["by_status"]
+    awaiting_review = sum(
+        revision_counts.get(name, 0)
+        for name in (
+            "submitted", "evaluated_passed", "evaluated_failed", "approved",
+        )
+    )
+    if awaiting_review:
+        return ("review self-revision lifecycle records in " +
+                status["self_revisions"]["dir"] +
+                " (agents propose; a named non-self reviewer decides)")
+    if revision_counts.get("probationary", 0):
+        return ("collect post-change evidence for probationary self-revisions "
+                "and record confirmed or reverted outcomes")
+
     # A human decision waiting always outranks collecting more data.
     lessons = status["proposals"]["lessons"]
     patches = status["proposals"]["patches"]
@@ -152,12 +192,20 @@ def main(argv=None, env=None, *, probe=probe_local_server) -> int:
             print(f"    {p['agent_id']}: {p['identity_version']} "
                   f"({p['promotion_status']}) | sessions={p['sessions_analyzed']} "
                   f"| promotions={p['promotions_recorded']} "
+                  f"| self-revisions={p['self_revisions_recorded']} "
+                  f"| principles={p['soul_principles']} "
                   f"| next gate={p['next_gate']}")
     else:
         print("  identity registry: empty (no apprentice has run yet)")
     lp, pp = status["proposals"]["lessons"], status["proposals"]["patches"]
     print(f"  pending proposals: lessons={lp if lp >= 0 else 'UNPARSEABLE'} "
           f"| prompt patches={pp}")
+    revisions = status["self_revisions"]
+    revision_parts = [
+        f"{name}={count}" for name, count in revisions["by_status"].items()
+    ]
+    print(f"  self-revisions   : total={revisions['count']}"
+          f" | {'; '.join(revision_parts) if revision_parts else 'none'}")
     g = status["gates"]
     print(f"  gates            : live={'ON' if g['live_providers'] else 'off'} "
           f"| local apprentice={'ON' if g['local_apprentice'] else 'off'} "
