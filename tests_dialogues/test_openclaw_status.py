@@ -49,13 +49,8 @@ def _env(tmp_path, **extra):
     return env
 
 
-def _no_probe(url, timeout):                    # must never be called
+def _no_probe(url, timeout):
     raise AssertionError("probe called although the local gate is OFF")
-
-
-# --------------------------------------------------------------------------- #
-# Empty state: clean report, sensible next command, no network
-# --------------------------------------------------------------------------- #
 
 
 def test_empty_state_is_clean_and_offline(status_script, tmp_path, capsys):
@@ -85,11 +80,6 @@ def test_json_mode_is_machine_readable(status_script, tmp_path, capsys):
     }
     assert status["gates"]["local_apprentice"] is False
     assert status["local_server"] is None
-
-
-# --------------------------------------------------------------------------- #
-# Populated state: counts, identity snapshot, staged next command
-# --------------------------------------------------------------------------- #
 
 
 def test_detects_accumulated_evidence(status_script, shadow_script, tmp_path,
@@ -150,6 +140,10 @@ def test_self_revision_lifecycle_outranks_collecting_more_data(
             "source": "trace-harness",
             "supports": ["identity:add_known_failure"],
             "value": proposal.value,
+            "verified_by": "evidence-harness",
+            "verification_reference": "report/status-1",
+            "observed_on": "2026-07-10",
+            "outcomes": [],
         }
     }
     snapshot = build_self_review_snapshot(
@@ -163,11 +157,6 @@ def test_self_revision_lifecycle_outranks_collecting_more_data(
     assert status["self_revisions"]["count"] == 1
     assert status["self_revisions"]["by_status"] == {"submitted": 1}
     assert "review self-revision lifecycle" in status["next_command"]
-
-
-# --------------------------------------------------------------------------- #
-# Local gate: probe only when ON, and a dead server drives the next command
-# --------------------------------------------------------------------------- #
 
 
 def test_probe_runs_only_with_gate_and_model(status_script, tmp_path):
