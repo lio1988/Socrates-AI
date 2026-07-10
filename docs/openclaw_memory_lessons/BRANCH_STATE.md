@@ -88,6 +88,8 @@ OpenClaw remembers.
 | Communication layer: disk readers, identity accumulation, curator review | `58a2f68` | `load_traces`/`load_jsonl` + `scripts/openclaw_review.py` | 8 |
 | Injected-context ledger (audit reports actual injections) | see git log | `ced.py` `_injected_lessons` + `_openclaw_audit` | 5 |
 | Goal 15 — Operator communication layer (guide + status + next-command) | see git log | `OPERATOR_GUIDE.md` + `scripts/openclaw_status.py` | 6 |
+| Governed agent self-revision (PR #60: evidence registry, lifecycle, transactions, self-review, recovery) | `8a47f84` | `openclaw_identity/` (+16 modules) + 2 scripts | 300+ |
+| Evidence attestation bridge (instruments -> trusted registry) | see git log | `scripts/openclaw_attest_evidence.py` | 7 |
 
 ## The integration surface (what an external cockpit like OpenClaw reads/writes)
 
@@ -96,6 +98,10 @@ runs/openclaw_traces/<session_id>.jsonl   sessions write; load_traces() reads
 runs/openclaw_shadow/shadow_records.jsonl shadow runs append; load_jsonl() reads
 runs/openclaw_identity/<agent_id>.json    IdentityRegistry (earned identity)
 runs/openclaw_proposals/PROPOSED_*.md     openclaw_review writes; human curates
+runs/openclaw_self_revision_evidence/     attested immutable evidence (Mode G)
+runs/openclaw_self_revisions/             proposal lifecycle records
+runs/openclaw_self_revision_transactions/ recoverable application journals
+runs/openclaw_self_review/                bounded snapshot/summary/instruction
 docs/openclaw_memory_lessons/MEMORY_LESSONS.md   curated source (human-only writes)
 ```
 

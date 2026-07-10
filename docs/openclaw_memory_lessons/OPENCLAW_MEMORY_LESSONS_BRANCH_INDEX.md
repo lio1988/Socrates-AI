@@ -71,6 +71,12 @@ OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE
   File: docs/openclaw_memory_lessons/OPERATOR_GUIDE.md
   Purpose: One-page command map — every mode, every artifact, every
   decision that needs a human hand, plus troubleshooting.
+
+OPENCLAW_MEMORY_LESSONS_SELF_REVISION_GOVERNANCE
+  File: docs/openclaw_memory_lessons/SELF_REVISION_GOVERNANCE.md
+  Purpose: Governed agent self-revision for Memory, Identity, and Soul —
+  evidence, bounded self-review, proposal lifecycle, recoverable
+  application, probation, canonical rollback.
 ```
 
 Related document outside this folder:
@@ -101,6 +107,7 @@ IDENTITY    = OPENCLAW_MEMORY_LESSONS_AGENT_IDENTITY
 SOUL_CARD   = OPENCLAW_MEMORY_LESSONS_AGENT_SOUL_CARD
 PROMPT_REGISTRY = OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY
 OPERATOR_GUIDE = OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE
+SELF_REVISION = OPENCLAW_MEMORY_LESSONS_SELF_REVISION_GOVERNANCE
 ```
 
 ## Naming rule for future docs

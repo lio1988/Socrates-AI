@@ -107,6 +107,39 @@ print('promoted to', reg.load_profile('local_apprentice_001').identity_version)
 `record_promotion` refuses a failing gate, an unnamed approver, and
 self-approval — the checks run even when you drive it by hand.
 
+## Mode G — Attest instrument evidence (named human act)
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_evidence.py local_apprentice_001 --verified-by "Your Name"
+```
+
+Converts REPEATED marker-verified shadow section losses into immutable
+`add_known_failure` evidence records. You vouch by name; the strict builders
+re-validate everything; exact reruns are idempotent, new evidence windows
+append. Without this step the self-review chain has no raw material.
+
+## Mode H — Bounded self-review package (agent proposes, nothing activates)
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_self_review.py local_apprentice_001
+```
+
+Builds the snapshot/summary/instruction artifacts an agent may use to author
+ONE descriptive proposal (Memory/Identity/Soul). Evidence comes only from the
+trusted registry (Mode G). Evaluation, named non-self approval, recoverable
+application, probation, and confirmation/rollback all still follow — see
+[SELF_REVISION_GOVERNANCE.md](SELF_REVISION_GOVERNANCE.md).
+
+## Mode I — Recover an interrupted revision transaction
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_recover_revision.py local_apprentice_001 <proposal_id>
+```
+
+Completes or verifies a crash-interrupted identity application from its
+journal. `openclaw_status.py` lists incomplete transactions and recommends
+this exact command when one exists.
+
 ## Run manifest (concept — not yet built)
 
 A future `runs/openclaw_runs/<run_id>/MANIFEST.json` will bundle per run:
