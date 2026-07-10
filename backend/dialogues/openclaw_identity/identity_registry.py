@@ -1,35 +1,85 @@
 """
-OpenClaw Agent Identity — the identity registry (persistence).
+OpenClaw Agent Identity — persistent, auditable identity profiles.
 
-Profiles must survive across sessions to be identities at all: a promotion
-earned last week is meaningless if the record evaporates with the process.
-The registry stores one human-readable JSON file per agent
-(``<directory>/<agent_id>.json``, sorted keys) so every profile — and its
-append-only version history — is diffable, reviewable, and auditable in git
-or on disk.
+One human-readable JSON file is stored per agent. Persistence grants no runtime
+authority, but earned history is protected mechanically:
+  - an existing version_history must remain an exact prefix of the new history
+  - appended entries must form valid version/status transitions
+  - earned version or ladder status cannot change without corresponding history
+  - writes are atomic (temp file + fsync + os.replace)
 
-Storage only. The registry grants nothing: loading a profile confers no
-authority, and nothing in the runtime pipeline reads it (the CED core does
-not import this package — test-locked).
-
-Pure stdlib, deterministic, offline. No provider calls, no network, no keys.
+Evidence-derived descriptive fields may be recomputed between saves. Pure
+stdlib, deterministic, offline. No provider calls, no network, no keys.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from .identity_profile import AgentIdentityProfile, from_record
 
-#: agent_id must be filesystem-safe (it becomes the file name).
 _AGENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
+def _history_prefix(
+    old: Sequence[Dict],
+    new: Sequence[Dict],
+) -> bool:
+    return len(new) >= len(old) and tuple(new[:len(old)]) == tuple(old)
+
+
+def _validate_appended_history(
+    existing: AgentIdentityProfile,
+    profile: AgentIdentityProfile,
+) -> None:
+    """Refuse history rewrite/truncation and unrecorded earned-state changes."""
+    old_history = tuple(existing.version_history)
+    new_history = tuple(profile.version_history)
+    if not _history_prefix(old_history, new_history):
+        raise ValueError(
+            "identity version_history is append-only; existing entries cannot "
+            "be removed or rewritten")
+
+    current_version = existing.identity_version
+    current_status = existing.promotion_status
+    for entry in new_history[len(old_history):]:
+        has_version = "from_version" in entry or "to_version" in entry
+        has_status = "from_status" in entry or "to_status" in entry
+        if has_version == has_status:
+            raise ValueError(
+                "each appended identity-history entry must describe exactly one "
+                "version or stage transition")
+
+        if has_version:
+            if not {"from_version", "to_version"}.issubset(entry):
+                raise ValueError("version transition requires from_version/to_version")
+            if str(entry["from_version"]) != current_version:
+                raise ValueError(
+                    "version-history chain does not start at the stored version")
+            current_version = str(entry["to_version"])
+        else:
+            if not {"from_status", "to_status"}.issubset(entry):
+                raise ValueError("stage transition requires from_status/to_status")
+            if str(entry["from_status"]) != current_status:
+                raise ValueError(
+                    "stage-history chain does not start at the stored status")
+            current_status = str(entry["to_status"])
+
+    if current_version != profile.identity_version:
+        raise ValueError(
+            "identity_version changed without a matching append-only transition")
+    if current_status != profile.promotion_status:
+        raise ValueError(
+            "promotion_status changed without a matching append-only transition")
+
+
 class IdentityRegistry:
-    """One JSON file per agent profile under a chosen directory."""
+    """One atomic, monotonic JSON profile per filesystem-safe agent id."""
 
     def __init__(self, directory: Path | str) -> None:
         self.directory = Path(directory)
@@ -42,31 +92,66 @@ class IdentityRegistry:
         return self.directory / f"{agent_id}.json"
 
     def save_profile(self, profile: AgentIdentityProfile) -> Path:
-        """Write the profile as sorted-key JSON. Overwrites the agent's own
-        previous file only — history inside the record is append-only by
-        construction (record_promotion never drops entries)."""
+        """Atomically save a profile without permitting earned-history rollback."""
         path = self._path_for(profile.agent_id)
         self.directory.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(profile.to_record(), ensure_ascii=False,
-                       sort_keys=True, indent=2) + "\n",
-            encoding="utf-8")
+
+        if path.exists():
+            existing = self.load_profile(profile.agent_id)
+            if existing is None:  # defensive; path existence already checked
+                raise ValueError("existing identity profile could not be loaded")
+            _validate_appended_history(existing, profile)
+
+        payload = json.dumps(
+            profile.to_record(),
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        ) + "\n"
+
+        temp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.directory,
+                prefix=f".{profile.agent_id}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary.write(payload)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+                temp_path = Path(temporary.name)
+            os.replace(temp_path, path)
+            temp_path = None
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink()
         return path
 
     def load_profile(self, agent_id: str) -> Optional[AgentIdentityProfile]:
-        """Load one agent's profile; None when it has never been saved."""
+        """Load one profile; None means it has never been saved."""
         path = self._path_for(agent_id)
         if not path.exists():
             return None
-        record = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"identity profile {path} is unreadable or corrupt") from exc
         return from_record(record)
 
     def all_profiles(self) -> List[AgentIdentityProfile]:
-        """Every stored profile, deterministically ordered by agent_id."""
+        """Load every profile in deterministic order; corruption is never hidden."""
         if not self.directory.exists():
             return []
         profiles: List[AgentIdentityProfile] = []
         for path in sorted(self.directory.glob("*.json")):
-            record = json.loads(path.read_text(encoding="utf-8"))
-            profiles.append(from_record(record))
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                profiles.append(from_record(record))
+            except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"identity profile {path} is unreadable or corrupt") from exc
         return profiles
