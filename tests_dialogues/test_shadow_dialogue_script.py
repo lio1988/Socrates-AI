@@ -90,6 +90,20 @@ def test_invalid_batch_id_is_refused(script):
         script._batch_id({"CED_SHADOW_BATCH_ID": "not safe/id"})
 
 
+def test_identity_records_follow_exact_gate_eligible_session_ids(script):
+    records = [
+        {"session_id": "eligible-a", "payload": 1},
+        {"session_id": "duplicate", "payload": "first"},
+        {"session_id": "duplicate", "payload": "replay"},
+        {"session_id": "excluded", "payload": 2},
+    ]
+    evidence = {"shadow_session_ids": ["eligible-a", "duplicate"]}
+
+    selected = script._identity_records_from_evidence(records, evidence)
+
+    assert selected == [records[0], records[1]]
+
+
 def test_main_demo_run_end_to_end(script, tmp_path, capsys):
     env = {
         "CED_SHADOW_SESSIONS": "2",
@@ -105,6 +119,7 @@ def test_main_demo_run_end_to_end(script, tmp_path, capsys):
     assert "gate gate_v0_3_to_v0_4" in output
     assert "earned evidence" in output
     assert "evidence id: pytest-batch" in output
+    assert "eligible identity:" in output
 
     path = tmp_path / "shadow" / "shadow_records.jsonl"
     records = [
