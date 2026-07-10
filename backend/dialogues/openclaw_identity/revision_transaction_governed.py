@@ -12,8 +12,8 @@ from typing import Any, Mapping
 
 from .identity_profile import AgentIdentityProfile, from_record
 from .memory_evidence_binding import (
+    lesson_fingerprint_map,
     memory_binding_reasons,
-    stable_lesson_fingerprint_map,
 )
 from .revision_reversal import is_canonical_reversal
 from .revision_transaction_recovery import (
@@ -81,20 +81,19 @@ class SelfRevisionTransactionCoordinator(_RecoveryCoordinator):
         previous_profile: AgentIdentityProfile,
         *,
         evidence_manifest,
-        stable_lesson_fingerprints=None,
+        lesson_fingerprints=None,
     ) -> None:
         lifecycle = self.lifecycle_registry.load(agent_id, proposal_id)
         if lifecycle is None:
             raise ValueError("self-revision lifecycle is missing")
         proposal = proposal_from_record(
             lifecycle["proposal"], expected_agent_id=agent_id)
-        fingerprints = stable_lesson_fingerprint_map(
-            stable_lesson_fingerprints)
+        fingerprints = lesson_fingerprint_map(lesson_fingerprints)
         reasons = memory_binding_reasons(
             proposal,
             current_profile=previous_profile,
             evidence_manifest=evidence_manifest,
-            stable_lesson_fingerprints=fingerprints,
+            lesson_fingerprints=fingerprints,
         )
         if reasons:
             raise ValueError(reasons[0])
@@ -106,7 +105,7 @@ class SelfRevisionTransactionCoordinator(_RecoveryCoordinator):
         *,
         evidence_manifest,
         stable_lesson_ids=(),
-        stable_lesson_fingerprints=None,
+        lesson_fingerprints=None,
         applied_by: str,
         application_reference: str,
         applied_on: str = "",
@@ -119,7 +118,7 @@ class SelfRevisionTransactionCoordinator(_RecoveryCoordinator):
             proposal_id,
             previous,
             evidence_manifest=evidence_manifest,
-            stable_lesson_fingerprints=stable_lesson_fingerprints,
+            lesson_fingerprints=lesson_fingerprints,
         )
         self._preflight_application(agent_id, proposal_id, previous)
         return super().apply_approved(
