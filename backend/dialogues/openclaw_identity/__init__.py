@@ -67,8 +67,13 @@ from .self_review import (
     profile_fingerprint,
     render_self_review_summary,
 )
-from .revision_registry import REGISTRY_SCHEMA_VERSION
-from .strict_revision_registry import SelfRevisionRegistry
+from .revision_registry import (
+    REGISTRY_SCHEMA_VERSION,
+    SelfRevisionRegistry,
+)
+from .strict_revision_registry import (
+    SelfRevisionRegistry as StrictSelfRevisionRegistry,
+)
 from .revision_reconciliation import (
     RevisionConsistencyReport,
     assert_revision_state_consistent,
@@ -141,6 +146,7 @@ __all__ = [
     "render_self_review_summary",
     "REGISTRY_SCHEMA_VERSION",
     "SelfRevisionRegistry",
+    "StrictSelfRevisionRegistry",
     "RevisionConsistencyReport",
     "assert_revision_state_consistent",
     "reconcile_revision_state",
