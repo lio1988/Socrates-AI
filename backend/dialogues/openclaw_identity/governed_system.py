@@ -110,7 +110,7 @@ class GovernedSelfRevisionSystem:
         *,
         evaluated_by: str,
         stable_lesson_ids: Iterable[str] = (),
-        stable_lesson_fingerprints: Mapping[str, str] | None = None,
+        lesson_fingerprints: Mapping[str, str] | None = None,
         evaluated_on: str = "",
     ) -> RevisionEvaluation:
         return self.lifecycle_registry.record_evaluation(
@@ -119,7 +119,7 @@ class GovernedSelfRevisionSystem:
             current_profile=self.profile(agent_id),
             evidence_manifest=self.trusted_manifest(agent_id),
             stable_lesson_ids=stable_lesson_ids,
-            stable_lesson_fingerprints=stable_lesson_fingerprints,
+            lesson_fingerprints=lesson_fingerprints,
             evaluated_by=evaluated_by,
             evaluated_on=evaluated_on,
         )
@@ -133,7 +133,7 @@ class GovernedSelfRevisionSystem:
         decided_by: str,
         decision_reference: str,
         stable_lesson_ids: Iterable[str] = (),
-        stable_lesson_fingerprints: Mapping[str, str] | None = None,
+        lesson_fingerprints: Mapping[str, str] | None = None,
         decided_on: str = "",
     ):
         return self.lifecycle_registry.record_decision(
@@ -142,7 +142,7 @@ class GovernedSelfRevisionSystem:
             current_profile=self.profile(agent_id),
             evidence_manifest=self.trusted_manifest(agent_id),
             stable_lesson_ids=stable_lesson_ids,
-            stable_lesson_fingerprints=stable_lesson_fingerprints,
+            lesson_fingerprints=lesson_fingerprints,
             decision=decision,
             decided_by=decided_by,
             decision_reference=decision_reference,
@@ -157,7 +157,7 @@ class GovernedSelfRevisionSystem:
         applied_by: str,
         application_reference: str,
         stable_lesson_ids: Iterable[str] = (),
-        stable_lesson_fingerprints: Mapping[str, str] | None = None,
+        lesson_fingerprints: Mapping[str, str] | None = None,
         applied_on: str = "",
     ) -> AgentIdentityProfile:
         """Apply only through the write-ahead transaction coordinator."""
@@ -166,7 +166,7 @@ class GovernedSelfRevisionSystem:
             proposal_id,
             evidence_manifest=self.trusted_manifest(agent_id),
             stable_lesson_ids=stable_lesson_ids,
-            stable_lesson_fingerprints=stable_lesson_fingerprints,
+            lesson_fingerprints=lesson_fingerprints,
             applied_by=applied_by,
             application_reference=application_reference,
             applied_on=applied_on,
