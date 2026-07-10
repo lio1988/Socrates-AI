@@ -3,11 +3,13 @@ OpenClaw Agent Identity — persistent, auditable identity profiles.
 
 One human-readable JSON file is stored per agent. Persistence grants no runtime
 authority, but earned history and approved self-revisions are protected:
-  - version_history and revision_history remain exact append-only prefixes
-  - version/stage transitions remain canonical and non-self-approved
-  - known failures, stable lessons, and soul principles cannot change without a
-    matching approved revision entry
-  - writes are atomic (temp file + fsync + os.replace)
+
+- version_history and revision_history remain exact append-only prefixes;
+- version/stage transitions remain canonical and non-self-approved;
+- known failures, stable lessons, and soul principles cannot change without a
+  matching approved revision entry;
+- untrusted JSON is schema/type checked and secret-shaped data is refused;
+- writes are atomic and serialized by a per-agent exclusive lock.
 
 Evidence-derived descriptive fields may be recomputed between saves. Pure
 stdlib, deterministic, offline. No provider calls, no network, no keys.
@@ -19,16 +21,48 @@ import json
 import os
 import re
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from .identity_profile import AgentIdentityProfile, from_record
 
-_AGENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_AGENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_SECRET_PATTERNS = (
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
+    re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(
+        r"\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|"
+        r"client[_-]?secret)\s*[:=]\s*\S{8,}",
+        re.IGNORECASE,
+    ),
+)
 
 
 def _history_prefix(old: Sequence[Dict], new: Sequence[Dict]) -> bool:
     return len(new) >= len(old) and tuple(new[:len(old)]) == tuple(old)
+
+
+def _find_secret(value: Any, path: str = "identity") -> Optional[str]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            violation = _find_secret(child, f"{path}.{key}")
+            if violation:
+                return violation
+        return None
+    if isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            violation = _find_secret(child, f"{path}[{index}]")
+            if violation:
+                return violation
+        return None
+    if isinstance(value, str):
+        for pattern in _SECRET_PATTERNS:
+            if pattern.search(value):
+                return (
+                    f"{path} contains token-shaped data matching "
+                    f"{pattern.pattern!r}")
+    return None
 
 
 def _validate_approver(entry: Dict, agent_id: str) -> None:
@@ -179,67 +213,106 @@ class IdentityRegistry:
         self.directory = Path(directory)
 
     def _path_for(self, agent_id: str) -> Path:
-        if not _AGENT_ID_RE.match(agent_id or ""):
+        if not _AGENT_ID_RE.fullmatch(agent_id or ""):
             raise ValueError(
                 f"agent_id {agent_id!r} is not filesystem-safe "
-                "(allowed: letters, digits, dot, underscore, hyphen)")
+                "(1-128 letters, digits, dot, underscore, hyphen)")
         return self.directory / f"{agent_id}.json"
 
-    def save_profile(self, profile: AgentIdentityProfile) -> Path:
-        """Atomically save a profile without permitting history rollback."""
-        path = self._path_for(profile.agent_id)
+    @contextmanager
+    def _locked(self, path: Path):
         self.directory.mkdir(parents=True, exist_ok=True)
-
-        if path.exists():
-            existing = self.load_profile(profile.agent_id)
-            if existing is None:
-                raise ValueError("existing identity profile could not be loaded")
-            _validate_appended_history(existing, profile)
-            _validate_appended_revisions(existing, profile)
-        elif profile.revision_history:
-            raise ValueError(
-                "a new identity profile must be saved before self-revisions are "
-                "appended; bootstrap fields may be curated, history may not")
-
-        payload = json.dumps(
-            profile.to_record(),
-            ensure_ascii=False,
-            sort_keys=True,
-            indent=2,
-        ) + "\n"
-
-        temp_path: Optional[Path] = None
+        lock_path = path.with_suffix(path.suffix + ".lock")
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.directory,
-                prefix=f".{profile.agent_id}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temporary:
-                temporary.write(payload)
-                temporary.flush()
-                os.fsync(temporary.fileno())
-                temp_path = Path(temporary.name)
-            os.replace(temp_path, path)
-            temp_path = None
+            descriptor = os.open(
+                lock_path,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            )
+        except FileExistsError as exc:
+            raise ValueError(
+                f"identity profile {path} is locked by another update") from exc
+        try:
+            os.write(descriptor, str(os.getpid()).encode("ascii"))
+            os.close(descriptor)
+            descriptor = -1
+            yield
         finally:
-            if temp_path is not None and temp_path.exists():
-                temp_path.unlink()
-        return path
+            if descriptor >= 0:
+                os.close(descriptor)
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
 
-    def load_profile(self, agent_id: str) -> Optional[AgentIdentityProfile]:
-        """Load one profile; None means it has never been saved."""
-        path = self._path_for(agent_id)
+    def _read_path(self, path: Path) -> Optional[AgentIdentityProfile]:
         if not path.exists():
             return None
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
+            violation = _find_secret(record)
+            if violation:
+                raise ValueError(
+                    f"identity profile contains secret-shaped data at {violation}")
             return from_record(record)
         except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             raise ValueError(
                 f"identity profile {path} is unreadable or corrupt") from exc
+
+    def save_profile(self, profile: AgentIdentityProfile) -> Path:
+        """Atomically save a strict profile without permitting history rollback."""
+        path = self._path_for(profile.agent_id)
+        record = profile.to_record()
+        validated = from_record(record)
+        if validated != profile:
+            raise ValueError("identity profile is not canonical or type-safe")
+        violation = _find_secret(record)
+        if violation:
+            raise ValueError(
+                f"identity profile refused because secret-shaped data was found at "
+                f"{violation}")
+
+        with self._locked(path):
+            existing = self._read_path(path)
+            if existing is not None:
+                _validate_appended_history(existing, profile)
+                _validate_appended_revisions(existing, profile)
+            elif profile.version_history or profile.revision_history:
+                raise ValueError(
+                    "a new identity profile must be saved before version or "
+                    "self-revision history is appended; bootstrap fields may be "
+                    "curated, history may not")
+
+            payload = json.dumps(
+                record,
+                ensure_ascii=False,
+                sort_keys=True,
+                indent=2,
+            ) + "\n"
+
+            temp_path: Optional[Path] = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=self.directory,
+                    prefix=f".{profile.agent_id}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as temporary:
+                    temporary.write(payload)
+                    temporary.flush()
+                    os.fsync(temporary.fileno())
+                    temp_path = Path(temporary.name)
+                os.replace(temp_path, path)
+                temp_path = None
+            finally:
+                if temp_path is not None and temp_path.exists():
+                    temp_path.unlink()
+            return path
+
+    def load_profile(self, agent_id: str) -> Optional[AgentIdentityProfile]:
+        """Load one strict profile; None means it has never been saved."""
+        return self._read_path(self._path_for(agent_id))
 
     def all_profiles(self) -> List[AgentIdentityProfile]:
         """Load every profile in deterministic order; corruption is never hidden."""
@@ -247,10 +320,10 @@ class IdentityRegistry:
             return []
         profiles: List[AgentIdentityProfile] = []
         for path in sorted(self.directory.glob("*.json")):
-            try:
-                record = json.loads(path.read_text(encoding="utf-8"))
-                profiles.append(from_record(record))
-            except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"identity profile {path} is unreadable or corrupt") from exc
+            profile = self._read_path(path)
+            if profile is not None:
+                if path.name != f"{profile.agent_id}.json":
+                    raise ValueError(
+                        f"identity profile filename does not match agent_id: {path}")
+                profiles.append(profile)
         return profiles
