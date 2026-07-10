@@ -1,4 +1,6 @@
-"""Promotion evidence must not count failed or unratified shadow records."""
+"""Shadow promotion evidence must be eligible, ratified, and replay-safe."""
+
+import copy
 
 from backend.dialogues.openclaw_identity import (
     evaluate_gate,
@@ -48,6 +50,7 @@ def test_only_successful_ratified_marked_shadow_records_count_for_gate():
     assert evidence["shadow_sessions_analyzed"] == 1
     assert evidence["shadow_session_ids"] == ["eligible"]
     assert evidence["shadow_records_marked"] == 3
+    assert evidence["shadow_records_unique"] == 3
     assert evidence["shadow_records_eligible"] == 1
     assert evidence["shadow_records_excluded_failed"] == 1
     assert evidence["shadow_records_excluded_unratified"] == 1
@@ -68,3 +71,41 @@ def test_unratified_shadow_records_cannot_create_a_passing_metric():
     result = evaluate_gate(gate, evidence)
     assert result.passed is False
     assert "missing evidence" in result.reasons[0]
+
+
+def test_identical_session_replay_counts_once():
+    original = _shadow_trace("replayed")
+    evidence = evidence_from_shadow_traces(
+        "shadow_apprentice",
+        [original, copy.deepcopy(original), copy.deepcopy(original)],
+    )
+
+    assert evidence["shadow_records_marked"] == 3
+    assert evidence["shadow_records_unique"] == 1
+    assert evidence["shadow_duplicate_replays_ignored"] == 2
+    assert evidence["shadow_sessions_analyzed"] == 1
+    assert evidence["shadow_blind_spots_wins"] == 1
+    assert evidence["shadow_session_ids"] == ["replayed"]
+
+
+def test_conflicting_duplicate_session_is_excluded_completely():
+    first = _shadow_trace("conflict")
+    second = copy.deepcopy(first)
+    second["question"] = "different payload under the same id"
+
+    evidence = evidence_from_shadow_traces(
+        "shadow_apprentice", [first, second])
+
+    assert evidence["shadow_records_unique"] == 0
+    assert evidence["shadow_conflicting_duplicate_session_ids"] == ["conflict"]
+    assert evidence["shadow_excluded_session_ids"] == ["conflict"]
+    assert "shadow_blind_spots_wins" not in evidence
+
+
+def test_missing_session_id_is_not_eligible():
+    missing = _shadow_trace("")
+    evidence = evidence_from_shadow_traces("shadow_apprentice", [missing])
+
+    assert evidence["shadow_records_missing_session_id"] == 1
+    assert evidence["shadow_records_eligible"] == 0
+    assert "shadow_blind_spots_wins" not in evidence
