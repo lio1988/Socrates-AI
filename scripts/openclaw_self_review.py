@@ -63,6 +63,21 @@ def _load_legacy_manifest(path: pathlib.Path):
     return value
 
 
+def _evidence_core(record):
+    if not isinstance(record, dict):
+        raise ValueError("evidence entries must be JSON objects")
+    raw_supports = record.get("supports") or ()
+    if isinstance(raw_supports, (str, bytes)):
+        raise ValueError("evidence supports must be a sequence, not text")
+    return {
+        "agent_id": str(record.get("agent_id", "")).strip(),
+        "verified": record.get("verified") is True,
+        "source": str(record.get("source", "")).strip(),
+        "supports": tuple(sorted(str(value).strip() for value in raw_supports)),
+        "value": str(record.get("value", "")).strip(),
+    }
+
+
 def _load_evidence(
     evidence_dir: pathlib.Path,
     legacy_path: pathlib.Path,
@@ -72,11 +87,13 @@ def _load_evidence(
     manifest = RevisionEvidenceRegistry(evidence_dir).manifest(agent_id)
     legacy = _load_legacy_manifest(legacy_path)
     for reference, record in legacy.items():
-        if reference in manifest and manifest[reference] != record:
-            raise ValueError(
-                f"evidence reference {reference!r} conflicts between registry "
-                "and legacy manifest")
-        manifest.setdefault(reference, record)
+        if reference in manifest:
+            if _evidence_core(manifest[reference]) != _evidence_core(record):
+                raise ValueError(
+                    f"evidence reference {reference!r} conflicts between registry "
+                    "and legacy manifest")
+            continue
+        manifest[reference] = record
     return manifest
 
 
