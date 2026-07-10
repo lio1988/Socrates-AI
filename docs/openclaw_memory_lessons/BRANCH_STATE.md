@@ -84,7 +84,22 @@ OpenClaw remembers.
 | Goal 8 — Prompt patch generator (proposes into the registry) | `4672c80` | `openclaw_prompts/patch_proposer.py` | 9 |
 | Goal 11 — Shadow Apprentice Mode (Stage 1 runtime) | `cfe0624` | `openclaw_shadow/shadow_apprentice.py` | 13 |
 | Goal 10 — Local LLM provider (gated apprentice adapter) | `27d796f` | `openclaw_local/local_provider.py` | 14 |
-| Shadow dialogue operator script (demo free / local gated) | see git log | `scripts/shadow_dialogue.py` | 8 |
+| Shadow dialogue operator script (demo free / local gated) | `29b63cf` | `scripts/shadow_dialogue.py` | 8 |
+| Communication layer: disk readers, identity accumulation, curator review | see git log | `load_traces`/`load_jsonl` + `scripts/openclaw_review.py` | 8 |
+
+## The integration surface (what an external cockpit like OpenClaw reads/writes)
+
+```text
+runs/openclaw_traces/<session_id>.jsonl   sessions write; load_traces() reads
+runs/openclaw_shadow/shadow_records.jsonl shadow runs append; load_jsonl() reads
+runs/openclaw_identity/<agent_id>.json    IdentityRegistry (earned identity)
+runs/openclaw_proposals/PROPOSED_*.md     openclaw_review writes; human curates
+docs/openclaw_memory_lessons/MEMORY_LESSONS.md   curated source (human-only writes)
+```
+
+The disk is the message bus: every layer communicates through auditable
+files, so any external orchestrator can drive the loop by running the
+scripts and reading the artifacts — no private APIs.
 
 ## Learning arcs currently closed
 

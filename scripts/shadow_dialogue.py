@@ -24,6 +24,8 @@ Optional switches (env-only):
     CED_SHADOW_SESSIONS=3     # how many questions in a batch run (default 3)
     CED_SHADOW_DIR=path       # where shadow records go
                               # (default runs/openclaw_shadow)
+    CED_IDENTITY_DIR=path     # where the identity registry lives
+                              # (default runs/openclaw_identity)
 
 Every session appends a marked shadow record (shadow_run=true) to disk; the
 run ends with the apprentice's SOUL CARD and its progress against identity
@@ -52,8 +54,10 @@ from backend.dialogues.openclaw_local import (                        # noqa: E4
     probe_local_server,
     resolve_local_adapter,
 )
+from backend.dialogues.openclaw_memory import load_jsonl              # noqa: E402
 from backend.dialogues.openclaw_shadow import ShadowApprentice        # noqa: E402
 from backend.dialogues.openclaw_identity import (                     # noqa: E402
+    IdentityRegistry,
     build_identity_profile,
     evaluate_gate,
     evidence_from_shadow_traces,
@@ -121,6 +125,32 @@ def _save_records(records, env):
     return path
 
 
+def _accumulated_profile(agent_id, records, registry):
+    """Identity across runs: EVIDENCE fields are recomputed fresh from the
+    FULL record history; EARNED fields (version, rank, promotion history,
+    curated failures/lessons) are preserved from the stored registry record —
+    a promotion recorded yesterday survives today's rebuild. A brand-new
+    apprentice starts as a shadow_apprentice at v0.3 (an operator PLACEMENT
+    for shadow mode, not an earned promotion — its empty version_history
+    says so honestly)."""
+    import dataclasses
+    fresh = build_identity_profile(agent_id, records,
+                                   identity_version="v0.3",
+                                   promotion_status="shadow_apprentice")
+    stored = registry.load_profile(agent_id)
+    if stored is None:
+        return fresh
+    return dataclasses.replace(
+        fresh,
+        identity_version=stored.identity_version,
+        promotion_status=stored.promotion_status,
+        next_gate=stored.next_gate,
+        version_history=stored.version_history,
+        known_failures=stored.known_failures,
+        stable_lessons=stored.stable_lessons,
+    )
+
+
 def main(argv=None, env=None) -> int:
     argv = sys.argv if argv is None else argv
     env = os.environ if env is None else env
@@ -174,22 +204,31 @@ def main(argv=None, env=None) -> int:
                   f"council={row['council_score']}")
     print("-" * _W)
 
-    # Identity: what the apprentice has PROVEN so far (descriptive only).
+    # Identity: what the apprentice has PROVEN so far — across EVERY run,
+    # not just this one. Records accumulate on disk; earned identity fields
+    # persist in the registry; evidence is recomputed from the full history.
     path = _save_records(runner.shadow_records, env)
-    profile = build_identity_profile(apprentice.provider_id,
-                                     runner.shadow_records,
-                                     promotion_status="shadow_apprentice",
-                                     identity_version="v0.3")
+    all_records = load_jsonl(path)
+    registry = IdentityRegistry(env.get(
+        "CED_IDENTITY_DIR", str(_ROOT / "runs" / "openclaw_identity")))
+    profile = _accumulated_profile(apprentice.provider_id, all_records,
+                                   registry)
+    registry_path = registry.save_profile(profile)
     print(render_soul_card(profile))
     print("-" * _W)
-    evidence = evidence_from_shadow_traces(apprentice.provider_id,
-                                           runner.shadow_records)
-    gate = next_gate_for("v0.3")
-    result = evaluate_gate(gate, evidence)
-    print(f"  gate {gate.gate_id}: "
-          f"{'PASSED (a human may now record the promotion)' if result.passed else 'not yet'}")
-    print(f"    {result.reasons[0]}")
-    print(f"  shadow records -> {path}")
+    evidence = evidence_from_shadow_traces(apprentice.provider_id, all_records)
+    gate = next_gate_for(profile.identity_version)
+    if gate is None:
+        print(f"  gate: none - {profile.identity_version} is the end of the "
+              "current chain")
+    else:
+        result = evaluate_gate(gate, evidence)
+        print(f"  gate {gate.gate_id}: "
+              f"{'PASSED (a human may now record the promotion)' if result.passed else 'not yet'}")
+        print(f"    {result.reasons[0]}")
+    print(f"  history          : {len(all_records)} shadow record(s) "
+          f"across all runs -> {path}")
+    print(f"  identity registry-> {registry_path}")
     print("=" * _W)
     print(f"  Done. mode = {mode}. The apprentice earned evidence, "
           f"not authority.")
