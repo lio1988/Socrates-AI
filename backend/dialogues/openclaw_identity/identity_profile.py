@@ -2,25 +2,21 @@
 OpenClaw Agent Identity — the auditable identity profile ("soul", non-mystical).
 
 An AgentIdentityProfile is the versioned, evidence-backed record of ONE agent
-seat: where it is strong, where it fails, which stable lessons apply to it,
-what version it has earned, and what gate comes next.
+seat: where it is strong, where it fails, which stable lessons and approved
+principles apply to it, what version it has earned, and what gate comes next.
 
-The guiding sentence (docs/openclaw_memory_lessons/SELF_IMPROVING_AGENT_IDENTITY.md):
+The guiding sentence:
 
     The agent does not become powerful because it claims identity.
     The agent earns identity through evidence.
 
 Mechanics, not judgement:
-  - ``role_strengths`` are derived ONLY from Goal 5 session traces: an
-    assembled section's ``source_draft_id`` is ``draft_<move_id>``, and the
-    trace's move list maps that move to its producing provider. Wins /
-    opportunities per section is a mechanical count over public assembly
-    outcomes — no raw hidden scorecards are read or stored.
-  - ``known_failures`` and ``stable_lessons`` are INPUTS (curator- or
-    lesson-proposer-supplied), never invented here.
-  - The profile is a SYSTEM-owned artifact. It is never injected into agent
-    contexts and grants no runtime authority (test-locked: the CED core does
-    not import this package).
+  - ``role_strengths`` are derived ONLY from Goal 5 session traces.
+  - ``known_failures`` and ``stable_lessons`` begin as curator inputs and can
+    later change only through governed, append-only self-revisions.
+  - ``soul_principles`` are approved descriptive commitments, never runtime
+    permissions and never automatic prompt mutations.
+  - The profile is SYSTEM-owned, runtime-inert, and never grants authority.
 
 Pure, deterministic, offline. No provider calls, no network, no keys.
 """
@@ -28,9 +24,8 @@ Pure, deterministic, offline. No provider calls, no network, no keys.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
-#: The five locked synthesis sections (mirrors SYNTHESIS_5_SECTION.md).
 SECTION_NAMES: Tuple[str, ...] = (
     "core_answer", "crucial_stress_test", "blind_spots", "nuance", "final_verdict",
 )
@@ -40,16 +35,11 @@ _DRAFT_PREFIX = "draft_"
 
 @dataclass(frozen=True)
 class AgentIdentityProfile:
-    """Versioned, auditable identity record for one agent seat.
-
-    Descriptive, not authority: nothing in this record changes what the agent
-    is allowed to do at runtime. Promotion is recorded here only AFTER the
-    evidence passed a gate and a named (non-self) approver signed it.
-    """
+    """Versioned, auditable identity record for one agent seat."""
 
     agent_id: str
     identity_version: str = "v0.1"
-    promotion_status: str = "base_agent"        # ladder stage name (see policy)
+    promotion_status: str = "base_agent"
     role_strengths: Dict[str, float] = field(default_factory=dict)
     section_wins: Dict[str, int] = field(default_factory=dict)
     section_opportunities: Dict[str, int] = field(default_factory=dict)
@@ -57,11 +47,13 @@ class AgentIdentityProfile:
     ratified_sessions: int = 0
     known_failures: Tuple[str, ...] = ()
     stable_lessons: Tuple[str, ...] = ()
+    soul_principles: Tuple[str, ...] = ()
     next_gate: Optional[str] = None
     version_history: Tuple[Dict[str, Any], ...] = ()
+    revision_history: Tuple[Dict[str, Any], ...] = ()
 
     def to_record(self) -> Dict[str, Any]:
-        """JSON-ready dict (the design-target schema of the identity layer)."""
+        """Return the complete JSON-ready identity record."""
         return {
             "agent_id": self.agent_id,
             "identity_version": self.identity_version,
@@ -73,17 +65,15 @@ class AgentIdentityProfile:
             "ratified_sessions": self.ratified_sessions,
             "known_failures": list(self.known_failures),
             "stable_lessons": list(self.stable_lessons),
+            "soul_principles": list(self.soul_principles),
             "next_gate": self.next_gate,
             "version_history": [dict(entry) for entry in self.version_history],
+            "revision_history": [dict(entry) for entry in self.revision_history],
         }
 
 
 def from_record(record: Dict[str, Any]) -> AgentIdentityProfile:
-    """Rebuild a profile from ``to_record()`` output (registry load path).
-
-    ``agent_id`` is required; every other field falls back to the same
-    defaults a fresh profile has. Round-trips: from_record(p.to_record()) == p.
-    """
+    """Rebuild a profile from ``to_record()`` output."""
     agent_id = str(record.get("agent_id", "")).strip()
     if not agent_id:
         raise ValueError("identity record requires a non-empty agent_id")
@@ -102,9 +92,12 @@ def from_record(record: Dict[str, Any]) -> AgentIdentityProfile:
         ratified_sessions=int(record.get("ratified_sessions", 0)),
         known_failures=tuple(record.get("known_failures") or ()),
         stable_lessons=tuple(record.get("stable_lessons") or ()),
+        soul_principles=tuple(record.get("soul_principles") or ()),
         next_gate=record.get("next_gate"),
         version_history=tuple(dict(e) for e in (record.get("version_history")
-                                                or ())),
+                                                 or ())),
+        revision_history=tuple(dict(e) for e in (record.get("revision_history")
+                                                  or ())),
     )
 
 
@@ -124,19 +117,11 @@ def build_identity_profile(
     *,
     known_failures: Iterable[str] = (),
     stable_lessons: Iterable[str] = (),
+    soul_principles: Iterable[str] = (),
     identity_version: str = "v0.1",
     promotion_status: str = "base_agent",
 ) -> AgentIdentityProfile:
-    """Build one agent's identity profile from Goal 5 session traces.
-
-    Every number is a mechanical count over trace-level public outcomes:
-      - opportunity: the agent authored a synthesis draft in a session and a
-        given section was resolved at assembly (someone's draft won it);
-      - win: the winning draft for that section was THIS agent's.
-
-    Sessions where the agent never appears contribute nothing. ``None`` /
-    missing assemblies contribute no opportunities (never fabricated).
-    """
+    """Build one agent's descriptive profile from public session outcomes."""
     wins: Dict[str, int] = {}
     opportunities: Dict[str, int] = {}
     sessions_analyzed = 0
@@ -164,7 +149,7 @@ def build_identity_profile(
             name = str(section.get("section_name", ""))
             src = str(section.get("source_draft_id", "") or "")
             if name not in SECTION_NAMES or not src.strip():
-                continue                       # unresolved section: no contest
+                continue
             opportunities[name] = opportunities.get(name, 0) + 1
             move_id = src[len(_DRAFT_PREFIX):] if src.startswith(_DRAFT_PREFIX) else ""
             if by_move.get(move_id) == agent_id:
@@ -175,8 +160,6 @@ def build_identity_profile(
         for name in sorted(opportunities)
     }
 
-    # next_gate is resolved lazily from the promotion policy so the profile
-    # module stays import-clean (policy imports profile, not vice versa).
     from .promotion_policy import next_gate_for
     gate = next_gate_for(identity_version)
 
@@ -191,5 +174,6 @@ def build_identity_profile(
         ratified_sessions=ratified_sessions,
         known_failures=tuple(known_failures),
         stable_lessons=tuple(stable_lessons),
+        soul_principles=tuple(soul_principles),
         next_gate=gate.gate_id if gate else None,
     )
