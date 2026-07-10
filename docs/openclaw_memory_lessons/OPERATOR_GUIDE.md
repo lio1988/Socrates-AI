@@ -165,19 +165,24 @@ and names a review artifact. Use `--action retire_principle` for a reviewed
 retirement. Evidence still requires a separate agent proposal, evaluation,
 non-self approval, and recoverable application.
 
-## Mode G4 — Attest single-agent Lesson A/B Memory evidence
+## Mode G4 — Attest bound single-agent Lesson A/B Memory evidence
 
 The ordinary Mode E report is whole-council evidence and cannot enter one
-agent's Memory. Mode G4 accepts only an explicit
-`openclaw_agent_lesson_ab_v1` report where the treatment scope is
-`single_agent`.
+agent's Memory. Mode G4 accepts only an
+`openclaw_agent_lesson_ab_attestation_v1` envelope containing:
+
+- a nested `openclaw_agent_lesson_ab_v1` report with
+  `treatment_scope="single_agent"`;
+- the exact curated lesson SHA-256 fingerprint;
+- the exact governed target Identity SHA-256 fingerprint;
+- the matched experiment/configuration SHA-256 fingerprint.
 
 Helped result → link evidence:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\openclaw_attest_lesson_ab.py `
   local_apprentice_001 `
-  --report runs\agent_lesson_ab\lesson-0007-helped.json `
+  --report runs\agent_lesson_ab\lesson-0007-helped-attestation.json `
   --action link `
   --verified-by "Your Name"
 ```
@@ -187,18 +192,23 @@ Harmful post-link result → unlink/revert evidence:
 ```powershell
 .\.venv\Scripts\python.exe scripts\openclaw_attest_lesson_ab.py `
   local_apprentice_001 `
-  --report runs\agent_lesson_ab\lesson-0007-harmed.json `
+  --report runs\agent_lesson_ab\lesson-0007-harmed-attestation.json `
   --action unlink `
   --verified-by "Your Name"
 ```
 
-The verifier named on the command must match the verifier inside the report.
-Link evidence requires a curated `stable`/`verified` lesson and a clean helped
-verdict with no regressions. Unlink evidence requires a concrete harmed verdict
-and a lesson currently linked to that agent. The command writes only immutable
-evidence; it never edits `MEMORY_LESSONS.md` or the agent profile. See
+The verifier named on the command must match the verifier inside the nested
+report. New evidence is refused if the lesson content/status changed under the
+same ID, if the governed target Identity changed, or if any binding is not
+canonical lowercase SHA-256. Link evidence additionally requires a curated
+`stable`/`verified` lesson and a clean helped verdict with no regressions.
+Unlink evidence requires a concrete harmed verdict and a lesson currently linked
+to that exact target state.
+
+The command writes only immutable evidence; it never edits
+`MEMORY_LESSONS.md`, the agent profile, or lifecycle state. See
 [AGENT_LESSON_AB_ATTESTATION.md](AGENT_LESSON_AB_ATTESTATION.md) for the exact
-report schema.
+envelope and experiment-manifest contract.
 
 ## Mode H — Bounded self-review package (agent proposes, nothing activates)
 
@@ -245,9 +255,10 @@ view and the audit files above are the ground truth.
   adjacent loss→win window of the requested size.
 - **Soul refused** — confirm both review flags and cite existing evidence for
   the same agent.
-- **Lesson A/B Memory attestation refused** — confirm the report uses
-  `openclaw_agent_lesson_ab_v1`, targets the same agent, names the same verifier,
-  and references a curated lesson with a compatible helped/harmed verdict.
+- **Lesson A/B Memory attestation refused** — confirm the envelope and nested
+  report schemas, target/verifier, exact lesson and Identity fingerprints,
+  experiment fingerprint, observation date, and compatible helped/harmed
+  verdict.
 
 ## The constitution (what no mode can do)
 
