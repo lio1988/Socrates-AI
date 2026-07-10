@@ -50,13 +50,14 @@ Each observation binds:
 - exact revising agent and provider;
 - parent and child draft IDs;
 - recomputed parent/child means and margin;
+- the exact positive `effect_margin` used to classify the outcome;
 - matched judge IDs and sections;
 - matched score count;
 - tree exploration and expansion budget;
 - digest of the exact score pairs;
 - source trace and full observation digest.
 
-Unknown fields, non-finite values, secret-shaped text, malformed IDs and digest mismatches fail closed.
+The schema verifies that `outcome` is mathematically consistent with the recorded margin and threshold. Unknown fields, non-finite values, secret-shaped text, malformed IDs and digest mismatches fail closed.
 
 ## Why matched score pairs
 
@@ -97,7 +98,7 @@ margin <= -effect_margin  → regressed
 otherwise                 → neutral
 ```
 
-These labels are observations only. A single revision never changes Identity.
+The threshold is stored inside the hash-bound observation; callers cannot relabel the same scores under an unrecorded threshold. These labels are observations only. A single revision never changes Identity.
 
 ## Failure evidence
 
@@ -108,7 +109,8 @@ These labels are observations only. A single revision never changes Identity.
 - distinct session IDs;
 - distinct source traces;
 - immutable observation digests;
-- a named non-self verifier through the existing evidence builder.
+- a named non-self verifier, checked case-insensitively;
+- deterministic ordering, so the same observation set produces the same evidence regardless of input order.
 
 It produces evidence supporting only:
 
@@ -135,13 +137,16 @@ before: concrete regressions
 
 Every before item must match an after item by `comparison_key`, with identical:
 
+- exact question hash;
+- provider ID;
 - judge IDs;
 - matched sections;
 - score count;
+- effect margin;
 - exploration constant;
 - expansion budget.
 
-Sessions must be unique and the windows may not overlap.
+Sessions must be unique and the windows may not overlap. These constraints prevent a provider/model change, easier question, different judge panel or looser threshold from masquerading as resolution.
 
 It produces the existing dual support:
 
@@ -182,12 +187,12 @@ This v1 reads the current completed `SessionState`, tree audit and real scorecar
 
 - real matched-score recomputation;
 - refusal to trust cached audit scores;
-- exact schema and digest tamper detection;
-- no-self-scoring;
+- exact schema, threshold binding and digest tamper detection;
+- no-self-scoring and no self-verification;
 - missing move/task provenance;
 - no-common-judge no-op;
-- repeated-regression evidence;
+- repeated-regression evidence and input-order determinism;
 - matched resolution windows;
-- changed judges, benchmark keys and tree budget refusal;
+- changed question, provider, judges, benchmark keys, threshold and tree budget refusal;
 - secret-shaped input rejection;
 - deterministic summaries.
