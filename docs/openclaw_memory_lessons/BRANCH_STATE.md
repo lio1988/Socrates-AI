@@ -85,7 +85,9 @@ OpenClaw remembers.
 | Goal 11 — Shadow Apprentice Mode (Stage 1 runtime) | `cfe0624` | `openclaw_shadow/shadow_apprentice.py` | 13 |
 | Goal 10 — Local LLM provider (gated apprentice adapter) | `27d796f` | `openclaw_local/local_provider.py` | 14 |
 | Shadow dialogue operator script (demo free / local gated) | `29b63cf` | `scripts/shadow_dialogue.py` | 8 |
-| Communication layer: disk readers, identity accumulation, curator review | see git log | `load_traces`/`load_jsonl` + `scripts/openclaw_review.py` | 8 |
+| Communication layer: disk readers, identity accumulation, curator review | `58a2f68` | `load_traces`/`load_jsonl` + `scripts/openclaw_review.py` | 8 |
+| Injected-context ledger (audit reports actual injections) | see git log | `ced.py` `_injected_lessons` + `_openclaw_audit` | 5 |
+| Goal 15 — Operator communication layer (guide + status + next-command) | see git log | `OPERATOR_GUIDE.md` + `scripts/openclaw_status.py` | 6 |
 
 ## The integration surface (what an external cockpit like OpenClaw reads/writes)
 

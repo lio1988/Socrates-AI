@@ -617,6 +617,32 @@ lesson-proposer patterns to `known_failures`.
 
 ---
 
+## Goal 15 — Operator communication layer
+
+**Status: DONE (v0).** The nervous system between the runtime and its human:
+
+- `OPERATOR_GUIDE.md` (canonical `OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE`)
+  — one page: every mode (demo shadow, real Ollama, council dialogue,
+  review, lesson A/B, human promotion checklist), the run-manifest concept,
+  troubleshooting, and the constitution.
+- `scripts/openclaw_status.py` — offline joined-up view (`--json` for
+  machines): stable lessons, trace/shadow counts, identity registry
+  snapshot, pending proposals, env gates, local-server probe ONLY when the
+  gate is already on, and one honest "next command" (a waiting human
+  decision always outranks collecting more data).
+- Injected-context ledger — the audit (and every trace) now reports the
+  lessons that ACTUALLY entered each phase/agent context at injection time,
+  never a question-only re-run of retrieval that could disagree with the
+  phase-aware runtime. Closed the "what we think entered vs what entered"
+  gap; the fix immediately exposed and corrected a wrong premise in a
+  lesson-A/B test.
+- Every operator script ends with a "Next:" section.
+
+Deliberately future: per-run MANIFEST.json bundle (documented in the guide),
+`--json` for the other scripts, promotion packet files.
+
+---
+
 ## Roadmap order
 
 Recommended order:

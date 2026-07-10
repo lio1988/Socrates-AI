@@ -66,6 +66,11 @@ OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY
   File: docs/openclaw_memory_lessons/PROMPT_REGISTRY.md
   Purpose: Versioned prompt lineage — specs, provider patches with the
   lesson lifecycle, content-addressed fingerprints, trace metadata.
+
+OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE
+  File: docs/openclaw_memory_lessons/OPERATOR_GUIDE.md
+  Purpose: One-page command map — every mode, every artifact, every
+  decision that needs a human hand, plus troubleshooting.
 ```
 
 Related document outside this folder:
@@ -95,6 +100,7 @@ TREE_MEMORY = OPENCLAW_MEMORY_LESSONS_TREE_MEMORY_MAP
 IDENTITY    = OPENCLAW_MEMORY_LESSONS_AGENT_IDENTITY
 SOUL_CARD   = OPENCLAW_MEMORY_LESSONS_AGENT_SOUL_CARD
 PROMPT_REGISTRY = OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY
+OPERATOR_GUIDE = OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE
 ```
 
 ## Naming rule for future docs

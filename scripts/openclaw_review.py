@@ -156,9 +156,11 @@ def main(argv=None, env=None) -> int:
                       f"{evidence['shadow_sessions_analyzed']} session(s)")
         print("-" * _W)
 
-    print("  Next: review the proposal files, promote what deserves it")
-    print("  (edit status by hand; A/B test with the harness first), and")
-    print("  deprecate what does not. The system never promotes itself.")
+    print("  Next:")
+    print("    review the proposal files above; A/B test candidates first")
+    print("    (OPERATOR_GUIDE Mode E), promote by hand (Mode F), deprecate")
+    print("    what fails. The system never promotes itself.")
+    print("    python scripts/openclaw_status.py   (the joined-up view)")
     print("=" * _W)
     return 0
 

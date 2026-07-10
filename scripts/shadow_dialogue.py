@@ -229,6 +229,10 @@ def main(argv=None, env=None) -> int:
     print(f"  history          : {len(all_records)} shadow record(s) "
           f"across all runs -> {path}")
     print(f"  identity registry-> {registry_path}")
+    print("-" * _W)
+    print("  Next:")
+    print("    python scripts/openclaw_review.py   (turn history into proposals)")
+    print("    python scripts/openclaw_status.py   (the joined-up view)")
     print("=" * _W)
     print(f"  Done. mode = {mode}. The apprentice earned evidence, "
           f"not authority.")
