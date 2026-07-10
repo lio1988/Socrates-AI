@@ -1,5 +1,6 @@
 """Tests for bound single-agent Lesson A/B -> governed Memory evidence."""
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -22,6 +23,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 AGENT = "local_apprentice_001"
 LESSON = "LESSON-0007"
 ATTESTATION_VERSION = "openclaw_agent_lesson_ab_attestation_v1"
+EXPERIMENT_VERSION = "openclaw_agent_lesson_ab_experiment_v1"
 
 
 @pytest.fixture(scope="module")
@@ -33,6 +35,16 @@ def attest_script():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def _digest(value):
+    return hashlib.sha256(json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")).hexdigest()
 
 
 def _lesson_markdown(status="stable", lesson_text=None):
@@ -106,38 +118,103 @@ def _save_profile(tmp_path, *, linked=()):
     return env, profile
 
 
-def _envelope(tmp_path, report=None, **updates):
+def _manifest(lesson_fingerprint, **updates):
+    manifest = {
+        "schema_version": EXPERIMENT_VERSION,
+        "target_agent_id": AGENT,
+        "lesson_id": LESSON,
+        "treatment_scope": "single_agent",
+        "question_hashes": [
+            "1" * 64,
+            "2" * 64,
+            "3" * 64,
+            "4" * 64,
+        ],
+        "control_configuration": {
+            "base_configuration_fingerprint": "a" * 64,
+            "injected_lesson_fingerprints": [],
+            "injection_target_agent_id": "",
+        },
+        "treatment_configuration": {
+            "base_configuration_fingerprint": "a" * 64,
+            "injected_lesson_fingerprints": [lesson_fingerprint],
+            "injection_target_agent_id": AGENT,
+        },
+        "execution_mode": "deterministic-mock",
+        "provider_ids": ["mock-a", "mock-b"],
+        "judge_configuration": {
+            "judge_set_fingerprint": "b" * 64,
+            "self_judging_allowed": False,
+        },
+        "random_seeds": [101, 102, 103, 104],
+        "arm_orders": [
+            ["control", "treatment"],
+            ["treatment", "control"],
+            ["control", "treatment"],
+            ["treatment", "control"],
+        ],
+        "counterbalanced": True,
+        "compute_budget": {
+            "token_limit": 1000,
+            "timeout_seconds": 30.0,
+            "retry_limit": 0,
+        },
+        "producer_version": "test-producer-v1",
+    }
+    manifest.update(updates)
+    return manifest
+
+
+def _envelope(tmp_path, report=None, *, envelope_updates=None,
+              manifest_updates=None):
     env = _env(tmp_path)
     lessons = load_memory_lessons(
         env["CED_MEMORY_LESSONS_PATH"], include_deprecated=True)
     lesson = next(item for item in lessons if item.lesson_id == LESSON)
     profile = IdentityRegistry(env["CED_IDENTITY_DIR"]).load_profile(AGENT)
+    envelope_updates = dict(envelope_updates or {})
+    lesson_fingerprint = envelope_updates.pop(
+        "lesson_fingerprint", memory_lesson_fingerprint(lesson))
+    manifest = _manifest(
+        lesson_fingerprint,
+        **dict(manifest_updates or {}),
+    )
     envelope = {
         "schema_version": ATTESTATION_VERSION,
-        "lesson_fingerprint": memory_lesson_fingerprint(lesson),
+        "lesson_fingerprint": lesson_fingerprint,
         "target_identity_fingerprint": (
             governed_profile_fingerprint(profile) if profile is not None
-            else "b" * 64
+            else "d" * 64
         ),
-        "experiment_fingerprint": "c" * 64,
+        "experiment_fingerprint": _digest(manifest),
+        "experiment_manifest": manifest,
         "instrument_report": report or _report(),
     }
-    envelope.update(updates)
+    envelope.update(envelope_updates)
     return envelope
 
 
-def _write_report(tmp_path, report=None, **envelope_updates):
+def _write_envelope(tmp_path, report=None, *, envelope_updates=None,
+                    manifest_updates=None):
     path = tmp_path / "attestation.json"
-    path.write_text(json.dumps(
-        _envelope(tmp_path, report, **envelope_updates)), encoding="utf-8")
+    path.write_text(json.dumps(_envelope(
+        tmp_path,
+        report,
+        envelope_updates=envelope_updates,
+        manifest_updates=manifest_updates,
+    )), encoding="utf-8")
     return path
 
 
 def _run(attest_script, tmp_path, *, action="link", report=None,
-         verifier="Operator", envelope_updates=None):
+         verifier="Operator", envelope_updates=None, manifest_updates=None):
     env = _env(tmp_path)
-    report_path = _write_report(
-        tmp_path, report, **(envelope_updates or {}))
+    report_path = _write_envelope(
+        tmp_path,
+        report,
+        envelope_updates=envelope_updates,
+        manifest_updates=manifest_updates,
+    )
     argv = [
         "prog", AGENT,
         "--report", str(report_path),
@@ -192,7 +269,8 @@ def test_report_target_and_named_verifier_are_bound(
     _save_profile(tmp_path)
 
     assert _run(
-        attest_script, tmp_path,
+        attest_script,
+        tmp_path,
         report=_report(target_agent_id="agent_beta"),
     ) == 1
     assert "targets another agent" in capsys.readouterr().out
@@ -232,14 +310,14 @@ def test_lesson_and_identity_fingerprints_must_match_current_state(
     assert _run(
         attest_script,
         tmp_path,
-        envelope_updates={"lesson_fingerprint": "d" * 64},
+        envelope_updates={"lesson_fingerprint": "e" * 64},
     ) == 1
     assert "lesson_fingerprint does not match" in capsys.readouterr().out
 
     assert _run(
         attest_script,
         tmp_path,
-        envelope_updates={"target_identity_fingerprint": "e" * 64},
+        envelope_updates={"target_identity_fingerprint": "f" * 64},
     ) == 1
     assert "target_identity_fingerprint does not match" in \
         capsys.readouterr().out
@@ -340,7 +418,7 @@ def test_exact_rerun_is_idempotent_and_changed_binding_conflicts(
     assert _run(
         attest_script,
         tmp_path,
-        envelope_updates={"experiment_fingerprint": "f" * 64},
+        manifest_updates={"producer_version": "test-producer-v2"},
     ) == 1
     assert "conflicting content" in capsys.readouterr().out
     assert len(registry.all_records(AGENT)) == 1
@@ -374,7 +452,7 @@ def test_invalid_envelope_json_url_and_digest_fail_closed(
     assert "lowercase SHA-256" in capsys.readouterr().out
 
 
-def test_secret_or_non_finite_report_values_are_refused(
+def test_secret_or_non_finite_values_are_refused(
         attest_script, tmp_path, capsys):
     _save_profile(tmp_path)
 
@@ -385,3 +463,11 @@ def test_secret_or_non_finite_report_values_are_refused(
     non_finite = _report(mean_score_delta=float("nan"))
     assert _run(attest_script, tmp_path, report=non_finite) == 1
     assert "must be finite" in capsys.readouterr().out
+
+    assert _run(
+        attest_script,
+        tmp_path,
+        manifest_updates={"producer_version": "api_key=abcdefgh12345678"},
+    ) == 1
+    assert "experiment_manifest.producer_version contains secret-shaped" in \
+        capsys.readouterr().out
