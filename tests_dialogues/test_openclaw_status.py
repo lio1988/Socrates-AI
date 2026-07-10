@@ -40,21 +40,21 @@ def offline_env(monkeypatch):
 
 
 def _env(tmp_path, **extra):
-    env = {"CED_TRACE_DIR": str(tmp_path / "traces"),
-           "CED_SHADOW_DIR": str(tmp_path / "shadow"),
-           "CED_IDENTITY_DIR": str(tmp_path / "identity"),
-           "CED_PROPOSALS_DIR": str(tmp_path / "proposals")}
+    env = {
+        "CED_TRACE_DIR": str(tmp_path / "traces"),
+        "CED_SHADOW_DIR": str(tmp_path / "shadow"),
+        "CED_IDENTITY_DIR": str(tmp_path / "identity"),
+        "CED_PROPOSALS_DIR": str(tmp_path / "proposals"),
+        "CED_SELF_REVISION_DIR": str(tmp_path / "self_revisions"),
+        "CED_SELF_REVISION_TRANSACTION_DIR": str(tmp_path / "transactions"),
+    }
     env.update(extra)
     return env
 
 
-def _no_probe(url, timeout):                    # must never be called
+def _no_probe(url, timeout):
     raise AssertionError("probe called although the local gate is OFF")
 
-
-# --------------------------------------------------------------------------- #
-# Empty state: clean report, sensible next command, no network
-# --------------------------------------------------------------------------- #
 
 def test_empty_state_is_clean_and_offline(status_script, tmp_path, capsys):
     rc = status_script.main(["prog"], env=_env(tmp_path), probe=_no_probe)
@@ -63,7 +63,10 @@ def test_empty_state_is_clean_and_offline(status_script, tmp_path, capsys):
     assert "traces           : 0" in out
     assert "shadow records   : 0" in out
     assert "identity registry: empty" in out
-    assert "shadow_dialogue.py" in out          # next: collect first evidence
+    assert "self-revisions   : total=0" in out
+    assert "registry binding : consistent" in out
+    assert "transactions     : total=0" in out
+    assert "shadow_dialogue.py" in out
 
 
 def test_json_mode_is_machine_readable(status_script, tmp_path, capsys):
@@ -71,16 +74,30 @@ def test_json_mode_is_machine_readable(status_script, tmp_path, capsys):
                             probe=_no_probe)
     assert rc == 0
     status = json.loads(capsys.readouterr().out)
-    for key in ("stable_lessons", "traces", "shadow_records", "identity",
-                "proposals", "gates", "local_server", "next_command"):
+    for key in (
+        "stable_lessons", "traces", "shadow_records", "identity",
+        "proposals", "self_revisions", "revision_consistency",
+        "revision_transactions", "gates", "local_server", "next_command",
+    ):
         assert key in status
+    assert status["self_revisions"] == {
+        "count": 0,
+        "by_status": {},
+        "dir": str(tmp_path / "self_revisions"),
+    }
+    assert status["revision_consistency"] == {
+        "consistent": True,
+        "agents": [],
+    }
+    assert status["revision_transactions"] == {
+        "count": 0,
+        "by_state": {},
+        "incomplete": [],
+        "dir": str(tmp_path / "transactions"),
+    }
     assert status["gates"]["local_apprentice"] is False
-    assert status["local_server"] is None       # gate off -> no probe
+    assert status["local_server"] is None
 
-
-# --------------------------------------------------------------------------- #
-# Populated state: counts, identity snapshot, staged next command
-# --------------------------------------------------------------------------- #
 
 def test_detects_accumulated_evidence(status_script, shadow_script, tmp_path,
                                       capsys):
@@ -91,7 +108,8 @@ def test_detects_accumulated_evidence(status_script, shadow_script, tmp_path,
     assert status["shadow_records"]["count"] == 2
     assert status["identity"][0]["agent_id"] == "local_apprentice_001"
     assert status["identity"][0]["sessions_analyzed"] == 2
-    # Evidence exists but no proposals yet -> recommend the review step.
+    assert status["identity"][0]["self_revisions_recorded"] == 0
+    assert status["revision_consistency"]["consistent"] is True
     assert "openclaw_review" in status["next_command"]
 
 
@@ -112,9 +130,100 @@ def test_pending_proposals_change_the_next_command(status_script, tmp_path):
     assert "review the proposal files" in status["next_command"]
 
 
-# --------------------------------------------------------------------------- #
-# Local gate: probe only when ON, and a dead server drives the next command
-# --------------------------------------------------------------------------- #
+def test_self_revision_lifecycle_outranks_collecting_more_data(
+        status_script, tmp_path):
+    from backend.dialogues.openclaw_identity import (
+        AgentIdentityProfile,
+        GovernedSelfRevisionRegistry,
+        IdentityRegistry,
+        SelfRevisionProposal,
+        build_self_review_snapshot,
+    )
+
+    agent_id = "local_apprentice_001"
+    profile = AgentIdentityProfile(agent_id=agent_id)
+    proposal = SelfRevisionProposal(
+        proposal_id="REV-STATUS-1",
+        agent_id=agent_id,
+        proposed_by=agent_id,
+        target="identity",
+        action="add_known_failure",
+        value="rushes exact-output tasks",
+        reason="Verified repeated pattern.",
+        evidence_references=("trace/session-1",),
+        risk="The evidence window may be narrow.",
+    )
+    manifest = {
+        "trace/session-1": {
+            "verified": True,
+            "agent_id": agent_id,
+            "source": "trace-harness",
+            "supports": ["identity:add_known_failure"],
+            "value": proposal.value,
+            "verified_by": "evidence-harness",
+            "verification_reference": "report/status-1",
+            "observed_on": "2026-07-10",
+            "outcomes": [],
+        }
+    }
+    IdentityRegistry(tmp_path / "identity").save_profile(profile)
+    snapshot = build_self_review_snapshot(profile, evidence_manifest=manifest)
+    GovernedSelfRevisionRegistry(tmp_path / "self_revisions").submit(
+        proposal, snapshot=snapshot)
+
+    status = status_script.collect_status(_env(tmp_path), probe=_no_probe)
+    assert status["self_revisions"]["count"] == 1
+    assert status["self_revisions"]["by_status"] == {"submitted": 1}
+    assert status["revision_consistency"]["consistent"] is True
+    assert "review self-revision lifecycle" in status["next_command"]
+
+
+def test_orphan_lifecycle_is_reported_before_more_self_review(
+        status_script, tmp_path):
+    from backend.dialogues.openclaw_identity import (
+        AgentIdentityProfile,
+        GovernedSelfRevisionRegistry,
+        SelfRevisionProposal,
+        build_self_review_snapshot,
+    )
+
+    agent_id = "orphan_agent"
+    profile = AgentIdentityProfile(agent_id=agent_id)
+    proposal = SelfRevisionProposal(
+        proposal_id="REV-ORPHAN-1",
+        agent_id=agent_id,
+        proposed_by=agent_id,
+        target="identity",
+        action="add_known_failure",
+        value="forgets constraints",
+        reason="Verified repeated pattern.",
+        evidence_references=("trace/orphan",),
+        risk="Evidence may be incomplete.",
+    )
+    manifest = {
+        "trace/orphan": {
+            "verified": True,
+            "agent_id": agent_id,
+            "source": "trace-harness",
+            "supports": ["identity:add_known_failure"],
+            "value": proposal.value,
+            "verified_by": "evidence-harness",
+            "verification_reference": "report/orphan",
+            "observed_on": "2026-07-10",
+            "outcomes": [],
+        }
+    }
+    GovernedSelfRevisionRegistry(tmp_path / "self_revisions").submit(
+        proposal,
+        snapshot=build_self_review_snapshot(profile, evidence_manifest=manifest),
+    )
+
+    status = status_script.collect_status(_env(tmp_path), probe=_no_probe)
+    assert status["revision_consistency"]["consistent"] is False
+    assert "identity profile is missing" in \
+        status["revision_consistency"]["agents"][0]["issues"][0]
+    assert "inspect identity/lifecycle consistency" in status["next_command"]
+
 
 def test_probe_runs_only_with_gate_and_model(status_script, tmp_path):
     calls = []

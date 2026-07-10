@@ -174,6 +174,8 @@ def _accumulated_profile(agent_id, records, registry):
         version_history=stored.version_history,
         known_failures=stored.known_failures,
         stable_lessons=stored.stable_lessons,
+        soul_principles=stored.soul_principles,
+        revision_history=stored.revision_history,
     )
 
 

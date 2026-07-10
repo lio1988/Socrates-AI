@@ -32,10 +32,6 @@ from backend.dialogues.openclaw_identity import (
 )
 
 
-# --------------------------------------------------------------------------- #
-# Trace builders (shape matches trace_capture.build_session_trace)
-# --------------------------------------------------------------------------- #
-
 def _healthy_trace(sid, winners=None):
     winners = winners or {"core_answer": "seat_a", "blind_spots": "seat_a"}
     moves = [{"move_id": f"m_{sid}_{p}", "phase": ph, "role": "r",
@@ -61,18 +57,25 @@ def _blocked_trace(sid):
                              "ratification_status": "not_ratified"}}
 
 
-# --------------------------------------------------------------------------- #
-# from_record / registry round-trip
-# --------------------------------------------------------------------------- #
+def _base_profile():
+    return build_identity_profile(
+        "seat_a",
+        [_healthy_trace("s1")],
+        known_failures=("over-explains",),
+        stable_lessons=("LESSON-0001",),
+    )
 
-def _promoted_profile():
-    p = build_identity_profile("seat_a", [_healthy_trace("s1")],
-                               known_failures=("over-explains",),
-                               stable_lessons=("LESSON-0001",))
+
+def _promoted_profile(base=None):
+    base = base or _base_profile()
     gate = next_gate_for("v0.1")
     result = evaluate_gate(gate, {"exact_output_failures_delta": -2})
-    return record_promotion(p, result, approved_by="operator",
-                            approved_on="2026-07-10")
+    return record_promotion(
+        base,
+        result,
+        approved_by="operator",
+        approved_on="2026-07-10",
+    )
 
 
 def test_from_record_round_trips_exactly():
@@ -87,7 +90,9 @@ def test_from_record_requires_agent_id():
 
 def test_registry_save_load_round_trip(tmp_path):
     reg = IdentityRegistry(tmp_path / "identities")
-    p = _promoted_profile()
+    base = _base_profile()
+    p = _promoted_profile(base)
+    reg.save_profile(base)
     path = reg.save_profile(p)
     assert path.name == "seat_a.json"
     loaded = reg.load_profile("seat_a")
@@ -119,23 +124,19 @@ def test_registry_all_profiles_sorted(tmp_path):
 
 def test_registry_file_is_readable_json(tmp_path):
     reg = IdentityRegistry(tmp_path)
-    path = reg.save_profile(_promoted_profile())
+    base = _base_profile()
+    reg.save_profile(base)
+    path = reg.save_profile(_promoted_profile(base))
     record = json.loads(path.read_text(encoding="utf-8"))
     assert record["agent_id"] == "seat_a"
     for forbidden in ("api_key", "sk-ant-", "Bearer "):
         assert forbidden not in path.read_text(encoding="utf-8")
 
 
-# --------------------------------------------------------------------------- #
-# Instrument-fed evidence
-# --------------------------------------------------------------------------- #
-
 def test_trace_window_delta_reflects_reduction():
     before = [_blocked_trace("b1"), _blocked_trace("b2")]
     after = [_healthy_trace("a1"), _healthy_trace("a2")]
     evidence = evidence_from_trace_windows(before, after)
-    # Blocked sessions starve phases -> exact_output observations BEFORE,
-    # none AFTER -> negative delta (failures went down).
     assert evidence["exact_output_failures_delta"] < 0
     assert evidence["synthesis_quality_failures_delta"] < 0
 
@@ -148,7 +149,6 @@ def test_empty_window_emits_nothing():
 def test_unmeasurable_metric_stays_absent_and_gate_fails():
     evidence = evidence_from_trace_windows(
         [_blocked_trace("b1")], [_healthy_trace("a1")])
-    # No instrument observes unsupported claims from traces alone (by design).
     assert "unsupported_claim_failures_delta" not in evidence
     gate = next_gate_for("v0.2")
     assert evaluate_gate(gate, evidence).passed is False
@@ -186,25 +186,19 @@ def test_collect_merges_disjoint_sources():
     assert collect_gate_evidence() == {}
 
 
-# --------------------------------------------------------------------------- #
-# The full pipeline composes
-# --------------------------------------------------------------------------- #
-
 def test_end_to_end_traces_to_promotion_to_disk(tmp_path):
-    # 1. Evidence from real instruments (failure deltas via Goal 6 detectors).
     evidence = collect_gate_evidence(
         traces_before=[_blocked_trace("b1"), _blocked_trace("b2")],
         traces_after=[_healthy_trace("a1"), _healthy_trace("a2")],
     )
-    # 2. Profile from traces; gate evaluated on instrument-fed evidence.
     profile = build_identity_profile("seat_a", [_healthy_trace("a1")])
     gate = next_gate_for(profile.identity_version)
     result = evaluate_gate(gate, evidence)
     assert result.passed is True
-    # 3. Human-approved promotion, persisted, reloaded intact.
-    promoted = record_promotion(profile, result, approved_by="operator",
-                                approved_on="2026-07-10")
+    promoted = record_promotion(
+        profile, result, approved_by="operator", approved_on="2026-07-10")
     reg = IdentityRegistry(tmp_path)
+    reg.save_profile(profile)
     reg.save_profile(promoted)
     loaded = reg.load_profile("seat_a")
     assert loaded.identity_version == "v0.2"

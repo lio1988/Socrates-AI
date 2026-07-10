@@ -5,8 +5,8 @@ A Soul Card is a human-readable rendering of an AgentIdentityProfile. It is
 DESCRIPTIVE AND AUDITABLE, NOT AUTHORITY: printing a card changes nothing at
 runtime, grants no permissions, and is never shown to agents as context.
 
-Every line is traceable to profile evidence (trace-derived win rates,
-curator-supplied flaws, gate history). No raw hidden scorecards, no secrets.
+Every line is traceable to profile evidence or an approved append-only
+self-revision. No raw hidden scorecards, no secrets.
 """
 
 from __future__ import annotations
@@ -62,6 +62,8 @@ def render_soul_card(profile: AgentIdentityProfile) -> str:
 
     flaws = ("\n".join(f"  - {f}" for f in profile.known_failures)
              if profile.known_failures else "  - none recorded")
+    principles = ("\n".join(f"  - {p}" for p in profile.soul_principles)
+                  if profile.soul_principles else "  - none approved")
     lessons = (", ".join(profile.stable_lessons)
                if profile.stable_lessons else "none recorded")
 
@@ -76,10 +78,13 @@ def render_soul_card(profile: AgentIdentityProfile) -> str:
         f"Weak role: {_role_line(profile, weak)}",
         "Known flaws:",
         flaws,
+        "Approved soul principles:",
+        principles,
         f"Stable lessons: {lessons}",
         f"Sessions analyzed: {profile.sessions_analyzed} "
         f"(ratified: {profile.ratified_sessions})",
         f"Promotions recorded: {len(profile.version_history)}",
+        f"Self-revisions recorded: {len(profile.revision_history)}",
         f"Next promotion gate: {gate_line}",
         "-" * len(CARD_HEADER),
         GUIDING_SENTENCE,
