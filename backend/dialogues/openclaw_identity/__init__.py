@@ -68,6 +68,12 @@ from .revision_reversal import (
     build_reversal_proposal,
     is_canonical_reversal,
 )
+from .revision_evidence import (
+    EVIDENCE_SCHEMA_VERSION,
+    RevisionEvidenceRecord,
+    RevisionEvidenceRegistry,
+    evidence_from_record,
+)
 from .soul_card import CARD_HEADER, GUIDING_SENTENCE, render_soul_card
 
 __all__ = [
@@ -109,6 +115,10 @@ __all__ = [
     "INVERSE_REVISION_ACTIONS",
     "build_reversal_proposal",
     "is_canonical_reversal",
+    "EVIDENCE_SCHEMA_VERSION",
+    "RevisionEvidenceRecord",
+    "RevisionEvidenceRegistry",
+    "evidence_from_record",
     "CARD_HEADER",
     "GUIDING_SENTENCE",
     "render_soul_card",
