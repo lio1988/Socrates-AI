@@ -26,6 +26,7 @@ No providers, network, API keys, prompt mutation, or CED authority changes.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 import pathlib
@@ -94,8 +95,7 @@ def _load_report(path_text: str) -> tuple[pathlib.Path, Mapping[str, Any]]:
 def _normalize_action(value: str) -> str:
     action = _ACTIONS.get(str(value or "").strip().lower())
     if action is None:
-        raise ValueError(
-            "Lesson A/B action must be link or unlink")
+        raise ValueError("Lesson A/B action must be link or unlink")
     return action
 
 
@@ -133,6 +133,14 @@ def _validate_report_identity(
     if report_verifier.casefold() != verified_by.casefold():
         raise ValueError(
             "--verified-by must match the named verifier stored in the report")
+    observed_on = str(report.get("observed_on", "")).strip()
+    if not observed_on:
+        raise ValueError("Lesson A/B report requires observed_on")
+    try:
+        _dt.date.fromisoformat(observed_on)
+    except ValueError as exc:
+        raise ValueError(
+            "Lesson A/B report observed_on must use YYYY-MM-DD") from exc
 
 
 def _validate_current_state(
@@ -214,6 +222,7 @@ def main(argv=None, env=None) -> int:
     print(f"  lesson         : {evidence.value}")
     print(f"  report         : {report_path}")
     print(f"  attested by    : {verified_by}")
+    print(f"  observed on    : {evidence.observed_on}")
     print(f"  evidence       : {evidence.reference}")
     print(f"  registry       : {evidence_dir}")
     print("-" * _W)
