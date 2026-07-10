@@ -7,7 +7,7 @@ agree with each other. This module detects drift such as:
 - a lifecycle marked applied while the identity history lacks its entry;
 - a mismatched revision index or digest;
 - a pre-application proposal already present in the profile;
-- a reverted original whose applied canonical inverse is absent.
+- a reverted original whose later confirmed canonical inverse is absent.
 
 Nothing is mutated. Operators may fail closed with
 ``assert_revision_state_consistent`` before producing Soul Cards or status.
@@ -144,14 +144,24 @@ def reconcile_revision_state(
             issues.append(
                 f"reverted lifecycle {proposal_id} has no linked reversal record")
             continue
-        if linked.get("status") not in {"probationary", "confirmed"}:
+        if linked.get("status") != "confirmed":
             issues.append(
-                f"reverted lifecycle {proposal_id} links an unapplied reversal")
+                f"reverted lifecycle {proposal_id} links an inverse that is not confirmed")
+        original_applied = _single_applied_event(lifecycle)
         linked_applied = _single_applied_event(linked)
         if linked_applied is None:
             issues.append(
                 f"reverted lifecycle {proposal_id} links a reversal without one "
                 "application event")
+        if original_applied is not None and linked_applied is not None:
+            original_index = original_applied.get("revision_index")
+            linked_index = linked_applied.get("revision_index")
+            if not isinstance(original_index, int) or not isinstance(linked_index, int):
+                issues.append(
+                    f"reverted lifecycle {proposal_id} has invalid revision indexes")
+            elif linked_index <= original_index:
+                issues.append(
+                    f"reverted lifecycle {proposal_id} links an inverse not applied later")
         try:
             original = proposal_from_record(
                 lifecycle.get("proposal") or {},
@@ -170,7 +180,7 @@ def reconcile_revision_state(
                 f"reverted lifecycle {proposal_id} links a non-canonical reversal")
         if linked_id not in profile_by_id:
             issues.append(
-                f"applied reversal {linked_id} is absent from identity history")
+                f"confirmed reversal {linked_id} is absent from identity history")
 
     unique_issues = tuple(dict.fromkeys(issues))
     return RevisionConsistencyReport(
