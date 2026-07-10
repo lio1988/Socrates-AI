@@ -66,6 +66,10 @@ def _manifest():
             "source": "trace-harness",
             "supports": ["identity:add_known_failure"],
             "value": "rushes exact-output tasks",
+            "verified_by": "evidence-harness",
+            "verification_reference": "report/trace-1",
+            "observed_on": "2026-07-10",
+            "outcomes": [],
         }
     }
 
@@ -106,7 +110,7 @@ def test_missing_profile_fails_without_artifacts(
     assert not (tmp_path / "review").exists()
 
 
-def test_happy_path_writes_bounded_artifacts_from_legacy_manifest(
+def test_happy_path_writes_bounded_artifacts_from_named_legacy_manifest(
         self_review_script, tmp_path, capsys):
     env = _env(tmp_path)
     IdentityRegistry(env["CED_IDENTITY_DIR"]).save_profile(_profile())
@@ -125,14 +129,34 @@ def test_happy_path_writes_bounded_artifacts_from_legacy_manifest(
     assert instruction_path.exists()
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot["agent_id"] == AGENT
-    assert snapshot["snapshot_version"] == "openclaw_self_review_v2"
+    assert snapshot["snapshot_version"] == "openclaw_self_review_v3"
+    assert snapshot["profile_fingerprint"]
+    assert snapshot["governed_profile_fingerprint"]
     assert len(snapshot["verified_evidence"]) == 1
+    assert snapshot["verified_evidence"][0]["verified_by"] == \
+        "evidence-harness"
+    assert snapshot["verified_evidence"][0]["verification_reference"] == \
+        "report/trace-1"
     assert snapshot["pending_proposal_ids"] == []
     assert "Return exactly one JSON object" in instruction_path.read_text(
         encoding="utf-8")
+    assert "Evidence provenance:" in summary_path.read_text(encoding="utf-8")
     assert "Nothing was activated" in out
     assert list(review_dir.glob("*.tmp")) == []
     assert list(review_dir.glob(".*.tmp")) == []
+
+
+def test_anonymous_legacy_verified_true_is_refused(
+        self_review_script, tmp_path, capsys):
+    env = _env(tmp_path)
+    IdentityRegistry(env["CED_IDENTITY_DIR"]).save_profile(_profile())
+    anonymous = _manifest()
+    anonymous["trace/session-1"].pop("verified_by")
+    Path(env["CED_SELF_REVISION_EVIDENCE"]).write_text(
+        json.dumps(anonymous), encoding="utf-8")
+    assert self_review_script.main(["prog", AGENT], env=env) == 1
+    assert "verified_by" in capsys.readouterr().out
+    assert not Path(env["CED_SELF_REVIEW_DIR"]).exists()
 
 
 def test_immutable_evidence_registry_is_used_without_legacy_json(
