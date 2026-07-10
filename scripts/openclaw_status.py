@@ -1,9 +1,10 @@
 """
 OpenClaw status — one command that answers "what is going on?".
 
-Offline and read-only: counts what exists on disk, shows the env gates, and
-recommends the next command. The ONLY optional network touch is a probe of
-the LOCAL server, and only when the local-apprentice gate is already ON.
+Offline and read-only: counts what exists on disk, shows the env gates, checks
+cross-registry consistency, and recommends the next command. The ONLY optional
+network touch is a probe of the LOCAL server, and only when the local-apprentice
+gate is already ON.
 
     .\.venv\Scripts\python.exe scripts\openclaw_status.py
     .\.venv\Scripts\python.exe scripts\openclaw_status.py --json
@@ -29,9 +30,10 @@ from backend.dialogues.openclaw_memory import (                       # noqa: E4
     parse_memory_lessons,
 )
 from backend.dialogues.openclaw_identity import (                     # noqa: E402
+    GovernedSelfRevisionRegistry,
     IdentityRegistry,
-    SelfRevisionRegistry,
     SelfRevisionTransactionCoordinator,
+    reconcile_revision_state,
 )
 from backend.dialogues.openclaw_local import (                        # noqa: E402
     LOCAL_GATE_ENV,
@@ -74,6 +76,35 @@ def _status_counts(records):
     return {key: by_status[key] for key in sorted(by_status)}
 
 
+def _revision_consistency(profiles, lifecycle_records):
+    records_by_agent = {}
+    for record in lifecycle_records:
+        records_by_agent.setdefault(record["agent_id"], []).append(record)
+
+    reports = []
+    profile_ids = set()
+    for profile in profiles:
+        profile_ids.add(profile.agent_id)
+        reports.append(reconcile_revision_state(
+            profile, records_by_agent.get(profile.agent_id, ())).to_record())
+
+    for agent_id in sorted(set(records_by_agent) - profile_ids):
+        reports.append({
+            "agent_id": agent_id,
+            "consistent": False,
+            "issues": [
+                "lifecycle records exist but the identity profile is missing"
+            ],
+            "profile_revision_count": 0,
+            "lifecycle_record_count": len(records_by_agent[agent_id]),
+        })
+
+    return {
+        "consistent": all(report["consistent"] for report in reports),
+        "agents": reports,
+    }
+
+
 def collect_status(env=None, *, probe=probe_local_server):
     """Everything the operator needs to know, as one dict (offline)."""
     env = os.environ if env is None else env
@@ -98,7 +129,7 @@ def collect_status(env=None, *, probe=probe_local_server):
     traces = load_traces(trace_dir)
     shadow_records = load_jsonl(shadow_path)
     identity_registry = IdentityRegistry(identity_dir)
-    lifecycle_registry = SelfRevisionRegistry(self_revision_dir)
+    lifecycle_registry = GovernedSelfRevisionRegistry(self_revision_dir)
     profiles = identity_registry.all_profiles()
     lessons_pending, patches_pending = _count_proposals(proposals_dir)
     self_revision_records = lifecycle_registry.all_records()
@@ -107,6 +138,7 @@ def collect_status(env=None, *, probe=probe_local_server):
         lifecycle_registry,
         transaction_dir,
     ).all_transactions()
+    consistency = _revision_consistency(profiles, self_revision_records)
 
     local_gate = env.get(LOCAL_GATE_ENV, "").strip() == "1"
     local_model = env.get(LOCAL_MODEL_ENV, "").strip()
@@ -150,6 +182,7 @@ def collect_status(env=None, *, probe=probe_local_server):
             "by_status": _status_counts(self_revision_records),
             "dir": str(self_revision_dir),
         },
+        "revision_consistency": consistency,
         "revision_transactions": {
             "count": len(transaction_records),
             "by_state": _status_counts(transaction_records),
@@ -169,13 +202,18 @@ def collect_status(env=None, *, probe=probe_local_server):
 
 
 def _next_command(status) -> str:
-    """One honest recommendation, prioritizing recovery and human decisions."""
+    """One honest recommendation, prioritizing recovery and integrity."""
     incomplete = status["revision_transactions"]["incomplete"]
     if incomplete:
         transaction = incomplete[0]
         return (
             "python scripts/openclaw_recover_revision.py "
             f"{transaction['agent_id']} {transaction['proposal_id']}"
+        )
+    if not status["revision_consistency"]["consistent"]:
+        return (
+            "inspect identity/lifecycle consistency issues before generating "
+            "new self-review proposals"
         )
     if status["local_server"] is not None and not status["local_server"]["reachable"]:
         return ("start your local server (e.g. `ollama serve`), then: "
@@ -247,6 +285,14 @@ def main(argv=None, env=None, *, probe=probe_local_server) -> int:
     ]
     print(f"  self-revisions   : total={revisions['count']}"
           f" | {'; '.join(revision_parts) if revision_parts else 'none'}")
+    consistency = status["revision_consistency"]
+    print(f"  registry binding : "
+          f"{'consistent' if consistency['consistent'] else 'INCONSISTENT'}")
+    for report in consistency["agents"]:
+        if report["consistent"]:
+            continue
+        for issue in report["issues"]:
+            print(f"    INTEGRITY: {report['agent_id']}: {issue}")
     transactions = status["revision_transactions"]
     transaction_parts = [
         f"{name}={count}" for name, count in transactions["by_state"].items()
