@@ -94,6 +94,57 @@ def test_earned_version_cannot_change_without_history_transition(tmp_path):
         registry.save_profile(forged)
 
 
+def test_forged_noncanonical_version_jump_is_refused(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    original = _profile()
+    registry.save_profile(original)
+
+    forged_entry = {
+        "from_version": "v0.1",
+        "to_version": "v99.0",
+        "gate_id": "gate_v0_1_to_v0_2",
+        "approved_by": "operator",
+    }
+    forged = dataclasses.replace(
+        original,
+        identity_version="v99.0",
+        next_gate=None,
+        version_history=(forged_entry,),
+    )
+    with pytest.raises(ValueError, match="canonical gate"):
+        registry.save_profile(forged)
+
+
+def test_forged_stage_skip_and_self_approval_are_refused(tmp_path):
+    registry = IdentityRegistry(tmp_path)
+    original = _profile()
+    registry.save_profile(original)
+
+    skipped = dataclasses.replace(
+        original,
+        promotion_status="shadow_apprentice",
+        version_history=({
+            "from_status": "base_agent",
+            "to_status": "shadow_apprentice",
+            "approved_by": "operator",
+        },),
+    )
+    with pytest.raises(ValueError, match="one ladder rung"):
+        registry.save_profile(skipped)
+
+    self_approved = dataclasses.replace(
+        original,
+        promotion_status="memory_aware",
+        version_history=({
+            "from_status": "base_agent",
+            "to_status": "memory_aware",
+            "approved_by": original.agent_id,
+        },),
+    )
+    with pytest.raises(ValueError, match="own identity transition"):
+        registry.save_profile(self_approved)
+
+
 def test_legitimate_promotion_appends_and_persists(tmp_path):
     registry = IdentityRegistry(tmp_path)
     original = _profile()
