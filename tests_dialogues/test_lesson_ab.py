@@ -124,10 +124,21 @@ def test_poisonous_lessons_detected_as_harmed(stable_pool):
     assert report["helped"] is False and report["verdict"] == "harmed"
 
 
-def test_no_selection_means_untested(stable_pool):
-    # A question matching no lesson keywords: retrieval selects nothing, the
-    # arms are trivially identical — honest "untested", never a verdict.
-    report = _run(["xyzzy plugh"], stable_pool,
+def test_no_selection_means_untested():
+    # A pool whose only lesson type matches NO deliberation phase and no
+    # keyword of the question: nothing is ever injected, the arms are
+    # trivially identical — honest "untested", never a verdict. (A pool of
+    # stable lessons does NOT qualify: runtime retrieval is phase-aware and
+    # injects phase-matched lessons even for keyword-less questions — the
+    # injected-context ledger made the audit report that reality.)
+    from backend.dialogues.openclaw_memory import MemoryLesson
+    unmatched_pool = [MemoryLesson(
+        lesson_id="LESSON-0999", name="Ratification-only lesson",
+        status="stable", lesson_type="ratification_quality",
+        source="test", use_when=(), problem_pattern="p",
+        bad_pattern="b", good_pattern="g",
+        lesson="Verify the verdict follows the stress test.", risk="r")]
+    report = _run(["xyzzy plugh"], unmatched_pool,
                   council_factory=_rigged_factory())
     assert report["tested"] == 0 and report["untested"] == 1
     assert report["questions"][0]["reason"] == "no_lessons_selected"

@@ -321,6 +321,20 @@ Acceptance criteria:
 
 ## Goal 8 — Prompt patch generator
 
+**Status: DONE (v0).** Implemented as
+`backend/dialogues/openclaw_prompts/patch_proposer.py` with tests in
+`tests_dialogues/test_patch_proposer.py`. The mirror image of the lesson
+proposer: the SAME Goal 6 failure detectors over Goal 5 traces,
+repeated-only gating (min 2 sessions), deterministic ids in the reserved
+PATCH-9001+ provisional range. Every proposal is `status="proposed"` with
+the policy audit fields filled (reason carries the observed session ids,
+expected effect, risk) — and the Goal 7 registry mechanically blocks
+proposals from default renders (test-locked), so a proposal reaches a
+rendered prompt only through an explicitly NAMED candidate A/B run and a
+human promotion. `attach_proposals(spec, patches)` is non-mutating. No
+detector observes unsupported claims yet, so that example patch cannot be
+proposed until a real instrument exists (same honest gap as the lessons).
+
 Later, after enough traces exist, build a Prompt Patch Generator.
 
 It should not rewrite prompts from scratch.
@@ -387,6 +401,25 @@ Acceptance criteria:
 
 ## Goal 10 — Local LLM provider for OpenClaw
 
+**Status: DONE (v0).** Implemented as
+`backend/dialogues/openclaw_local/local_provider.py` with tests in
+`tests_dialogues/test_local_provider.py`. `LocalLLMAdapter` targets any
+OpenAI-compatible localhost endpoint (Ollama default
+`http://localhost:11434/v1`, LM Studio, llama.cpp, vLLM) and INHERITS the
+proven transport/retry/redaction/no-fabrication/JSON-repair machinery from
+the existing OpenAI-compatible adapter — one transport, two flavors. No API
+key required (local availability = enabled). Explicitly gated:
+`CED_ENABLE_LOCAL_APPRENTICE=1` + `CED_LOCAL_LLM_MODEL` (+ optional
+`CED_LOCAL_LLM_URL`/`_TIMEOUT`/`_KEY`), env-only, never `.env`; a missing
+gate or model is a clean skip with the exact instruction, never an error;
+`probe_local_server` gives a helpful "is Ollama running?" hint on a dead
+server. Default provider id is `local_apprentice_001` — the design-target
+identity holder. `build_local_shadow_apprentice` bridges straight into the
+Goal 11 runner (test-locked e2e: canned local output shadows a council and
+wins rigged sections with zero network). The CED core never imports the
+package: the local model enters the council only through the Promotion
+Arena.
+
 Add a local provider adapter so OpenClaw can run a local model as an agent.
 
 Possible backends:
@@ -411,6 +444,24 @@ Acceptance criteria:
 ---
 
 ## Goal 11 — OpenClaw Shadow Apprentice Mode
+
+**Status: DONE (v0, Stage 1).** Implemented as
+`backend/dialogues/openclaw_shadow/shadow_apprentice.py` with tests in
+`tests_dialogues/test_shadow_apprentice.py`. The `ShadowApprentice` runner:
+the council runs normally FIRST (final answer exists before the apprentice
+moves); the apprentice receives the same question plus the same selected
+memory lessons (identical context key as the CED wiring); a judge panel
+(never the apprentice) scores its five-section draft blind under a neutral
+label; each section is compared against the council's actual assembled
+winner — a shadow win requires STRICTLY beating the council score (ties
+earn nothing). Every session emits a marked shadow record
+(`shadow_run=True`, the Goal 13.2 capture-time marker) that the existing
+identity evidence path consumes unchanged: 3 verified shadow blind-spot
+wins pass identity gate v0.3→v0.4 end-to-end (test-locked). Mechanically
+guaranteed: an apprentice sitting in the council it shadows is refused; a
+failed draft is an honest `ok=False`; the council final is byte-identical
+with and without shadowing. Stage 2+ (contributing low-risk sections)
+remains future work behind the Promotion Arena gate.
 
 Create a safe training mode where the local agent observes and compares before it becomes a full council member.
 
@@ -563,6 +614,32 @@ docs-side history): identity registry + instrument-fed gate evidence
 (`845bcf9`) and capture-time shadow-run markers with verified shadow
 evidence (`196a892`). Still deliberately open: auto-linking
 lesson-proposer patterns to `known_failures`.
+
+---
+
+## Goal 15 — Operator communication layer
+
+**Status: DONE (v0).** The nervous system between the runtime and its human:
+
+- `OPERATOR_GUIDE.md` (canonical `OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE`)
+  — one page: every mode (demo shadow, real Ollama, council dialogue,
+  review, lesson A/B, human promotion checklist), the run-manifest concept,
+  troubleshooting, and the constitution.
+- `scripts/openclaw_status.py` — offline joined-up view (`--json` for
+  machines): stable lessons, trace/shadow counts, identity registry
+  snapshot, pending proposals, env gates, local-server probe ONLY when the
+  gate is already on, and one honest "next command" (a waiting human
+  decision always outranks collecting more data).
+- Injected-context ledger — the audit (and every trace) now reports the
+  lessons that ACTUALLY entered each phase/agent context at injection time,
+  never a question-only re-run of retrieval that could disagree with the
+  phase-aware runtime. Closed the "what we think entered vs what entered"
+  gap; the fix immediately exposed and corrected a wrong premise in a
+  lesson-A/B test.
+- Every operator script ends with a "Next:" section.
+
+Deliberately future: per-run MANIFEST.json bundle (documented in the guide),
+`--json` for the other scripts, promotion packet files.
 
 ---
 

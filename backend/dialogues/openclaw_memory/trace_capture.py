@@ -125,6 +125,42 @@ def build_session_trace(
     return trace
 
 
+def load_jsonl(path: Path | str) -> List[Dict[str, Any]]:
+    """Read one JSONL file of records; malformed lines are skipped honestly
+    (a corrupt line must not destroy the rest of the history). Missing file
+    returns [] — an empty history is a state, not an error."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    records: List[Dict[str, Any]] = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def load_traces(directory: Path | str) -> List[Dict[str, Any]]:
+    """Load every trace from a capture directory (the read-back side of
+    ``TraceCapturer(output_dir=...)`` — cross-session learning needs to read
+    yesterday's traces, not only this process's memory). Deterministic:
+    files in sorted name order, lines in file order. Missing directory
+    returns []."""
+    d = Path(directory)
+    if not d.exists():
+        return []
+    traces: List[Dict[str, Any]] = []
+    for path in sorted(d.glob("*.jsonl")):
+        traces.extend(load_jsonl(path))
+    return traces
+
+
 class TraceCapturer:
     """In-memory trace collector with optional JSONL file output.
 

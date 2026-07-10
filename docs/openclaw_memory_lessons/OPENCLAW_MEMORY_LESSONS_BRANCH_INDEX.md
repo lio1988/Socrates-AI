@@ -66,6 +66,11 @@ OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY
   File: docs/openclaw_memory_lessons/PROMPT_REGISTRY.md
   Purpose: Versioned prompt lineage — specs, provider patches with the
   lesson lifecycle, content-addressed fingerprints, trace metadata.
+
+OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE
+  File: docs/openclaw_memory_lessons/OPERATOR_GUIDE.md
+  Purpose: One-page command map — every mode, every artifact, every
+  decision that needs a human hand, plus troubleshooting.
 ```
 
 Related document outside this folder:
@@ -95,6 +100,7 @@ TREE_MEMORY = OPENCLAW_MEMORY_LESSONS_TREE_MEMORY_MAP
 IDENTITY    = OPENCLAW_MEMORY_LESSONS_AGENT_IDENTITY
 SOUL_CARD   = OPENCLAW_MEMORY_LESSONS_AGENT_SOUL_CARD
 PROMPT_REGISTRY = OPENCLAW_MEMORY_LESSONS_PROMPT_REGISTRY
+OPERATOR_GUIDE = OPENCLAW_MEMORY_LESSONS_OPERATOR_GUIDE
 ```
 
 ## Naming rule for future docs
@@ -122,8 +128,15 @@ backend/dialogues/openclaw_identity/   # landed: identity_profile, promotion_pol
 backend/dialogues/openclaw_tree/       # reserved (tree runtime landed CED-side as
                                        # backend/dialogues/deliberation_tree.py)
 backend/dialogues/openclaw_prompts/    # landed: prompt_registry (versioned specs,
-                                       # provider patches, fingerprints —
-                                       # runtime-inert until explicitly wired)
+                                       # provider patches, fingerprints) +
+                                       # patch_proposer (failures -> PROPOSED
+                                       # patches) — runtime-inert until wired
+backend/dialogues/openclaw_shadow/     # landed: shadow_apprentice (Stage 1
+                                       # runner — observes, gets judged,
+                                       # never touches the council)
+backend/dialogues/openclaw_local/      # landed: local_provider (gated local
+                                       # OpenAI-compatible adapter — the
+                                       # local_apprentice_001 seat)
 ```
 
 Avoid vague names such as:

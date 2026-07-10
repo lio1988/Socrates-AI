@@ -309,6 +309,9 @@ class CEDOrchestrator:
         self.tree_expansions = int(tree_expansions)
         self.tree_exploration = float(tree_exploration)
         self._tree_audits: Dict[str, Dict[str, Any]] = {}
+        # Injected-context ledger: per session, which OpenClaw lessons ACTUALLY
+        # entered which phase/agent context (CED-owned; feeds the audit).
+        self._injected_lessons: Dict[str, List[Dict[str, Any]]] = {}
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
@@ -661,6 +664,14 @@ class CEDOrchestrator:
             )
             if retrieved:
                 base["openclaw_memory_lessons"] = render_memory_lessons_block(retrieved)
+                # Injected-context ledger: record what ACTUALLY entered this
+                # context (per phase/agent), so the audit reports reality —
+                # never a re-run of retrieval that may disagree with it.
+                self._injected_lessons.setdefault(state.session_id, []).append({
+                    "phase": phase.value,
+                    "agent_id": agent_id,
+                    "lesson_ids": [r.lesson_id for r in retrieved],
+                })
         specific = self._phase_specific_context(state, phase, agent_id)
         base.update(specific)
         return base
@@ -1218,19 +1229,23 @@ class CEDOrchestrator:
         }
 
     def _openclaw_audit(self, state: SessionState) -> Optional[Dict[str, Any]]:
-        """OpenClaw Memory Lessons audit (CED-owned, hidden from agents)."""
+        """OpenClaw Memory Lessons audit (CED-owned, hidden from agents).
+
+        Reports the injected-context LEDGER — what actually entered agent
+        contexts during the session, per phase/agent — never a fresh re-run
+        of retrieval, which could disagree with runtime reality (runtime
+        retrieval is phase-aware; a question-only re-run is not)."""
         if self.openclaw_lessons is None:
             return None
-        from .openclaw_memory import retrieve_lessons
-        retrieved = retrieve_lessons(
-            self.openclaw_lessons,
-            task_text=state.question,
-        )
+        injections = self._injected_lessons.get(state.session_id, [])
+        selected = sorted({lid for inj in injections
+                           for lid in inj["lesson_ids"]})
         return {
             "enabled": True,
             "pool_size": len(self.openclaw_lessons),
-            "selected": [r.lesson_id for r in retrieved],
-            "selected_count": len(retrieved),
+            "selected": selected,
+            "selected_count": len(selected),
+            "injections": injections,
         }
 
     def _registry_scoring_audit(self, state: SessionState) -> Dict[str, Any]:

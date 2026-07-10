@@ -47,6 +47,8 @@ from .context_injection import (
 from .trace_capture import (
     TraceCapturer,
     build_session_trace,
+    load_jsonl,
+    load_traces,
 )
 from .lesson_proposer import (
     DEFAULT_MIN_OCCURRENCES,
@@ -87,6 +89,8 @@ __all__ = [
     "select_lessons_for_task",
     "TraceCapturer",
     "build_session_trace",
+    "load_jsonl",
+    "load_traces",
     "DEFAULT_MIN_OCCURRENCES",
     "PROPOSAL_ID_START",
     "aggregate_failures",
