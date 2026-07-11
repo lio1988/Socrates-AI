@@ -196,3 +196,42 @@ This v1 reads the current completed `SessionState`, tree audit and real scorecar
 - changed question, provider, judges, benchmark keys, threshold and tree budget refusal;
 - secret-shaped input rejection;
 - deterministic summaries.
+
+
+## Retained Tree Evidence Operator Bridge (phase 2)
+
+Live sessions evaporate with the process, so the bridge retains EXACTLY the
+fields the extractor reads as one digest-bound artifact and replays them
+through the SAME code path:
+
+```text
+completed session
+  -> retain_tree_session / save_tree_session_artifact
+     (openclaw_tree_session_artifact_v1: ids, attribution, matched scores,
+      tree audit - no draft texts, no prompts, no keys, tamper-evident)
+  -> scripts/openclaw_tree_evidence.py <artifact>
+     (read-only: recomputes observations, writes
+      openclaw_tree_evidence_report_v1 with per-agent summaries and the
+      exact observation digests; registers NOTHING)
+  -> human review of the report
+  -> scripts/openclaw_attest_tree_evidence.py <agent>
+       --report <report> --kind failure|resolution
+       --observation <digest> ... | --before/--after <digest> ...
+       --pattern-key ... --weakness ... (curator inputs, never invented)
+       --verified-by "Name" --verification-reference <ref>
+     (re-verifies report digest + every cited observation digest, then the
+      strict governed builders re-validate everything; registers ONE
+      immutable evidence record; idempotent on exact rerun, a different
+      selection/verifier/review artifact is a NEW record)
+  -> bounded self-review -> proposal -> independent evaluation
+     -> named non-self decision -> probation -> confirm or revert
+```
+
+Round-trip equality is test-locked: a retained artifact yields byte-identical
+observations (and digests) to the live session it captured. Tampering with
+the artifact, the report, or any cited observation fails closed. Neither
+script proposes, approves, applies, links Memory, or touches Identity/Soul.
+
+Later, when a canonical event ledger exists, the retention step is replaced
+by a TreeRevisionProjection over canonical tree events feeding the SAME
+observation schema and the SAME attestation contract.

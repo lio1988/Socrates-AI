@@ -113,6 +113,13 @@ from .tree_revision_evidence import (
     extract_tree_revision_observations,
     summarize_tree_revision_observations,
 )
+from .tree_session_retention import (
+    TREE_SESSION_ARTIFACT_VERSION,
+    RetainedTreeSession,
+    load_tree_session_artifact,
+    retain_tree_session,
+    save_tree_session_artifact,
+)
 from .revision_transaction import TRANSACTION_SCHEMA_VERSION
 from .soul_card import CARD_HEADER, GUIDING_SENTENCE, render_soul_card
 
@@ -190,6 +197,11 @@ __all__ = [
     "build_tree_revision_resolution_evidence",
     "extract_tree_revision_observations",
     "summarize_tree_revision_observations",
+    "TREE_SESSION_ARTIFACT_VERSION",
+    "RetainedTreeSession",
+    "load_tree_session_artifact",
+    "retain_tree_session",
+    "save_tree_session_artifact",
     "TRANSACTION_SCHEMA_VERSION",
     "CARD_HEADER",
     "GUIDING_SENTENCE",
