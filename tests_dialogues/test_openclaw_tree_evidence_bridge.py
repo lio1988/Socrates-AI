@@ -306,3 +306,43 @@ def test_attest_resolution_refuses_unmatched_windows(attest_script, tmp_path,
     assert attest_script.main(argv, env=env) == 1
     assert "matched comparison keys" in capsys.readouterr().out
     assert not (tmp_path / "evidence").exists()
+
+
+# --------------------------------------------------------------------------- #
+# Non-OK DraftScorecard guard on REAL model objects
+# (DraftScorecard.provider_status exists - models.py:414 - so this guard is
+# live in production, not only against duck-typed fixtures.)
+# --------------------------------------------------------------------------- #
+
+def _with_modified_card(state, **updates):
+    """Copy the session with ONE real scorecard modified (fixture untouched)."""
+    cards = list(state.draft_scorecards)
+    index = next(i for i, card in enumerate(cards) if card.section_scores)
+    cards[index] = cards[index].model_copy(update=updates)
+    return state.model_copy(update={"draft_scorecards": cards}), cards[index]
+
+
+def test_non_ok_scorecard_with_scores_fails_closed(live_session):
+    from backend.dialogues.models import ProviderStatus
+    state, final = live_session
+    broken_state, card = _with_modified_card(
+        state, provider_status=ProviderStatus.ERROR)
+    assert card.section_scores                       # contradiction is real
+    with pytest.raises(ValueError, match="non-OK scorecard"):
+        extract_tree_revision_observations(broken_state, final)
+
+
+def test_non_ok_scorecard_without_scores_is_ignored_not_fabricated(
+        live_session):
+    from backend.dialogues.models import ProviderStatus
+    state, final = live_session
+    baseline = extract_tree_revision_observations(state, final)
+    skipped_state, card = _with_modified_card(
+        state, provider_status=ProviderStatus.ERROR, section_scores=[])
+    observations = extract_tree_revision_observations(skipped_state, final)
+    # The failed voter's scores simply vanish from the matched intersection:
+    # never an error, never a fabricated zero, never MORE evidence.
+    assert len(observations) <= len(baseline)
+    for item in observations:
+        assert card.voter_agent_id not in item.judge_ids or \
+            item.matched_score_count > 0
