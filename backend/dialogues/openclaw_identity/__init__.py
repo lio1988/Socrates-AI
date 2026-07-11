@@ -104,6 +104,22 @@ from .revision_evidence_builders_hardened import (
     build_identity_resolution_evidence,
     build_soul_attestation_evidence,
 )
+from .tree_revision_evidence import (
+    TREE_EVIDENCE_SOURCE,
+    TREE_REVISION_OBSERVATION_VERSION,
+    TreeRevisionObservation,
+    build_tree_revision_failure_evidence,
+    build_tree_revision_resolution_evidence,
+    extract_tree_revision_observations,
+    summarize_tree_revision_observations,
+)
+from .tree_session_retention import (
+    TREE_SESSION_ARTIFACT_VERSION,
+    RetainedTreeSession,
+    load_tree_session_artifact,
+    retain_tree_session,
+    save_tree_session_artifact,
+)
 from .revision_transaction import TRANSACTION_SCHEMA_VERSION
 from .soul_card import CARD_HEADER, GUIDING_SENTENCE, render_soul_card
 
@@ -174,6 +190,18 @@ __all__ = [
     "build_identity_failure_evidence",
     "build_identity_resolution_evidence",
     "build_soul_attestation_evidence",
+    "TREE_EVIDENCE_SOURCE",
+    "TREE_REVISION_OBSERVATION_VERSION",
+    "TreeRevisionObservation",
+    "build_tree_revision_failure_evidence",
+    "build_tree_revision_resolution_evidence",
+    "extract_tree_revision_observations",
+    "summarize_tree_revision_observations",
+    "TREE_SESSION_ARTIFACT_VERSION",
+    "RetainedTreeSession",
+    "load_tree_session_artifact",
+    "retain_tree_session",
+    "save_tree_session_artifact",
     "TRANSACTION_SCHEMA_VERSION",
     "CARD_HEADER",
     "GUIDING_SENTENCE",
