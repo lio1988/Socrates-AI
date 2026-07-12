@@ -29,6 +29,10 @@ from backend.dialogues.openclaw_consultation import (
 )
 from backend.dialogues.openclaw_consultation import receipts as receipts_mod
 from backend.dialogues.openclaw_consultation.schemas import sha256_text
+# The atomic publication algorithm now lives in the shared primitive; fake-clock
+# tests patch its module-local `time` (os/uuid are global singletons and are
+# still patched via receipts_mod.os / receipts_mod.uuid).
+from backend.dialogues import openclaw_receipts as core_mod
 
 
 def _broken_link(src, dst):
@@ -367,7 +371,7 @@ def test_fallback_transient_delete_pending_permission_error_retries(
             raise PermissionError(13, "simulated DELETE_PENDING", name)
         return real_open(name, flags)
 
-    monkeypatch.setattr(receipts_mod, "time", clock)
+    monkeypatch.setattr(core_mod, "time", clock)
     monkeypatch.setattr(receipts_mod.os, "open", transient_open)
     assert store.save(receipt) == path
     assert len(attempts) == 4
@@ -393,7 +397,7 @@ def test_fallback_permanent_permission_error_is_bounded_and_canonical(
         attempts.append(name)
         raise PermissionError(13, "persistent DELETE_PENDING", name)
 
-    monkeypatch.setattr(receipts_mod, "time", clock)
+    monkeypatch.setattr(core_mod, "time", clock)
     monkeypatch.setattr(receipts_mod.os, "open", denied_open)
     with pytest.raises(ConsultationError,
                        match="publication lock timed out"):
@@ -442,7 +446,7 @@ def test_fallback_delete_pending_reconciles_peer_publication_without_overwrite(
         path.write_bytes(winner_bytes)
         raise PermissionError(13, "simulated DELETE_PENDING", name)
 
-    monkeypatch.setattr(receipts_mod, "time", clock)
+    monkeypatch.setattr(core_mod, "time", clock)
     monkeypatch.setattr(receipts_mod.os, "open", publish_then_deny)
     if identical:
         assert store.save(incoming) == path
@@ -484,7 +488,7 @@ def test_fallback_reconcile_retries_transient_permission_error(
                     13, "simulated final-file sharing violation", current)
         return real_read_text(current, *args, **kwargs)
 
-    monkeypatch.setattr(receipts_mod, "time", clock)
+    monkeypatch.setattr(core_mod, "time", clock)
     monkeypatch.setattr(receipts_mod.os, "open", acquire_then_publish)
     monkeypatch.setattr(path_type, "read_text", transient_read_text)
     assert store.save(receipt) == path
@@ -848,7 +852,7 @@ def test_single_deadline_is_not_reset_across_phases(tmp_path, monkeypatch):
             raise PermissionError(13, "final sharing denied", current)
         return real_read(current, *args, **kwargs)
 
-    monkeypatch.setattr(receipts_mod, "time", clock)
+    monkeypatch.setattr(core_mod, "time", clock)
     monkeypatch.setattr(receipts_mod.os, "open", open_then_peer_publishes)
     monkeypatch.setattr(path_type, "read_text", denied_read)
     with pytest.raises(ConsultationError, match="timed out"):
@@ -873,7 +877,7 @@ def test_poll_is_capped_to_remaining_time(tmp_path, monkeypatch):
         opens.append(name)
         raise PermissionError(13, "held", name)
 
-    monkeypatch.setattr(receipts_mod, "time", clock)
+    monkeypatch.setattr(core_mod, "time", clock)
     monkeypatch.setattr(receipts_mod.os, "open", denied_open)
     with pytest.raises(ConsultationError, match="lock timed out"):
         store.save(receipt)
@@ -1062,7 +1066,7 @@ def test_permanent_final_read_denial_is_bounded_and_canonical(tmp_path,
             raise PermissionError(13, "final sharing denied", current)
         return real_read(current, *args, **kwargs)
 
-    monkeypatch.setattr(receipts_mod, "time", clock)
+    monkeypatch.setattr(core_mod, "time", clock)
     monkeypatch.setattr(path_type, "read_text", denied)
     with pytest.raises(ConsultationError, match="timed out"):
         store.save(receipt)                          # reconcile read denied
