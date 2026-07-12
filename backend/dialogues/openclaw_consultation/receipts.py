@@ -104,9 +104,12 @@ def verify_receipt(record: Mapping[str, Any]) -> Dict[str, Any]:
     return dict(record)
 
 
-#: Bounded wait for a fallback publisher to finish (never an infinite loop).
+#: Bounded wait for a publisher to finish (never an infinite loop).
 _PUBLISH_LOCK_TIMEOUT = 5.0
 _PUBLISH_LOCK_POLL = 0.005
+#: Bounded retries if a freshly generated temp name already exists (a foreign
+#: temp we must never touch); a fresh UUID is tried each time.
+_TEMP_CREATE_ATTEMPTS = 8
 
 
 class ConsultationReceiptStore:
@@ -115,16 +118,17 @@ class ConsultationReceiptStore:
     nor collide with a drive/stream marker. Writes are atomic and immutable:
     the first distinct content for a request_id wins; identical content is an
     idempotent success; different content is refused - even under concurrent
-    writers.
+    writers mixing hard-link-capable and hard-link-less filesystems.
 
-    Publication is atomic and no-overwrite. The primary path is an atomic
-    ``os.link`` (fails if the final already exists). On a filesystem without
-    hard-link support, writers serialize on an exclusive sibling *publication
-    lock*: the single lock holder re-checks that the final is absent and then
-    atomically ``os.replace`` its already-complete temp into place, so no reader
-    ever sees an empty or partial final receipt. Losers wait (bounded) for the
-    lock, then verify/reconcile; a stuck lock times out as a ConsultationError
-    and NEVER overwrites an existing receipt.
+    ALL publication participates in ONE exclusive sibling *publication lock*.
+    The single lock holder re-checks that the final is absent, then publishes
+    with the preferred atomic ``os.link`` (falling back to ``os.replace`` of an
+    already-complete temp only when hard links are unsupported) - both executed
+    while it still owns the lock, so a primary and a fallback writer can never
+    both publish. Losers wait (bounded, on a single monotonic deadline), then
+    verify/reconcile; a stuck lock times out as a ConsultationError and NEVER
+    overwrites an existing receipt. Expected filesystem/decoding/parsing/data
+    failures on the public API surface are normalized to ConsultationError.
     """
 
     def __init__(self, directory: pathlib.Path | str, *,
@@ -151,102 +155,213 @@ class ConsultationReceiptStore:
         stem = path.name.split(".", 1)[0]           # the sha256 hex
         return path.parent / f"{stem}.receipt.lock"
 
-    def _reconcile(self, path: pathlib.Path,
-                   verified: Mapping[str, Any]) -> pathlib.Path:
+    # ── strict, normalized read of an existing final receipt ─────────────────
+
+    def _read_verified_final(self, path: pathlib.Path, *,
+                             deadline: Optional[float] = None) -> Dict[str, Any]:
+        """Read + parse + schema-verify one final receipt. Every expected
+        filesystem/decoding/parsing/data failure becomes ConsultationError with
+        a safe message (never a raw exception, never raw file contents). A
+        transient Windows sharing denial (PermissionError) right after a peer
+        publishes is retried, but ONLY within the single publication deadline
+        and never as a filesystem operation started after it expires."""
+        while True:
+            try:
+                return verify_receipt(json.loads(
+                    path.read_text(encoding="utf-8")))
+            except ConsultationError:
+                raise                                # already safe + specific
+            except PermissionError:
+                if deadline is None:
+                    raise ConsultationError(
+                        "existing consultation receipt could not be read for "
+                        "reconciliation") from None
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ConsultationError(
+                        "consultation receipt reconciliation timed out"
+                    ) from None
+                time.sleep(min(self._lock_poll, remaining))
+                if time.monotonic() >= deadline:     # no post-deadline re-read
+                    raise ConsultationError(
+                        "consultation receipt reconciliation timed out"
+                    ) from None
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError,
+                    TypeError, ValueError):
+                raise ConsultationError(
+                    "existing consultation receipt could not be read for "
+                    "reconciliation") from None
+
+    def _reconcile(self, path: pathlib.Path, verified: Mapping[str, Any], *,
+                   deadline: Optional[float] = None) -> pathlib.Path:
         """A final receipt already exists: verify it, then return idempotently
         if it is byte-for-byte the same consultation, else refuse the conflict.
-        The existing final receipt is re-verified before any idempotent return.
-
-        Any read/parse failure is normalized to ConsultationError (defense in
-        depth) with a safe message - never a raw JSON/filesystem exception and
-        never raw file contents.
-        """
-        try:
-            existing = verify_receipt(json.loads(
-                path.read_text(encoding="utf-8")))
-        except ConsultationError:
-            raise                                    # already safe + specific
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError, TypeError,
-                ValueError):
-            raise ConsultationError(
-                "existing consultation receipt could not be read for "
-                "reconciliation")
+        The existing final is re-verified before any idempotent return."""
+        existing = self._read_verified_final(path, deadline=deadline)
         if existing["receipt_digest"] != verified["receipt_digest"]:
             raise ConsultationError(
                 "conflicting consultation receipt for the same request_id")
         return path
 
-    def _fallback_publish(self, path: pathlib.Path, tmp: pathlib.Path,
-                          verified: Mapping[str, Any]) -> pathlib.Path:
-        """No hard-link support: serialize publication on an exclusive sibling
-        lock, then atomically replace the already-complete temp into place."""
-        lock = self._lock_for(path)
-        deadline = time.monotonic() + self._lock_timeout
+    # ── the single publication protocol ──────────────────────────────────────
+
+    def _acquire_lock(self, lock: pathlib.Path, path: pathlib.Path,
+                      deadline: float) -> Optional[int]:
+        """Acquire the exclusive publication lock, or return None if the final
+        was already published (caller reconciles - never overwrites). Bounded by
+        the single deadline; contention (peer-held lock, or Windows
+        DELETE_PENDING PermissionError while a peer unlinks its lock) waits and
+        retries, other OSErrors and timeout become ConsultationError."""
         while True:
             if path.exists():
-                return self._reconcile(path, verified)   # already published
+                return None                          # already published
             try:
-                fd = os.open(os.fspath(lock),
-                             os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            except FileExistsError:
-                # Another writer is publishing: wait (bounded), then reconcile.
-                if time.monotonic() >= deadline:
+                return os.open(os.fspath(lock),
+                               os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except (FileExistsError, PermissionError):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
                     raise ConsultationError(
-                        "consultation receipt publication lock timed out")
-                time.sleep(self._lock_poll)
-                continue
+                        "consultation receipt publication lock timed out"
+                    ) from None
+                time.sleep(min(self._lock_poll, remaining))
+                if time.monotonic() >= deadline:     # no post-deadline acquire
+                    raise ConsultationError(
+                        "consultation receipt publication lock timed out"
+                    ) from None
+            except OSError:
+                raise ConsultationError(
+                    "consultation receipt publication lock acquisition failed"
+                ) from None
+
+    def _create_temp(self, payload: str) -> pathlib.Path:
+        """Create and fully write a UNIQUE per-writer temp. On the (astronomic)
+        chance the generated name already exists it is a FOREIGN temp: never
+        touched, a fresh UUID is tried, bounded. Returns a temp this writer owns."""
+        for _ in range(_TEMP_CREATE_ATTEMPTS):
+            candidate = self.directory / f".{uuid.uuid4().hex}.receipt.tmp"
             try:
-                if path.exists():
-                    # Published while we were acquiring the lock: never overwrite.
-                    return self._reconcile(path, verified)
-                os.replace(tmp, path)   # atomic; temp is already fully written
-                return path
-            finally:
-                os.close(fd)
-                try:
-                    os.unlink(lock)
-                except FileNotFoundError:
-                    pass
+                with open(candidate, "x", encoding="utf-8") as handle:
+                    handle.write(payload)
+                return candidate                     # created + owned by us
+            except FileExistsError:
+                continue                             # foreign temp: do not touch
+            except OSError:
+                raise ConsultationError(
+                    "consultation receipt temp write failed") from None
+        raise ConsultationError(
+            "consultation receipt temp allocation failed after retries")
+
+    def _cleanup(self, *, lock_fd: Optional[int], lock: pathlib.Path,
+                 lock_owned: bool, tmp: Optional[pathlib.Path],
+                 temp_owned: bool) -> List[str]:
+        """Independently attempt every writer-owned cleanup. One failure never
+        blocks the others; a foreign lock/temp is never removed; the published
+        final is never touched. Returns non-fatal cleanup error tags (never
+        raises), so the caller can preserve the primary cause."""
+        errors: List[str] = []
+        if lock_fd is not None:
+            try:
+                os.close(lock_fd)
+            except OSError as exc:
+                errors.append(f"lock-close {exc.__class__.__name__}")
+        if lock_owned:
+            try:
+                os.unlink(lock)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                errors.append(f"lock-unlink {exc.__class__.__name__}")
+        if temp_owned and tmp is not None:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                errors.append(f"temp-unlink {exc.__class__.__name__}")
+        return errors
 
     def save(self, record: Mapping[str, Any]) -> pathlib.Path:
         verified = verify_receipt(record)
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._path_for(verified["request_id"])
-        if path.exists():
-            return self._reconcile(path, verified)
+        lock = self._lock_for(path)
+        # ONE monotonic deadline for the ENTIRE publication attempt - never
+        # reset when switching from lock acquisition to publication/reconcile.
+        deadline = time.monotonic() + self._lock_timeout
 
-        payload = json.dumps(verified, ensure_ascii=False, sort_keys=True,
-                             indent=2) + "\n"
-        # Unique per-writer temp in the SAME directory (never a shared name),
-        # written in FULL before any publication is attempted.
-        tmp = self.directory / f".{uuid.uuid4().hex}.receipt.tmp"
+        lock_fd: Optional[int] = None
+        lock_owned = False
+        tmp: Optional[pathlib.Path] = None
+        temp_owned = False
+        primary_exc: Optional[ConsultationError] = None
+        result: Optional[pathlib.Path] = None
         try:
-            with open(tmp, "x", encoding="utf-8") as handle:
-                handle.write(payload)
-            try:
-                os.link(tmp, path)          # primary: atomic, fails if exists
-            except FileExistsError:
-                return self._reconcile(path, verified)
-            except (OSError, NotImplementedError):
-                # No hard-link support: lock-serialized atomic-replace publish.
-                return self._fallback_publish(path, tmp, verified)
+            lock_fd = self._acquire_lock(lock, path, deadline)
+            if lock_fd is None:
+                # Already published (peer or prior run): reconcile, never overwrite.
+                result = self._reconcile(path, verified, deadline=deadline)
+            else:
+                lock_owned = True
+                if path.exists():                    # never overwrite an existing final
+                    result = self._reconcile(path, verified, deadline=deadline)
+                else:
+                    payload = json.dumps(verified, ensure_ascii=False,
+                                         sort_keys=True, indent=2) + "\n"
+                    tmp = self._create_temp(payload)
+                    temp_owned = True
+                    # Prefer os.link; fall back to os.replace - BOTH under the lock.
+                    try:
+                        os.link(tmp, path)
+                    except FileExistsError:
+                        # Cannot happen under the lock, but never overwrite.
+                        result = self._reconcile(path, verified,
+                                                 deadline=deadline)
+                    except (OSError, NotImplementedError):
+                        try:
+                            os.replace(tmp, path)
+                            temp_owned = False       # replace consumed the temp
+                        except OSError:
+                            raise ConsultationError(
+                                "consultation receipt publication failed"
+                            ) from None
+                        result = path
+                    else:
+                        result = path
+        except ConsultationError as exc:
+            primary_exc = exc
         finally:
-            try:
-                os.unlink(tmp)
-            except FileNotFoundError:
-                pass
-        return path
+            cleanup_errors = self._cleanup(
+                lock_fd=lock_fd, lock=lock, lock_owned=lock_owned,
+                tmp=tmp, temp_owned=temp_owned)
+
+        if primary_exc is not None:
+            if cleanup_errors:
+                # Principal cause stays the publication failure; cleanup is
+                # appended as secondary diagnostic context.
+                raise ConsultationError(
+                    f"{primary_exc} | cleanup also failed: "
+                    f"{'; '.join(cleanup_errors)}") from primary_exc
+            raise primary_exc
+        if cleanup_errors:
+            # Publication succeeded but a writer-owned cleanup failed: the final
+            # is valid and unchanged, but surface the failure canonically.
+            raise ConsultationError(
+                "consultation receipt cleanup failed: "
+                + "; ".join(cleanup_errors))
+        return result
 
     def load(self, request_id: str) -> Optional[Dict[str, Any]]:
         path = self._path_for(request_id)
         if not path.exists():
             return None
-        return verify_receipt(json.loads(path.read_text(encoding="utf-8")))
+        return self._read_verified_final(path)
 
     def all_receipts(self) -> List[Dict[str, Any]]:
         if not self.directory.exists():
             return []
-        return [verify_receipt(json.loads(p.read_text(encoding="utf-8")))
+        # Deterministic ordering; malformed receipts fail closed (never skipped).
+        return [self._read_verified_final(p)
                 for p in sorted(self.directory.glob("*.receipt.json"))]
 
 
