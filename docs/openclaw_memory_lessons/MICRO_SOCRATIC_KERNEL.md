@@ -159,21 +159,16 @@ no-overwrite publication) and additionally fixes the Windows `DELETE_PENDING`
 fallback-lock race so a concurrent publisher never leaks a raw filesystem
 exception.
 
-## Note on temporary receipt-store duplication
+## Shared receipt-store architecture
 
-The kernel's receipt store is currently self-contained because the
-`openclaw_consultation` package (whose store shares the same hardened design)
-lives in an **unmerged** PR. This is **intentional temporary duplication across
-independent, unmerged branches**. Before the Micro-Socratic Kernel is merged, the
-hardened receipt-persistence implementations must either:
+PR #64 is merged. Both the external-consultation and Micro-Socratic domains use
+`backend/dialogues/openclaw_receipts.py` as a neutral shared primitive for
+atomic, immutable JSON receipt persistence. Domain schemas, builders, verifiers,
+and error types remain separate.
 
-1. be consolidated into a shared internal primitive after PR #64 lands, or
-2. be compared for exact security-property parity and retained only with an
-   explicit package-isolation rationale.
-
-(Note: this kernel store already carries the Windows `DELETE_PENDING`
-fallback-lock fix; the consultation store in PR #64 still needs it — a parity
-gap to reconcile at consolidation time.)
+The kernel remains runtime-inert: this consolidation does not execute external
+consultations, grant self-certification authority, or mutate CED, Memory,
+Identity, Soul, governance, or runtime state.
 
 ## Operator CLI
 
