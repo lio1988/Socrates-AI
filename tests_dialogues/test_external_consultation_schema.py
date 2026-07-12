@@ -7,6 +7,7 @@ refused. Advice can never claim authority or tool execution.
 """
 
 import math
+from decimal import Decimal
 
 import pytest
 
@@ -17,7 +18,10 @@ from backend.dialogues.openclaw_consultation import (
     ExternalConsultationRequest,
     validate_payload,
 )
-from backend.dialogues.openclaw_consultation.schemas import REQUEST_VERSION
+from backend.dialogues.openclaw_consultation.schemas import (
+    REQUEST_VERSION,
+    clean_request_id,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -118,6 +122,18 @@ def test_depth_greater_than_one_refused():
         _request(consultation_depth=2)
 
 
+def test_depth_rejects_lookalike_types():
+    # LOW fix: strict integer 1 only — bool/float/str/Decimal that merely
+    # equal 1 must be refused (they would otherwise skew the digest).
+    for bad in (True, False, 1.0, "1", Decimal("1")):
+        with pytest.raises(ConsultationError, match="integer 1"):
+            _request(consultation_depth=bad)
+
+
+def test_depth_exactly_int_one_accepted():
+    assert _request(consultation_depth=1).consultation_depth == 1
+
+
 def test_tools_allowed_true_refused():
     with pytest.raises(ConsultationError, match="tools_allowed"):
         _request(tools_allowed=True)
@@ -183,10 +199,96 @@ def test_invalid_timestamp_refused():
         _request(created_at="yesterday")
 
 
+def test_semantically_invalid_timestamps_raise_consultation_error():
+    # LOW fix: regex-valid-but-impossible timestamps must fail as
+    # ConsultationError (not a raw ValueError leaking from the parser).
+    for stamp in ("2026-13-45T00:00:00Z", "2026-02-30T00:00:00Z",
+                  "2026-01-01T25:00:00Z", "2026-01-01T00:00:00+99:00"):
+        with pytest.raises(ConsultationError):
+            _request(created_at=stamp)
+        with pytest.raises(ConsultationError):
+            _request(expires_at=stamp)
+
+
 def test_expiry_not_after_creation_refused():
     with pytest.raises(ConsultationError, match="after created_at"):
         _request(created_at="2026-07-11T01:00:00Z",
                  expires_at="2026-07-11T00:00:00Z")
+
+
+def test_expiry_ordering_correct_across_mixed_offsets():
+    # Same instant expressed as Z and +00:00 must NOT count as "after".
+    with pytest.raises(ConsultationError, match="after created_at"):
+        _request(created_at="2026-07-11T00:00:00Z",
+                 expires_at="2026-07-11T00:00:00+00:00")
+    # A later instant in a different offset is accepted.
+    r = _request(created_at="2026-07-11T00:00:00Z",
+                 expires_at="2026-07-11T03:00:00+02:00")  # == 01:00Z, later
+    assert r.expires_at.endswith("+02:00")
+
+
+# --------------------------------------------------------------------------- #
+# request_id must be a strict, path-safe identifier (HIGH)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("evil", [
+    "../../tmp/pwned", "..\\..\\pwned", "C:evil", "x:stream",
+    "/absolute/path", "a/b/c", "dir\\file", ".", "..", "with space",
+])
+def test_traversal_and_separator_request_ids_refused(evil):
+    with pytest.raises(ConsultationError):
+        clean_request_id(evil)
+    with pytest.raises(ConsultationError):
+        _request(request_id=evil)
+
+
+def test_ordinary_request_id_accepted():
+    for ok in ("req-001", "consult-critic-0a1b2c3d4e5f6a7b", "a.b_c-1"):
+        assert clean_request_id(ok) == ok
+
+
+# --------------------------------------------------------------------------- #
+# judge candidate_order is bound to the request (MEDIUM)
+# --------------------------------------------------------------------------- #
+
+def _judge(**overrides):
+    base = dict(mode="judge", draft=None, candidates=("A", "B"))
+    base.update(overrides)
+    return _request(**base)
+
+
+def test_judge_defaults_candidate_order_to_identity():
+    assert _judge().candidate_order == (0, 1)
+
+
+def test_judge_accepts_swapped_order_and_changes_digest():
+    assert _judge(candidate_order=(1, 0)).candidate_order == (1, 0)
+    assert _judge(candidate_order=(0, 1)).request_digest != \
+        _judge(candidate_order=(1, 0)).request_digest
+
+
+def test_judge_rejects_non_permutation_orders():
+    for bad in [(0, 0), (1, 1), (0, 2), (2, 3), (0,), (0, 1, 0),
+                (True, False), (0.0, 1.0), ("0", "1")]:
+        with pytest.raises(ConsultationError, match="candidate_order"):
+            _judge(candidate_order=bad)
+
+
+def test_candidate_order_survives_record_roundtrip():
+    request = _judge(candidate_order=(1, 0))
+    restored = ExternalConsultationRequest.from_record(request.to_record())
+    assert restored.candidate_order == (1, 0)
+    assert restored.request_digest == request.request_digest
+
+
+def test_critic_rejects_candidate_order():
+    with pytest.raises(ConsultationError, match="forbids candidate_order"):
+        _request(candidate_order=(0, 1))
+
+
+def test_independent_solver_rejects_candidate_order():
+    with pytest.raises(ConsultationError, match="forbids candidate_order"):
+        _request(mode="independent_solver", draft=None, candidate_order=(0, 1))
 
 
 def test_too_many_evidence_references_refused():

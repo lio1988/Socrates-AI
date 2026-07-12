@@ -3,8 +3,9 @@
 Every consulted session starts from these directives - no history, no profile,
 no scratchpad, no tools. The requesting agent's draft is disclosed ONLY in
 critic mode; independent_solver never sees it (confirmation-bias reduction);
-judge sees exactly two anonymous candidates whose order can be counterbalanced
-by a deterministic seed.
+judge sees exactly two anonymous candidates whose presentation order is the
+request's own ``candidate_order`` (bound into the request digest), so the same
+canonical request always yields the same prompt.
 
 A machine-readable mode marker line is embedded in the system prompt so the
 deterministic mock adapter (and only it) can pick a scripted schema; real
@@ -14,7 +15,7 @@ providers ignore it and simply follow the JSON contract.
 from __future__ import annotations
 
 import json
-from typing import Dict, List
+from typing import Dict
 
 from .schemas import ExternalConsultationRequest
 
@@ -52,19 +53,15 @@ _MODE_CONTRACTS: Dict[str, str] = {
 }
 
 
-def _order(request: ExternalConsultationRequest, seed: int) -> List[int]:
-    """Deterministic candidate order; seed can counterbalance A/B position."""
-    return [1, 0] if seed % 2 else [0, 1]
-
-
 def build_system_prompt(request: ExternalConsultationRequest) -> str:
     return (f"{_ISOLATION}\n\n"
             f"OPENCLAW_CONSULTATION_MODE:{request.mode}\n\n"
             f"{_MODE_CONTRACTS[request.mode]}")
 
 
-def build_user_prompt(request: ExternalConsultationRequest,
-                      *, judge_seed: int = 0) -> str:
+def build_user_prompt(request: ExternalConsultationRequest) -> str:
+    """The prompt is a pure function of the canonical request. For judge mode
+    the presentation order is request.candidate_order (bound in the digest)."""
     sections: Dict[str, object] = {
         "purpose": request.purpose,
         "task": request.question,
@@ -77,11 +74,10 @@ def build_user_prompt(request: ExternalConsultationRequest,
         # Only critic may see the requesting agent's draft.
         sections["draft_under_review"] = request.draft
     elif request.mode == "judge":
-        order = _order(request, judge_seed)
         labels = ("candidate_a", "candidate_b")
         sections["candidates"] = {
             labels[position]: request.candidates[source]
-            for position, source in enumerate(order)
+            for position, source in enumerate(request.candidate_order)
         }
     # independent_solver: task + purpose + evidence only; no draft, no candidates.
 

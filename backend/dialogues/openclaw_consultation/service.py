@@ -61,7 +61,6 @@ class ExternalConsultationService:
         request: ExternalConsultationRequest,
         provider: ConsultationProvider,
         *,
-        judge_seed: int = 0,
         now: Optional[str] = None,
     ) -> ConsultationOutcome:
         # 1. policy (schema already validated the request on construction).
@@ -73,10 +72,12 @@ class ExternalConsultationService:
             raise ConsultationError(
                 "provider does not match the request's consulted_provider")
 
-        # 2. build the isolated call (system + single user message only).
+        # 2. build the isolated call (system + single user message only). The
+        # prompt is fully determined by the canonical request (judge order is
+        # request.candidate_order), so nothing outside the digest shapes it.
         call = ConsultationCall(
             system_prompt=build_system_prompt(request),
-            user_prompt=build_user_prompt(request, judge_seed=judge_seed),
+            user_prompt=build_user_prompt(request),
             max_tokens=request.max_tokens,
             timeout_seconds=request.timeout_seconds,
             provider=request.consulted_provider,

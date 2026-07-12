@@ -115,6 +115,7 @@ def build_request(argv, env) -> ExternalConsultationRequest:
 
     draft = None
     candidates = ()
+    candidate_order = ()
     if mode == "critic":
         draft = _read_text(_flag(argv, "--draft-file"), label="draft-file")
     elif mode == "judge":
@@ -124,6 +125,15 @@ def build_request(argv, env) -> ExternalConsultationRequest:
                 "judge mode requires exactly two --candidate-file arguments")
         candidates = tuple(_read_text(path, label="candidate-file")
                            for path in files)
+        # Deterministic presentation order, bound into the request digest.
+        # "0,1" (default) shows candidate-file #1 as candidate_a; "1,0" swaps.
+        raw_order = _flag(argv, "--candidate-order", "0,1")
+        try:
+            candidate_order = tuple(
+                int(part) for part in raw_order.split(","))
+        except ValueError:
+            raise ConsultationError(
+                "--candidate-order must be '0,1' or '1,0'")
 
     max_tokens = int(_flag(argv, "--max-tokens", "1024"))
     timeout_seconds = float(_flag(argv, "--timeout-seconds", "60"))
@@ -152,6 +162,7 @@ def build_request(argv, env) -> ExternalConsultationRequest:
         expires_at=expires_at,
         draft=draft,
         candidates=candidates,
+        candidate_order=candidate_order,
     )
 
 
@@ -175,8 +186,7 @@ def run_consultation_cli(argv, env):
         clock=lambda: fixed_now,
     )
     outcome = asyncio.run(service.consult(
-        request, provider, judge_seed=int(_flag(argv, "--judge-seed", "0")),
-        now=request.created_at))
+        request, provider, now=request.created_at))
     return request, outcome
 
 

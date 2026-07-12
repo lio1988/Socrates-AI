@@ -54,6 +54,9 @@ _VERDICTS = ("candidate_a", "candidate_b", "tie", "insufficient_evidence")
 
 _AGENT_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _SAFE_RE = re.compile(r"^[A-Za-z0-9._:/-]{1,256}$")
+#: request_id is turned into a filesystem name, so it must be a strict,
+#: path-separator-free identifier (no "/", "\\", ":", and never "." or "..").
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 _ISO_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$")
@@ -129,6 +132,21 @@ def clean_id(value: Any, *, field: str) -> str:
     return text
 
 
+def clean_request_id(value: Any, *, field: str = "request_id") -> str:
+    """A request_id becomes a filesystem name, so it must be a strict,
+    path-separator-free identifier. Rejects "/", "\\", ":", any traversal
+    sequence, and the bare "." / ".." ids. Never trust it as a filename even
+    after this - the store additionally hashes it and contains the path."""
+    text = clean_text(value, field=field, maximum=128)
+    if text in (".", ".."):
+        raise ConsultationError(f"{field} may not be '.' or '..'")
+    if not _REQUEST_ID_RE.fullmatch(text):
+        raise ConsultationError(
+            f"{field} must be a filename-safe id (ASCII letters, digits, dot, "
+            "underscore, hyphen; no path separators or drive/stream markers)")
+    return text
+
+
 def clean_hex64(value: Any, *, field: str) -> str:
     text = str(value or "").strip().lower()
     if not _HEX64_RE.fullmatch(text):
@@ -136,20 +154,32 @@ def clean_hex64(value: Any, *, field: str) -> str:
     return text
 
 
+def iso_utc(value: str) -> _dt.datetime:
+    """Parse an ISO-8601 timestamp into an aware UTC datetime so ordering is
+    correct across mixed Z/offset notations. Any parser failure (impossible
+    month/day/hour, bad offset, overflow) is re-raised as ConsultationError so
+    callers that catch ConsultationError still fail closed."""
+    try:
+        parsed = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, OverflowError, TypeError) as exc:
+        raise ConsultationError(f"invalid timestamp {value!r}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_dt.timezone.utc)
+    return parsed.astimezone(_dt.timezone.utc)
+
+
 def clean_iso(value: Any, *, field: str) -> str:
     text = str(value or "").strip()
     if not _ISO_RE.fullmatch(text):
         raise ConsultationError(f"{field} must be an ISO-8601 timestamp")
+    # Format is necessary but not sufficient: reject semantically-impossible
+    # dates (month 13, day 30 in Feb, hour 25, bad offset) as ConsultationError.
+    try:
+        iso_utc(text)
+    except ConsultationError as exc:
+        raise ConsultationError(
+            f"{field} is not a valid timestamp: {text!r}") from exc
     return text
-
-
-def iso_utc(value: str) -> _dt.datetime:
-    """Parse a validated ISO-8601 timestamp into an aware UTC datetime so
-    ordering is correct across mixed Z/offset notations."""
-    parsed = _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=_dt.timezone.utc)
-    return parsed.astimezone(_dt.timezone.utc)
 
 
 def finite_number(value: Any, *, field: str, minimum: float,
@@ -182,12 +212,28 @@ def _string_tuple(values: Any, *, field: str, maximum_items: int,
                  for item in values)
 
 
+def _permutation_pair(values: Any, *, field: str) -> Tuple[int, int]:
+    """A judge candidate order: exactly two entries that are a permutation of
+    [0, 1]. Strict integer typing (no bool, no float, no str)."""
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise ConsultationError(f"{field} must be a sequence")
+    items = list(values)
+    if len(items) != 2:
+        raise ConsultationError(f"{field} must have exactly two entries")
+    for item in items:
+        if type(item) is not int:
+            raise ConsultationError(f"{field} entries must be integers")
+    if sorted(items) != [0, 1]:
+        raise ConsultationError(f"{field} must be a permutation of [0, 1]")
+    return (items[0], items[1])
+
+
 # ── request ──────────────────────────────────────────────────────────────────
 
 _REQUEST_FIELDS = {
     "schema_version", "request_id", "requesting_agent_id", "mode",
     "consulted_provider", "consulted_model", "consultation_relation",
-    "question", "question_sha256", "draft", "candidates",
+    "question", "question_sha256", "draft", "candidates", "candidate_order",
     "public_evidence_references", "purpose", "max_tokens", "timeout_seconds",
     "created_at", "expires_at", "consultation_depth", "tools_allowed",
     "request_digest",
@@ -210,13 +256,14 @@ class ExternalConsultationRequest:
     expires_at: str
     draft: Optional[str] = None
     candidates: Tuple[str, ...] = ()
+    candidate_order: Tuple[int, ...] = ()
     public_evidence_references: Tuple[str, ...] = ()
     consultation_depth: int = CONSULTATION_DEPTH
     tools_allowed: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "request_id",
-                           clean_id(self.request_id, field="request_id"))
+                           clean_request_id(self.request_id, field="request_id"))
         object.__setattr__(self, "requesting_agent_id",
                            clean_agent(self.requesting_agent_id))
         mode = str(self.mode)
@@ -240,9 +287,12 @@ class ExternalConsultationRequest:
                            clean_text(self.purpose, field="purpose",
                                       maximum=MAX_PURPOSE_CHARS))
 
-        # depth and tools are hard invariants, not preferences.
-        if self.consultation_depth != CONSULTATION_DEPTH:
-            raise ConsultationError("consultation_depth must be exactly 1 in v1")
+        # depth and tools are hard invariants, not preferences. Strict typing:
+        # bool/float/str/Decimal that merely equal 1 are rejected.
+        if type(self.consultation_depth) is not int or \
+                self.consultation_depth != CONSULTATION_DEPTH:
+            raise ConsultationError(
+                "consultation_depth must be exactly the integer 1 in v1")
         if self.tools_allowed is not False:
             raise ConsultationError("tools_allowed must be false in v1")
 
@@ -292,6 +342,20 @@ class ExternalConsultationRequest:
             clean_text(item, field="candidate", maximum=MAX_CANDIDATE_CHARS)
             for item in candidates))
 
+        # candidate_order: bound into the request (and thus the digest) so the
+        # judge prompt is fully determined by the canonical request. Only judge
+        # may carry it; it defaults to [0, 1] when omitted so it is always
+        # concrete. critic/independent_solver must not carry it.
+        order = tuple(self.candidate_order or ())
+        if self.mode == "judge":
+            if not order:
+                order = (0, 1)
+            order = _permutation_pair(order, field="candidate_order")
+        elif order:
+            raise ConsultationError(
+                f"{self.mode} mode forbids candidate_order")
+        object.__setattr__(self, "candidate_order", order)
+
     @property
     def question_sha256(self) -> str:
         return sha256_text(self.question)
@@ -309,6 +373,7 @@ class ExternalConsultationRequest:
             "question_sha256": self.question_sha256,
             "draft": self.draft,
             "candidates": list(self.candidates),
+            "candidate_order": list(self.candidate_order),
             "public_evidence_references": list(self.public_evidence_references),
             "purpose": self.purpose,
             "max_tokens": self.max_tokens,
@@ -351,6 +416,7 @@ class ExternalConsultationRequest:
             expires_at=record["expires_at"],
             draft=record["draft"],
             candidates=tuple(record["candidates"] or ()),
+            candidate_order=tuple(record["candidate_order"] or ()),
             public_evidence_references=tuple(
                 record["public_evidence_references"] or ()),
             consultation_depth=record["consultation_depth"],
@@ -387,7 +453,7 @@ class ConsultationResult:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "request_id",
-                           clean_id(self.request_id, field="request_id"))
+                           clean_request_id(self.request_id, field="request_id"))
         object.__setattr__(self, "request_digest",
                            clean_hex64(self.request_digest,
                                        field="request_digest"))
@@ -567,5 +633,5 @@ __all__ = [
     "MAX_EVIDENCE_REFERENCES", "MAX_TOKENS_CEILING", "MAX_TIMEOUT_SECONDS",
     "ConsultationError", "ExternalConsultationRequest", "ConsultationResult",
     "canonical_json", "digest", "sha256_text", "validate_payload",
-    "clean_iso", "iso_utc",
+    "clean_iso", "iso_utc", "clean_request_id",
 ]

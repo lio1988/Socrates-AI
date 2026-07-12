@@ -169,17 +169,61 @@ def test_judge_receives_anonymous_candidates_only():
         assert forbidden not in lowered
 
 
-def test_judge_order_counterbalances_with_seed():
-    provider = MockConsultationProvider(provider_id="mock")
+def test_judge_order_is_bound_to_the_request_not_an_external_seed():
+    # The presentation order is request.candidate_order (in the digest), so two
+    # requests differing ONLY in order produce different prompts AND different
+    # request digests. There is no external seed that can move the prompt.
+    p0 = MockConsultationProvider(provider_id="mock")
+    p1 = MockConsultationProvider(provider_id="mock")
+    r0 = _request(mode="judge", draft=None, consulted_model="mock-judge",
+                  candidates=("FIRST_BODY", "SECOND_BODY"),
+                  candidate_order=(0, 1))
+    r1 = _request(mode="judge", draft=None, consulted_model="mock-judge",
+                  candidates=("FIRST_BODY", "SECOND_BODY"),
+                  candidate_order=(1, 0))
+    _consult(r0, p0)
+    _consult(r1, p1)
+    assert "FIRST_BODY" in p0.calls[0].user_prompt
+    assert p0.calls[0].user_prompt != p1.calls[0].user_prompt
+    assert r0.request_digest != r1.request_digest
+    # consult() no longer accepts a judge_seed parameter at all.
+    with pytest.raises(TypeError):
+        asyncio.run(_service().consult(r0, MockConsultationProvider("mock"),
+                                       judge_seed=1, now=_NOW))
+
+
+def test_same_request_always_yields_the_same_prompt():
     request = _request(mode="judge", draft=None, consulted_model="mock-judge",
-                       candidates=("FIRST_BODY", "SECOND_BODY"))
-    _consult(request, provider, judge_seed=0)
-    _consult(request, provider, judge_seed=1)
-    first_prompt, second_prompt = provider.calls[0].user_prompt, \
-        provider.calls[1].user_prompt
-    # Both bodies always present; their A/B position flips with the seed.
-    assert "FIRST_BODY" in first_prompt and "SECOND_BODY" in first_prompt
-    assert first_prompt != second_prompt
+                       candidates=("BODY_ONE", "BODY_TWO"),
+                       candidate_order=(1, 0))
+    p_a = MockConsultationProvider(provider_id="mock")
+    p_b = MockConsultationProvider(provider_id="mock")
+    _consult(request, p_a)
+    _consult(request, p_b)
+    assert p_a.calls[0].user_prompt == p_b.calls[0].user_prompt
+
+
+def test_receipt_records_resolved_candidate_order_mapping():
+    provider = MockConsultationProvider(provider_id="mock")
+    outcome = _consult(
+        _request(mode="judge", draft=None, consulted_model="mock-judge",
+                 candidates=("PHYSICAL_0", "PHYSICAL_1"),
+                 candidate_order=(1, 0)), provider)
+    # candidate_a -> original index order[0], candidate_b -> order[1].
+    assert outcome.receipt["candidate_order"] == [1, 0]
+    prompt = provider.calls[0].user_prompt
+    a_pos, b_pos = prompt.index("candidate_a"), prompt.index("candidate_b")
+    # With order (1,0): candidate_a shows PHYSICAL_1, candidate_b shows PHYSICAL_0.
+    assert prompt.index("PHYSICAL_1") > a_pos
+    assert prompt.index("PHYSICAL_0") > b_pos
+
+
+def test_critic_and_solver_reject_candidate_order():
+    for mode, kw in (("critic", {"draft": "d"}),
+                     ("independent_solver", {"draft": None})):
+        with pytest.raises(ConsultationError, match="forbids candidate_order"):
+            _request(mode=mode, consulted_model="m",
+                     candidate_order=(0, 1), **kw)
 
 
 # --------------------------------------------------------------------------- #

@@ -102,6 +102,38 @@ def test_judge_run_with_two_candidates(consult_script, tmp_path):
         "candidate_a", "candidate_b", "tie", "insufficient_evidence")
 
 
+def test_judge_candidate_order_flag_is_recorded(consult_script, tmp_path):
+    question = _write(tmp_path / "q.txt", "Which candidate is stronger?")
+    a = _write(tmp_path / "a.txt", "Candidate one body.")
+    b = _write(tmp_path / "b.txt", "Candidate two body.")
+    output = tmp_path / "out" / "judge-result.json"
+    rc = consult_script.main(
+        ["prog", "--mode", "judge", "--agent", "local_apprentice_001",
+         "--provider", "mock", "--model", "mock-judge",
+         "--question-file", str(question), "--candidate-order", "1,0",
+         "--candidate-file", str(a), "--candidate-file", str(b),
+         "--output", str(output)], env=_env())
+    assert rc == 0
+    receipt = verify_receipt(json.loads(
+        next((tmp_path / "out").glob("*.receipt.json")).read_text(
+            encoding="utf-8")))
+    assert receipt["candidate_order"] == [1, 0]
+
+
+def test_hostile_request_id_refused(consult_script, tmp_path, capsys):
+    question = _write(tmp_path / "q.txt", "Solve this.")
+    output = tmp_path / "out" / "r.json"
+    rc = consult_script.main(
+        ["prog", "--mode", "independent_solver", "--agent", "a",
+         "--provider", "mock", "--model", "mock-solver", "--request-id",
+         "../../pwned", "--question-file", str(question),
+         "--output", str(output)], env=_env())
+    assert rc == 1
+    assert "REFUSED" in capsys.readouterr().out
+    # Nothing escaped the intended output directory.
+    assert not (tmp_path / "pwned.receipt.json").exists()
+
+
 # --------------------------------------------------------------------------- #
 # determinism, idempotency, no stray state
 # --------------------------------------------------------------------------- #

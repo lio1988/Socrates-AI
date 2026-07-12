@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -24,15 +25,17 @@ from .schemas import (
     clean_hex64,
     clean_id,
     clean_iso,
+    clean_request_id,
     digest,
+    sha256_text,
 )
 
 _RECEIPT_FIELDS = {
     "schema_version", "request_id", "request_digest", "result_digest",
     "requesting_agent_id", "mode", "provider", "model", "consultation_relation",
-    "worker_id", "isolated_session", "tools_disabled", "delegation_disabled",
-    "started_at", "completed_at", "provider_status", "token_usage",
-    "receipt_digest",
+    "candidate_order", "worker_id", "isolated_session", "tools_disabled",
+    "delegation_disabled", "started_at", "completed_at", "provider_status",
+    "token_usage", "receipt_digest",
 }
 
 
@@ -66,6 +69,11 @@ def build_receipt(
         "provider": result.provider,
         "model": result.model,
         "consultation_relation": request.consultation_relation,
+        # Resolved judge order: candidate_a -> candidate_order[0],
+        # candidate_b -> candidate_order[1] (empty for critic/solver). This
+        # makes the verdict->original-candidate mapping auditable from the
+        # receipt alone.
+        "candidate_order": list(request.candidate_order),
         "worker_id": clean_id(worker_id, field="worker_id"),
         "isolated_session": True,
         "tools_disabled": True,
@@ -96,31 +104,72 @@ def verify_receipt(record: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 class ConsultationReceiptStore:
-    """One JSON file per request_id; append-only, idempotent, conflict-safe."""
+    """One JSON file per request_id, keyed by a HASHED filename (never the raw
+    request_id), so a hostile request_id can neither traverse out of the store
+    nor collide with a drive/stream marker. Writes are atomic and immutable:
+    the first distinct content for a request_id wins; identical content is an
+    idempotent success; different content is refused - even under concurrent
+    writers, because publication uses an atomic no-overwrite link/create."""
 
     def __init__(self, directory: pathlib.Path | str) -> None:
         self.directory = pathlib.Path(directory)
 
     def _path_for(self, request_id: str) -> pathlib.Path:
-        request_id = clean_id(request_id, field="request_id")
-        return self.directory / f"{request_id}.receipt.json"
+        # request_id is validated as a strict identifier, then HASHED for the
+        # on-disk name; the raw id never touches the filesystem path.
+        safe = clean_request_id(request_id, field="request_id")
+        name = f"{sha256_text(safe)}.receipt.json"
+        base = self.directory.resolve()
+        path = (base / name)
+        # Defense-in-depth: the resolved path must stay directly under base.
+        if path.resolve().parent != base:
+            raise ConsultationError("receipt path escapes the store directory")
+        return path
+
+    def _reconcile(self, path: pathlib.Path,
+                   verified: Mapping[str, Any]) -> pathlib.Path:
+        """A final receipt already exists: verify it, then return idempotently
+        if it is byte-for-byte the same consultation, else refuse the conflict.
+        The existing final receipt is re-verified before any idempotent return.
+        """
+        existing = verify_receipt(json.loads(path.read_text(encoding="utf-8")))
+        if existing["receipt_digest"] != verified["receipt_digest"]:
+            raise ConsultationError(
+                "conflicting consultation receipt for the same request_id")
+        return path
 
     def save(self, record: Mapping[str, Any]) -> pathlib.Path:
         verified = verify_receipt(record)
-        path = self._path_for(verified["request_id"])
         self.directory.mkdir(parents=True, exist_ok=True)
+        path = self._path_for(verified["request_id"])
         if path.exists():
-            existing = verify_receipt(json.loads(
-                path.read_text(encoding="utf-8")))
-            if existing["receipt_digest"] != verified["receipt_digest"]:
-                raise ConsultationError(
-                    "conflicting consultation receipt for the same request_id")
-            return path                            # idempotent exact rewrite
+            return self._reconcile(path, verified)
+
         payload = json.dumps(verified, ensure_ascii=False, sort_keys=True,
                              indent=2) + "\n"
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(payload, encoding="utf-8")
-        os.replace(tmp, path)
+        # Unique per-writer temp in the SAME directory (never a shared name),
+        # then publish with an atomic, no-overwrite operation.
+        tmp = self.directory / f".{uuid.uuid4().hex}.receipt.tmp"
+        try:
+            with open(tmp, "x", encoding="utf-8") as handle:
+                handle.write(payload)
+            try:
+                os.link(tmp, path)          # atomic; fails if path exists
+            except FileExistsError:
+                return self._reconcile(path, verified)
+            except (OSError, NotImplementedError):
+                # Filesystems without hard-link support: fall back to an
+                # exclusive create of the final path (still no-overwrite).
+                try:
+                    with open(path, "x", encoding="utf-8") as final:
+                        final.write(payload)
+                except FileExistsError:
+                    return self._reconcile(path, verified)
+        finally:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
         return path
 
     def load(self, request_id: str) -> Optional[Dict[str, Any]]:

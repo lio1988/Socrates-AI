@@ -60,6 +60,14 @@ Each `critic` issue is an object with exactly `severity`
 **confirmation bias** by producing a genuinely independent answer to compare
 against.
 
+For `judge`, the presentation order is the request's own `candidate_order`
+(`[0, 1]` or `[1, 0]`), which is **bound into the request digest**. The same
+canonical request therefore always yields the exact same prompt, and the
+receipt records the resolved order so the verdict maps back unambiguously:
+`candidate_a → original candidate[candidate_order[0]]`,
+`candidate_b → original candidate[candidate_order[1]]`. There is no external,
+un-bound seed that could move the prompt outside the digest.
+
 ## Same model, fresh session
 
 `consultation_relation` is either `same_model_new_session` or `peer_model`. The
@@ -115,16 +123,21 @@ operations. There is no tool channel in the call at all.
 
 `schema_version`, `request_id`, `requesting_agent_id`, `mode`,
 `consulted_provider`, `consulted_model`, `consultation_relation`, `question`,
-`question_sha256`, `draft` **or** `candidates` (per mode),
+`question_sha256`, `draft` **or** `candidates` + `candidate_order` (per mode),
 `public_evidence_references`, `purpose`, `max_tokens`, `timeout_seconds`,
 `created_at`, `expires_at`, `consultation_depth (==1)`,
 `tools_allowed (==false)`, `request_digest`.
 
-Mode invariants: `critic` requires a draft and forbids candidates;
-`independent_solver` forbids both; `judge` requires exactly two candidates and
-forbids a draft. Unknown fields, NaN/Infinity, secret-shaped values, invalid or
-non-increasing timestamps, oversized strings, and malformed hashes are all
-refused.
+Mode invariants: `critic` requires a draft and forbids candidates/candidate_order;
+`independent_solver` forbids all of them; `judge` requires exactly two candidates,
+forbids a draft, and carries a `candidate_order` permutation of `[0, 1]`
+(defaulting to `[0, 1]`) that is part of the request digest. `request_id` must be
+a strict, path-safe identifier (ASCII letters/digits/`.`/`_`/`-`; no path
+separators, drive/stream markers, or bare `.`/`..`). `consultation_depth` must be
+the **integer** `1` (not `True`/`1.0`/`"1"`). Unknown fields, NaN/Infinity,
+secret-shaped values, semantically-impossible or non-increasing timestamps
+(rejected as `ConsultationError`), oversized strings, and malformed hashes are
+all refused.
 
 ### `openclaw_external_consultation_result_v1`
 
@@ -141,14 +154,31 @@ authority-claim patterns — **valid JSON is not enough**.
 
 `schema_version`, `request_id`, `request_digest`, `result_digest`,
 `requesting_agent_id`, `mode`, `provider`, `model`, `consultation_relation`,
-`worker_id`, `isolated_session`, `tools_disabled`, `delegation_disabled`,
-`started_at`, `completed_at`, `provider_status`, `token_usage` (when present),
-`receipt_digest`.
+`candidate_order`, `worker_id`, `isolated_session`, `tools_disabled`,
+`delegation_disabled`, `started_at`, `completed_at`, `provider_status`,
+`token_usage` (when present), `receipt_digest`.
 
-The receipt binds the canonical request digest to the canonical result digest.
-An exact rerun is **idempotent**; the same `request_id` with different content
-is **refused** as an immutable conflict. It stores no API keys, no auth headers,
-and no hidden provider reasoning.
+The receipt binds the canonical request digest to the canonical result digest,
+and records the resolved `candidate_order` so a judge verdict maps back to the
+original candidate indices without the request in hand. An exact rerun is
+**idempotent**; the same `request_id` with different content is **refused** as an
+immutable conflict. It stores no API keys, no auth headers, and no hidden
+provider reasoning.
+
+### Safe, atomic receipt persistence
+
+The receipt store never uses the raw `request_id` as a filename. It writes one
+file per request keyed by `sha256(request_id) + ".receipt.json"`, and
+`_path_for` additionally asserts (via `resolve()`) that the path stays directly
+beneath the store directory — so a hostile `request_id` can neither traverse out
+of the store nor collide with a Windows drive/stream marker. Publication is
+**atomic and immutable**: each writer writes a uniquely-named temp file in the
+same directory, then publishes with an atomic no-overwrite link (falling back to
+an exclusive `O_EXCL` create). The first distinct content for a `request_id`
+wins; a concurrent writer with different content gets an immutable conflict
+(never last-writer-wins); identical content is an idempotent success; temp files
+are always cleaned up, even on failure. The existing final receipt is
+re-verified before any idempotent return.
 
 ## Operator CLI
 
@@ -176,11 +206,14 @@ governance state. It writes one result file and one receipt file.
   --output runs\consultation\solver-result.json
 ```
 
-`judge` mode takes two `--candidate-file` arguments. In v1 the CLI wires only
-the deterministic `mock` adapter; any other provider is refused (a live
-provider is never activated here and no `.env` change is required). Set
-`CED_CONSULTATION_NOW` to a fixed ISO timestamp for fully deterministic,
-idempotent output.
+`judge` mode takes two `--candidate-file` arguments plus an optional
+`--candidate-order` (`0,1` default, or `1,0` to swap which file is presented as
+`candidate_a`); the chosen order is bound into the request digest and recorded
+in the receipt. In v1 the CLI wires only the deterministic `mock` adapter; any
+other provider is refused (a live provider is never activated here and no `.env`
+change is required). `--request-id` (if supplied) must be a strict path-safe
+identifier or the run is refused. Set `CED_CONSULTATION_NOW` to a fixed ISO
+timestamp for fully deterministic, idempotent output.
 
 ## Integration boundary (runtime-inert in v1)
 

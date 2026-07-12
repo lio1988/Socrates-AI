@@ -7,6 +7,8 @@ keys or hidden reasoning are stored.
 """
 
 import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -20,6 +22,7 @@ from backend.dialogues.openclaw_consultation import (
     build_receipt,
     verify_receipt,
 )
+from backend.dialogues.openclaw_consultation.schemas import sha256_text
 
 _NOW = "2026-07-11T00:00:00Z"
 _EXP = "2026-07-11T01:00:00Z"
@@ -177,3 +180,107 @@ def test_receipt_digest_changes_when_result_changes():
 
 def test_store_load_missing_returns_none(tmp_path):
     assert ConsultationReceiptStore(tmp_path).load("nope") is None
+
+
+# --------------------------------------------------------------------------- #
+# HIGH — receipt filenames are hashed and contained (no traversal)
+# --------------------------------------------------------------------------- #
+
+def test_on_disk_name_is_hashed_not_raw_request_id(tmp_path):
+    receipt = _outcome(_request()).receipt
+    store = ConsultationReceiptStore(tmp_path)
+    path = store.save(receipt)
+    assert path.name == sha256_text("req-receipt") + ".receipt.json"
+    # The raw request_id is still preserved INSIDE the verified JSON.
+    assert store.load("req-receipt")["request_id"] == "req-receipt"
+
+
+@pytest.mark.parametrize("evil", [
+    "../../tmp/pwned", "..\\..\\pwned", "C:evil", "x:stream",
+    "/absolute/path", "a/b/c", ".", "..",
+])
+def test_path_for_refuses_hostile_request_ids(tmp_path, evil):
+    with pytest.raises(ConsultationError):
+        ConsultationReceiptStore(tmp_path)._path_for(evil)
+
+
+def test_every_valid_receipt_path_stays_under_the_store(tmp_path):
+    store = ConsultationReceiptStore(tmp_path)
+    base = tmp_path.resolve()
+    for rid in ("req-receipt", "consult-critic-0a1b2c3d", "a.b_c-9"):
+        resolved = store._path_for(rid).resolve()
+        assert resolved.parent == base            # proven with resolve()
+        assert str(resolved).startswith(str(base))
+
+
+# --------------------------------------------------------------------------- #
+# MEDIUM — atomic, immutable, concurrency-safe persistence
+# --------------------------------------------------------------------------- #
+
+def test_concurrent_distinct_content_exactly_one_wins(tmp_path):
+    store = ConsultationReceiptStore(tmp_path)
+    # Two DIFFERENT receipts sharing the same request_id.
+    receipts = [
+        _outcome(_request(question=f"Distinct question number {i}.")).receipt
+        for i in range(8)
+    ]
+    assert len({r["receipt_digest"] for r in receipts}) == 8
+    assert len({r["request_id"] for r in receipts}) == 1
+
+    barrier = threading.Barrier(len(receipts))
+    wins, conflicts = [], []
+
+    def worker(rec):
+        barrier.wait()                            # maximise the real race
+        try:
+            store.save(rec)
+            wins.append(rec["receipt_digest"])
+        except ConsultationError:
+            conflicts.append(rec["receipt_digest"])
+
+    with ThreadPoolExecutor(max_workers=len(receipts)) as pool:
+        list(pool.map(worker, receipts))
+
+    assert len(wins) == 1                          # no last-writer-wins
+    assert len(conflicts) == len(receipts) - 1
+    # The persisted final file is exactly the single winner and is valid.
+    stored = store.load("req-receipt")
+    assert stored["receipt_digest"] == wins[0]
+    verify_receipt(stored)
+    # Exactly one final receipt, and no orphan temp files left behind.
+    assert [p.name for p in tmp_path.iterdir()] == [
+        sha256_text("req-receipt") + ".receipt.json"]
+
+
+def test_concurrent_identical_content_is_idempotent(tmp_path):
+    store = ConsultationReceiptStore(tmp_path)
+    receipt = _outcome(_request()).receipt
+    barrier = threading.Barrier(8)
+    errors = []
+
+    def worker(_):
+        barrier.wait()
+        try:
+            store.save(receipt)
+        except Exception as exc:                  # noqa: BLE001
+            errors.append(exc)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(worker, range(8)))
+
+    assert errors == []                            # identical content never conflicts
+    assert store.load("req-receipt")["receipt_digest"] == receipt["receipt_digest"]
+    assert [p.name for p in tmp_path.iterdir()] == [
+        sha256_text("req-receipt") + ".receipt.json"]
+
+
+def test_existing_final_receipt_is_verified_before_idempotent_return(tmp_path):
+    store = ConsultationReceiptStore(tmp_path)
+    receipt = _outcome(_request()).receipt
+    path = store.save(receipt)
+    # Corrupt the persisted final receipt, then a re-save must NOT silently
+    # succeed — it re-verifies the existing file first.
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        receipt["worker_id"], "tampered-worker"), encoding="utf-8")
+    with pytest.raises(ConsultationError):
+        store.save(receipt)
