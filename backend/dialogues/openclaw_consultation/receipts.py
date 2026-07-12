@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional
@@ -103,16 +104,35 @@ def verify_receipt(record: Mapping[str, Any]) -> Dict[str, Any]:
     return dict(record)
 
 
+#: Bounded wait for a fallback publisher to finish (never an infinite loop).
+_PUBLISH_LOCK_TIMEOUT = 5.0
+_PUBLISH_LOCK_POLL = 0.005
+
+
 class ConsultationReceiptStore:
     """One JSON file per request_id, keyed by a HASHED filename (never the raw
     request_id), so a hostile request_id can neither traverse out of the store
     nor collide with a drive/stream marker. Writes are atomic and immutable:
     the first distinct content for a request_id wins; identical content is an
     idempotent success; different content is refused - even under concurrent
-    writers, because publication uses an atomic no-overwrite link/create."""
+    writers.
 
-    def __init__(self, directory: pathlib.Path | str) -> None:
+    Publication is atomic and no-overwrite. The primary path is an atomic
+    ``os.link`` (fails if the final already exists). On a filesystem without
+    hard-link support, writers serialize on an exclusive sibling *publication
+    lock*: the single lock holder re-checks that the final is absent and then
+    atomically ``os.replace`` its already-complete temp into place, so no reader
+    ever sees an empty or partial final receipt. Losers wait (bounded) for the
+    lock, then verify/reconcile; a stuck lock times out as a ConsultationError
+    and NEVER overwrites an existing receipt.
+    """
+
+    def __init__(self, directory: pathlib.Path | str, *,
+                 lock_timeout: float = _PUBLISH_LOCK_TIMEOUT,
+                 lock_poll: float = _PUBLISH_LOCK_POLL) -> None:
         self.directory = pathlib.Path(directory)
+        self._lock_timeout = lock_timeout
+        self._lock_poll = lock_poll
 
     def _path_for(self, request_id: str) -> pathlib.Path:
         # request_id is validated as a strict identifier, then HASHED for the
@@ -126,17 +146,67 @@ class ConsultationReceiptStore:
             raise ConsultationError("receipt path escapes the store directory")
         return path
 
+    @staticmethod
+    def _lock_for(path: pathlib.Path) -> pathlib.Path:
+        stem = path.name.split(".", 1)[0]           # the sha256 hex
+        return path.parent / f"{stem}.receipt.lock"
+
     def _reconcile(self, path: pathlib.Path,
                    verified: Mapping[str, Any]) -> pathlib.Path:
         """A final receipt already exists: verify it, then return idempotently
         if it is byte-for-byte the same consultation, else refuse the conflict.
         The existing final receipt is re-verified before any idempotent return.
+
+        Any read/parse failure is normalized to ConsultationError (defense in
+        depth) with a safe message - never a raw JSON/filesystem exception and
+        never raw file contents.
         """
-        existing = verify_receipt(json.loads(path.read_text(encoding="utf-8")))
+        try:
+            existing = verify_receipt(json.loads(
+                path.read_text(encoding="utf-8")))
+        except ConsultationError:
+            raise                                    # already safe + specific
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError, TypeError,
+                ValueError):
+            raise ConsultationError(
+                "existing consultation receipt could not be read for "
+                "reconciliation")
         if existing["receipt_digest"] != verified["receipt_digest"]:
             raise ConsultationError(
                 "conflicting consultation receipt for the same request_id")
         return path
+
+    def _fallback_publish(self, path: pathlib.Path, tmp: pathlib.Path,
+                          verified: Mapping[str, Any]) -> pathlib.Path:
+        """No hard-link support: serialize publication on an exclusive sibling
+        lock, then atomically replace the already-complete temp into place."""
+        lock = self._lock_for(path)
+        deadline = time.monotonic() + self._lock_timeout
+        while True:
+            if path.exists():
+                return self._reconcile(path, verified)   # already published
+            try:
+                fd = os.open(os.fspath(lock),
+                             os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                # Another writer is publishing: wait (bounded), then reconcile.
+                if time.monotonic() >= deadline:
+                    raise ConsultationError(
+                        "consultation receipt publication lock timed out")
+                time.sleep(self._lock_poll)
+                continue
+            try:
+                if path.exists():
+                    # Published while we were acquiring the lock: never overwrite.
+                    return self._reconcile(path, verified)
+                os.replace(tmp, path)   # atomic; temp is already fully written
+                return path
+            finally:
+                os.close(fd)
+                try:
+                    os.unlink(lock)
+                except FileNotFoundError:
+                    pass
 
     def save(self, record: Mapping[str, Any]) -> pathlib.Path:
         verified = verify_receipt(record)
@@ -148,23 +218,18 @@ class ConsultationReceiptStore:
         payload = json.dumps(verified, ensure_ascii=False, sort_keys=True,
                              indent=2) + "\n"
         # Unique per-writer temp in the SAME directory (never a shared name),
-        # then publish with an atomic, no-overwrite operation.
+        # written in FULL before any publication is attempted.
         tmp = self.directory / f".{uuid.uuid4().hex}.receipt.tmp"
         try:
             with open(tmp, "x", encoding="utf-8") as handle:
                 handle.write(payload)
             try:
-                os.link(tmp, path)          # atomic; fails if path exists
+                os.link(tmp, path)          # primary: atomic, fails if exists
             except FileExistsError:
                 return self._reconcile(path, verified)
             except (OSError, NotImplementedError):
-                # Filesystems without hard-link support: fall back to an
-                # exclusive create of the final path (still no-overwrite).
-                try:
-                    with open(path, "x", encoding="utf-8") as final:
-                        final.write(payload)
-                except FileExistsError:
-                    return self._reconcile(path, verified)
+                # No hard-link support: lock-serialized atomic-replace publish.
+                return self._fallback_publish(path, tmp, verified)
         finally:
             try:
                 os.unlink(tmp)

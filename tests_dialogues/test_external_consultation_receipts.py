@@ -7,7 +7,12 @@ keys or hidden reasoning are stored.
 """
 
 import asyncio
+import json
+import os
+import subprocess
+import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -22,7 +27,13 @@ from backend.dialogues.openclaw_consultation import (
     build_receipt,
     verify_receipt,
 )
+from backend.dialogues.openclaw_consultation import receipts as receipts_mod
 from backend.dialogues.openclaw_consultation.schemas import sha256_text
+
+
+def _broken_link(src, dst):
+    """Simulate a filesystem without hard-link support (forces the fallback)."""
+    raise OSError("simulated: no hard-link support")
 
 _NOW = "2026-07-11T00:00:00Z"
 _EXP = "2026-07-11T01:00:00Z"
@@ -284,3 +295,161 @@ def test_existing_final_receipt_is_verified_before_idempotent_return(tmp_path):
         receipt["worker_id"], "tampered-worker"), encoding="utf-8")
     with pytest.raises(ConsultationError):
         store.save(receipt)
+
+
+# --------------------------------------------------------------------------- #
+# LOW fix — no-hard-link FALLBACK: lock-serialized atomic publication
+# --------------------------------------------------------------------------- #
+
+def _hashed(request_id="req-receipt"):
+    return sha256_text(request_id) + ".receipt.json"
+
+
+def _race(store, receipts):
+    barrier = threading.Barrier(len(receipts))
+    wins, conflicts, leaks = [], [], []
+
+    def worker(rec):
+        barrier.wait()
+        try:
+            store.save(rec)
+            wins.append(rec["receipt_digest"])
+        except ConsultationError:
+            conflicts.append(rec["receipt_digest"])
+        except Exception as exc:                      # non-ConsultationError = leak
+            leaks.append(f"{type(exc).__name__}: {exc}")
+
+    with ThreadPoolExecutor(max_workers=len(receipts)) as pool:
+        list(pool.map(worker, receipts))
+    return wins, conflicts, leaks
+
+
+def _no_orphans(tmp_path):
+    names = [p.name for p in tmp_path.iterdir()]
+    assert not any(n.endswith(".tmp") for n in names), names
+    assert not any(n.endswith(".lock") for n in names), names
+    return names
+
+
+def test_fallback_concurrent_distinct_one_wins_no_raw(tmp_path, monkeypatch):
+    monkeypatch.setattr(receipts_mod.os, "link", _broken_link)
+    store = ConsultationReceiptStore(tmp_path)
+    receipts = [_outcome(_request(question=f"distinct {i}")).receipt
+                for i in range(8)]
+    wins, conflicts, leaks = _race(store, receipts)
+    assert leaks == []                                # no raw JSONDecodeError
+    assert len(wins) == 1 and len(conflicts) == 7
+    verify_receipt(store.load("req-receipt"))
+    assert _no_orphans(tmp_path) == [_hashed()]       # one valid final, lock gone
+
+
+def test_fallback_concurrent_identical_all_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setattr(receipts_mod.os, "link", _broken_link)
+    store = ConsultationReceiptStore(tmp_path)
+    receipt = _outcome(_request()).receipt
+    wins, conflicts, leaks = _race(store, [receipt] * 8)
+    assert leaks == [] and conflicts == []            # idempotent, no raw errors
+    assert store.load("req-receipt")["receipt_digest"] == receipt["receipt_digest"]
+    assert _no_orphans(tmp_path) == [_hashed()]
+
+
+def test_fallback_loser_never_reads_partial_when_publish_is_slow(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(receipts_mod.os, "link", _broken_link)
+    real_replace = os.replace
+
+    def slow_replace(src, dst):
+        time.sleep(0.2)                               # widen the publish window
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(receipts_mod.os, "replace", slow_replace)
+    store = ConsultationReceiptStore(tmp_path)
+    a = _outcome(_request(question="winner-or-loser A")).receipt
+    b = _outcome(_request(question="winner-or-loser B")).receipt
+    wins, conflicts, leaks = _race(store, [a, b])
+    assert leaks == []                                # loser got no partial JSON
+    assert len(wins) == 1 and len(conflicts) == 1
+    verify_receipt(store.load("req-receipt"))
+
+
+def test_fallback_publication_lock_timeout_is_consultation_error(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(receipts_mod.os, "link", _broken_link)
+    store = ConsultationReceiptStore(tmp_path, lock_timeout=0.2, lock_poll=0.01)
+    receipt = _outcome(_request()).receipt
+    # Simulate a stuck/crashed writer holding the lock; the final never appears.
+    path = store._path_for("req-receipt")
+    lock = store._lock_for(path)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    lock.write_text("", encoding="utf-8")
+    with pytest.raises(ConsultationError, match="lock timed out"):
+        store.save(receipt)
+    assert not path.exists()                          # never overwritten/created
+    # No new orphan temp; the stale lock is left for explicit operator action.
+    leftovers = sorted(p.name for p in tmp_path.iterdir())
+    assert leftovers == [lock.name]
+    assert not any(n.endswith(".tmp") for n in leftovers)
+
+
+def test_permanently_malformed_final_receipt_is_consultation_error(tmp_path):
+    store = ConsultationReceiptStore(tmp_path)
+    receipt = _outcome(_request()).receipt
+    path = store._path_for("req-receipt")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    path.write_text("this is not json at all", encoding="utf-8")   # corrupt
+    with pytest.raises(ConsultationError):
+        store.save(receipt)                           # normalized, not JSONDecodeError
+
+
+def test_fallback_lock_removed_after_normal_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(receipts_mod.os, "link", _broken_link)
+    store = ConsultationReceiptStore(tmp_path)
+    store.save(_outcome(_request()).receipt)
+    assert _no_orphans(tmp_path) == [_hashed()]       # lock + tmp both gone
+
+
+def test_fallback_process_level_contention(tmp_path):
+    """Process-level forced fallback: exactly one valid final receipt, only
+    conflicts/idempotent otherwise, no leaks (where subprocess spawn works)."""
+    root = str(__import__("pathlib").Path(__file__).resolve().parents[1])
+    worker = tmp_path / "proc_worker.py"
+    worker.write_text(
+        "import sys, os, json, time, pathlib\n"
+        "sys.path.insert(0, sys.argv[4])\n"
+        "from backend.dialogues.openclaw_consultation import receipts as rm\n"
+        "from backend.dialogues.openclaw_consultation import ConsultationError\n"
+        "rm.os.link = lambda s, d: (_ for _ in ()).throw(OSError('no link'))\n"
+        "rec = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'))\n"
+        "start = float(sys.argv[3])\n"
+        "while time.time() < start:\n"
+        "    pass\n"
+        "try:\n"
+        "    rm.ConsultationReceiptStore(sys.argv[1]).save(rec)\n"
+        "    print('WIN')\n"
+        "except ConsultationError:\n"
+        "    print('CONFLICT')\n"
+        "except Exception as e:\n"
+        "    print('LEAK:' + type(e).__name__)\n",
+        encoding="utf-8")
+    store_dir = tmp_path / "store"
+    store_dir.mkdir()
+    recs = [_outcome(_request(question=f"proc distinct {i}")).receipt
+            for i in range(4)]
+    paths = []
+    for i, rec in enumerate(recs):
+        p = tmp_path / f"rec{i}.json"
+        p.write_text(json.dumps(rec), encoding="utf-8")
+        paths.append(str(p))
+    start = time.time() + 2.0
+    try:
+        procs = [subprocess.Popen(
+            [sys.executable, str(worker), str(store_dir), pp, str(start), root],
+            stdout=subprocess.PIPE, text=True) for pp in paths]
+        outs = [pr.communicate(timeout=60)[0].strip() for pr in procs]
+    except (OSError, subprocess.SubprocessError) as exc:
+        pytest.skip(f"subprocess spawn unavailable: {exc}")
+    assert all(o in ("WIN", "CONFLICT") for o in outs), outs   # no LEAK
+    assert outs.count("WIN") == 1
+    files = [p.name for p in store_dir.iterdir()]
+    assert files == [_hashed("req-receipt")]
+    verify_receipt(json.loads((store_dir / files[0]).read_text(encoding="utf-8")))
