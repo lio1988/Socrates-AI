@@ -343,3 +343,93 @@ def test_consult_external_model_requires_consultation_request():
                                       "priority": "recommended"}])
     assert validate_check_payload("standard", ok)["decision"] == \
         "consult_external_model"
+
+
+# --------------------------------------------------------------------------- #
+# accept must not coexist with a REQUIRED (blocking) verification (MEDIUM fix)
+# --------------------------------------------------------------------------- #
+
+def _vr(kind, priority):
+    return {"kind": kind, "reason": "recompute the result", "priority": priority}
+
+
+def test_accept_with_required_verification_refused_standard():
+    payload = dict(_STANDARD_PAYLOAD, decision="accept", revision_guidance=[],
+                   verification_requests=[_vr("calculator", "required")])
+    with pytest.raises(MicroSocraticError,
+                       match="required verification_request"):
+        validate_check_payload("standard", payload)
+
+
+def test_accept_with_optional_verification_allowed():
+    payload = dict(_STANDARD_PAYLOAD, decision="accept", revision_guidance=[],
+                   verification_requests=[_vr("calculator", "optional")])
+    assert validate_check_payload("standard", payload)["decision"] == "accept"
+
+
+def _high_risk(**over):
+    base = {
+        "claim_summary": "The dosage is correct.",
+        "assumptions": ["units are milligrams"],
+        "strongest_challenges": ["unit assumption unstated"],
+        "missing_evidence": ["no source for the conversion factor"],
+        "verification_requests": [],
+        "uncertainties": ["weight basis unclear"],
+        "decision": "accept",
+        "revision_guidance": [],
+    }
+    base.update(over)
+    return base
+
+
+def test_accept_with_required_source_check_refused_high_risk():
+    payload = _high_risk(verification_requests=[_vr("source_check", "required")])
+    with pytest.raises(MicroSocraticError,
+                       match="required verification_request"):
+        validate_check_payload("high_risk", payload)
+
+
+def test_accept_with_required_external_consultation_refused_high_risk():
+    payload = _high_risk(
+        verification_requests=[_vr("external_consultation", "required")])
+    with pytest.raises(MicroSocraticError,
+                       match="required verification_request"):
+        validate_check_payload("high_risk", payload)
+
+
+def test_accept_with_required_cannot_bypass_via_check_construction():
+    # The service path (MicroSocraticCheck.__post_init__ -> validate) and a
+    # from_record round-trip both re-run validation, so the incoherent payload
+    # cannot slip through as a built check.
+    payload = dict(_STANDARD_PAYLOAD, decision="accept", revision_guidance=[],
+                   verification_requests=[_vr("code_test", "required")])
+    with pytest.raises(MicroSocraticError,
+                       match="required verification_request"):
+        MicroSocraticCheck(
+            request_id="kernel-001", request_digest="a" * 64,
+            agent_id="local_apprentice_001", mode="standard", provider="mock",
+            model="mock-auditor", provider_status="ok",
+            structured_payload=payload)
+
+
+def test_verify_with_tool_with_required_tool_request_allowed():
+    payload = dict(_STANDARD_PAYLOAD, decision="verify_with_tool",
+                   revision_guidance=[],
+                   verification_requests=[_vr("calculator", "required")])
+    assert validate_check_payload("standard", payload)["decision"] == \
+        "verify_with_tool"
+
+
+def test_consult_external_model_with_required_external_request_allowed():
+    payload = dict(_STANDARD_PAYLOAD, decision="consult_external_model",
+                   revision_guidance=[],
+                   verification_requests=[_vr("external_consultation", "required")])
+    assert validate_check_payload("standard", payload)["decision"] == \
+        "consult_external_model"
+
+
+def test_revise_with_required_verification_and_guidance_allowed():
+    payload = dict(_STANDARD_PAYLOAD, decision="revise",
+                   revision_guidance=["use atomic no-overwrite publication"],
+                   verification_requests=[_vr("code_test", "required")])
+    assert validate_check_payload("standard", payload)["decision"] == "revise"

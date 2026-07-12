@@ -541,6 +541,14 @@ def _coherence(mode: str, payload: Dict[str, Any]) -> None:
     if decision == "accept" and guidance:
         raise MicroSocraticError(
             "decision 'accept' must not carry revision_guidance")
+    if decision == "accept" and any(vr["priority"] == "required" for vr in vrs):
+        # 'accept' means no unresolved blocking verification requirement - it is
+        # NOT governance approval or self-certification. A 'required' verification
+        # is blocking by definition, so a caller must not be able to cherry-pick
+        # the 'accept' and silently drop it. (vrs items are already validated,
+        # so "priority" is guaranteed present.)
+        raise MicroSocraticError(
+            "decision 'accept' must not carry a required verification_request")
     if decision == "revise" and not guidance:
         raise MicroSocraticError(
             "decision 'revise' requires non-empty revision_guidance")
