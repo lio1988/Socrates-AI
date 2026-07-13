@@ -35,6 +35,7 @@ No providers, network, keys, automatic promotion, or canonical profile writes.
 
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import hashlib
 import json
@@ -62,35 +63,145 @@ MIN_OCCURRENCES = 2
 DEFAULT_RESOLUTION_WINDOW = 2
 
 
-def _value(argv, name, default=""):
-    if name not in argv:
-        return default
-    index = argv.index(name)
-    if index + 1 >= len(argv):
-        return default
-    return str(argv[index + 1]).strip()
+class _ArgumentRefusal(ValueError):
+    """A deterministic CLI refusal raised instead of argparse SystemExit."""
 
 
-def _values(argv, name):
-    values = []
-    for index, value in enumerate(argv):
-        if value == name and index + 1 < len(argv):
-            cleaned = str(argv[index + 1]).strip()
-            if cleaned:
-                values.append(cleaned)
-    return values
+class _StrictArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise _ArgumentRefusal(message)
 
 
-def _positive_int(value, *, field, default):
-    if value == "":
-        return default
+class _StoreOnce(argparse.Action):
+    """Store a singleton option and refuse ambiguous repetitions."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if getattr(self, "_seen", False):
+            parser.error(f"argument {option_string}: may not be repeated")
+        self._seen = True
+        setattr(
+            namespace,
+            self.dest,
+            self.const if self.nargs == 0 else values,
+        )
+
+
+def _non_option_text(value):
+    cleaned = str(value).strip()
+    if not cleaned:
+        raise argparse.ArgumentTypeError("must be non-empty")
+    if cleaned.startswith("-"):
+        raise argparse.ArgumentTypeError("must not be an option token")
+    return cleaned
+
+
+def _window_value(value):
     try:
         parsed = int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} must be an integer") from exc
+        raise argparse.ArgumentTypeError(
+            "resolution window must be an integer") from exc
     if parsed < 2:
-        raise ValueError(f"{field} must be an integer >= 2")
+        raise argparse.ArgumentTypeError(
+            "resolution window must be an integer >= 2")
     return parsed
+
+
+def _parser():
+    parser = _StrictArgumentParser(
+        prog="openclaw_attest_evidence.py",
+        description="Attest governed OpenClaw evidence as a named human act.",
+        allow_abbrev=False,
+    )
+    parser.add_argument("agent_id", type=_non_option_text)
+    parser.add_argument(
+        "--mode",
+        choices=("failure", "resolution", "resolve", "soul"),
+        default="failure",
+        action=_StoreOnce,
+        help="attestation mode; resolve is an alias for resolution",
+    )
+    parser.add_argument(
+        "--verified-by", required=True, type=_non_option_text,
+        action=_StoreOnce)
+    parser.add_argument(
+        "--section", type=_non_option_text, action=_StoreOnce,
+        default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--window", type=_window_value, action=_StoreOnce,
+        default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--action",
+        choices=("add_principle", "retire_principle"),
+        type=_non_option_text,
+        action=_StoreOnce,
+        default=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--principle", type=_non_option_text, action=_StoreOnce,
+        default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--evidence-ref", action="append", type=_non_option_text,
+        default=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--rationale", type=_non_option_text, action=_StoreOnce,
+        default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--review-reference", type=_non_option_text,
+        action=_StoreOnce,
+        default=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--constitutional-review", action=_StoreOnce, nargs=0, const=True,
+        default=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--risk-reviewed", action=_StoreOnce, nargs=0, const=True,
+        default=argparse.SUPPRESS)
+    return parser
+
+
+def _option_name(destination):
+    return f"--{destination.replace('_', '-')}"
+
+
+def _validate_mode_envelope(args, mode):
+    common = {"agent_id", "mode", "verified_by"}
+    allowed = {
+        "failure": common,
+        "resolution": common | {"section", "window"},
+        "soul": common | {
+            "action", "principle", "evidence_ref", "rationale",
+            "review_reference", "constitutional_review", "risk_reviewed",
+        },
+    }[mode]
+    required = {
+        "failure": set(),
+        "resolution": {"section"},
+        "soul": {
+            "action", "principle", "evidence_ref", "rationale",
+            "review_reference", "constitutional_review", "risk_reviewed",
+        },
+    }[mode]
+    provided = set(vars(args))
+    irrelevant = sorted(provided - allowed)
+    if irrelevant:
+        rendered = ", ".join(_option_name(name) for name in irrelevant)
+        raise _ArgumentRefusal(f"{mode} mode does not accept {rendered}")
+    missing = sorted(required - provided)
+    if missing:
+        rendered = ", ".join(_option_name(name) for name in missing)
+        raise _ArgumentRefusal(f"{mode} mode requires {rendered}")
+
+
+def _print_argument_refusal(message):
+    if "required: --verified-by" in message:
+        message = (
+            "attestation requires a named attester "
+            "(--verified-by \"Your Name\")"
+        )
+    print(f"  REFUSED: invalid arguments: {message}")
 
 
 def _weakness_for_section(section):
@@ -231,7 +342,7 @@ def _soul_report(agent_id, *, action, principle, evidence_references,
         "agent_id": agent_id,
         "action": action,
         "principle": principle,
-        "evidence_references": sorted(evidence_references),
+        "evidence_references": list(evidence_references),
         "rationale": rationale,
         "review_reference": review_reference,
     }
@@ -328,7 +439,8 @@ def _attest_soul(registry, *, agent_id, action, principle,
     if not risk_reviewed:
         raise ValueError("soul mode requires --risk-reviewed")
 
-    for reference in evidence_references:
+    canonical_evidence_references = sorted(evidence_references)
+    for reference in canonical_evidence_references:
         evidence = registry.load(reference)
         if evidence is None:
             raise ValueError(f"Soul evidence reference {reference!r} does not exist")
@@ -340,7 +452,7 @@ def _attest_soul(registry, *, agent_id, action, principle,
         agent_id,
         action=action,
         principle=principle,
-        evidence_references=evidence_references,
+        evidence_references=canonical_evidence_references,
         rationale=rationale,
         review_reference=review_reference,
         reviewed_by=verified_by,
@@ -354,31 +466,31 @@ def _attest_soul(registry, *, agent_id, action, principle,
 
 
 def main(argv=None, env=None) -> int:
-    argv = sys.argv if argv is None else argv
-    env = os.environ if env is None else env
+    cli_argv = sys.argv[1:] if argv is None else list(argv)[1:]
+    try:
+        args = _parser().parse_args(cli_argv)
+    except _ArgumentRefusal as exc:
+        _print_argument_refusal(str(exc))
+        return 1
+    except SystemExit as exc:
+        return int(exc.code)
 
-    agent_id = str(argv[1]).strip() if len(argv) > 1 else ""
-    verified_by = _value(argv, "--verified-by")
-    mode = _value(argv, "--mode", "failure").lower()
-    if mode == "resolve":
-        mode = "resolution"
+    mode = "resolution" if args.mode == "resolve" else args.mode
+    try:
+        _validate_mode_envelope(args, mode)
+    except _ArgumentRefusal as exc:
+        _print_argument_refusal(str(exc))
+        return 1
+
+    env = os.environ if env is None else env
+    agent_id = args.agent_id
+    verified_by = args.verified_by
 
     print("=" * _W)
     print("  OPENCLAW EVIDENCE ATTESTATION - named human act; evidence only")
     print("=" * _W)
-    if not agent_id:
-        print("  usage: openclaw_attest_evidence.py <agent_id> "
-              "--verified-by \"Your Name\"")
-        return 1
-    if not verified_by:
-        print("  REFUSED: attestation requires a named attester "
-              "(--verified-by \"Your Name\").")
-        return 1
     if verified_by.casefold() == agent_id.casefold():
         print("  REFUSED: an agent can never attest its own evidence.")
-        return 1
-    if mode not in {"failure", "resolution", "soul"}:
-        print(f"  REFUSED: unknown attestation mode {mode!r}.")
         return 1
 
     shadow_path = pathlib.Path(env.get(
@@ -403,15 +515,11 @@ def main(argv=None, env=None) -> int:
             )
         elif mode == "resolution":
             records = load_jsonl(shadow_path)
-            window = _positive_int(
-                _value(argv, "--window"),
-                field="resolution window",
-                default=DEFAULT_RESOLUTION_WINDOW,
-            )
+            window = getattr(args, "window", DEFAULT_RESOLUTION_WINDOW)
             written, skipped = _attest_resolution(
                 records, registry,
                 agent_id=agent_id,
-                section=_value(argv, "--section"),
+                section=args.section,
                 window=window,
                 shadow_path=shadow_path,
                 verified_by=verified_by,
@@ -421,15 +529,15 @@ def main(argv=None, env=None) -> int:
             written, skipped = _attest_soul(
                 registry,
                 agent_id=agent_id,
-                action=_value(argv, "--action"),
-                principle=_value(argv, "--principle"),
-                evidence_references=_values(argv, "--evidence-ref"),
-                rationale=_value(argv, "--rationale"),
-                review_reference=_value(argv, "--review-reference"),
+                action=args.action,
+                principle=args.principle,
+                evidence_references=args.evidence_ref,
+                rationale=args.rationale,
+                review_reference=args.review_reference,
                 verified_by=verified_by,
                 observed_on=observed_on,
-                constitutional_review="--constitutional-review" in argv,
-                risk_reviewed="--risk-reviewed" in argv,
+                constitutional_review=args.constitutional_review,
+                risk_reviewed=args.risk_reviewed,
             )
     except ValueError as exc:
         print(f"  REFUSED: {exc}")

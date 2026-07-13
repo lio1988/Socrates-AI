@@ -70,6 +70,121 @@ def _env(tmp_path):
     }
 
 
+def _assert_parser_refusal(attest_script, tmp_path, capsys, argv):
+    assert attest_script.main(argv, env=_env(tmp_path)) != 0
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "REFUSED: invalid arguments:" in combined
+    assert "Traceback" not in combined
+    assert RevisionEvidenceRegistry(tmp_path / "evidence").all_records() == []
+    assert list(tmp_path.rglob("*")) == []
+
+
+@pytest.mark.parametrize("option", [
+    "--verified-by",
+    "--mode",
+    "--section",
+    "--window",
+    "--action",
+    "--principle",
+    "--evidence-ref",
+    "--rationale",
+    "--review-reference",
+])
+def test_strict_parser_rejects_missing_option_values_without_artifacts(
+        attest_script, tmp_path, capsys, option):
+    argv = ["prog", AGENT, "--verified-by", "Operator", option]
+    if option == "--verified-by":
+        argv = ["prog", AGENT, option]
+    _assert_parser_refusal(attest_script, tmp_path, capsys, argv)
+
+
+@pytest.mark.parametrize("argv", [
+    ["prog", AGENT, "--verified-by", "--constitutional-review",
+     "--risk-reviewed"],
+    ["prog", AGENT, "--review-reference", "--constitutional-review",
+     "--verified-by", "Operator"],
+    ["prog", AGENT, "--principle", "--risk-reviewed",
+     "--verified-by", "Operator"],
+    ["prog", AGENT, "--rationale", "--verified-by", "Operator"],
+    ["prog", AGENT, "--section", "--window", "2",
+     "--verified-by", "Operator"],
+    ["prog", AGENT, "--window", "--verified-by", "Operator"],
+    ["prog", AGENT, "--action", "--principle", "A principle",
+     "--verified-by", "Operator"],
+    ["prog", AGENT, "--evidence-ref", "--rationale", "A rationale",
+     "--verified-by", "Operator"],
+])
+def test_strict_parser_rejects_option_shaped_values_without_artifacts(
+        attest_script, tmp_path, capsys, argv):
+    _assert_parser_refusal(attest_script, tmp_path, capsys, argv)
+
+
+@pytest.mark.parametrize("argv", [
+    ["prog", AGENT, "--verified-by", "Operator", "--unknown-option", "x"],
+    ["prog", AGENT, "--verified-b", "Operator"],
+    ["prog", "--verified-by", "Operator"],
+])
+def test_strict_parser_rejects_unknown_abbreviated_and_missing_positional(
+        attest_script, tmp_path, capsys, argv):
+    _assert_parser_refusal(attest_script, tmp_path, capsys, argv)
+
+
+@pytest.mark.parametrize("argv", [
+    ["prog", AGENT, "--verified-by=--constitutional-review"],
+    ["prog", AGENT, "--mode", "soul", "--verified-by", "Operator",
+     "--review-reference=--constitutional-review"],
+    ["prog", AGENT, "--verified-by", "First Operator",
+     "--verified-by", "Second Operator"],
+    ["prog", AGENT, "--mode", "failure", "--mode", "resolution",
+     "--verified-by", "Operator"],
+    ["prog", AGENT, "--mode", "soul", "--constitutional-review",
+     "--constitutional-review", "--verified-by", "Operator"],
+])
+def test_strict_parser_rejects_equals_exploits_and_singleton_repetitions(
+        attest_script, tmp_path, capsys, argv):
+    _assert_parser_refusal(attest_script, tmp_path, capsys, argv)
+
+
+@pytest.mark.parametrize("argv", [
+    ["prog", AGENT, "--verified-by", "Operator",
+     "--section", SECTION],
+    ["prog", AGENT, "--mode", "resolution", "--section", SECTION,
+     "--principle", PRINCIPLE, "--verified-by", "Operator"],
+    ["prog", AGENT, "--mode", "soul", "--action", "add_principle",
+     "--principle", PRINCIPLE, "--evidence-ref", "trace/a",
+     "--rationale", "Evidence warrants it.",
+     "--review-reference", "review/soul-envelope",
+     "--constitutional-review", "--risk-reviewed",
+     "--section", SECTION, "--verified-by", "Operator"],
+])
+def test_strict_parser_rejects_irrelevant_mode_specific_arguments(
+        attest_script, tmp_path, capsys, argv):
+    _assert_parser_refusal(attest_script, tmp_path, capsys, argv)
+
+
+@pytest.mark.parametrize("argv", [
+    ["prog", AGENT, "--mode", "resolution", "--section", SECTION,
+     "--window", "1", "--verified-by", "Operator"],
+    ["prog", AGENT, "--mode", "resolution", "--section", SECTION,
+     "--window", "not-an-integer", "--verified-by", "Operator"],
+    ["prog", "   ", "--verified-by", "Operator"],
+    ["prog", AGENT, "--verified-by", "   "],
+])
+def test_strict_parser_rejects_invalid_typed_or_empty_values(
+        attest_script, tmp_path, capsys, argv):
+    _assert_parser_refusal(attest_script, tmp_path, capsys, argv)
+
+
+def test_strict_parser_help_returns_zero_without_artifacts(
+        attest_script, tmp_path, capsys):
+    assert attest_script.main(["prog", "--help"], env=_env(tmp_path)) == 0
+    captured = capsys.readouterr()
+    assert "usage: openclaw_attest_evidence.py" in captured.out
+    assert "Traceback" not in captured.out + captured.err
+    assert list(tmp_path.rglob("*")) == []
+
+
 def _failure_args(agent_id=AGENT):
     return ["prog", agent_id, "--verified-by", "Operator"]
 
@@ -87,16 +202,21 @@ def _resolution_args(agent_id=AGENT, *, section=SECTION, window=2):
 def _soul_args(reference, *, agent_id=AGENT, action="add_principle",
                principle=PRINCIPLE, include_constitution=True,
                include_risk=True):
+    references = (
+        list(reference) if isinstance(reference, (list, tuple))
+        else [reference]
+    )
     args = [
         "prog", agent_id,
         "--mode", "soul",
         "--action", action,
         "--principle", principle,
-        "--evidence-ref", reference,
         "--rationale", "Repeated verified evidence warrants this principle.",
         "--review-reference", "review/soul-001",
         "--verified-by", "Operator",
     ]
+    for evidence_reference in references:
+        args.extend(["--evidence-ref", evidence_reference])
     if include_constitution:
         args.append("--constitutional-review")
     if include_risk:
@@ -162,6 +282,19 @@ def test_matched_resolution_window_becomes_inverse_evidence(
     )
     assert resolution.outcomes == ("reverted",)
     assert "matched-" in resolution.source
+
+
+def test_resolve_alias_uses_the_default_resolution_window(
+        attest_script, tmp_path, capsys):
+    registry, _ = _prepare_failure(attest_script, tmp_path, capsys)
+    args = [
+        "prog", AGENT, "--mode", "resolve", "--section", SECTION,
+        "--verified-by", "Operator",
+    ]
+
+    assert attest_script.main(args, env=_env(tmp_path)) == 0
+    assert "mode           : resolution" in capsys.readouterr().out
+    assert len(registry.all_records(AGENT)) == 2
 
 
 def test_resolution_refuses_non_clean_after_window(
@@ -235,6 +368,75 @@ def test_soul_add_principle_is_named_non_self_evidence(
     capsys.readouterr()
     assert len([row for row in registry.all_records(AGENT)
                 if "soul:add_principle" in row.supports]) == 1
+
+
+def test_soul_reference_order_is_canonical_and_idempotent(
+        attest_script, tmp_path, capsys, monkeypatch):
+    registry = RevisionEvidenceRegistry(tmp_path / "evidence")
+    references = ("trace/a", "trace/b")
+    for index, reference in enumerate(references):
+        registry.register(RevisionEvidenceRecord(
+            reference=reference,
+            agent_id=AGENT,
+            source=f"trace-harness/{index}",
+            supports=("identity:add_known_failure",),
+            value=f"weakness-{index}",
+            verified_by="Independent Operator",
+            verification_reference=f"review/source-{index}",
+        ))
+
+    captured_orders = []
+    original_builder = attest_script.build_soul_attestation_evidence
+
+    def capture_builder(report):
+        captured_orders.append(tuple(report["evidence_references"]))
+        return original_builder(report)
+
+    monkeypatch.setattr(
+        attest_script, "build_soul_attestation_evidence", capture_builder)
+
+    assert attest_script.main(
+        _soul_args(references), env=_env(tmp_path)) == 0
+    capsys.readouterr()
+    assert attest_script.main(
+        _soul_args(tuple(reversed(references))), env=_env(tmp_path)) == 0
+    capsys.readouterr()
+
+    soul_records = [
+        record for record in registry.all_records(AGENT)
+        if "soul:add_principle" in record.supports
+    ]
+    assert len(soul_records) == 1
+    assert captured_orders == [references, references]
+
+
+def test_soul_duplicate_and_missing_references_fail_without_soul_evidence(
+        attest_script, tmp_path, capsys):
+    registry = RevisionEvidenceRegistry(tmp_path / "evidence")
+    source = RevisionEvidenceRecord(
+        reference="trace/source",
+        agent_id=AGENT,
+        source="trace-harness",
+        supports=("identity:add_known_failure",),
+        value="source weakness",
+        verified_by="Independent Operator",
+        verification_reference="review/source",
+    )
+    registry.register(source)
+
+    assert attest_script.main(
+        _soul_args((source.reference, source.reference)),
+        env=_env(tmp_path),
+    ) == 1
+    assert "must be distinct" in capsys.readouterr().out
+
+    assert attest_script.main(
+        _soul_args("trace/missing"), env=_env(tmp_path)) == 1
+    assert "does not exist" in capsys.readouterr().out
+    assert not any(
+        "soul:add_principle" in record.supports
+        for record in registry.all_records(AGENT)
+    )
 
 
 def test_soul_refuses_cross_agent_evidence(attest_script, tmp_path, capsys):
