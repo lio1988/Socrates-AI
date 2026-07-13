@@ -20,8 +20,9 @@ All commands from the repo root, PowerShell:
 ```
 
 Shows: lessons found, traces/shadow records accumulated, identity registry
-state, pending proposals, env gates, and the **next recommended command**.
-Add `--json` for machine-readable output.
+state, pending proposals, governed self-revision lifecycle/transaction state,
+env gates, and the **next recommended command**. Add `--json` for a
+machine-readable report.
 
 ## Mode A — Demo shadow run (free, deterministic, zero setup)
 
@@ -60,10 +61,18 @@ Writes a trace per session to `runs/openclaw_traces/`.
 .\.venv\Scripts\python.exe scripts\openclaw_review.py
 ```
 
-Reads ALL traces + shadow records, reports repeated failure patterns, and
-writes proposals to `runs/openclaw_proposals/`:
-`PROPOSED_LESSONS.md` (loader-parseable) and `PROPOSED_PROMPT_PATCHES.md`.
-Nothing becomes active by being proposed.
+Reads all traces, shadow records, immutable self-revision evidence, and proposal
+lifecycles. It may write these read-only curator surfaces under
+`runs/openclaw_proposals/`:
+
+```text
+PROPOSED_LESSONS.md
+PROPOSED_PROMPT_PATCHES.md
+SELF_REVISION_PIPELINE.md
+```
+
+The pipeline report shows each agent’s verified evidence, proposal status, and
+next governed action. Nothing becomes active merely because it appears there.
 
 ## Mode E — Lesson A/B test (before promoting a lesson)
 
@@ -107,16 +116,53 @@ print('promoted to', reg.load_profile('local_apprentice_001').identity_version)
 `record_promotion` refuses a failing gate, an unnamed approver, and
 self-approval — the checks run even when you drive it by hand.
 
-## Mode G — Attest instrument evidence (named human act)
+## Mode G1 — Attest a repeated Identity weakness
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\openclaw_attest_evidence.py local_apprentice_001 --verified-by "Your Name"
 ```
 
-Converts REPEATED marker-verified shadow section losses into immutable
-`add_known_failure` evidence records. You vouch by name; the strict builders
-re-validate everything; exact reruns are idempotent, new evidence windows
-append. Without this step the self-review chain has no raw material.
+Converts repeated marker-verified shadow section losses into immutable
+`identity:add_known_failure` evidence. At least two distinct sessions are
+required; replayed session IDs never double-count.
+
+## Mode G2 — Attest an Identity resolution
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_evidence.py local_apprentice_001 --mode resolution --section blind_spots --window 2 --verified-by "Your Name"
+```
+
+Resolution is deliberately explicit. It requires:
+
+- an existing attested weakness with the exact same value;
+- two equal adjacent windows for that section;
+- every session in the before-window is a verified loss;
+- every session in the after-window is a verified win;
+- distinct, non-replayed sessions.
+
+The resulting evidence supports the original weakness and its canonical
+`resolve_known_failure` inverse. It does not change Identity by itself.
+
+## Mode G3 — Attest a Soul constitutional review
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_evidence.py local_apprentice_001 `
+  --mode soul `
+  --action add_principle `
+  --principle "State uncertainty before asserting a final verdict." `
+  --evidence-ref "shadow/..." `
+  --rationale "Repeated verified evidence warrants this commitment." `
+  --review-reference "review/soul-001" `
+  --constitutional-review --risk-reviewed `
+  --verified-by "Your Name"
+```
+
+Soul principles are normative commitments and are never inferred automatically.
+The command refuses unless the reviewer explicitly confirms constitutional and
+risk review, cites existing evidence owned by the same agent, writes a rationale,
+and names a review artifact. Use `--action retire_principle` for a reviewed
+retirement. Evidence still requires a separate agent proposal, evaluation,
+non-self approval, and recoverable application.
 
 ## Mode H — Bounded self-review package (agent proposes, nothing activates)
 
@@ -125,9 +171,9 @@ append. Without this step the self-review chain has no raw material.
 ```
 
 Builds the snapshot/summary/instruction artifacts an agent may use to author
-ONE descriptive proposal (Memory/Identity/Soul). Evidence comes only from the
-trusted registry (Mode G). Evaluation, named non-self approval, recoverable
-application, probation, and confirmation/rollback all still follow — see
+one descriptive proposal. Evidence comes only from the trusted registry
+(Mode G1/G2/G3). Evaluation, named non-self approval, recoverable application,
+probation, and confirmation/rollback all still follow — see
 [SELF_REVISION_GOVERNANCE.md](SELF_REVISION_GOVERNANCE.md).
 
 ## Mode I — Recover an interrupted revision transaction
@@ -157,12 +203,17 @@ view and the audit files above are the ground truth.
   use `git add -f` (and note `runs/` is deliberately not committed).
 - **Live run refuses** — both gates needed: `CED_ENABLE_LIVE_PROVIDERS=1`
   AND a real `ANTHROPIC_API_KEY` in the environment (never in files).
-- **Nothing to review** — traces/records accumulate only after Mode A/B/C
-  runs; the review reads history, it does not create it.
+- **Nothing to review** — traces, evidence, and lifecycle records accumulate
+  only after their corresponding modes run; the review reads history.
+- **Resolution refused** — first attest the weakness, then provide a clean
+  adjacent loss→win window of the requested size.
+- **Soul refused** — confirm both review flags and cite existing evidence for
+  the same agent.
 
 ## The constitution (what no mode can do)
 
-The system proposes; a human promotes. Judging stays anonymous; agents
-never see scores. Failures stay missing, never fabricated. The apprentice
-cannot touch final answers before the Promotion Arena. The disk is the
-message bus — every artifact above is a plain auditable file.
+The system proposes; a human promotes. Judging stays anonymous; agents never
+see hidden scores. Failures stay missing, never fabricated. The apprentice
+cannot touch final answers before the Promotion Arena. Memory, Identity, and
+Soul remain descriptive and never grant CED authority. Every artifact above is
+a plain auditable file.

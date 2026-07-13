@@ -153,9 +153,14 @@ def test_earned_identity_survives_rebuild(shadow_script, tmp_path, capsys):
 # --------------------------------------------------------------------------- #
 
 def _review_env(tmp_path):
+    # Full isolation: every directory the review reads must point at tmp,
+    # including the governed self-revision surfaces - otherwise the test
+    # silently reads the repo's real runs/ artifacts.
     return {"CED_TRACE_DIR": str(tmp_path / "traces"),
             "CED_SHADOW_DIR": str(tmp_path / "shadow"),
-            "CED_PROPOSALS_DIR": str(tmp_path / "proposals")}
+            "CED_PROPOSALS_DIR": str(tmp_path / "proposals"),
+            "CED_SELF_REVISION_EVIDENCE_DIR": str(tmp_path / "evidence"),
+            "CED_SELF_REVISION_DIR": str(tmp_path / "revisions")}
 
 
 def test_review_with_empty_history_is_a_clean_message(review_script, tmp_path,
