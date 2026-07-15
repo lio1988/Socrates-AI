@@ -125,6 +125,8 @@ Governed FinalResponse + audit metadata
 - **CED** validates and aggregates those judgments mechanically.
 - **Conversation continuity** is carried through a sanitized public brief; each
   turn remains a fresh governed council run.
+- **Learning and self-review components** may produce advice, telemetry,
+  hypotheses, or evidence. They cannot approve themselves or bypass governance.
 
 The repository also contains an older `socrates_ai.py` / `backend/orchestrator/`
 reasoning family and static HTML prototypes. They are historical prototypes and
@@ -272,28 +274,224 @@ A strict OpenRouter adapter is **planned**, not implemented on the current
 
 ---
 
-## Conversation, learning, and governance
+## Conversation continuity
 
-The canonical engine includes optional governed layers for:
+`ConversationManager` provides a normal multi-turn chat experience above the
+canonical council engine.
 
-- multi-turn conversation continuity through sanitized public briefs;
-- provider-seat reliability and quarantine telemetry;
-- epistemic lessons from ratified public outcomes;
-- calibration and topic-skill analytics;
-- open-question tracking and bounded inquiry cycles;
-- deliberation-tree and revision evidence workflows where present;
-- OpenClaw Memory, Identity, Soul, prompt, and revision governance bridges.
+Each user turn creates a fresh governed council run. Agents receive a sanitized
+public continuation brief containing prior public answers, claims, caveats,
+objections, unresolved questions, and the new user message. They do not receive
+hidden peer scores, private scorer identities, task logs, provider mappings, or
+other audit internals.
 
-These layers do not receive unrestricted authority.
+Continuity therefore lives in public epistemic context, not in hidden session
+reuse or agent scratchpads.
 
-Important boundaries:
+---
 
-- no self-attestation or self-approval;
-- no automatic Memory, Identity, Soul, or prompt mutation;
-- no hidden chain-of-thought stored as an authority-bearing artifact;
-- no leaderboard-based governance authority;
-- failed evidence remains failed rather than being silently promoted;
-- governed changes require explicit evidence, provenance, and non-self approval.
+## Governed learning — not unrestricted self-rewriting
+
+Socrates AI contains optional learning and telemetry layers, but “self-learning”
+does **not** mean that the system may silently rewrite itself.
+
+### Council-level learning
+
+Implemented learning-oriented components include:
+
+- **Epistemic lessons** distilled from ratified public outcomes;
+- **process lessons** that record bounded advice about how a dialogue was run;
+- **open-question tracking** for unresolved gaps and future inquiry;
+- **seat-health telemetry** for timeouts, schema failures, rate limits, and
+  evidence-gated quarantine;
+- **topic-skill analytics** based on peer-evaluated performance;
+- **calibration analytics** for confidence quality;
+- **bounded inquiry cycles** over high-priority open questions;
+- **training-corpus support** for ratified demonstrations and peer-preference
+  pairs;
+- **protocol-evolution evaluation** against external-truth instruments.
+
+The learning path is deliberately asymmetric:
+
+```text
+ratified public outcome
+    -> bounded lesson / telemetry / hypothesis
+    -> future controlled use
+    -> matched evaluation
+    -> retained evidence
+    -> independent review
+    -> governed decision
+```
+
+A failed, weak, incomparable, unratified, or unmatched result is not promoted.
+Training support may produce datasets, plans, or operator-run scripts, but the
+council process does not automatically train or replace a model.
+
+### Lasting agent change
+
+Memory, Identity, Soul, prompt, and revision artifacts are separate from the
+agent's temporary CED role. A lasting change must travel through a governed path
+such as:
+
+```text
+verified observation
+    -> retained tamper-evident artifact
+    -> named non-self attestation
+    -> immutable evidence record
+    -> bounded self-review
+    -> strict proposal
+    -> independent evaluation
+    -> named non-self approval
+    -> recoverable application
+    -> probation
+    -> confirmation or governed rollback
+```
+
+No component may treat its own recommendation, score, consultation, or receipt as
+self-approval.
+
+### Implemented governance and evidence bridges
+
+The current `main` branch includes, among other foundations:
+
+- curated OpenClaw Memory lessons and injection auditing;
+- integrity-hardened matched evaluation and evidence handling;
+- Identity failure evidence and governed Identity-resolution evidence;
+- Soul constitutional-review attestation;
+- read-only curator reporting over immutable evidence and lifecycle state;
+- Deliberation Tree parent/child revision evidence with matched-compute checks;
+- shared atomic, immutable, conflict-safe receipt persistence.
+
+The single-agent Lesson A/B Memory link/unlink attestation bridge in **PR #62** is
+still an open draft and must not be described as shipped on `main`.
+
+---
+
+## Per-agent bounded self-questioning
+
+### Micro-Socratic Kernel v1
+
+The Micro-Socratic Kernel is a small local self-check that an agent may run on its
+own draft before finalization.
+
+```text
+Every agent may question itself.
+No agent may certify itself.
+```
+
+The kernel identifies:
+
+- the central claim;
+- required assumptions;
+- the strongest challenge or counterexample;
+- missing evidence and uncertainty;
+- verification needs;
+- one bounded recommendation.
+
+Its recommendations are limited to:
+
+```text
+accept
+revise
+verify_with_tool
+consult_external_model
+insufficient_information
+```
+
+The kernel may recommend verification, revision, or consultation, but it may not:
+
+- execute a tool;
+- launch external consultation;
+- retry or recursively question itself;
+- approve or certify the agent;
+- silently replace the final answer;
+- mutate `SessionState`, CED, Memory, Identity, Soul, prompts, or governance;
+- store hidden chain-of-thought or a private scratchpad.
+
+Risk modes (`light`, `standard`, `high_risk`) strengthen the required structured
+fields; they do not grant additional calls or authority.
+
+**Current status:** implemented and tested, with an offline operator CLI and
+immutable receipts, but **runtime-inert**. It is not automatically invoked inside
+`CEDOrchestrator` and is not yet active on every agent call.
+
+---
+
+## External Self-Consultation v1
+
+External Self-Consultation allows a requesting agent to obtain one bounded,
+isolated advisory response from the same model in a fresh context or from a peer
+model.
+
+Supported modes are:
+
+```text
+critic
+independent_solver
+judge
+```
+
+The consulted model receives no previous conversation history, hidden scratchpad,
+full Memory/Identity/Soul profile, secrets, tools, write capability, delegation,
+or approval authority. The call is exactly one provider call: there is no nested
+consultation and no repair/retry loop.
+
+```text
+The requesting agent may ask.
+The consulted model may advise.
+The consulted model may not execute, approve, delegate, or mutate.
+Only governed evidence may justify a lasting change.
+```
+
+Consultation output is advice or candidate evidence only. It cannot mutate CED,
+Memory, Identity, Soul, proposals, evidence registries, or governance state, and
+it cannot serve as self-approval.
+
+**Current status:** implemented and tested as a runtime-inert foundation with an
+offline/manual operator CLI. It is not automatically called by the Micro-Socratic
+Kernel or `CEDOrchestrator`.
+
+---
+
+## Relationship between local reasoning components
+
+| Component | Purpose | Authority |
+|---|---|---|
+| Micro-Socratic Kernel | One agent's bounded local self-check | Recommendation only |
+| External Self-Consultation | One isolated independent advisory call | Advice / candidate evidence only |
+| Deliberation Tree | Explore and compare alternative revisions | Search and measured revision, not approval |
+| Peer scoring | Evaluate another output under a rubric | Qualitative judgment, no protocol control |
+| CEDOrchestrator | Execute the canonical protocol | Sole execution/protocol authority |
+| Governance and evidence registries | Authorize lasting change through explicit lifecycle rules | No automatic semantic judgment |
+
+A future integration may follow:
+
+```text
+draft
+    -> optional Micro-Socratic Check
+    -> optional governed tool or external consultation
+    -> optional bounded revision
+    -> ordinary CED peer evaluation and ratification
+```
+
+That future wiring must preserve one-call budgets, auditability, no self-approval,
+and the sole authority of `CEDOrchestrator`.
+
+---
+
+## Security, privacy, and evidence boundaries
+
+- No API keys or secrets in source, HTML, frontend code, prompts, receipts, or
+  committed files.
+- No hidden chain-of-thought retained as an authority-bearing artifact.
+- No raw private scratchpad transfer between agents or consultation services.
+- No self-attestation, self-approval, or automatic profile mutation.
+- Failed provider calls and failed evidence remain visible failures.
+- Immutable records are append-only; exact reruns may be idempotent, while
+  conflicting reuse is refused.
+- Named non-self review is required where a lasting governance action is
+  supported.
+- Identity, Memory, Soul, prompts, and temporary CED roles remain distinct.
 
 ---
 
@@ -336,25 +534,46 @@ Do not place provider keys in source files, HTML, frontend code, or commits.
 | `backend/dialogues/provider_registry.py` | Provider-adapter readiness, execution, failure status, and quorum. |
 | `backend/dialogues/offline_provider_adapter.py` | Offline-first real-shaped adapter seam. |
 | `backend/dialogues/conversation.py` | Multi-turn public-brief continuity layer. |
+| `backend/dialogues/openclaw_socratic_kernel/` | Runtime-inert bounded per-agent self-check. |
+| `backend/dialogues/openclaw_consultation/` | Runtime-inert isolated external advisory service. |
+| `backend/dialogues/openclaw_receipts.py` | Shared hardened immutable receipt publication primitive. |
 | `backend/dialogues/openclaw_*` | Governed evidence, Memory, Identity, Soul, prompt, consultation, and revision packages. |
-| `backend/evaluation/` | External-truth and protocol-evolution evaluation tools. |
-| `backend/training/` | Governed training-corpus and local training support. |
-| `tests_dialogues/` | Canonical engine and governance regression suite. |
-| `backend/dialogues/README.md` | Detailed technical reference and phase history. |
+| `backend/evaluation/` | External-truth, evidence-harness, and protocol-evolution evaluation tools. |
+| `backend/training/` | Governed corpus harvesting and operator-run local training support. |
+| `tests_dialogues/` | Canonical engine, learning, consultation, kernel, and governance regression suite. |
+| `docs/openclaw_memory_lessons/` | Detailed Memory, consultation, kernel, and evidence-boundary documentation. |
+| `backend/dialogues/README.md` | Detailed technical reference and historical phase record. |
 | `socrates_ai.py`, `backend/orchestrator/` | Legacy reasoning family; not canonical. |
 
 ---
 
 ## Current implementation status
 
-The current `main` branch contains the governed CED reasoning engine, deterministic
-role rotation, structured provider registry, registry-backed peer evaluation,
-blind five-section assembly, Council Ratification, conversation continuity,
-learning/telemetry layers, and governed OpenClaw attestation bridges.
+### Implemented on `main`
 
-The following product-layer work is still planned and must not be confused with
-current functionality:
+- governed CED reasoning engine;
+- deterministic rotating roles;
+- structured provider registry and honest provider failures;
+- registry-backed deliberation, peer scoring, blind section assembly, and Council
+  Ratification;
+- multi-turn public-brief conversation continuity;
+- optional lessons, telemetry, calibration, open questions, inquiry, evaluation,
+  and training-support layers;
+- curated OpenClaw Memory lessons and integrity-hardened evidence foundations;
+- Identity failure/resolution and Soul constitutional-review attestation bridges;
+- Deliberation Tree revision-evidence bridge;
+- External Self-Consultation v1, runtime-inert;
+- Micro-Socratic Kernel v1, runtime-inert;
+- shared immutable receipt persistence.
 
+### Open draft — not shipped
+
+- PR #62: bound single-agent Lesson A/B Memory link/unlink attestation.
+
+### Planned or not yet connected to canonical runtime
+
+- automatic bounded Micro-Socratic Kernel invocation in the agent/CED path;
+- governed automatic handoff from the kernel to tools or External Consultation;
 - canonical append-only Epistemic Event Ledger for the `CEDOrchestrator` family;
 - versioned public event projections;
 - robust FastAPI/SSE transport with replay and `Last-Event-ID`;
@@ -368,12 +587,17 @@ reasoning family and is not the transport authority for the canonical CED engine
 
 ## Documentation
 
-- Start here for project identity and operating principles.
+- Start here for project identity, architecture, learning boundaries, and current
+  implementation status.
 - Read [`backend/dialogues/README.md`](backend/dialogues/README.md) for the deep
   technical reference and historical phase detail.
 - Read `RESEARCH.md` for evaluation methodology and claims discipline.
-- Read the focused architecture and governance documents under `docs/` where
-  available.
+- Read `docs/openclaw_memory_lessons/MICRO_SOCRATIC_KERNEL.md` for the bounded
+  per-agent self-check contract.
+- Read `docs/openclaw_memory_lessons/EXTERNAL_SELF_CONSULTATION.md` for the
+  isolated consultation contract.
+- Read the other focused architecture and governance documents under `docs/` for
+  evidence, Memory, Identity, Soul, and revision details.
 
 ---
 
@@ -394,5 +618,5 @@ A repository license file has not yet been added. Add an explicit license before
 relying on reuse or redistribution permissions.
 
 Contributions should preserve the permanent invariants, add regression tests, and
-clearly distinguish implemented, gated, experimental, historical, and planned
-capabilities.
+clearly distinguish implemented, gated, experimental, runtime-inert, historical,
+draft, and planned capabilities.
