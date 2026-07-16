@@ -8,10 +8,11 @@ Exact current state for safe resumption. Keep current.
 - Worktree: `C:\Users\spirc\Desktop\Socrates-AI-live-view-foundation`
   (isolated; the sibling `C:\Users\spirc\Desktop\Socrates-AI` holds unrelated
   in-progress OpenClaw work — never touch it).
-- Tip: the `Complete Council Live View reveal contract` commit (round 4),
-  whose parent is `6ca08dd` (merge of `origin/main` = `b699dad`). Branch is
-  even with `origin/main` on history (0 behind) and ahead by the foundation +
-  merge + reveal-contract commits.
+- Tip: the `Clarify receipt_ref docstring as typed ReceiptRef` commit
+  (round-4 sign-off doc fix), whose parent is `62b52ca` (round-4 reveal
+  contract). Branch is even with `origin/main` on history (0 behind) and
+  ahead by the foundation + merge + reveal-contract + doc-fix commits.
+  **Round 4 APPROVED; Draft PR is the active next step.**
 
 ## Foundation commits (oldest → newest)
 
@@ -21,7 +22,9 @@ Exact current state for safe resumption. Keep current.
 4. `ebb5c19` Finalize Council Live View foundation references and isolation
    (round 3)
 5. `6ca08dd` Merge `origin/main` (adds `AGENTS.md`, `CLAUDE.md`)
-6. `Complete Council Live View reveal contract` (round 4) — this commit
+6. `62b52ca` Complete Council Live View reveal contract (round 4)
+7. `Clarify receipt_ref docstring as typed ReceiptRef` (round-4 sign-off
+   doc-only fix) — this commit
 
 ## Completed work
 
@@ -64,9 +67,16 @@ rejection; digest patterns) with a real monkeypatch TOCTOU regression test.
 
 ## Blockers / next safe step
 
-- Draft PR: BLOCKED pending foundation review sign-off. Opening it is a user
-  action in the GitHub UI (`gh` token here cannot open PRs on the repo).
-- Slice 1 (observer/emission hook): BLOCKED — must be a SEPARATE branch off
-  this tip after the foundation PR, guarded by a byte-identical
-  `FinalResponse` golden test.
-- Next safe step: await round-4 sign-off, then open the Draft PR.
+- Foundation review: **APPROVED** through round 4 (commit `62b52ca`).
+- Draft PR: **GO** — `base: main`, `compare: feature/council-live-view-foundation`,
+  title `Add Council Live View event foundation`. Opening it is a user action
+  in the GitHub UI (`gh` token here cannot open PRs on `lio1988/Socrates-AI`).
+  Compare URL:
+  https://github.com/lio1988/Socrates-AI/compare/main...feature/council-live-view-foundation
+- Slice 1 (observer/emission hook): starts ONLY after the Draft PR is opened,
+  on a SEPARATE branch off this tip
+  (`git switch feature/council-live-view-foundation` →
+  `git switch -c feature/council-live-view-observer-hook`), guarded by a
+  byte-identical `FinalResponse` golden test. This foundation branch is now
+  frozen except for review fixes of the same PR.
+- Next safe step: open the Draft PR (user, UI), then branch for Slice 1.

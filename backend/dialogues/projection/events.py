@@ -22,8 +22,10 @@ Strict, frozen, versioned contract (audited + hardening round 1):
     emitted_at        — assigned ONLY by the ledger; MUST be timezone-aware
                         UTC (naive or non-UTC datetimes are rejected)
     causal_parent_id  — event_id of the causing event (optional)
-    receipt_ref       — AtomicReceiptStore digest reference; REQUIRED where
-                        the contract matrix says so (provider.completed)
+    receipt_ref       — typed, resolvable ``ReceiptRef`` (receipt_kind +
+                        request_id + receipt_digest) into the immutable
+                        AtomicReceiptStore; REQUIRED where the contract matrix
+                        says so (provider.completed)
     artifact_digest   — single digest for non-move artifacts (optional)
     raw_digest / validated_digest — REQUIRED inside move.validated payloads
     payload           — validated + normalized by the event's typed model
