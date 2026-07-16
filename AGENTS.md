@@ -48,4 +48,42 @@ Say what you did and why, not just a block of code. Flag concerns even when you 
 
 A few patterns recur often enough to name: the Kitchen Sink (restructuring half the codebase while you are at it), the Wrong Abstraction (copy-paste twice before you abstract), the Optimistic Path (the happy path handled and the 500 ignored), and the Runaway Refactor (a fix that cascades across files). Catch yourself in any of these and the right move is to stop, not to push through.
 
+## XI. Branch Working Documentation
 
+For every working branch other than `main`, create and maintain a branch documentation folder at:
+
+`docs/branches/<normalized-branch-name>/`
+
+Normalize the folder name by replacing `/` in the Git branch name with `-`. For example:
+
+`feature/council-live-view-foundation` → `docs/branches/feature-council-live-view-foundation/`
+
+The folder must contain:
+
+- `README.md`
+- `MEMORY.md`
+- `PLAN.md`
+- `PRESENT.md`
+
+The first heading in the branch `README.md` must contain the exact, unmodified Git branch name, including `/`. For example:
+
+`# Branch: feature/council-live-view-foundation`
+
+The branch `README.md` is the entry point. It must state the branch purpose, success criterion, scope, non-goals, and links to `MEMORY.md`, `PLAN.md`, and `PRESENT.md`.
+
+Use `MEMORY.md` for stable branch context: decisions already made, non-negotiable invariants, important files and interfaces, constraints, and things that must not change. Do not use it as a log of every minor action.
+
+Use `PLAN.md` for the agreed execution plan: success criterion, scope, non-goals, ordered implementation steps, validation gates, and stop conditions. Keep completed and remaining steps current.
+
+Use `PRESENT.md` for the exact current state: branch name, current HEAD when relevant, completed work, remaining work, changed files, tests and exact results, blockers, worktree state when relevant, and the next safe step. Keep it current so another agent or a later session can resume safely.
+
+Before major work on a branch, read in this order:
+
+1. `AGENTS.md`
+2. root `README.md`
+3. branch `README.md`
+4. branch `MEMORY.md`
+5. branch `PLAN.md`
+6. branch `PRESENT.md`
+
+When durable architecture, invariants, workflows, or decisions change, update the canonical project documentation as part of the branch. Branch documentation does not replace canonical documentation.
