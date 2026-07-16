@@ -1,167 +1,169 @@
-# Coding Agent Guidelines
+# Field Notes for Coding Agents
 
-Shared instructions for Codex, Claude Code, Cursor, and other coding agents working in this repository.
+## How to Write Code the User Will Not Need to Rewrite
 
-> Read the real system. Make the smallest correct change. Prove it with evidence.
+Shared instructions for Codex, Claude Code, Cursor, and other coding agents.
 
-## 1. Read before writing
+Language models make predictable coding mistakes: they generate plausible code quickly, but often fail to notice that plausible is not the same as correct. The purpose of these rules is to make correctness come from the process around the code, not from confidence in the first draft.
 
-Before editing code:
+## I. Read Before You Write
 
-1. inspect the current branch, HEAD, worktree, and existing diff;
-2. read the complete relevant implementation, tests, imports, call sites, schemas, and nearby documentation;
-3. search the repository before assuming an API, field, command, file, status, or pattern exists;
-4. state the task scope, assumptions, constraints, and concrete success criterion;
-5. distinguish verified facts from hypotheses.
+The biggest source of bad model-written code is writing before reading the codebase.
 
-Do not guess silently. Do not rely on memory when the repository can answer the question.
+- Read the complete files you are about to change; do not skim.
+- Read the relevant tests, imports, call sites, schemas, configuration, and nearby documentation.
+- Copy established project patterns only after verifying that they apply.
+- Check what the project actually depends on before introducing a new API or package.
+- Search the repository before assuming that a helper, command, field, status, or convention exists.
+- When you cannot find a relevant pattern or the intended behavior is unclear, ask instead of guessing.
 
-## 2. Understand before copying
+Do not fill gaps with plausible-looking code.
 
-Existing code is evidence, not automatically a template.
+## II. Think Before You Code
 
-Before reusing a pattern:
+Figure out what you are doing before you start typing.
 
-- understand why it exists;
-- confirm that its semantics match the new use case;
-- check whether it is current, legacy, transitional, or intentionally limited;
-- verify its failure behavior and tests;
-- preserve only the parts that are actually required.
+- State your assumptions explicitly. For example, "add authentication" could mean several different things; name the interpretation you are using.
+- State important constraints and trade-offs.
+- Separate verified facts from hypotheses.
+- Explain why an existing pattern is appropriate before copying it.
+- For multi-step or high-impact work, state the plan before implementation so a wrong direction can be corrected early.
+- When something is genuinely confusing, stop and ask rather than inventing an answer.
 
-Do not copy an abstraction merely because it is nearby or familiar.
+Code that passes a casual review but fails when it matters often begins with an unstated assumption.
 
-## 3. Choose the simplest sufficient solution
+## III. Simplicity
 
-Prefer the smallest design that fully satisfies the current requirement.
+Write the minimum code that solves the problem in front of you now, not the minimum code that could solve every future version of it.
 
+- Resist premature abstraction.
 - Do not build a framework for one concrete need.
 - Do not add configuration for hypothetical future variants.
 - Do not introduce indirection without a demonstrated benefit.
 - Do not optimize before measuring a real problem.
 - Prefer clear code over clever code.
-- Prefer existing project patterns and the standard library when they fit.
+- Skip defensive handling for states that validated contracts make impossible, unless a real boundary shows that they can occur.
+- Hardcode a value until there is a real reason to make it configurable.
 
-A smaller correct solution is better than a broad speculative one.
+If the only reason for an abstraction is "in case we need it," it is probably overbuilt.
 
-## 4. Make surgical changes
+## IV. Surgical Changes
 
-Keep the diff focused and reviewable.
+The diff should be as small as the task allows.
 
-- Modify only files required by the task.
-- Avoid unrelated refactors, formatting sweeps, renames, cleanup, and dependency upgrades.
+- Modify only files and lines required by the task.
+- Match the style of the surrounding code.
+- Do not reformat unrelated code.
+- Do not mix cleanup, renames, dependency upgrades, or unrelated refactors into the requested change.
 - Preserve public interfaces and persisted formats unless the task explicitly requires a migration.
-- Prefer additive, versioned evolution over silent semantic replacement.
+- Prefer additive, versioned changes over silent semantic replacement.
 - Do not change multiple independent variables at once unless the change must be atomic.
-- If the work spreads into unrelated subsystems, stop and reassess the design.
 
-Do not hide a large rewrite inside a small feature or bug fix.
+Use this test: can every changed line be justified by the task? If a line changed only because "I was already here," revert it.
 
-## 5. Define what “done” means
+If a fix starts cascading across unrelated files, stop and reassess instead of pushing through.
 
-Before implementation, identify observable success criteria.
+## V. Verification
 
-Examples include:
+The gap between code that works and code you think works is testing.
 
-- a specific failing test passes;
-- a reproduced bug no longer occurs;
-- a new behavior is covered by success and failure tests;
-- a command exits successfully with the expected output;
-- a schema or API contract is satisfied without regression.
+For a reproducible bug:
 
-Do not declare completion based only on code looking plausible.
+1. write or identify a focused test that captures the broken behavior;
+2. run it and observe it fail for the expected reason;
+3. make the smallest root-cause fix;
+4. rerun the test and observe it pass;
+5. run the nearby tests and then the broader relevant suite.
 
-## 6. Debug systematically
+That RED-to-GREEN sequence is the clearest evidence that the cause was fixed rather than merely hidden.
 
-For a bug:
-
-1. read the entire error, traceback, logs, and surrounding context;
-2. reproduce the failure before editing;
-3. separate observations from hypotheses;
-4. test one hypothesis at a time;
-5. add or identify a focused test that fails for the correct reason;
-6. implement the smallest root-cause fix;
-7. rerun the focused test, nearby tests, and then the broader relevant suite.
-
-Do not mask symptoms with broad exception handling, retries, fallback values, null checks, or silent defaults without explaining why the invalid state arose.
-
-Fix the reason the value became invalid, not merely the line where the failure surfaced.
-
-## 7. Test behavior, not implementation details
-
-Tests should demonstrate externally meaningful behavior and important invariants.
-
-- Cover the normal path and the most important failure or boundary path.
+- Test behavior that can actually break, not incidental implementation details.
+- Test the important failure or boundary path, not only the happy path.
 - Use realistic inputs and the real integration seam when practical.
 - Avoid excessive mocking that bypasses the behavior under test.
 - Never weaken, delete, skip, xfail, or rewrite a valid test merely to get green.
-- Do not change expected values until evidence shows the previous contract was wrong.
-- If correct behavior is unusually hard to test, reconsider the design boundary.
+- Do not change expected values until evidence shows the old contract was wrong.
 
-Run the narrowest relevant tests first, then broaden.
+If correct behavior is unusually hard to test, treat that as information about the design, not permission to skip verification.
 
-Report the exact commands and results. Never claim tests passed unless they ran successfully in the current worktree and environment.
+## VI. Goal-Driven Execution
 
-## 8. Add dependencies reluctantly
+Every task needs an observable success criterion before code is written.
 
-Before adding a dependency:
+Turn vague requests into concrete behavior. For example, "add validation" should become something like: reject missing or malformed email input, return the specified error response with a clear message, and test both cases.
 
-- confirm the repository does not already provide the capability;
-- consider the standard library or a small local implementation;
-- verify maintenance, licensing, security, and compatibility implications;
-- account for lockfile and deployment impact;
+- Define what "done" means before implementation.
+- For multi-step work, present the plan before making broad changes.
+- Tie each implementation step to the success criterion.
+- Do not declare completion because the code looks plausible.
+- Do not expand the task beyond the agreed contract without surfacing it first.
+
+## VII. Debugging
+
+When something breaks, investigate; do not guess.
+
+1. read the entire error, stack trace, logs, and surrounding context;
+2. reproduce the problem before changing anything;
+3. separate observations from hypotheses;
+4. change one thing at a time;
+5. test each hypothesis;
+6. fix the root cause, not the nearest symptom.
+
+Do not cover an unexpected null with a null check until you understand why it is null. Otherwise the bug often moves somewhere quieter.
+
+Do not mask failures with broad exception handling, retries, fallback values, silent defaults, or ignored errors without explaining the invalid state that produced them.
+
+## VIII. Dependencies
+
+Every dependency is permanent code you do not control.
+
+Before adding one:
+
+- check whether the repository already provides the capability;
+- check whether the language or standard library already provides it;
+- prefer a built-in facility such as `crypto.randomUUID()` over a package when it meets the need;
+- evaluate maintenance, licensing, security, compatibility, lockfile, and deployment impact;
 - explain why the dependency is necessary.
 
-Do not add a package to avoid writing a few clear, well-tested lines.
+Do not smuggle a dependency into the manifest without making the choice visible.
 
-## 9. Protect security and user work
+Do not add a package merely to avoid writing a few clear, well-tested lines.
 
-- Never expose, print, stage, or commit secrets, API keys, tokens, authorization headers, or private data.
-- Treat `.env` and local credential files as sensitive and uncommitted unless explicitly instructed otherwise.
-- Sanitize logs, exceptions, fixtures, screenshots, and generated artifacts when needed.
-- Preserve the user's current branch and unrelated uncommitted work.
-- Refuse conflicting writes to immutable or append-only records instead of overwriting history.
+## IX. Communication
 
-## 10. Use Git safely
-
-Inspect the full status and diff before staging.
-
-- Never stage unrelated user changes.
-- Prefer explicit file paths in a mixed worktree.
-- Do not amend, rebase, reset, force-push, delete branches, or rewrite history without explicit authorization.
-- Do not commit, push, open or modify a pull request, merge, or change remote state without explicit authorization for that action.
-- Commit or push permission does not imply merge permission.
-- Confirm the remote points to the commit claimed as pushed.
-
-A commit should contain one coherent change and an accurate message.
-
-## 11. Communicate with evidence
+Say what you changed and why, not just what code you wrote.
 
 At completion, report:
 
 - the exact files changed;
 - the behavior added, removed, or corrected;
 - why the solution is appropriately scoped;
-- tests and checks actually run, with results;
-- remaining risks, limitations, assumptions, or deliberately untouched work;
-- branch, commit, and pull-request state only when those actions occurred.
+- the tests and checks actually run, with exact results;
+- remaining risks, limitations, assumptions, concerns, or deliberately untouched work.
 
-Be direct about uncertainty. Do not use confident language to conceal missing evidence.
+Flag concerns even when you implemented exactly what was requested.
 
-## 12. Common failure modes to avoid
+Be precise about uncertainty. "I am not sure whether this library supports streaming; verify before relying on it" is useful. "I think this should work" is not evidence.
 
-Do not:
+Never claim that tests passed unless they ran successfully in the current worktree and environment.
 
-- start coding before understanding the relevant system;
-- invent APIs or repository capabilities;
-- perform a broad rewrite when a local fix is sufficient;
-- create abstractions before the second real use case exists;
-- test only the happy path;
-- fix symptoms while leaving the root cause intact;
-- silently ignore errors or unavailable data;
-- add dependencies or configuration without demonstrated need;
-- mix unrelated cleanup into the requested change;
-- claim success without running the relevant checks.
+## X. Common Failure Modes
+
+Recognize these patterns and stop rather than pushing through:
+
+- **Kitchen Sink:** restructuring a large part of the codebase while supposedly making a local change.
+- **Wrong Abstraction:** creating a generic abstraction before repeated real use cases justify it. Prefer copying a small pattern twice before abstracting prematurely.
+- **Optimistic Path:** handling the happy path while ignoring failures, boundary cases, or the resulting 500/error state.
+- **Runaway Refactor:** allowing a small fix to cascade across many files and unrelated subsystems.
+
+Also avoid:
+
+- coding before understanding the relevant system;
+- inventing APIs or repository capabilities;
+- silently ignoring unavailable data or errors;
+- adding configuration without demonstrated need;
+- claiming success without the relevant checks.
 
 When requirements conflict, evidence is incomplete, permissions are missing, or the proposed change expands beyond the requested contract, stop and surface the issue instead of guessing.
 
-A partial, honest result is better than a broad, unverified rewrite.
+> Read the real system. Make the smallest correct change. Prove it with evidence.
