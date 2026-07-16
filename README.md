@@ -167,6 +167,135 @@ it does not grant a fixed Final Evaluator or Chairman monopoly.
 
 ---
 
+## Agent Prompt Architecture v2 — active documentation target
+
+Branch: `agent/prompt-architecture-v2-foundation`
+
+Status on this branch: **specified, not yet implemented or runtime-wired**.
+Documentation alone must never be described as a shipped feature.
+
+The v2 prompt architecture preserves the original `CORE_AGENT_PROMPT v1.9`
+philosophy while separating permanent identity from temporary role and task
+instructions.
+
+The required composition order is:
+
+```text
+CED Core Epistemic Constitution v2.0
+    + Persistent Agent Identity Capsule v1
+    + Governed Identity Evidence Projection
+    + Capability Manifest
+    + Temporary Role Overlay
+    + Phase / Task Contract
+    + Exact Output Schema
+    + optional bounded Micro-Socratic Check
+```
+
+The permanent separation is:
+
+```text
+model / agent identity != temporary role != current task != CED authority
+```
+
+### Foundation A — CED Core Epistemic Constitution v2.0
+
+The common constitution applies to every model and every role. It defines:
+
+- contribution over winning or majority approval;
+- explicit epistemic markers and calibrated confidence;
+- evidence discipline and strict non-fabrication;
+- dialogue continuity and revision under valid criticism;
+- capability-manifest boundaries;
+- bounded Micro-Socratic and consultation rules;
+- evaluator blindness and anti-herding;
+- CED authority and no-self-approval boundaries;
+- exact-model, prompt-lineage, privacy, and prompt-injection constraints;
+- exact output-schema precedence.
+
+The constitution must not contain role-specific duties, provider personality,
+current tool availability, or a task-specific schema. Those belong to later
+layers.
+
+### Foundation B — Persistent Agent Identity Capsule v1
+
+Every model must know its persistent operational identity independently of its
+current role. The prompt-safe view must contain only governed fields such as:
+
+```text
+schema_version
+agent_id
+provider_family
+provider_id
+requested_model_id
+identity_version
+identity_digest
+validated_strengths
+known_unresolved_failures
+approved_lessons
+active_improvement_hypotheses
+probationary_constraints
+```
+
+The capsule must obey these rules:
+
+- the requested model ID records what CED requested; it is not proof of the model
+  actually returned by the provider;
+- returned-model verification is adapter/CED-owned and comes from response
+  metadata, never model text;
+- raw Identity, Memory, Soul, traces, evidence registries, hidden scores, or
+  secrets are never injected;
+- empty guidance sections mean no eligible governed record was supplied, not that
+  the agent has no strengths, failures, or history;
+- role-fit hypotheses never become identity facts;
+- strengths are guidance, not authority;
+- failures are operational risks, not permanent character traits;
+- hypotheses remain unproven until independent evaluation;
+- all injected items are deterministically ordered, bounded, source-linked, and
+  included in an externally computed identity digest.
+
+The full canonical wording, schema target, rendering contract, digest rules,
+implementation sequence, acceptance tests, agent instructions, and progress ledger
+are in
+[`docs/agent_prompt_architecture/FOUNDATION_V2.md`](docs/agent_prompt_architecture/FOUNDATION_V2.md).
+
+### Implementation targets
+
+| Target | Purpose | Current status |
+|---|---|---|
+| `T0` | Documentation lock for the two foundations | `implemented` on this branch |
+| `T1` | Dedicated versioned constitution module | `not_started` |
+| `T2` | Strict prompt-safe identity-view schema | `not_started` |
+| `T3` | Read-only governed Identity projection | `not_started` |
+| `T4` | Deterministic identity renderer and digest | `not_started` |
+| `T5` | Canonical prompt-builder integration | `not_started` |
+| `T6` | Requested/returned model and receipt lineage | `not_started` |
+| `T7` | Focused, adversarial, and regression tests | `not_started` |
+| `T8` | Controlled canonical-runtime activation | `not_started` |
+
+### Instructions for an implementation agent
+
+An agent continuing this work must:
+
+1. read the full foundation document before editing code;
+2. inspect existing prompt, Identity, evidence, provider, and receipt foundations;
+3. implement targets in order, beginning with `T1` and `T2`;
+4. reuse existing governance and immutable receipt primitives rather than creating
+   bypasses;
+5. preserve current behavior when new inputs are absent during migration;
+6. add tests before or with each behavior;
+7. never inject raw persistent registries;
+8. never assign a permanent role through identity;
+9. never allow a model to verify its own provider route;
+10. preserve blind scoring and minimal awareness;
+11. update the Progress Ledger in the same change that advances a target;
+12. run focused tests, `tests_dialogues`, and the full suite before claiming
+    validation.
+
+The Socrates and other role overlays are explicit non-goals of this foundation
+branch. They begin only after these two common layers are reviewed and accepted.
+
+---
+
 ## Deliberation pipeline
 
 | Stage | Purpose |
@@ -541,6 +670,7 @@ Do not place provider keys in source files, HTML, frontend code, or commits.
 | `backend/evaluation/` | External-truth, evidence-harness, and protocol-evolution evaluation tools. |
 | `backend/training/` | Governed corpus harvesting and operator-run local training support. |
 | `tests_dialogues/` | Canonical engine, learning, consultation, kernel, and governance regression suite. |
+| `docs/agent_prompt_architecture/FOUNDATION_V2.md` | Constitution v2.0 and Persistent Identity Capsule v1 target, tests, and progress ledger. |
 | `docs/openclaw_memory_lessons/` | Detailed Memory, consultation, kernel, and evidence-boundary documentation. |
 | `backend/dialogues/README.md` | Detailed technical reference and historical phase record. |
 | `socrates_ai.py`, `backend/orchestrator/` | Legacy reasoning family; not canonical. |
@@ -570,8 +700,15 @@ Do not place provider keys in source files, HTML, frontend code, or commits.
 
 - PR #62: bound single-agent Lesson A/B Memory link/unlink attestation.
 
+### Specified on `agent/prompt-architecture-v2-foundation` — not runtime-wired
+
+- CED Core Epistemic Constitution v2.0;
+- Persistent Agent Identity Capsule v1;
+- implementation targets `T1` through `T8` and progress/status rules.
+
 ### Planned or not yet connected to canonical runtime
 
+- implementation and activation of the Agent Prompt Architecture v2 foundations;
 - automatic bounded Micro-Socratic Kernel invocation in the agent/CED path;
 - governed automatic handoff from the kernel to tools or External Consultation;
 - canonical append-only Epistemic Event Ledger for the `CEDOrchestrator` family;
@@ -589,6 +726,9 @@ reasoning family and is not the transport authority for the canonical CED engine
 
 - Start here for project identity, architecture, learning boundaries, and current
   implementation status.
+- Read [`docs/agent_prompt_architecture/FOUNDATION_V2.md`](docs/agent_prompt_architecture/FOUNDATION_V2.md)
+  for the exact Constitution v2.0 and Persistent Identity Capsule v1 implementation
+  contract, targets, acceptance tests, agent instructions, and progress ledger.
 - Read [`backend/dialogues/README.md`](backend/dialogues/README.md) for the deep
   technical reference and historical phase detail.
 - Read `RESEARCH.md` for evaluation methodology and claims discipline.
