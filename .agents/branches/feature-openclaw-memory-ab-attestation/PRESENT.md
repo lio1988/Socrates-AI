@@ -3,13 +3,13 @@
 Snapshot date: 2026-07-16  
 PR: `#62 — Add bound single-agent Lesson A/B Memory attestation`  
 Original remote PR head before handoff files: `0ea3bfb3dc4552616d44eda20a09fc67b107855b`  
-Handoff head before this `PRESENT.md` commit: `659a71e8013b64e2638b6224966c2206c5f1a1cf`
+Handoff head before this final status commit: `c6ea524e761a73e05c4178ce1c0d9a30c3846e8f`
 
 Always verify the live head, base, mergeability, and commit graph before editing. This file records a snapshot, not an immutable ref.
 
 ## PR and stack state
 
-At the initial verified inspection:
+The final PR inspection before this status commit reported:
 
 ```text
 PR: #62
@@ -19,14 +19,14 @@ merged: false
 mergeable: true
 base: feature/openclaw-attestation-bridges
 base SHA recorded by PR: 15483130d04bfe02a16efc3f589b8d78ff848210
-remote head before handoff: 0ea3bfb3dc4552616d44eda20a09fc67b107855b
-commits: 37
-changed files: 15
-additions: 2670
+head before this status commit: c6ea524e761a73e05c4178ce1c0d9a30c3846e8f
+commits: 43
+changed files: 21
+additions: 3787
 deletions: 13
 ```
 
-PR #61 is now closed and merged into `main`:
+PR #61 is closed and merged into `main`:
 
 ```text
 PR #61 merged: true
@@ -36,7 +36,7 @@ PR #61 merge commit: d2916038c8fdd633414d0a2d8dc0e272e9f2ec09
 
 PR #62 still targets the historical feature branch and has not been cleanly retargeted to `main`.
 
-## Verified divergence before handoff files
+## Verified divergence after handoff files
 
 Comparison with the live feature-base branch reported:
 
@@ -44,7 +44,7 @@ Comparison with the live feature-base branch reported:
 base: feature/openclaw-attestation-bridges
 base head: f4caf3f75cef40f51c6963bf909ec85c8101a4b5
 status: diverged
-PR branch ahead: 37 commits
+PR branch ahead: 43 commits
 PR branch behind: 20 commits
 merge base: 037595a7698e1aa706e72f8b95595a675a59636a
 ```
@@ -54,18 +54,16 @@ Comparison with current `main` reported:
 ```text
 main head: b699dad275a9c8824811b0c7307a688f700d3eb2
 status: diverged
-PR branch ahead: 47 commits
+PR branch ahead: 53 commits
 PR branch behind: 10 commits
 merge base: 8753c2c65697c1c4395a2674979a708d08ccd481
 ```
 
-These counts were taken before the six handoff documentation files were added. Recompute before synchronization.
-
-Do not infer that GitHub’s initial `mergeable: true` means the stack is ready. The base relationship is stale and the branch is behind both the feature base and `main`.
+Do not infer that GitHub’s `mergeable: true` means the stack is ready. The base relationship is stale and the branch is behind both the feature base and `main`.
 
 ## Intended PR-owned files before handoff
 
-The live PR listed fifteen changed files:
+The original remote PR listed fifteen changed files:
 
 ```text
 backend/dialogues/openclaw_identity/governed_system.py
@@ -103,7 +101,7 @@ These six files are documentation-only and do not change G4 runtime/operator beh
 The remote PR source contains:
 
 - `memory_lesson_fingerprint()` over the complete canonical lesson record;
-- strict-looking G4 envelope/manifest validation code;
+- G4 envelope/manifest validation code;
 - exact lesson, governed Identity, and experiment fingerprint binding;
 - single-agent treatment/control causality checks;
 - named non-self verifier binding;
@@ -147,13 +145,13 @@ This does not by itself prove an exploitable defect, but it requires direct adve
 
 ### Local-only work is not remote state
 
-A later developer/agent report may describe a local merge commit or unstaged RED→GREEN fixes beyond remote head `0ea3bfb...`.
+A later developer/agent report may describe a local merge commit or unstaged RED→GREEN fixes beyond original remote head `0ea3bfb...`.
 
 No such work is part of PR #62 unless the exact commits appear on the GitHub branch. Inspect local repositories separately and never report local-only fixes as pushed.
 
 ### Validation staleness
 
-The PR body documents an intended local gate but does not provide GitHub CI statuses for the inspected remote head. The combined-status query returned no statuses.
+The PR body documents an intended local gate but does not provide final exact pass counts for the current remote head. The combined-status query returned no statuses.
 
 The original PR body says to keep draft until all local tests pass. That requirement remains.
 
@@ -206,9 +204,9 @@ shipped: no
 
 Perform `PLANS.md` Gate 0 only:
 
-1. inspect the live remote commit graph after the handoff commits;
+1. inspect the live remote commit graph after this status commit;
 2. inspect any local checkout for unpushed merge/fix work and record it separately;
-3. identify exactly why the branch is behind the old feature base by twenty commits and current `main` by ten commits at the last comparison;
+3. identify exactly why the branch is behind the old feature base by twenty commits and current `main` by ten commits;
 4. reconstruct the intended PR #62-only diff on top of merged PR #61;
 5. write a reversible synchronization/retarget plan with recovery SHAs;
 6. do not change code or PR base until that plan is reviewed.
