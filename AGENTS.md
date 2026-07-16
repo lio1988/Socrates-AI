@@ -48,6 +48,4 @@ Say what you did and why, not just a block of code. Flag concerns even when you 
 
 A few patterns recur often enough to name: the Kitchen Sink (restructuring half the codebase while you are at it), the Wrong Abstraction (copy-paste twice before you abstract), the Optimistic Path (the happy path handled and the 500 ignored), and the Runaway Refactor (a fix that cascades across files). Catch yourself in any of these and the right move is to stop, not to push through.
 
----
 
-© 2024 A. Karpathy. Personal use of this material is permitted. This is an independent reformatting of the author's working notes on LLM-assisted programming (CLAUDE.md, v240626) into a conference-style document. Freely available; rules subject to revision as the models change.
