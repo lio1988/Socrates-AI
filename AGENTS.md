@@ -4,7 +4,9 @@
 
 Shared instructions for Codex, Claude Code, Cursor, and other coding agents.
 
-Language models make predictable coding mistakes: they generate plausible code quickly, but often fail to notice that plausible is not the same as correct. The purpose of these rules is to make correctness come from the process around the code, not from confidence in the first draft.
+## Abstract
+
+Language models make predictable coding mistakes: they generate plausible code quickly, but plausible is not the same as correct. These are rules, not suggestions: correctness must come from the process around the code, not confidence in the first draft.
 
 ## I. Read Before You Write
 
@@ -15,7 +17,7 @@ The biggest source of bad model-written code is writing before reading the codeb
 - Copy established project patterns only after verifying that they apply.
 - Check what the project actually depends on before introducing a new API or package.
 - Search the repository before assuming that a helper, command, field, status, or convention exists.
-- When you cannot find a relevant pattern or the intended behavior is unclear, ask instead of guessing.
+- Investigate first. Ask only when a consequential ambiguity remains and choosing incorrectly could materially change behavior, scope, security, or compatibility.
 
 Do not fill gaps with plausible-looking code.
 
@@ -28,7 +30,7 @@ Figure out what you are doing before you start typing.
 - Separate verified facts from hypotheses.
 - Explain why an existing pattern is appropriate before copying it.
 - For multi-step or high-impact work, state the plan before implementation so a wrong direction can be corrected early.
-- When something is genuinely confusing, stop and ask rather than inventing an answer.
+- When something is genuinely confusing, investigate it; ask only if the unresolved choice could materially affect the result.
 
 Code that passes a casual review but fails when it matters often begins with an unstated assumption.
 
@@ -40,10 +42,10 @@ Write the minimum code that solves the problem in front of you now, not the mini
 - Do not build a framework for one concrete need.
 - Do not add configuration for hypothetical future variants.
 - Do not introduce indirection without a demonstrated benefit.
-- Do not optimize before measuring a real problem.
+- Do not optimize speculatively; optimize when performance is part of the task or evidence demonstrates a real problem.
 - Prefer clear code over clever code.
-- Skip defensive handling for states that validated contracts make impossible, unless a real boundary shows that they can occur.
-- Hardcode a value until there is a real reason to make it configurable.
+- Skip defensive handling only for internal states ruled out by validated invariants. Always validate external input and unreliable I/O boundaries.
+- Hardcode ordinary implementation constants until configuration is justified. Never hardcode secrets, credentials, deployment-specific values, or security-sensitive policy.
 
 If the only reason for an abstraction is "in case we need it," it is probably overbuilt.
 
@@ -55,8 +57,7 @@ The diff should be as small as the task allows.
 - Match the style of the surrounding code.
 - Do not reformat unrelated code.
 - Do not mix cleanup, renames, dependency upgrades, or unrelated refactors into the requested change.
-- Preserve public interfaces and persisted formats unless the task explicitly requires a migration.
-- Prefer additive, versioned changes over silent semantic replacement.
+- Preserve public contracts and persisted formats unless the task explicitly requires changing them. When it does, state the compatibility impact.
 - Do not change multiple independent variables at once unless the change must be atomic.
 
 Use this test: can every changed line be justified by the task? If a line changed only because "I was already here," revert it.
@@ -73,7 +74,7 @@ For a reproducible bug:
 2. run it and observe it fail for the expected reason;
 3. make the smallest root-cause fix;
 4. rerun the test and observe it pass;
-5. run the nearby tests and then the broader relevant suite.
+5. run nearby tests, then run the broader relevant suite when proportionate to the change's scope and regression risk.
 
 That RED-to-GREEN sequence is the clearest evidence that the cause was fixed rather than merely hidden.
 
@@ -164,6 +165,6 @@ Also avoid:
 - adding configuration without demonstrated need;
 - claiming success without the relevant checks.
 
-When requirements conflict, evidence is incomplete, permissions are missing, or the proposed change expands beyond the requested contract, stop and surface the issue instead of guessing.
+When requirements conflict, evidence is incomplete, permissions are missing, or the proposed change expands beyond the requested contract, investigate first. Stop and ask only if a consequential ambiguity remains or proceeding would risk changing behavior, scope, security, compatibility, or user work.
 
 > Read the real system. Make the smallest correct change. Prove it with evidence.
