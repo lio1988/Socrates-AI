@@ -157,6 +157,26 @@ patterns on event_id / causal_parent_id / receipt_ref / artifact_digest.
    Also: `flags_by_section` keys must be RESOLVED sections — an unresolved
    section has no winning content to flag.
 
+## Hardening round 4 (adversarial review of ebb5c19 — narrow reveal contract)
+
+1. **Strict reveal input contract**: `AnonymousMapping` is now `strict=True`
+   with a `mode="before"` validator that ONLY canonically parses the wire
+   enum strings (`purpose`, `reveal_policy`) so JSON still round-trips —
+   everything else is validated strictly. `round_index="0"`/`True`,
+   whitespace-only `session_id`/`run_id`/`phase`/`evaluator_id`, sentinel
+   `run_id`, blank real subject ids (at the model AND in `build_mapping`),
+   and non-`^[0-9a-f]{64}$` `permutation_digest`/`mapping_digest` are all
+   rejected.
+2. **Real TOCTOU regression test**: a `monkeypatch` on module-level
+   `verify_mapping` mutates the caller's mapping the instant verification
+   returns (inside the verify→store window) and proves the stored snapshot
+   stays canonical — locking the actual snapshot-before-verify cause, the
+   way the `idempotency_key` test locked its cause.
+
+Repository sync: merged `origin/main` (adds `AGENTS.md`, `CLAUDE.md`; no code
+overlap) and added the branch working documentation folder
+`docs/branches/feature-council-live-view-foundation/` required by `AGENTS.md`.
+
 ## What exists now
 
 Package: `backend/dialogues/projection/` — pure contracts, zero execution.

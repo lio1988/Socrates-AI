@@ -59,6 +59,7 @@ from pydantic import (
 )
 
 from .events import sha256_hex
+from .taxonomy import FORBIDDEN_RUN_ID_SENTINELS
 
 
 REVEAL_CONTRACT_SCHEMA = "ced_reveal_mapping_v1"
@@ -147,7 +148,7 @@ class AnonymousMapping(BaseModel):
     mapping digest, reveal policy. Structural integrity (uniqueness,
     alias/assignment agreement, no self-subject) is enforced at construction.
     """
-    model_config = ConfigDict(extra="forbid", frozen=True,
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True,
                               populate_by_name=True)
 
     schema_name:        str = Field(
@@ -167,8 +168,28 @@ class AnonymousMapping(BaseModel):
     assignments:        Dict[str, str]
     # anonymous ids in the evaluator's permuted presentation order
     presentation_order: List[str]
-    permutation_digest: str
-    mapping_digest:     str
+    permutation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mapping_digest:     str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_wire_enums(cls, values: object) -> object:
+        """
+        Canonical enum parsing ONLY (round 4): under strict=True the raw
+        wire strings for the enum fields must be turned into enum instances
+        before strict field validation, so wire JSON still round-trips. No
+        other coercion happens — everything else is validated strictly.
+        """
+        if not isinstance(values, dict):
+            return values
+        normalized = dict(values)
+        if "purpose" in normalized:
+            normalized["purpose"] = EvaluationPurpose(normalized["purpose"])
+        if "reveal_policy" in normalized:
+            normalized["reveal_policy"] = RevealPolicy(
+                normalized["reveal_policy"]
+            )
+        return normalized
 
     @model_validator(mode="after")
     def _check(self) -> "AnonymousMapping":
@@ -178,6 +199,22 @@ class AnonymousMapping(BaseModel):
             raise ValueError(
                 f"unsupported reveal schema_version {self.schema_version}"
             )
+        # Context identifiers must carry a non-whitespace character
+        # (min_length=1 does not exclude "   "). Round 4.
+        for field_name in ("session_id", "run_id", "phase", "evaluator_id"):
+            if not getattr(self, field_name).strip():
+                raise ValueError(
+                    f"{field_name} must contain a non-whitespace character"
+                )
+        if self.run_id.strip().lower() in FORBIDDEN_RUN_ID_SENTINELS:
+            raise ValueError(
+                f"run_id {self.run_id!r} is a forbidden sentinel"
+            )
+        for real in self.assignments.values():
+            if not real.strip():
+                raise ValueError(
+                    "real subject ids must contain a non-whitespace character"
+                )
         order = self.presentation_order
         if len(order) == 0:
             raise ValueError(
@@ -265,6 +302,10 @@ def build_mapping(
         )
     if len(set(real_subject_agent_ids)) != len(real_subject_agent_ids):
         raise ValueError("real_subject_agent_ids must be unique")
+    if any(not str(sid).strip() for sid in real_subject_agent_ids):
+        raise ValueError(
+            "real subject ids must contain a non-whitespace character"
+        )
 
     seed = derive_permutation_seed(
         session_id, run_id, phase, round_index, evaluator_id, purpose

@@ -38,6 +38,7 @@ from backend.dialogues.projection import (
     project_role_history,
     verify_mapping,
 )
+import backend.dialogues.projection.reveal as reveal_module
 from backend.dialogues.projection.reveal import _compute_digests
 
 SUBJECTS = ["agent_0", "agent_1", "agent_2"]
@@ -331,6 +332,72 @@ class TestMapping:
             )
 
 
+# ── strict reveal input contract (round 4, finding 1) ───────────────────────
+
+class TestRevealStrictContract:
+    def _dumped(self, **overrides):
+        """A valid mapping's field dict, with strict-hostile overrides."""
+        base = _mapping().model_dump()
+        base.update(overrides)
+        return base
+
+    def test_string_round_index_rejected(self):
+        with pytest.raises(ValidationError):
+            AnonymousMapping(**self._dumped(round_index="0"))
+
+    def test_bool_round_index_rejected(self):
+        with pytest.raises(ValidationError):
+            AnonymousMapping(**self._dumped(round_index=True))
+
+    def test_whitespace_session_id_rejected(self):
+        with pytest.raises(ValidationError, match="non-whitespace"):
+            AnonymousMapping(**self._dumped(session_id="   "))
+
+    def test_whitespace_phase_rejected(self):
+        with pytest.raises(ValidationError, match="non-whitespace"):
+            AnonymousMapping(**self._dumped(phase="   "))
+
+    def test_whitespace_evaluator_rejected(self):
+        with pytest.raises(ValidationError, match="non-whitespace"):
+            AnonymousMapping(**self._dumped(evaluator_id=" \t "))
+
+    def test_sentinel_run_id_rejected(self):
+        with pytest.raises(ValidationError, match="sentinel"):
+            AnonymousMapping(**self._dumped(run_id="none"))
+
+    def test_blank_real_subject_rejected_at_model(self):
+        m = _mapping()
+        dumped = m.model_dump()
+        first = m.presentation_order[0]
+        dumped["assignments"] = {**dumped["assignments"], first: "  "}
+        with pytest.raises(ValidationError, match="non-whitespace"):
+            AnonymousMapping(**dumped)
+
+    def test_blank_real_subject_rejected_in_build(self):
+        with pytest.raises(ValueError, match="non-whitespace"):
+            build_mapping(
+                session_id="sess_x", run_id="run_1", phase="synthesis",
+                round_index=0, evaluator_id="agent_3",
+                purpose=EvaluationPurpose.SECTION_SCORE,
+                real_subject_agent_ids=["agent_0", "   "],
+            )
+
+    def test_malformed_digests_rejected(self):
+        with pytest.raises(ValidationError, match="pattern"):
+            AnonymousMapping(**self._dumped(mapping_digest="A" * 64))
+        with pytest.raises(ValidationError, match="pattern"):
+            AnonymousMapping(**self._dumped(permutation_digest="deadbeef"))
+
+    def test_wire_json_enum_strings_still_round_trip(self):
+        import json
+        m = _mapping()
+        wire = m.model_dump(by_alias=True, mode="json")
+        assert wire["purpose"] == "section_score"          # raw string on wire
+        assert wire["reveal_policy"] == "after_evaluation_close"
+        assert AnonymousMapping.model_validate(wire) == m
+        assert AnonymousMapping.model_validate_json(json.dumps(wire)) == m
+
+
 # ── store: controlled reveal + write-once + deep immunity ───────────────────
 
 class TestRevealPolicyStore:
@@ -458,6 +525,39 @@ class TestRevealPolicyStore:
         assert "agent_impostor" not in revealed.values()
         assert store.evaluator_view(**_CTX) == \
                list(_mapping().presentation_order)
+
+    def test_caller_mutation_between_verify_and_store_cannot_poison(
+        self, monkeypatch
+    ):
+        """
+        Round 4, finding 2: exercise the EXACT window — mutate the caller's
+        mapping the instant verification returns, before the store commits.
+        Because register() verifies and stores a private SNAPSHOT taken
+        before verification, the injected mutation of the caller object
+        cannot reach the store.
+        """
+        store = RevealPolicyStore()
+        caller_mapping = _mapping()
+        real_verify = reveal_module.verify_mapping
+
+        def verify_then_mutate(candidate):
+            result = real_verify(candidate)
+            # Fire inside the verify→store window, on the caller object.
+            caller_mapping.assignments[
+                caller_mapping.presentation_order[0]
+            ] = "agent_impostor"
+            caller_mapping.presentation_order.append("anon_injected")
+            return result
+
+        monkeypatch.setattr(reveal_module, "verify_mapping",
+                            verify_then_mutate)
+        store.register(caller_mapping)
+
+        store.close_evaluation(**_CTX)
+        revealed = store.reveal(**_CTX)
+        assert "agent_impostor" not in revealed.values()
+        assert set(revealed.values()) == set(SUBJECTS)
+        assert "anon_injected" not in store.evaluator_view(**_CTX)
 
     def test_mutating_mapping_after_register_cannot_change_store(self):
         store = RevealPolicyStore()
