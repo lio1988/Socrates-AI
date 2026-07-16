@@ -108,6 +108,57 @@ class EventLedger:
             "contradictory fact"
         )
 
+    def _preflight(
+        self, draft: CedEventDraft, stream: str, digest: str
+    ) -> Optional[CedEpistemicEvent]:
+        """
+        ALL contract checks for an append, under the lock (round 3,
+        finding 4): duplicate/conflict, global event_id uniqueness, and the
+        v1 causality policy. Runs BEFORE the clock on the first pass so a
+        broken clock can never mask the real contract error, and again after
+        the clock for races. Pure: mutates nothing.
+        """
+        existing = self._existing(stream, draft.idempotency_key, digest)
+        if existing is not None:
+            return existing
+
+        # Global event_id uniqueness: reaching here means this is NOT an
+        # idempotent replay, so a known event_id is a different fact trying
+        # to reuse an identity.
+        if draft.event_id in self._event_id_index:
+            raise CedEventConflictError(
+                f"event_id {draft.event_id!r} is already bound to a "
+                "different canonical fact — event ids are globally "
+                "unique (causal references would become ambiguous)"
+            )
+
+        # v1 causality policy: parent must already exist; self-parent is
+        # refused; cross-STREAM links are allowed only WITHIN one session
+        # (session:<S> → run-of-<S>); cross-session links are refused —
+        # conversation lineage needs an explicit contract later.
+        if draft.causal_parent_id is not None:
+            if draft.causal_parent_id == draft.event_id:
+                raise CedCausalityError(
+                    "an event cannot be its own causal parent"
+                )
+            location = self._event_id_index.get(draft.causal_parent_id)
+            if location is None:
+                raise CedCausalityError(
+                    f"causal_parent_id {draft.causal_parent_id!r} does "
+                    "not reference any recorded event — parents must "
+                    "exist before their children"
+                )
+            parent_stream, parent_index = location
+            parent = self._events_by_stream[parent_stream][parent_index]
+            if parent.session_id != draft.session_id:
+                raise CedCausalityError(
+                    "cross-session causal links are refused in v1 — the "
+                    f"parent belongs to session {parent.session_id!r}, "
+                    f"this event to {draft.session_id!r}; cross-session "
+                    "lineage requires an explicit future contract"
+                )
+        return None
+
     # ── write path ────────────────────────────────────────────────────────
 
     def append(self, draft: CedEventDraft) -> CedEpistemicEvent:
@@ -124,47 +175,25 @@ class EventLedger:
         stream = draft.stream_id
         key = draft.idempotency_key
 
-        # First check: an exact duplicate returns WITHOUT touching the clock
-        # (finding 4 — a broken clock must not break idempotent replay).
+        # First pass: EVERY contract check runs BEFORE the clock (round 3,
+        # finding 4) — an exact duplicate returns, and an invalid event_id /
+        # causality error surfaces as ITSELF, never masked by a broken clock.
         with self._lock:
-            existing = self._existing(stream, key, digest)
+            existing = self._preflight(draft, stream, digest)
         if existing is not None:
             return existing.model_copy(deep=True)
 
-        # Only a genuinely new fact consumes a clock reading. The injected
-        # callable runs outside the lock. If it raises, nothing was mutated.
+        # Only a genuinely valid new fact consumes a clock reading. The
+        # injected callable runs outside the lock. If it raises, nothing was
+        # mutated.
         emitted_at = self._clock()
 
         with self._lock:
-            # Re-check under the lock: another thread may have appended the
-            # same key while we were reading the clock.
-            existing = self._existing(stream, key, digest)
+            # Repeat ALL checks under the lock: another thread may have
+            # appended while we were reading the clock.
+            existing = self._preflight(draft, stream, digest)
             if existing is not None:
                 return existing.model_copy(deep=True)
-
-            # Global event_id uniqueness (round 2, finding 2): reaching here
-            # means this is NOT an idempotent replay, so a known event_id is
-            # a different fact trying to reuse an identity.
-            if draft.event_id in self._event_id_index:
-                raise CedEventConflictError(
-                    f"event_id {draft.event_id!r} is already bound to a "
-                    "different canonical fact — event ids are globally "
-                    "unique (causal references would become ambiguous)"
-                )
-
-            # v1 causality policy (round 2, finding 2): parent must already
-            # exist globally (cross-stream allowed); self-parent is refused.
-            if draft.causal_parent_id is not None:
-                if draft.causal_parent_id == draft.event_id:
-                    raise CedCausalityError(
-                        "an event cannot be its own causal parent"
-                    )
-                if draft.causal_parent_id not in self._event_id_index:
-                    raise CedCausalityError(
-                        f"causal_parent_id {draft.causal_parent_id!r} does "
-                        "not reference any recorded event — parents must "
-                        "exist before their children"
-                    )
 
             events = self._events_by_stream.get(stream)
             next_sequence = (len(events) if events is not None else 0) + 1

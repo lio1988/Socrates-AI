@@ -44,7 +44,8 @@ from backend.dialogues.projection import (
 )
 
 UTC_FIXED = datetime(2026, 7, 16, 12, 0, 0, tzinfo=timezone.utc)
-RECEIPT = "sha256:" + "c" * 64
+RECEIPT = dict(receipt_kind="provider", request_id="req_t1_p1_0",
+               receipt_digest="c" * 64)
 
 
 def _draft(**overrides) -> CedEventDraft:
@@ -211,7 +212,14 @@ class TestEnvelopeContract:
             build_draft(
                 event_type=CedEventType.PROVIDER_COMPLETED,
                 session_id="sess_x", run_id="run_1",
-                receipt_ref="rcpt_not_a_digest",       # wrong format
+                receipt_ref={**RECEIPT, "receipt_digest": "XYZ"},
+                payload=payload,
+            )
+        with pytest.raises(ValidationError, match="receipt_kind"):
+            build_draft(
+                event_type=CedEventType.PROVIDER_COMPLETED,
+                session_id="sess_x", run_id="run_1",
+                receipt_ref={**RECEIPT, "receipt_kind": "ratification"},
                 payload=payload,
             )
         d = build_draft(
@@ -220,7 +228,11 @@ class TestEnvelopeContract:
             receipt_ref=RECEIPT,
             payload=payload,
         )
-        assert d.receipt_ref == RECEIPT
+        # The reference is RESOLVABLE: kind + request_id locate the record,
+        # the digest verifies the loaded content.
+        assert d.receipt_ref.request_id == "req_t1_p1_0"
+        assert d.receipt_ref.receipt_kind == "provider"
+        assert d.receipt_ref.receipt_digest == "c" * 64
 
     def test_receipt_on_receiptless_event_rejected(self):
         # role.assigned has receipt rule "none": a receipt_ref is a violation.
@@ -354,6 +366,19 @@ class TestWireRoundTrip:
         wire["schema"] = "ced_epistemic_event_v999"
         with pytest.raises(ValidationError, match="unknown schema name"):
             CedEpistemicEvent.model_validate(wire)
+
+    def test_wire_round_trip_with_nested_receipt(self):
+        ledger = EventLedger(clock=lambda: UTC_FIXED)
+        sealed = ledger.append(build_draft(
+            event_type=CedEventType.PROVIDER_COMPLETED,
+            session_id="sess_x", run_id="run_1",
+            receipt_ref=RECEIPT,
+            payload=dict(task_id="t1", provider_id="p1", attempt_index=0,
+                         returned_model="m", latency_ms=10.0),
+        ))
+        wire = sealed.wire_dict()
+        assert wire["receipt_ref"]["schema"] == "ced_receipt_ref_v1"
+        assert CedEpistemicEvent.model_validate(wire) == sealed
 
 
 # ── session/run stream semantics ─────────────────────────────────────────────
@@ -521,6 +546,22 @@ class TestCausalityPolicy:
         with pytest.raises(ValidationError, match="pattern"):
             _draft(causal_parent_id="not-an-id")
 
+    def test_cross_session_parent_refused(self):
+        # Round 3: causal links may cross STREAMS only within one session —
+        # a parent from another session is refused pending an explicit
+        # cross-session lineage contract.
+        ledger = EventLedger()
+        parent = ledger.append(_session_created(session_id="sess_A"))
+        child = build_draft(
+            event_type=CedEventType.RUN_STARTED,
+            session_id="sess_B", run_id="run_B",
+            payload={},
+            causal_parent_id=parent.event_id,
+        )
+        with pytest.raises(CedCausalityError, match="cross-session"):
+            ledger.append(child)
+        assert ledger.events_for_run("run_B") == ()
+
 
 # ── ledger behavior ──────────────────────────────────────────────────────────
 
@@ -654,6 +695,44 @@ class TestFailureAtomicity:
         dup = ledger.append(_draft())
         assert dup == first
         assert len(calls) == 1
+
+    def test_missing_parent_does_not_call_clock(self):
+        # Round 3, finding 4: contract errors preflight BEFORE the clock.
+        calls = []
+
+        def counting_clock():
+            calls.append(1)
+            return UTC_FIXED
+
+        ledger = EventLedger(clock=counting_clock)
+        with pytest.raises(CedCausalityError):
+            ledger.append(_draft(causal_parent_id="evt_ghost"))
+        assert calls == []
+
+    def test_reused_event_id_does_not_call_clock(self):
+        calls = []
+
+        def counting_clock():
+            calls.append(1)
+            return UTC_FIXED
+
+        ledger = EventLedger(clock=counting_clock)
+        ledger.append(_draft(event_id="evt_same"))
+        assert len(calls) == 1
+        with pytest.raises(CedEventConflictError, match="globally unique"):
+            ledger.append(_draft(
+                payload={"agent_id": "agent_1", "role": "empiricist"},
+                event_id="evt_same"))
+        assert len(calls) == 1     # the invalid append never reached the clock
+
+    def test_broken_clock_cannot_mask_causality_conflict(self):
+        def broken_clock():
+            raise RuntimeError("clock down")
+
+        ledger = EventLedger(clock=broken_clock)
+        # The REAL contract error must surface, not the clock failure.
+        with pytest.raises(CedCausalityError, match="does not reference"):
+            ledger.append(_draft(causal_parent_id="evt_ghost"))
 
     def test_clock_failure_on_new_event_leaves_no_stream_or_index(self):
         def broken_clock():

@@ -48,7 +48,7 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
@@ -63,6 +63,53 @@ from .taxonomy import (
 
 SCHEMA_NAME = "ced_epistemic_event_v1"
 SCHEMA_VERSION = 1
+
+RECEIPT_REF_SCHEMA = "ced_receipt_ref_v1"
+
+
+class ReceiptRef(BaseModel):
+    """
+    Typed, RESOLVABLE reference to an immutable receipt (round 3, finding 3).
+
+    The real AtomicReceiptStore is addressed by request_id (its file path
+    derives from sha256(request_id) and the public lookup is
+    ``load(request_id)``) — a bare content digest cannot locate a record.
+    So the reference carries BOTH:
+
+    - ``receipt_kind`` + ``request_id`` — locate the store/domain and load
+      the record without scanning;
+    - ``receipt_digest`` — verify that the loaded record is the exact
+      immutable content this event refers to (content check happens at
+      projection-integration time; the format is checkable here).
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True,
+                              populate_by_name=True)
+
+    schema_name:    str = Field(
+        default=RECEIPT_REF_SCHEMA,
+        validation_alias=AliasChoices("schema", "schema_name"),
+        serialization_alias="schema",
+    )
+    receipt_kind:   Literal["provider", "ratification", "blocking_objection"]
+    request_id:     str = Field(min_length=1, max_length=200)
+    receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _check_schema(self) -> "ReceiptRef":
+        if self.schema_name != RECEIPT_REF_SCHEMA:
+            raise ValueError(
+                f"unknown receipt-ref schema: {self.schema_name!r}"
+            )
+        return self
+
+
+#: Which receipt_kind each receipt-bearing event must carry.
+_RECEIPT_KIND_BY_EVENT: Dict[CedEventType, str] = {
+    CedEventType.PROVIDER_COMPLETED:         "provider",
+    CedEventType.PROVIDER_FAILED:            "provider",
+    CedEventType.RATIFICATION_VOTE_RECORDED: "ratification",
+    CedEventType.BLOCKING_OBJECTION_RAISED:  "blocking_objection",
+}
 
 
 def _utcnow() -> datetime:
@@ -187,7 +234,8 @@ def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
                 f"{field_name!r} (contract matrix)"
             )
 
-    # Receipt rule (round 2, finding 5): required / pending / none.
+    # Receipt rule (rounds 2–3, finding 5/R3-3): required / optional / none.
+    # ("pending integration" is documentation status, not wire semantics.)
     if contract.receipt == "required":
         if model.receipt_ref is None:
             raise ValueError(
@@ -200,8 +248,17 @@ def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
                 f"{model.event_type.value} carries no receipt — a "
                 "receipt_ref here is a contract violation"
             )
-    # "optional_pending_integration": present-or-absent, format-checked by
-    # the field pattern when present.
+    if model.receipt_ref is not None:
+        expected_kind = _RECEIPT_KIND_BY_EVENT.get(model.event_type)
+        if expected_kind is None:
+            raise ValueError(
+                f"{model.event_type.value} is not a receipt-bearing event"
+            )
+        if model.receipt_ref.receipt_kind != expected_kind:
+            raise ValueError(
+                f"{model.event_type.value} requires receipt_kind "
+                f"{expected_kind!r}, got {model.receipt_ref.receipt_kind!r}"
+            )
 
     # Envelope-level pairing/version re-check + payload strict re-validation.
     from .payloads import PAYLOAD_MODELS
@@ -270,12 +327,10 @@ class _EnvelopeBase(BaseModel):
     round_index:      Optional[int] = Field(default=None, ge=0)
     causal_parent_id: Optional[str] = Field(
         default=None, pattern=r"^evt_[0-9A-Za-z_-]{3,64}$")
-    # Typed receipt reference (round 2, finding 5): the sha256 digest under
-    # which the immutable AtomicReceiptStore record is addressable. Format is
-    # verifiable without store access; content verification happens at
-    # projection-integration time.
-    receipt_ref:      Optional[str] = Field(
-        default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    # Typed, resolvable receipt reference (round 3, finding 3): kind +
+    # request_id locate the immutable AtomicReceiptStore record;
+    # receipt_digest verifies the loaded content.
+    receipt_ref:      Optional[ReceiptRef] = None
     artifact_digest:  Optional[str] = Field(
         default=None, pattern=r"^[0-9a-f]{64}$")
     idempotency_key:  str

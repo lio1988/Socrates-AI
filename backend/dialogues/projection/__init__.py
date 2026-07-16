@@ -39,10 +39,12 @@ from .payloads import (
     ProviderTokenUsage,
 )
 from .events import (
+    RECEIPT_REF_SCHEMA,
     SCHEMA_NAME,
     SCHEMA_VERSION,
     CedEpistemicEvent,
     CedEventDraft,
+    ReceiptRef,
     build_draft,
     canonical_identity_digest,
     derive_event_idempotency_key,
@@ -95,10 +97,12 @@ __all__ = [
     "BasePayload",
     "ProviderTokenUsage",
     # envelope
+    "RECEIPT_REF_SCHEMA",
     "SCHEMA_NAME",
     "SCHEMA_VERSION",
     "CedEpistemicEvent",
     "CedEventDraft",
+    "ReceiptRef",
     "build_draft",
     "canonical_identity_digest",
     "derive_event_idempotency_key",

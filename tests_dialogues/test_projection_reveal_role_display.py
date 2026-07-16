@@ -44,9 +44,10 @@ SUBJECTS = ["agent_0", "agent_1", "agent_2"]
 
 
 def _mapping(evaluator="agent_3", purpose=EvaluationPurpose.SECTION_SCORE,
-             policy=RevealPolicy.AFTER_EVALUATION_CLOSE):
+             policy=RevealPolicy.AFTER_EVALUATION_CLOSE, run_id="run_1"):
     return build_mapping(
         session_id="sess_x",
+        run_id=run_id,
         phase="synthesis",
         round_index=0,
         evaluator_id=evaluator,
@@ -56,8 +57,10 @@ def _mapping(evaluator="agent_3", purpose=EvaluationPurpose.SECTION_SCORE,
     )
 
 
-_CTX = dict(session_id="sess_x", phase="synthesis", round_index=0,
-            evaluator_id="agent_3", purpose=EvaluationPurpose.SECTION_SCORE)
+_CTX = dict(session_id="sess_x", run_id="run_1", phase="synthesis",
+            round_index=0, evaluator_id="agent_3",
+            purpose=EvaluationPurpose.SECTION_SCORE)
+_CTX_RUN_B = {**_CTX, "run_id": "run_2"}
 
 
 # ── deterministic per-evaluator permutation + alias scoping ─────────────────
@@ -65,54 +68,74 @@ _CTX = dict(session_id="sess_x", phase="synthesis", round_index=0,
 class TestPermutationAndAliasScope:
     def test_same_inputs_same_permutation(self):
         seed = derive_permutation_seed(
-            "sess_x", "synthesis", 0, "agent_3",
+            "sess_x", "run_1", "synthesis", 0, "agent_3",
             EvaluationPurpose.SECTION_SCORE)
         assert permute_subjects(seed, SUBJECTS) == \
                permute_subjects(seed, SUBJECTS)
 
     def test_input_order_does_not_matter(self):
         seed = derive_permutation_seed(
-            "sess_x", "synthesis", 0, "agent_3",
+            "sess_x", "run_1", "synthesis", 0, "agent_3",
             EvaluationPurpose.SECTION_SCORE)
         assert permute_subjects(seed, SUBJECTS) == \
                permute_subjects(seed, list(reversed(SUBJECTS)))
 
     def test_seed_components_all_matter(self):
         base = derive_permutation_seed(
-            "sess_x", "synthesis", 0, "agent_3",
+            "sess_x", "run_1", "synthesis", 0, "agent_3",
             EvaluationPurpose.SECTION_SCORE)
         variants = [
-            derive_permutation_seed("sess_y", "synthesis", 0, "agent_3",
+            derive_permutation_seed("sess_y", "run_1", "synthesis", 0,
+                                    "agent_3",
                                     EvaluationPurpose.SECTION_SCORE),
-            derive_permutation_seed("sess_x", "elenchus", 0, "agent_3",
+            derive_permutation_seed("sess_x", "run_2", "synthesis", 0,
+                                    "agent_3",
                                     EvaluationPurpose.SECTION_SCORE),
-            derive_permutation_seed("sess_x", "synthesis", 1, "agent_3",
+            derive_permutation_seed("sess_x", "run_1", "elenchus", 0,
+                                    "agent_3",
                                     EvaluationPurpose.SECTION_SCORE),
-            derive_permutation_seed("sess_x", "synthesis", 0, "agent_2",
+            derive_permutation_seed("sess_x", "run_1", "synthesis", 1,
+                                    "agent_3",
                                     EvaluationPurpose.SECTION_SCORE),
-            derive_permutation_seed("sess_x", "synthesis", 0, "agent_3",
-                                    EvaluationPurpose.MOVE_SCORE),
+            derive_permutation_seed("sess_x", "run_1", "synthesis", 0,
+                                    "agent_2",
+                                    EvaluationPurpose.SECTION_SCORE),
+            derive_permutation_seed("sess_x", "run_1", "synthesis", 0,
+                                    "agent_3", EvaluationPurpose.MOVE_SCORE),
         ]
         assert all(v != base for v in variants)
 
     def test_no_delimiter_collision_in_seed_context(self):
-        # Hardening round 1 finding 8: canonical JSON, not "|" joins.
-        a = derive_permutation_seed("s|x", "p", 0, "e",
+        a = derive_permutation_seed("s|x", "r", "p", 0, "e",
                                     EvaluationPurpose.MOVE_SCORE)
-        b = derive_permutation_seed("s", "x|p", 0, "e",
+        b = derive_permutation_seed("s", "x|r", "p", 0, "e",
                                     EvaluationPurpose.MOVE_SCORE)
         assert a != b
 
     def test_alias_scope_differs_by_evaluator(self):
         """The SAME subject gets a DIFFERENT anonymous id per evaluator."""
         seed_a = derive_permutation_seed(
-            "sess_x", "synthesis", 0, "eval_a",
+            "sess_x", "run_1", "synthesis", 0, "eval_a",
             EvaluationPurpose.SECTION_SCORE)
         seed_b = derive_permutation_seed(
-            "sess_x", "synthesis", 0, "eval_b",
+            "sess_x", "run_1", "synthesis", 0, "eval_b",
             EvaluationPurpose.SECTION_SCORE)
         assert anonymous_subject_id(seed_a, "agent_0") != \
                anonymous_subject_id(seed_b, "agent_0")
+
+    def test_alias_scope_differs_by_run(self):
+        """Round 3, finding 1: same session, different run → different
+        aliases — blind evaluations are RUN-scoped."""
+        seed_run1 = derive_permutation_seed(
+            "sess_x", "run_1", "synthesis", 0, "agent_3",
+            EvaluationPurpose.SECTION_SCORE)
+        seed_run2 = derive_permutation_seed(
+            "sess_x", "run_2", "synthesis", 0, "agent_3",
+            EvaluationPurpose.SECTION_SCORE)
+        assert anonymous_subject_id(seed_run1, "agent_0") != \
+               anonymous_subject_id(seed_run2, "agent_0")
+        m1, m2 = _mapping(run_id="run_1"), _mapping(run_id="run_2")
+        assert set(m1.presentation_order).isdisjoint(m2.presentation_order)
 
     def test_alias_scope_differs_by_phase_round_purpose(self):
         contexts = [
@@ -123,7 +146,8 @@ class TestPermutationAndAliasScope:
         ]
         aliases = {
             anonymous_subject_id(
-                derive_permutation_seed("sess_x", phase, rnd, "eval_a", purp),
+                derive_permutation_seed("sess_x", "run_1", phase, rnd,
+                                        "eval_a", purp),
                 "agent_0")
             for phase, rnd, purp in contexts
         }
@@ -135,7 +159,7 @@ class TestPermutationAndAliasScope:
         orders = set()
         for evaluator in ("eval_a", "eval_b", "eval_c", "eval_d"):
             seed = derive_permutation_seed(
-                "sess_x", "synthesis", 0, evaluator,
+                "sess_x", "run_1", "synthesis", 0, evaluator,
                 EvaluationPurpose.SECTION_SCORE)
             orders.add(tuple(permute_subjects(seed, subjects)))
         assert len(orders) > 1
@@ -268,7 +292,8 @@ class TestMapping:
     def test_self_subject_tripwire_refuses_never_repairs(self):
         with pytest.raises(SelfSubjectError, match="own output"):
             build_mapping(
-                session_id="sess_x", phase="synthesis", round_index=0,
+                session_id="sess_x", run_id="run_1", phase="synthesis",
+                round_index=0,
                 evaluator_id="agent_0",           # also a subject author
                 purpose=EvaluationPurpose.SECTION_SCORE,
                 real_subject_agent_ids=list(SUBJECTS),
@@ -277,7 +302,8 @@ class TestMapping:
     def test_duplicate_subjects_rejected(self):
         with pytest.raises(ValueError, match="unique"):
             build_mapping(
-                session_id="sess_x", phase="synthesis", round_index=0,
+                session_id="sess_x", run_id="run_1", phase="synthesis",
+                round_index=0,
                 evaluator_id="agent_3",
                 purpose=EvaluationPurpose.SECTION_SCORE,
                 real_subject_agent_ids=["agent_0", "agent_0"],
@@ -286,7 +312,8 @@ class TestMapping:
     def test_negative_round_index_rejected(self):
         with pytest.raises(ValidationError):
             build_mapping(
-                session_id="sess_x", phase="synthesis", round_index=-1,
+                session_id="sess_x", run_id="run_1", phase="synthesis",
+                round_index=-1,
                 evaluator_id="agent_3",
                 purpose=EvaluationPurpose.SECTION_SCORE,
                 real_subject_agent_ids=list(SUBJECTS),
@@ -296,7 +323,8 @@ class TestMapping:
         with pytest.raises((ValidationError, ValueError),
                            match="at least one subject"):
             build_mapping(
-                session_id="sess_x", phase="synthesis", round_index=0,
+                session_id="sess_x", run_id="run_1", phase="synthesis",
+                round_index=0,
                 evaluator_id="agent_3",
                 purpose=EvaluationPurpose.SECTION_SCORE,
                 real_subject_agent_ids=[],
@@ -371,13 +399,65 @@ class TestRevealPolicyStore:
         store = RevealPolicyStore()
         store.register(_mapping())
         conflicting = build_mapping(
-            session_id="sess_x", phase="synthesis", round_index=0,
+            session_id="sess_x", run_id="run_1", phase="synthesis",
+            round_index=0,
             evaluator_id="agent_3",
             purpose=EvaluationPurpose.SECTION_SCORE,
             real_subject_agent_ids=["agent_0", "agent_1"],  # different set
         )
         with pytest.raises(ValueError, match="conflicting"):
             store.register(conflicting)
+
+    def test_same_session_different_run_independent_registration(self):
+        """Round 3, finding 1: two runs in one session are independent
+        registration contexts — no overwrite, no shared reveal."""
+        store = RevealPolicyStore()
+        run_a = _mapping(run_id="run_1")
+        run_b = _mapping(run_id="run_2")
+        store.register(run_a)
+        store.register(run_b)   # NOT a conflict: different context
+        assert store.evaluator_view(**_CTX) == list(run_a.presentation_order)
+        assert store.evaluator_view(**_CTX_RUN_B) == \
+               list(run_b.presentation_order)
+
+    def test_closing_run_a_does_not_reveal_run_b(self):
+        store = RevealPolicyStore()
+        store.register(_mapping(run_id="run_1"))
+        store.register(_mapping(run_id="run_2"))
+        store.close_evaluation(**_CTX)          # close run A only
+        assert store.is_closed(**_CTX) is True
+        assert store.is_closed(**_CTX_RUN_B) is False
+        with pytest.raises(RevealSealedError, match="not closed"):
+            store.reveal(**_CTX_RUN_B)          # run B stays sealed
+
+    def test_never_policy_in_run_a_cannot_affect_run_b(self):
+        store = RevealPolicyStore()
+        store.register(_mapping(run_id="run_1", policy=RevealPolicy.NEVER))
+        run_b = _mapping(run_id="run_2",
+                         policy=RevealPolicy.AFTER_EVALUATION_CLOSE)
+        store.register(run_b)
+        store.close_evaluation(**_CTX_RUN_B)
+        # run B reveals normally; run A's NEVER is irrelevant to it.
+        assert store.reveal(**_CTX_RUN_B) == dict(run_b.assignments)
+        with pytest.raises(RevealSealedError, match="NEVER"):
+            store.close_evaluation(**_CTX)
+            store.reveal(**_CTX)
+
+    def test_snapshot_before_verify_stored_mapping_stays_canonical(self):
+        """Round 3, finding 2 (TOCTOU): mutating the caller's mapping right
+        after verification cannot poison the stored snapshot."""
+        store = RevealPolicyStore()
+        m = _mapping()
+        store.register(m)
+        # Post-registration mutation of the caller-owned nested containers.
+        m.assignments[m.presentation_order[0]] = "agent_impostor"
+        m.presentation_order.append("anon_injected")
+        store.close_evaluation(**_CTX)
+        revealed = store.reveal(**_CTX)
+        assert set(revealed.values()) == set(SUBJECTS)
+        assert "agent_impostor" not in revealed.values()
+        assert store.evaluator_view(**_CTX) == \
+               list(_mapping().presentation_order)
 
     def test_mutating_mapping_after_register_cannot_change_store(self):
         store = RevealPolicyStore()
@@ -445,7 +525,8 @@ class TestRevealStoreConcurrency:
         store = RevealPolicyStore()
         mapping_a = _mapping()
         mapping_b = build_mapping(
-            session_id="sess_x", phase="synthesis", round_index=0,
+            session_id="sess_x", run_id="run_1", phase="synthesis",
+            round_index=0,
             evaluator_id="agent_3",
             purpose=EvaluationPurpose.SECTION_SCORE,
             real_subject_agent_ids=["agent_0", "agent_1"],  # different set

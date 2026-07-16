@@ -55,7 +55,8 @@ from backend.dialogues.projection.payloads import (
     SectionWinnerSelectedPayload,
 )
 
-RECEIPT = "sha256:" + "c" * 64
+RECEIPT = dict(receipt_kind="provider", request_id="req_t1_p1_0",
+               receipt_digest="c" * 64)
 
 
 def _five_section_refs():
@@ -234,12 +235,14 @@ class TestContractMatrixAgreement:
         assert CedEventType.MOVE_VALIDATED in PHASE_REQUIRED_TYPES
 
     def test_receipt_rules_match_matrix(self):
+        # Round 3, finding 3: wire vocabulary is required | optional | none
+        # ("pending integration" is documentation, not a schema value).
         required = {et for et, c in CONTRACT_MATRIX.items()
                     if c.receipt == "required"}
-        pending = {et for et, c in CONTRACT_MATRIX.items()
-                   if c.receipt == "optional_pending_integration"}
+        optional = {et for et, c in CONTRACT_MATRIX.items()
+                    if c.receipt == "optional"}
         assert required == {CedEventType.PROVIDER_COMPLETED}
-        assert pending == {
+        assert optional == {
             CedEventType.PROVIDER_FAILED,
             CedEventType.RATIFICATION_VOTE_RECORDED,
             CedEventType.BLOCKING_OBJECTION_RAISED,
@@ -494,6 +497,15 @@ class TestAssemblyCoherence:
             unresolved_sections=["nuance"],
             flags_by_section={"core_answer": ["unsupported_claim"]})
         assert p.flags_by_section == {"core_answer": ["unsupported_claim"]}
+
+    def test_flags_on_unresolved_section_rejected(self):
+        # Round 3, finding 5: nuance is unresolved → no winning content to
+        # flag. flags_by_section keys must be RESOLVED sections only.
+        with pytest.raises(ValidationError, match="RESOLVED"):
+            AssemblyCompletedPayload(
+                answer_id="ans_1", sections=self._refs(),
+                unresolved_sections=["nuance"],
+                flags_by_section={"nuance": ["unsupported_claim"]})
 
 
 class TestClosedVocabularyPayloads:

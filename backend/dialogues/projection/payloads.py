@@ -335,9 +335,15 @@ class AssemblyCompletedPayload(BasePayload):
                     "thin_sections must reference assembled sections"
                 )
         if self.flags_by_section is not None:
-            if not set(self.flags_by_section.keys()) <= set(names):
+            # Round 3, finding 5: flags describe the WINNING content — an
+            # unresolved section has no winning draft to flag.
+            resolved_names = {ref.section for ref in self.sections
+                              if not ref.unresolved}
+            if not set(self.flags_by_section.keys()) <= resolved_names:
                 raise ValueError(
-                    "flags_by_section keys must reference assembled sections"
+                    "flags_by_section keys must reference RESOLVED assembled "
+                    "sections — an unresolved section has no winning content "
+                    "to flag"
                 )
             for section, flags in self.flags_by_section.items():
                 if len(flags) != len(set(flags)):

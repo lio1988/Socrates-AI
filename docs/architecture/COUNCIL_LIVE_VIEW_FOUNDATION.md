@@ -1,10 +1,33 @@
 # Council Live View Foundation — Slice 0 (+ inert ledger half of Slice 1)
 
-Status: **implemented, runtime-inert, contract-audited, hardened (review
-round 1)**. Parent decision record:
+Status: **implemented, runtime-inert, contract-audited, hardened through
+adversarial review rounds 1–3**. Parent decision record:
 [KARPATHY_LLM_COUNCIL_MAPPING.md](KARPATHY_LLM_COUNCIL_MAPPING.md)
 (§9, §14, §18). Branch: `feature/council-live-view-foundation` (isolated
 worktree off origin/main).
+
+> **Precedence note.** Where the parent mapping's original §9.2 event sketch
+> (identity fields, attempt/receipt/payload details) differs from the code in
+> this package, the executable `contract_matrix.CONTRACT_MATRIX` and the typed
+> payload models are authoritative. §9.2 is the historical proposal; this
+> package is the ratified v1 contract. See the mapping's *Implementation
+> Addendum*.
+
+## Package modules
+
+- `taxonomy.py` — closed 22-type dotted taxonomy, typed stream contract,
+  closed projection vocabularies (`SectionLiteral`, `RoleLiteral`, …).
+- `contract_matrix.py` — the executable `CONTRACT_MATRIX` (immutable view).
+- `payloads.py` — 22 strict/frozen typed payload models (immutable registry).
+- `events.py` — `ced_epistemic_event_v1` envelope, `ReceiptRef`,
+  executable idempotency derivation, semantic digest.
+- `ledger.py` — append-only per-stream `EventLedger`.
+- `reveal.py` — run-scoped `AnonymousMapping` + `RevealPolicyStore`.
+- `role_display.py` — strict `role_history` projection.
+
+Tests (focused): `tests_dialogues/test_projection_events_ledger.py`,
+`test_projection_reveal_role_display.py`,
+`test_projection_contract_matrix.py` (183 tests as of round 3).
 
 ## Hardening round 1 (adversarial review of f8124d0 — all 10 findings closed)
 
@@ -102,6 +125,38 @@ Extra coherence: AnonymousMapping non-empty context + `round_index ≥ 0` +
 `thin_sections` dup-free; typed non-negative `ProviderTokenUsage`; bounded
 patterns on event_id / causal_parent_id / receipt_ref / artifact_digest.
 
+## Hardening round 3 (adversarial review of 83435ef — all 5 findings closed)
+
+1. **Run-scoped reveal contexts (critical)**: `AnonymousMapping` and every
+   store key/API now carry `run_id` —
+   `(session_id, run_id, phase, round_index, evaluator_id, purpose)`. `run_id`
+   participates in the seed, context key and both digests, so two runs in one
+   session get different aliases and fully independent register/close/reveal
+   lifecycles: closing run A cannot reveal run B, and a NEVER policy in run A
+   cannot affect run B.
+2. **Snapshot-before-verify registration (TOCTOU)**: `register()` first takes
+   a private re-validated snapshot, verifies THE SNAPSHOT, and stores THE
+   SNAPSHOT — the caller-owned mapping is never touched after the snapshot, so
+   mutating its nested `assignments`/`presentation_order` after verification
+   cannot poison the store.
+3. **Resolvable typed receipt reference**: `receipt_ref` is now the typed
+   `ReceiptRef` (`ced_receipt_ref_v1`) = `receipt_kind` + `request_id`
+   (locates the record; `AtomicReceiptStore` is addressed by
+   `sha256(request_id)` / `load(request_id)`) + `receipt_digest` (verifies the
+   loaded content). Receipt-bearing events must carry the matching
+   `receipt_kind`. Receipt wire vocabulary is `required | optional | none`;
+   "pending integration" is documentation/status only.
+4. **Pre-clock event/causality validation**: a single `_preflight()` runs ALL
+   checks (dedupe/conflict, global event_id uniqueness, causality) under the
+   lock BEFORE the clock and again after it for races — a broken clock can no
+   longer mask a real `CedCausalityError`/`CedEventConflictError`, and an
+   invalid append never touches the clock.
+5. **Same-session causality**: cross-STREAM causal links are allowed only
+   within one session (`session:<S>` → run-of-`S`); a parent from another
+   session is refused pending an explicit cross-session lineage contract.
+   Also: `flags_by_section` keys must be RESOLVED sections — an unresolved
+   section has no winning content to flag.
+
 ## What exists now
 
 Package: `backend/dialogues/projection/` — pure contracts, zero execution.
@@ -112,18 +167,21 @@ Package: `backend/dialogues/projection/` — pure contracts, zero execution.
 | `payloads.py` | one strict typed payload model per event type (22/22, import-time completeness guard) | `extra="forbid"` + `strict=True` + `frozen=True`; unknown field / wrong type / NaN / Infinity rejected; `PAYLOAD_SCHEMA = "<event>.payload"`, `PAYLOAD_VERSION` per model; `move.validated` requires split `raw_digest`/`validated_digest` (`^[0-9a-f]{64}$`) |
 | `events.py` | `ced_epistemic_event_v1` envelope (frozen, strict) + semantic identity | fields: schema/schema_version/**payload_schema/payload_version**/event_id/idempotency_key/sequence/session_id/run_id/event_type/actor_id/subject_id/phase/round_index/emitted_at/causal_parent_id/receipt_ref/artifact_digest/payload; wrong event↔payload pairing and payload-version mismatch rejected; `semantic_digest` = canonical sorted-UTF-8 JSON **excluding event_id** (sequence/emitted_at structurally absent from drafts) |
 | `ledger.py` | `EventLedger` — append-only, per-stream | **sequence starts at 1**, gap-free, assigned only at append; duplicate (same stream+key+content) → existing event, no sequence consumed; **conflict** (same stream+key, different content) → `CedEventConflictError`, no mutation, no sequence consumed; failed append leaves no gap; reads return fresh **tuples** of frozen events; cross-stream isolation; no global singleton, no callbacks, injected callable (clock) never runs under the lock; deterministic injected clock |
-| `reveal.py` | §6.5 blind-evaluation reveal policy | aliases scoped per (session, phase, round, **evaluator**, purpose) — never global; per-evaluator deterministic SHA-256 permutation; backend-owned digest-sealed `AnonymousMapping`; reveal gated on explicit `close_evaluation()`; `NEVER` policy stays sealed; forged-mapping detection; **not a scheduler**: never selects voters/subjects — a self-subject input raises `SelfSubjectError` as a tripwire for an upstream eligibility bug (self-scoring prohibition remains the canonical protocol's responsibility) |
-| `role_display.py` | §6.2 role-loop display | exclusively projects canonical `role_history`; **no role recalculation, no inferred primary role, no silent repair**; frozen rows; groupings computed backend-side — the frontend renders, never calculates |
+| `reveal.py` | §6.5 blind-evaluation reveal policy | aliases scoped per (session, **run**, phase, round, evaluator, purpose) — never global; per-evaluator deterministic SHA-256 permutation; backend-owned digest-sealed `AnonymousMapping`; TOCTOU-safe snapshot-before-verify registration; reveal gated on explicit `close_evaluation()`; `NEVER` policy stays sealed; canonical forged-mapping detection; **not a scheduler**: never selects voters/subjects — a self-subject input raises `SelfSubjectError` as a tripwire for an upstream eligibility bug (self-scoring prohibition remains the canonical protocol's responsibility) |
+| `role_display.py` | §6.2 role-loop display | exclusively projects canonical `role_history`; **no role recalculation, no inferred primary role, no silent repair**; frozen rows carrying exactly `{phase, round_index, agent_id, role}`; groupings computed backend-side — the frontend renders, never calculates |
 
 Tests: `tests_dialogues/test_projection_events_ledger.py` +
-`tests_dialogues/test_projection_reveal_role_display.py` — including the
-explicit audit cases (session.created stream semantics; sequence-from-1;
-failed-append-no-gap; duplicate-no-sequence; same-key/different-content
-conflict; extra-field/wrong-type/pairing/version payload rejection; immutable
-reads; cross-stream isolation; per-evaluator alias scope; tamper detection;
-sealed-before-close; NEVER unrevealable; malformed role row refused; display
-never recalculates; runtime-inertness guard) plus integration against a real
-offline `CEDOrchestrator.run_session`.
+`test_projection_reveal_role_display.py` + `test_projection_contract_matrix.py`
+— including the explicit audit cases (session.created stream semantics;
+sequence-from-1; failed-append-no-gap; duplicate-no-sequence;
+same-key/different-content conflict; 22/22 executable identity;
+extra-field/wrong-type/pairing/version payload rejection; immutable reads;
+cross-stream isolation; per-run/per-evaluator alias scope; TOCTOU snapshot;
+canonical tamper detection; sealed-before-close; NEVER unrevealable;
+pre-clock causality; same-session causality; malformed/reserved-field role
+row refused; display never recalculates; frozen registries;
+runtime-inertness guard) plus integration against a real offline
+`CEDOrchestrator.run_session`.
 
 ## What deliberately does NOT exist yet
 

@@ -6,10 +6,13 @@ de-anonymizes client-side with an unescaped regex — the exact anti-pattern the
 mapping brief rejects ("the mapping must not exist only in frontend memory").
 This module is the Socrates replacement contract.
 
-**Alias scope:** anonymous aliases are scoped per
-``(session_id, phase, round_index, evaluator_id, evaluation_purpose)``.
-The SAME subject receives a DIFFERENT anonymous id in each evaluator context —
-aliases are never global, never reusable across phases/rounds/purposes.
+**Alias scope (round 3, finding 1 — RUN-SCOPED):** anonymous aliases are
+scoped per ``(session_id, run_id, phase, round_index, evaluator_id,
+evaluation_purpose)``. Blind evaluations happen inside a RUN, so two runs in
+the same session get DIFFERENT aliases, independent registrations, and
+independent close/reveal lifecycles — closing run A can never open run B,
+and a NEVER policy in run A cannot affect run B. run_id participates in the
+seed derivation, the context key, both digests, and every store API.
 
 **Not a scheduler:** this layer never selects voters, never selects subjects,
 and never decides eligibility. It receives an already-decided
@@ -19,29 +22,23 @@ REMAINS the responsibility of that canonical protocol; ``SelfSubjectError``
 is a defense-in-depth TRIPWIRE that surfaces an upstream eligibility
 violation — it never repairs, reassigns, or filters the input.
 
-Hardening round 1 (review findings 1, 2, 3, 8):
+Hardening (rounds 1–3):
 
 - **The sealed-record digest covers the WHOLE record** — schema, full
-  context, **reveal policy**, assignments AND presentation order — so a
-  policy downgrade can never reuse an existing digest.
-- **register() never overwrites**: an exactly identical re-registration is an
-  idempotent no-op; ANY difference (even policy-only or order-only) raises.
-  A NEVER mapping therefore cannot be downgraded by re-registration.
-- **verify_mapping() recomputes the canonical mapping from context**: it
-  re-derives the seed, every anonymous id and the canonical presentation
-  order from the real subject ids, requires exact equality, checks subject
-  uniqueness and the self-subject tripwire, and only then compares the
-  sealed-record digests. Recomputing digests over a non-canonical mapping
-  therefore cannot make it verify (SHA-256 here is integrity, not a MAC —
-  canonical recomputation is what makes forgery detectable).
-- **Deep copies at the store boundary**: the store keeps its own deep copy
-  and returns copies, so mutating a registered mapping object (or a returned
-  view) can never change the store.
-- **Canonical JSON derivations**: seeds and alias inputs are canonical JSON
-  arrays (type-preserving), never "|" string joins — no delimiter collisions.
-- **Structural uniqueness at the model**: duplicate presentation aliases,
-  duplicate real subjects, alias/assignment mismatches and self-subjects are
-  rejected at construction, not just at verification.
+  run-scoped context, **reveal policy**, assignments AND presentation order.
+- **register() never overwrites** and is **TOCTOU-safe (round 3, finding 2)**:
+  it first takes a private snapshot (re-validated model), verifies THE
+  SNAPSHOT, and stores THE SNAPSHOT — a caller mutating the original mapping
+  after verification can never reach the store.
+- **verify_mapping() recomputes the canonical mapping from context**: seed,
+  every anonymous id and the canonical order are re-derived from the real
+  subject ids; exact equality is required BEFORE digest comparison
+  (SHA-256 is integrity, not a MAC).
+- **Concurrency-safe**: check-then-write is atomic under an internal lock.
+- **Canonical JSON derivations**: no "|" joins, no delimiter collisions.
+- **Structural uniqueness at the model**: duplicate aliases, duplicate real
+  subjects, alias/assignment mismatches and self-subjects reject at
+  construction.
 
 Pure contract: imports nothing from ced.py / providers / registry.
 """
@@ -51,7 +48,7 @@ from __future__ import annotations
 import json
 import threading
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from pydantic import (
     AliasChoices,
@@ -66,6 +63,8 @@ from .events import sha256_hex
 
 REVEAL_CONTRACT_SCHEMA = "ced_reveal_mapping_v1"
 REVEAL_CONTRACT_VERSION = 1
+
+ContextKey = Tuple[str, str, str, int, str, str]
 
 
 class EvaluationPurpose(str, Enum):
@@ -102,14 +101,15 @@ def _canonical_json(data: object) -> str:
 
 def derive_permutation_seed(
     session_id: str,
+    run_id: str,
     phase: str,
     round_index: int,
     evaluator_id: str,
     purpose: EvaluationPurpose,
 ) -> str:
-    """SHA-256 seed over the §6.5 context, as a canonical JSON array."""
+    """SHA-256 seed over the run-scoped §6.5 context (canonical JSON array)."""
     return sha256_hex(_canonical_json(
-        ["ced_reveal_seed", session_id, phase, round_index,
+        ["ced_reveal_seed", session_id, run_id, phase, round_index,
          evaluator_id, purpose.value]
     ))
 
@@ -118,7 +118,7 @@ def anonymous_subject_id(seed: str, real_subject_agent_id: str) -> str:
     """
     Stable, non-reversible anonymous id for one subject under one seed.
     Seed-scoped: the same subject gets a different alias per evaluator
-    context (evaluator/phase/round/purpose).
+    context (run/evaluator/phase/round/purpose).
     """
     return "anon_" + sha256_hex(
         _canonical_json(["subject", seed, real_subject_agent_id])
@@ -141,8 +141,8 @@ def permute_subjects(seed: str, real_subject_ids: List[str]) -> List[str]:
 
 class AnonymousMapping(BaseModel):
     """
-    Backend-owned record of one evaluator's blind view for one evaluation.
-    Digest-sealed and frozen; retained per §6.5:
+    Backend-owned record of one evaluator's blind view for one evaluation,
+    scoped to a RUN. Digest-sealed and frozen; retained per §6.5:
     anonymous_subject_id, real_subject_agent_id, permutation digest,
     mapping digest, reveal policy. Structural integrity (uniqueness,
     alias/assignment agreement, no self-subject) is enforced at construction.
@@ -157,6 +157,7 @@ class AnonymousMapping(BaseModel):
     )
     schema_version:     int = REVEAL_CONTRACT_VERSION
     session_id:         str = Field(min_length=1)
+    run_id:             str = Field(min_length=1)
     phase:              str = Field(min_length=1)
     round_index:        int = Field(ge=0)
     evaluator_id:       str = Field(min_length=1)
@@ -206,21 +207,21 @@ class AnonymousMapping(BaseModel):
             )
         return self
 
-    def context_key(self) -> Tuple[str, str, int, str, str]:
-        return (self.session_id, self.phase, self.round_index,
+    def context_key(self) -> ContextKey:
+        return (self.session_id, self.run_id, self.phase, self.round_index,
                 self.evaluator_id, self.purpose.value)
 
 
 def _compute_digests(
-    context: Tuple[str, str, int, str, str],
+    context: ContextKey,
     reveal_policy: RevealPolicy,
     assignments: Dict[str, str],
     presentation_order: List[str],
 ) -> Tuple[str, str]:
     """
     Sealed-record digests. The mapping digest covers the WHOLE record —
-    schema/version, full context, reveal policy, assignments AND order —
-    so no field can change without changing the digest (finding 1).
+    schema/version, full run-scoped context, reveal policy, assignments AND
+    order — so no field can change without changing the digest.
     """
     permutation_digest = sha256_hex(_canonical_json({
         "schema": REVEAL_CONTRACT_SCHEMA,
@@ -242,6 +243,7 @@ def _compute_digests(
 def build_mapping(
     *,
     session_id: str,
+    run_id: str,
     phase: str,
     round_index: int,
     evaluator_id: str,
@@ -250,8 +252,8 @@ def build_mapping(
     reveal_policy: RevealPolicy = RevealPolicy.AFTER_EVALUATION_CLOSE,
 ) -> AnonymousMapping:
     """
-    Build the digest-sealed blind mapping for ONE evaluator, for an
-    (evaluator, subjects) pairing ALREADY decided by the canonical CED
+    Build the digest-sealed blind mapping for ONE evaluator in ONE run, for
+    an (evaluator, subjects) pairing ALREADY decided by the canonical CED
     protocol. This function assigns nothing and filters nothing: a
     self-subject in the input is an upstream eligibility bug and raises
     SelfSubjectError (tripwire, not repair).
@@ -265,7 +267,7 @@ def build_mapping(
         raise ValueError("real_subject_agent_ids must be unique")
 
     seed = derive_permutation_seed(
-        session_id, phase, round_index, evaluator_id, purpose
+        session_id, run_id, phase, round_index, evaluator_id, purpose
     )
     ordered_real = permute_subjects(seed, real_subject_agent_ids)
     assignments = {
@@ -274,12 +276,14 @@ def build_mapping(
     presentation_order = [
         anonymous_subject_id(seed, real) for real in ordered_real
     ]
-    context = (session_id, phase, round_index, evaluator_id, purpose.value)
+    context: ContextKey = (session_id, run_id, phase, round_index,
+                           evaluator_id, purpose.value)
     permutation_digest, mapping_digest = _compute_digests(
         context, reveal_policy, assignments, presentation_order
     )
     return AnonymousMapping(
         session_id=session_id,
+        run_id=run_id,
         phase=phase,
         round_index=round_index,
         evaluator_id=evaluator_id,
@@ -294,10 +298,10 @@ def build_mapping(
 
 def verify_mapping(mapping: AnonymousMapping) -> bool:
     """
-    CANONICAL verification (finding 3): re-derive the whole blind view from
-    the mapping's context and real subjects, require exact equality, then
-    check the sealed-record digests. An attacker who recomputes digests over
-    a non-canonical alias set or order still fails, because the aliases and
+    CANONICAL verification: re-derive the whole blind view from the mapping's
+    run-scoped context and real subjects, require exact equality, then check
+    the sealed-record digests. An attacker who recomputes digests over a
+    non-canonical alias set or order still fails, because the aliases and
     order themselves are recomputed here from the context.
     """
     order = list(mapping.presentation_order)
@@ -305,7 +309,7 @@ def verify_mapping(mapping: AnonymousMapping) -> bool:
 
     # Structural integrity (also enforced at construction — re-checked so a
     # verification path never trusts upstream construction).
-    if len(order) != len(set(order)):
+    if len(order) == 0 or len(order) != len(set(order)):
         return False
     if len(order) != len(assignments):
         return False
@@ -319,8 +323,8 @@ def verify_mapping(mapping: AnonymousMapping) -> bool:
 
     # Canonical recomputation from context + real subjects.
     seed = derive_permutation_seed(
-        mapping.session_id, mapping.phase, mapping.round_index,
-        mapping.evaluator_id, mapping.purpose,
+        mapping.session_id, mapping.run_id, mapping.phase,
+        mapping.round_index, mapping.evaluator_id, mapping.purpose,
     )
     expected_real_order = permute_subjects(seed, reals)
     expected_assignments = {
@@ -349,38 +353,40 @@ def verify_mapping(mapping: AnonymousMapping) -> bool:
 
 class RevealPolicyStore:
     """
-    CED-side registry of blind mappings. The pre-close surface exposes ONLY
-    anonymous ids in presentation order; real identities are released solely
-    by ``reveal()`` after ``close_evaluation()`` — and never for a mapping
-    whose policy is NEVER. The store schedules nothing and assigns nothing.
+    CED-side registry of blind mappings, keyed by the RUN-SCOPED context.
+    The pre-close surface exposes ONLY anonymous ids in presentation order;
+    real identities are released solely by ``reveal()`` after
+    ``close_evaluation()`` — and never for a mapping whose policy is NEVER.
+    The store schedules nothing and assigns nothing.
 
-    Registration is write-once per context: an exactly identical
-    re-registration is an idempotent no-op; ANY difference (policy included)
-    is a conflict. The store keeps deep copies — callers cannot mutate it
-    through retained or returned references.
-
-    Round 2 (finding 3): the check-then-write is atomic under an internal
-    lock, so two racing registrations can never overwrite each other — one
-    wins, the conflicting one raises. Canonical verification (pure) runs
-    OUTSIDE the lock; under the lock there are only dict operations and an
-    equality comparison.
+    Registration is write-once per context, TOCTOU-safe (round 3, finding 2):
+    a private re-validated SNAPSHOT is taken first, verification runs on the
+    snapshot, and the snapshot is what gets stored — the caller-owned object
+    is never touched again after the snapshot, so mutating it after
+    verification cannot reach the store. Check-then-write is atomic under an
+    internal lock.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._mappings: Dict[Tuple[str, str, int, str, str], AnonymousMapping] = {}
+        self._mappings: Dict[ContextKey, AnonymousMapping] = {}
         self._closed: set = set()
 
     def register(self, mapping: AnonymousMapping) -> None:
-        if not verify_mapping(mapping):        # pure — outside the lock
+        # 1. Private snapshot FIRST (fresh nested containers via dump/validate).
+        candidate = AnonymousMapping.model_validate(
+            mapping.model_dump(mode="python")
+        )
+        # 2. Verify THE SNAPSHOT (pure — outside the lock).
+        if not verify_mapping(candidate):
             raise ValueError("refusing to register a mapping that fails "
                              "canonical verification (possible forgery)")
-        key = mapping.context_key()
-        stored_copy = mapping.model_copy(deep=True)
+        # 3. From here on, only the snapshot is used.
+        key = candidate.context_key()
         with self._lock:
             existing = self._mappings.get(key)
             if existing is not None:
-                if existing == mapping:
+                if existing == candidate:
                     return                      # idempotent re-registration
                 raise ValueError(
                     "conflicting mapping already registered for this "
@@ -388,11 +394,12 @@ class RevealPolicyStore:
                     "(policy, order and assignments are all part of its "
                     "identity)"
                 )
-            self._mappings[key] = stored_copy
+            self._mappings[key] = candidate
 
     def evaluator_view(
         self,
         session_id: str,
+        run_id: str,
         phase: str,
         round_index: int,
         evaluator_id: str,
@@ -401,19 +408,21 @@ class RevealPolicyStore:
         """Anonymous ids in presentation order — safe at any time.
         Returns a fresh list; mutating it cannot change the store."""
         mapping = self._require(
-            session_id, phase, round_index, evaluator_id, purpose
+            session_id, run_id, phase, round_index, evaluator_id, purpose
         )
         return list(mapping.presentation_order)
 
     def close_evaluation(
         self,
         session_id: str,
+        run_id: str,
         phase: str,
         round_index: int,
         evaluator_id: str,
         purpose: EvaluationPurpose,
     ) -> None:
-        key = (session_id, phase, round_index, evaluator_id, purpose.value)
+        key = (session_id, run_id, phase, round_index, evaluator_id,
+               purpose.value)
         with self._lock:
             if key not in self._mappings:
                 raise KeyError(f"no mapping registered for context {key}")
@@ -422,18 +431,20 @@ class RevealPolicyStore:
     def is_closed(
         self,
         session_id: str,
+        run_id: str,
         phase: str,
         round_index: int,
         evaluator_id: str,
         purpose: EvaluationPurpose,
     ) -> bool:
         with self._lock:
-            return (session_id, phase, round_index,
+            return (session_id, run_id, phase, round_index,
                     evaluator_id, purpose.value) in self._closed
 
     def reveal(
         self,
         session_id: str,
+        run_id: str,
         phase: str,
         round_index: int,
         evaluator_id: str,
@@ -442,13 +453,13 @@ class RevealPolicyStore:
         """anonymous_subject_id -> real_subject_agent_id, policy-gated.
         Returns a fresh dict; mutating it cannot change the store."""
         mapping = self._require(
-            session_id, phase, round_index, evaluator_id, purpose
+            session_id, run_id, phase, round_index, evaluator_id, purpose
         )
         if mapping.reveal_policy == RevealPolicy.NEVER:
             raise RevealSealedError(
                 "this mapping's reveal policy is NEVER — identities stay sealed"
             )
-        if not self.is_closed(session_id, phase, round_index,
+        if not self.is_closed(session_id, run_id, phase, round_index,
                               evaluator_id, purpose):
             raise RevealSealedError(
                 "evaluation not closed — identities are sealed until "
@@ -459,12 +470,14 @@ class RevealPolicyStore:
     def _require(
         self,
         session_id: str,
+        run_id: str,
         phase: str,
         round_index: int,
         evaluator_id: str,
         purpose: EvaluationPurpose,
     ) -> AnonymousMapping:
-        key = (session_id, phase, round_index, evaluator_id, purpose.value)
+        key = (session_id, run_id, phase, round_index, evaluator_id,
+               purpose.value)
         with self._lock:
             mapping = self._mappings.get(key)
         if mapping is None:

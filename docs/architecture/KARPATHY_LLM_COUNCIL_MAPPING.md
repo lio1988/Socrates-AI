@@ -753,3 +753,50 @@ identity and immutable evidence. The reasoning engine does not change; a new,
 thin, versioned projection + transport + UI is added over the canonical
 `CEDOrchestrator`, and the pre-existing family-B API is treated as a pattern
 donor and migration source, never as a second authority.
+
+---
+
+## Implementation Addendum (Slice 0 as built — supersedes §9.2 where they differ)
+
+The §9.2 event table above is the historical *proposal*. Slice 0 was
+implemented in `backend/dialogues/projection/` and hardened through three
+adversarial review rounds; where the proposal and the code differ, **the
+executable `contract_matrix.CONTRACT_MATRIX` and the typed `payloads.py`
+models are authoritative**. See
+[COUNCIL_LIVE_VIEW_FOUNDATION.md](COUNCIL_LIVE_VIEW_FOUNDATION.md). Notable
+refinements the code locks in beyond the original sketch:
+
+- **Event envelope**: `schema = ced_epistemic_event_v1`, plus per-payload
+  `payload_schema` / `payload_version`; identity is **executable**
+  (`derive_event_idempotency_key` from the matrix identity fields, verified
+  on every draft — arbitrary keys are impossible). `event_id` is globally
+  unique in the ledger; `emitted_at` must be tz-aware UTC; `causal_parent_id`
+  must reference an already-recorded event in the **same session**.
+- **Streams**: `session.created` is session-scoped (`run_id=None`, stream
+  `session:<id>`); every other event is run-scoped (`run:<id>`). `stream_id`
+  is derived, never caller-supplied; sentinel run ids are rejected.
+- **Identity fields** (superseding the sketch): provider events key on
+  `attempt_index` (a retry is a new attempt, not a conflict);
+  `ratification_vote.recorded` keys on `(ratification_id, voter_id)` and
+  carries `voter_id`; `blocking_objection.raised` keys on
+  `(ratification_id, provider_id)` and carries `provider_id`.
+- **Payload parity**: `draft.created` carries `sections_present`;
+  `peer_score.completed` carries `score_id`/`scored_kind`/`overall_score`/
+  `penalty_flags` (+ section/draft when section-scored);
+  `section_winner.selected` carries `assembly_flags`; `assembly.completed`
+  carries five-section refs + `flags_by_section` (resolved sections only).
+  Vocabularies (sections/roles/phases/verdicts/penalty flags/statuses) are
+  closed Literals with tested parity against `models.py`.
+- **Receipts**: `receipt_ref` is the typed, resolvable `ReceiptRef`
+  (`receipt_kind` + `request_id` + `receipt_digest`), not a bare
+  `sha256:<digest>` string. Wire rule vocabulary is `required | optional |
+  none`; `provider.completed` requires one, the other provider/ratification
+  events allow one (runtime does not yet mint them), the rest forbid one.
+- **Reveal**: per-evaluator anonymization is **run-scoped**
+  (`session, run, phase, round, evaluator, purpose`) with backend-owned,
+  digest-sealed, TOCTOU-safe, write-once mappings and gated reveal.
+
+None of this changes the report's decisions; it is the ratified detail of the
+first slice. The observer/emission hook (Slice 1) remains deferred and will be
+a separate branch off the foundation tip, guarded by a byte-identical
+`FinalResponse` test.

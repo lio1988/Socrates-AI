@@ -8,8 +8,7 @@ One row per event type (hardening rounds 1–2, review findings 6/R2-1/R2-5):
     → required payload fields
     → optional payload fields
     → idempotency identity fields  (EXECUTABLE — see below)
-    → receipt rule                 (required / optional_pending_integration /
-                                    none)
+    → receipt rule                 (required / optional / none)
     → public/redacted projection rule
 
 The matrix is ENFORCED three ways:
@@ -38,17 +37,20 @@ Identity semantics (round 2, finding 1):
   never conflicts with round-1 votes; runner-up replacements carry the
   repair ``round`` in their identity for the same reason.
 
-Receipt rule (round 2, finding 5): ``receipt_ref`` is a typed reference to an
-immutable receipt — format ``sha256:<64 hex>`` (the receipt digest under
-which the AtomicReceiptStore record is addressable). Format is verifiable
-without store access; content verification happens at projection-integration
-time. ``required`` = the event may not exist without one
-(provider.completed — the immutable-provider-receipt invariant).
-``optional_pending_integration`` = the parent architecture links these events
-to receipts, but the current runtime does not yet mint them
-(provider.failed, ratification_vote.recorded, blocking_objection.raised) —
-the matrix says so honestly instead of claiming full parity. ``none`` = the
-event carries NO receipt_ref (present value is a contract violation).
+Receipt rule (rounds 2–3): ``receipt_ref`` is the typed, RESOLVABLE
+``events.ReceiptRef`` — ``receipt_kind`` + ``request_id`` locate the record
+in the AtomicReceiptStore (whose public lookup is ``load(request_id)``;
+paths derive from sha256(request_id), so a bare content digest cannot locate
+anything), and ``receipt_digest`` verifies the loaded immutable content.
+Format is checkable without store access; content verification happens at
+projection-integration time. Wire semantics are timeless:
+``required`` = the event may not exist without one (provider.completed —
+the immutable-provider-receipt invariant); ``optional`` = the parent
+architecture links these events to receipts (provider.failed,
+ratification_vote.recorded, blocking_objection.raised) — STATUS NOTE: the
+current runtime does not yet mint those receipts, which is why they are
+optional rather than required; ``none`` = the event carries NO receipt_ref
+(a present value is a contract violation).
 
 Changing a row here is a versioned contract change, never a convenience edit.
 """
@@ -62,7 +64,12 @@ from typing import Dict, Literal, Mapping, Tuple
 from .taxonomy import CedEventType
 
 ProjectionRule = Literal["public", "derived", "redacted_until_reveal"]
-ReceiptRule = Literal["required", "optional_pending_integration", "none"]
+#: Wire semantics are timeless: required / optional / none. The fact that
+#: the current runtime does not yet MINT receipts for the optional events
+#: (provider.failed, ratification_vote.recorded, blocking_objection.raised)
+#: is documentation/status metadata — see the module docstring — never a
+#: schema value (round 3, finding 3).
+ReceiptRule = Literal["required", "optional", "none"]
 
 
 @dataclass(frozen=True)
@@ -141,7 +148,7 @@ _CONTRACT_MATRIX: Dict[CedEventType, EventContract] = {
                           "failure_category", "attempt_index"),
         optional_payload=(),
         idempotency_identity=("task_id", "provider_id", "attempt_index"),
-        receipt="optional_pending_integration",
+        receipt="optional",
         projection="public",
     ),
     CedEventType.MOVE_VALIDATED: EventContract(
@@ -220,7 +227,7 @@ _CONTRACT_MATRIX: Dict[CedEventType, EventContract] = {
                           "severity", "required_fix"),
         optional_payload=(),
         idempotency_identity=("ratification_id", "provider_id"),
-        receipt="optional_pending_integration",
+        receipt="optional",
         projection="public",
     ),
     CedEventType.RATIFICATION_VOTE_RECORDED: EventContract(
@@ -228,7 +235,7 @@ _CONTRACT_MATRIX: Dict[CedEventType, EventContract] = {
         required_payload=("ratification_id", "voter_id", "verdict"),
         optional_payload=("caveat", "target_section", "provider_id"),
         idempotency_identity=("ratification_id", "voter_id"),
-        receipt="optional_pending_integration",
+        receipt="optional",
         projection="public",
     ),
     CedEventType.RUNNER_UP_REPLACED: EventContract(
