@@ -49,6 +49,7 @@ Pure contract: imports nothing from ced.py / providers / registry.
 from __future__ import annotations
 
 import json
+import threading
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
@@ -155,10 +156,10 @@ class AnonymousMapping(BaseModel):
         serialization_alias="schema",
     )
     schema_version:     int = REVEAL_CONTRACT_VERSION
-    session_id:         str
-    phase:              str
-    round_index:        int
-    evaluator_id:       str
+    session_id:         str = Field(min_length=1)
+    phase:              str = Field(min_length=1)
+    round_index:        int = Field(ge=0)
+    evaluator_id:       str = Field(min_length=1)
     purpose:            EvaluationPurpose
     reveal_policy:      RevealPolicy = RevealPolicy.AFTER_EVALUATION_CLOSE
     # anonymous_subject_id -> real_subject_agent_id (backend-side only)
@@ -177,6 +178,10 @@ class AnonymousMapping(BaseModel):
                 f"unsupported reveal schema_version {self.schema_version}"
             )
         order = self.presentation_order
+        if len(order) == 0:
+            raise ValueError(
+                "a blind mapping must contain at least one subject"
+            )
         if len(order) != len(set(order)):
             raise ValueError(
                 "presentation_order must not contain duplicate aliases"
@@ -353,27 +358,37 @@ class RevealPolicyStore:
     re-registration is an idempotent no-op; ANY difference (policy included)
     is a conflict. The store keeps deep copies — callers cannot mutate it
     through retained or returned references.
+
+    Round 2 (finding 3): the check-then-write is atomic under an internal
+    lock, so two racing registrations can never overwrite each other — one
+    wins, the conflicting one raises. Canonical verification (pure) runs
+    OUTSIDE the lock; under the lock there are only dict operations and an
+    equality comparison.
     """
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._mappings: Dict[Tuple[str, str, int, str, str], AnonymousMapping] = {}
         self._closed: set = set()
 
     def register(self, mapping: AnonymousMapping) -> None:
-        if not verify_mapping(mapping):
+        if not verify_mapping(mapping):        # pure — outside the lock
             raise ValueError("refusing to register a mapping that fails "
                              "canonical verification (possible forgery)")
         key = mapping.context_key()
-        existing = self._mappings.get(key)
-        if existing is not None:
-            if existing == mapping:
-                return                      # idempotent re-registration
-            raise ValueError(
-                "conflicting mapping already registered for this context — "
-                "a registered mapping is never overwritten (policy, order "
-                "and assignments are all part of its identity)"
-            )
-        self._mappings[key] = mapping.model_copy(deep=True)
+        stored_copy = mapping.model_copy(deep=True)
+        with self._lock:
+            existing = self._mappings.get(key)
+            if existing is not None:
+                if existing == mapping:
+                    return                      # idempotent re-registration
+                raise ValueError(
+                    "conflicting mapping already registered for this "
+                    "context — a registered mapping is never overwritten "
+                    "(policy, order and assignments are all part of its "
+                    "identity)"
+                )
+            self._mappings[key] = stored_copy
 
     def evaluator_view(
         self,
@@ -399,9 +414,10 @@ class RevealPolicyStore:
         purpose: EvaluationPurpose,
     ) -> None:
         key = (session_id, phase, round_index, evaluator_id, purpose.value)
-        if key not in self._mappings:
-            raise KeyError(f"no mapping registered for context {key}")
-        self._closed.add(key)
+        with self._lock:
+            if key not in self._mappings:
+                raise KeyError(f"no mapping registered for context {key}")
+            self._closed.add(key)
 
     def is_closed(
         self,
@@ -411,8 +427,9 @@ class RevealPolicyStore:
         evaluator_id: str,
         purpose: EvaluationPurpose,
     ) -> bool:
-        return (session_id, phase, round_index,
-                evaluator_id, purpose.value) in self._closed
+        with self._lock:
+            return (session_id, phase, round_index,
+                    evaluator_id, purpose.value) in self._closed
 
     def reveal(
         self,
@@ -448,7 +465,8 @@ class RevealPolicyStore:
         purpose: EvaluationPurpose,
     ) -> AnonymousMapping:
         key = (session_id, phase, round_index, evaluator_id, purpose.value)
-        mapping = self._mappings.get(key)
+        with self._lock:
+            mapping = self._mappings.get(key)
         if mapping is None:
             raise KeyError(f"no mapping registered for context {key}")
         return mapping

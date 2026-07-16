@@ -32,7 +32,12 @@ from .taxonomy import (
     session_stream_id,
 )
 from .contract_matrix import CONTRACT_MATRIX, EventContract
-from .payloads import PAYLOAD_MODELS, AssemblySectionRef, BasePayload
+from .payloads import (
+    PAYLOAD_MODELS,
+    AssemblySectionRef,
+    BasePayload,
+    ProviderTokenUsage,
+)
 from .events import (
     SCHEMA_NAME,
     SCHEMA_VERSION,
@@ -40,11 +45,12 @@ from .events import (
     CedEventDraft,
     build_draft,
     canonical_identity_digest,
+    derive_event_idempotency_key,
     derive_idempotency_key,
     semantic_digest,
     sha256_hex,
 )
-from .ledger import CedEventConflictError, EventLedger
+from .ledger import CedCausalityError, CedEventConflictError, EventLedger
 from .reveal import (
     REVEAL_CONTRACT_SCHEMA,
     AnonymousMapping,
@@ -87,6 +93,7 @@ __all__ = [
     "PAYLOAD_MODELS",
     "AssemblySectionRef",
     "BasePayload",
+    "ProviderTokenUsage",
     # envelope
     "SCHEMA_NAME",
     "SCHEMA_VERSION",
@@ -94,10 +101,12 @@ __all__ = [
     "CedEventDraft",
     "build_draft",
     "canonical_identity_digest",
+    "derive_event_idempotency_key",
     "derive_idempotency_key",
     "semantic_digest",
     "sha256_hex",
     # ledger
+    "CedCausalityError",
     "CedEventConflictError",
     "EventLedger",
     # reveal

@@ -1,14 +1,15 @@
 """
 Council Live View Foundation — contract matrix + vocabulary parity + coherence.
 
-Hardening round 1 (review findings 6 + 9):
-- 22/22: every implemented payload model's required/optional fields equal the
-  explicit CONTRACT_MATRIX (which encodes the parent mapping §9.2);
-- the taxonomy's phase-required set and the matrix agree;
-- closed projection vocabularies (sections/roles/phases/penalty flags/
-  verdicts) are IDENTICAL to the canonical enums in backend.dialogues.models
-  (tests may import models; the production projection package may not);
-- semantic coherence validators actually fire.
+Round 1 (findings 6 + 9): 22/22 payload↔matrix agreement, closed-vocabulary
+parity with backend.dialogues.models, semantic coherence validators.
+
+Round 2 (findings 1, 4, 5, 6): 22/22 EXECUTABLE identity tests (same identity
+→ same key; identity change → new key; same identity + different content →
+ledger conflict; wrong supplied key → reject), receipt RULES
+(required / optional_pending_integration / none), frozen registries,
+Phase-27 parity fields (assembly_flags / flags_by_section), typed token
+usage, per-voter ratification identity.
 """
 
 from __future__ import annotations
@@ -33,7 +34,13 @@ from backend.dialogues.projection import (
     SECTION_NAMES,
     VERDICT_NAMES,
     AssemblySectionRef,
+    CedEventConflictError,
+    CedEventDraft,
     CedEventType,
+    EventLedger,
+    ProviderTokenUsage,
+    build_draft,
+    derive_event_idempotency_key,
 )
 from backend.dialogues.projection.payloads import (
     AssemblyCompletedPayload,
@@ -42,10 +49,156 @@ from backend.dialogues.projection.payloads import (
     PeerScoreCompletedPayload,
     ProviderFailedPayload,
     QuorumEvaluatedPayload,
+    RatificationVoteRecordedPayload,
     RunCompletedPayload,
     RunnerUpReplacedPayload,
     SectionWinnerSelectedPayload,
 )
+
+RECEIPT = "sha256:" + "c" * 64
+
+
+def _five_section_refs():
+    return [
+        dict(section="core_answer", selected_draft_id="d1", unresolved=False),
+        dict(section="crucial_stress_test", selected_draft_id="d1",
+             unresolved=False),
+        dict(section="blind_spots", selected_draft_id="d1", unresolved=False),
+        dict(section="nuance", selected_draft_id=None, unresolved=True),
+        dict(section="final_verdict", selected_draft_id="d1",
+             unresolved=False),
+    ]
+
+
+#: One valid draft recipe per event type (envelope extras + payload).
+SAMPLES = {
+    CedEventType.SESSION_CREATED: dict(
+        run_id=None, payload={"question": "Q?"}),
+    CedEventType.RUN_STARTED: dict(payload={}),
+    CedEventType.ROLE_ASSIGNED: dict(
+        phase="opening", round_index=0,
+        payload={"agent_id": "agent_0", "role": "socrates"}),
+    CedEventType.PHASE_STARTED: dict(
+        phase="opening", round_index=0, payload={}),
+    CedEventType.TASK_CREATED: dict(payload=dict(
+        task_id="t1", task_kind="synthesis_draft", agent_id="agent_0",
+        slot_index=0, attempt_index=0, schema_name="s", context_hash="h")),
+    CedEventType.PROVIDER_REQUESTED: dict(payload=dict(
+        task_id="t1", provider_id="p1", requested_model="m",
+        attempt_index=0)),
+    CedEventType.PROVIDER_COMPLETED: dict(
+        receipt_ref=RECEIPT,
+        payload=dict(task_id="t1", provider_id="p1", returned_model="m",
+                     latency_ms=10.0, attempt_index=0)),
+    CedEventType.PROVIDER_FAILED: dict(payload=dict(
+        task_id="t1", provider_id="p1", status="timeout",
+        failure_category="timeout", attempt_index=0)),
+    CedEventType.MOVE_VALIDATED: dict(
+        phase="synthesis", round_index=0,
+        payload=dict(move_id="m1", task_id="t1", agent_id="agent_0",
+                     role="socrates", confidence=0.7,
+                     raw_digest="a" * 64, validated_digest="b" * 64)),
+    CedEventType.DRAFT_CREATED: dict(payload=dict(
+        draft_id="d1", author_agent_id="agent_0", move_id="m1",
+        sections_present=["core_answer"])),
+    CedEventType.PEER_SCORE_REQUESTED: dict(payload=dict(
+        score_task_id="st1", target_id="m1", voter_id="agent_1")),
+    CedEventType.PEER_SCORE_COMPLETED: dict(payload=dict(
+        score_task_id="st1", score_id="sc1", voter_id="agent_1",
+        scored_kind="move", overall_score=8.0, penalty_flags=[])),
+    CedEventType.PEER_SCORE_MISSING: dict(payload=dict(
+        score_task_id="st1", reason="timeout")),
+    CedEventType.QUORUM_EVALUATED: dict(payload=dict(
+        scope="phase:opening", expected=3, valid=3, status="complete")),
+    CedEventType.SECTION_WINNER_SELECTED: dict(payload=dict(
+        section="nuance", unresolved=False, selected_draft_id="d1",
+        average_score=8.0, score_count=3)),
+    CedEventType.ASSEMBLY_COMPLETED: dict(payload=dict(
+        answer_id="ans1", sections=_five_section_refs(),
+        unresolved_sections=["nuance"])),
+    CedEventType.BLOCKING_OBJECTION_RAISED: dict(payload=dict(
+        ratification_id="rat1", provider_id="p1", target_section="nuance",
+        severity="critical", required_fix="fix")),
+    CedEventType.RATIFICATION_VOTE_RECORDED: dict(payload=dict(
+        ratification_id="rat1", voter_id="agent_1", verdict="accept")),
+    CedEventType.RUNNER_UP_REPLACED: dict(payload=dict(
+        section="nuance", from_draft="d1", to_draft="d2",
+        via="peer_score_ranking", round=1)),
+    CedEventType.SECTION_UNRESOLVED: dict(payload=dict(
+        section="nuance", reason="no valid scores")),
+    CedEventType.ANSWER_WITHHELD: dict(payload=dict(
+        reason="critical block", status="repair_required")),
+    CedEventType.RUN_COMPLETED: dict(payload=dict(
+        ratification_status="ratified")),
+}
+
+#: One identity mutation per event type: (field, is_envelope, new_value).
+IDENTITY_VARIANTS = {
+    CedEventType.SESSION_CREATED:            ("session_id", True, "sess_y"),
+    CedEventType.RUN_STARTED:                ("run_id", True, "run_2"),
+    CedEventType.ROLE_ASSIGNED:              ("agent_id", False, "agent_1"),
+    CedEventType.PHASE_STARTED:              ("round_index", True, 1),
+    CedEventType.TASK_CREATED:               ("task_id", False, "t2"),
+    CedEventType.PROVIDER_REQUESTED:         ("attempt_index", False, 1),
+    CedEventType.PROVIDER_COMPLETED:         ("attempt_index", False, 1),
+    CedEventType.PROVIDER_FAILED:            ("attempt_index", False, 1),
+    CedEventType.MOVE_VALIDATED:             ("move_id", False, "m2"),
+    CedEventType.DRAFT_CREATED:              ("draft_id", False, "d2"),
+    CedEventType.PEER_SCORE_REQUESTED:       ("score_task_id", False, "st2"),
+    CedEventType.PEER_SCORE_COMPLETED:       ("score_task_id", False, "st2"),
+    CedEventType.PEER_SCORE_MISSING:         ("score_task_id", False, "st2"),
+    CedEventType.QUORUM_EVALUATED:           ("scope", False, "phase:elenchus"),
+    CedEventType.SECTION_WINNER_SELECTED:    ("section", False, "blind_spots"),
+    CedEventType.ASSEMBLY_COMPLETED:         ("answer_id", False, "ans2"),
+    CedEventType.BLOCKING_OBJECTION_RAISED:  ("provider_id", False, "p2"),
+    CedEventType.RATIFICATION_VOTE_RECORDED: ("voter_id", False, "agent_2"),
+    CedEventType.RUNNER_UP_REPLACED:         ("round", False, 2),
+    CedEventType.SECTION_UNRESOLVED:         ("section", False, "blind_spots"),
+    CedEventType.ANSWER_WITHHELD:            ("run_id", True, "run_2"),
+    CedEventType.RUN_COMPLETED:              ("run_id", True, "run_2"),
+}
+
+
+def _spec_copy(event_type: CedEventType) -> dict:
+    spec = {}
+    for key, value in SAMPLES[event_type].items():
+        spec[key] = dict(value) if isinstance(value, dict) else value
+    spec["payload"] = dict(spec["payload"])
+    return spec
+
+
+def _sample_draft(event_type: CedEventType, *,
+                  session_id: str = None,
+                  actor_id: str = None) -> CedEventDraft:
+    spec = _spec_copy(event_type)
+    run_id = spec.pop("run_id", "run_1")
+    kwargs = dict(
+        event_type=event_type,
+        session_id=session_id or f"sess_{event_type.name.lower()}",
+        run_id=run_id,
+        **spec,
+    )
+    if actor_id is not None:
+        kwargs["actor_id"] = actor_id
+    return build_draft(**kwargs)
+
+
+def _sample_with_identity_variant(event_type: CedEventType) -> CedEventDraft:
+    field, is_envelope, value = IDENTITY_VARIANTS[event_type]
+    spec = _spec_copy(event_type)
+    session_id = f"sess_{event_type.name.lower()}"
+    run_id = spec.pop("run_id", "run_1")
+    if is_envelope:
+        if field == "session_id":
+            session_id = value
+        elif field == "run_id":
+            run_id = value
+        else:
+            spec[field] = value
+    else:
+        spec["payload"][field] = value
+    return build_draft(event_type=event_type, session_id=session_id,
+                       run_id=run_id, **spec)
 
 
 # ── 22/22 matrix agreement ───────────────────────────────────────────────────
@@ -80,13 +233,17 @@ class TestContractMatrixAgreement:
         assert from_matrix == PHASE_REQUIRED_TYPES
         assert CedEventType.MOVE_VALIDATED in PHASE_REQUIRED_TYPES
 
-    def test_receipt_requirement_matches_matrix(self):
-        with_receipt = {
-            event_type
-            for event_type, contract in CONTRACT_MATRIX.items()
-            if contract.receipt_required
+    def test_receipt_rules_match_matrix(self):
+        required = {et for et, c in CONTRACT_MATRIX.items()
+                    if c.receipt == "required"}
+        pending = {et for et, c in CONTRACT_MATRIX.items()
+                   if c.receipt == "optional_pending_integration"}
+        assert required == {CedEventType.PROVIDER_COMPLETED}
+        assert pending == {
+            CedEventType.PROVIDER_FAILED,
+            CedEventType.RATIFICATION_VOTE_RECORDED,
+            CedEventType.BLOCKING_OBJECTION_RAISED,
         }
-        assert with_receipt == {CedEventType.PROVIDER_COMPLETED}
 
     def test_every_row_declares_projection_and_identity(self):
         for event_type, contract in CONTRACT_MATRIX.items():
@@ -99,6 +256,73 @@ class TestContractMatrixAgreement:
     def test_peer_score_completed_is_redacted_until_reveal(self):
         contract = CONTRACT_MATRIX[CedEventType.PEER_SCORE_COMPLETED]
         assert contract.projection == "redacted_until_reveal"
+
+
+# ── frozen registries (round 2, finding 6) ───────────────────────────────────
+
+class TestRegistryImmutability:
+    def test_contract_matrix_cannot_be_mutated(self):
+        weaker = CONTRACT_MATRIX[CedEventType.RUN_STARTED]
+        with pytest.raises(TypeError):
+            CONTRACT_MATRIX[CedEventType.PROVIDER_COMPLETED] = weaker
+        with pytest.raises(TypeError):
+            del CONTRACT_MATRIX[CedEventType.PROVIDER_COMPLETED]
+
+    def test_payload_registry_cannot_be_mutated(self):
+        permissive = PAYLOAD_MODELS[CedEventType.RUN_STARTED]
+        with pytest.raises(TypeError):
+            PAYLOAD_MODELS[CedEventType.MOVE_VALIDATED] = permissive
+        with pytest.raises(TypeError):
+            del PAYLOAD_MODELS[CedEventType.MOVE_VALIDATED]
+
+    def test_contract_rows_are_frozen(self):
+        row = CONTRACT_MATRIX[CedEventType.PROVIDER_COMPLETED]
+        with pytest.raises(AttributeError):
+            row.receipt = "none"
+
+
+# ── 22/22 executable identity (round 2, finding 1) ───────────────────────────
+
+class TestExecutableIdentity22:
+    def test_same_identity_same_content_same_key_22_of_22(self):
+        for event_type in CedEventType:
+            a = _sample_draft(event_type)
+            b = _sample_draft(event_type)
+            assert a.idempotency_key == b.idempotency_key, event_type
+
+    def test_identity_field_change_changes_key_22_of_22(self):
+        for event_type in CedEventType:
+            base = _sample_draft(event_type)
+            variant = _sample_with_identity_variant(event_type)
+            assert base.idempotency_key != variant.idempotency_key, (
+                f"{event_type.value}: mutating identity field "
+                f"{IDENTITY_VARIANTS[event_type][0]!r} did not change the key"
+            )
+
+    def test_same_identity_different_content_conflicts_22_of_22(self):
+        # actor_id is never an identity field: same key, different semantic
+        # content → the ledger must refuse the contradictory fact.
+        for event_type in CedEventType:
+            ledger = EventLedger()
+            ledger.append(_sample_draft(event_type))
+            contradictory = _sample_draft(event_type, actor_id="agent_zzz")
+            assert contradictory.idempotency_key == \
+                   _sample_draft(event_type).idempotency_key
+            with pytest.raises(CedEventConflictError):
+                ledger.append(contradictory)
+
+    def test_wrong_supplied_key_rejected_22_of_22(self):
+        for event_type in CedEventType:
+            good = _sample_draft(event_type)
+            with pytest.raises(ValidationError, match="contract-derived"):
+                CedEventDraft(**{**good.model_dump(),
+                                 "idempotency_key": "idem_" + "f" * 64})
+
+    def test_derive_event_key_refuses_missing_identity_field(self):
+        with pytest.raises(ValueError, match="identity field"):
+            derive_event_idempotency_key(
+                CedEventType.TASK_CREATED, session_id="s", run_id="r",
+                payload={})   # no task_id
 
 
 # ── vocabulary parity with canonical CED enums ───────────────────────────────
@@ -120,7 +344,7 @@ class TestVocabularyParity:
         assert set(VERDICT_NAMES) == {v.value for v in CouncilVerdict}
 
 
-# ── semantic coherence validators (finding 9) ────────────────────────────────
+# ── semantic coherence validators ────────────────────────────────────────────
 
 class TestQuorumCoherence:
     def test_valid_cannot_exceed_expected(self):
@@ -186,9 +410,27 @@ class TestSectionWinnerCoherence:
                 section="nuance", unresolved=True,
                 selected_draft_id="draft_1", average_score=8.0, score_count=3)
 
+    def test_unresolved_winner_carries_no_assembly_flags(self):
+        with pytest.raises(ValidationError, match="must not carry"):
+            SectionWinnerSelectedPayload(
+                section="nuance", unresolved=True,
+                assembly_flags=["vague"])
+
     def test_resolved_winner_requires_selection_data(self):
         with pytest.raises(ValidationError, match="requires"):
             SectionWinnerSelectedPayload(section="nuance", unresolved=False)
+
+    def test_assembly_flags_closed_and_unique(self):
+        with pytest.raises(ValidationError, match="duplicates"):
+            SectionWinnerSelectedPayload(
+                section="nuance", unresolved=False,
+                selected_draft_id="d1", average_score=8.0, score_count=3,
+                assembly_flags=["vague", "vague"])
+        p = SectionWinnerSelectedPayload(
+            section="nuance", unresolved=False,
+            selected_draft_id="d1", average_score=8.0, score_count=3,
+            assembly_flags=["unsupported_claim", "missed_uncertainty"])
+        assert p.assembly_flags == ["unsupported_claim", "missed_uncertainty"]
 
     def test_both_coherent_forms_build(self):
         SectionWinnerSelectedPayload(section="nuance", unresolved=True)
@@ -199,12 +441,7 @@ class TestSectionWinnerCoherence:
 
 class TestAssemblyCoherence:
     def _refs(self):
-        return [
-            AssemblySectionRef(section="core_answer",
-                               selected_draft_id="draft_1", unresolved=False),
-            AssemblySectionRef(section="nuance",
-                               selected_draft_id=None, unresolved=True),
-        ]
+        return [AssemblySectionRef(**ref) for ref in _five_section_refs()]
 
     def test_unresolved_sections_must_match_flagged_refs(self):
         with pytest.raises(ValidationError, match="must equal"):
@@ -218,6 +455,14 @@ class TestAssemblyCoherence:
             unresolved_sections=["nuance"])
         assert p.unresolved_sections == ["nuance"]
 
+    def test_assembly_requires_all_five_locked_sections(self):
+        # Round 2: exactly one ref per locked section — a 2-section
+        # "assembly" is not a canonical AssembledAnswer.
+        partial = self._refs()[:2]
+        with pytest.raises(ValidationError, match="five locked sections"):
+            AssemblyCompletedPayload(answer_id="ans_1", sections=partial,
+                                     unresolved_sections=[])
+
     def test_section_ref_coherence(self):
         with pytest.raises(ValidationError, match="no selected draft"):
             AssemblySectionRef(section="core_answer",
@@ -226,23 +471,29 @@ class TestAssemblyCoherence:
             AssemblySectionRef(section="core_answer",
                                selected_draft_id=None, unresolved=False)
 
-    def test_thin_sections_must_reference_assembled_sections(self):
-        with pytest.raises(ValidationError, match="thin_sections"):
+    def test_thin_sections_subset_and_unique(self):
+        with pytest.raises(ValidationError, match="duplicates"):
             AssemblyCompletedPayload(
                 answer_id="ans_1", sections=self._refs(),
                 unresolved_sections=["nuance"],
-                thin_sections=["blind_spots"])   # not in assembled sections
+                thin_sections=["blind_spots", "blind_spots"])
+        p = AssemblyCompletedPayload(
+            answer_id="ans_1", sections=self._refs(),
+            unresolved_sections=["nuance"],
+            thin_sections=["blind_spots"])
+        assert p.thin_sections == ["blind_spots"]
 
-    def test_duplicate_section_refs_rejected(self):
-        dup = [
-            AssemblySectionRef(section="core_answer",
-                               selected_draft_id="draft_1", unresolved=False),
-            AssemblySectionRef(section="core_answer",
-                               selected_draft_id="draft_2", unresolved=False),
-        ]
-        with pytest.raises(ValidationError, match="repeat"):
-            AssemblyCompletedPayload(answer_id="ans_1", sections=dup,
-                                     unresolved_sections=[])
+    def test_flags_by_section_keys_and_uniqueness(self):
+        with pytest.raises(ValidationError, match="duplicate flags"):
+            AssemblyCompletedPayload(
+                answer_id="ans_1", sections=self._refs(),
+                unresolved_sections=["nuance"],
+                flags_by_section={"core_answer": ["vague", "vague"]})
+        p = AssemblyCompletedPayload(
+            answer_id="ans_1", sections=self._refs(),
+            unresolved_sections=["nuance"],
+            flags_by_section={"core_answer": ["unsupported_claim"]})
+        assert p.flags_by_section == {"core_answer": ["unsupported_claim"]}
 
 
 class TestClosedVocabularyPayloads:
@@ -267,6 +518,12 @@ class TestClosedVocabularyPayloads:
             required_fix="fix it")
         assert p.severity == "critical"
 
+    def test_ratification_vote_requires_voter(self):
+        with pytest.raises(ValidationError) as exc_info:
+            RatificationVoteRecordedPayload(
+                ratification_id="rat_1", verdict="accept")
+        assert "voter_id" in str(exc_info.value)
+
     def test_runner_up_via_closed_and_draft_must_change(self):
         with pytest.raises(ValidationError):
             RunnerUpReplacedPayload(section="nuance", from_draft="d1",
@@ -281,7 +538,17 @@ class TestClosedVocabularyPayloads:
         with pytest.raises(ValidationError):
             ProviderFailedPayload(task_id="t", provider_id="p",
                                   status="mostly_fine",
-                                  failure_category="unknown")
+                                  failure_category="unknown",
+                                  attempt_index=0)
+
+    def test_token_usage_typed_and_non_negative(self):
+        with pytest.raises(ValidationError):
+            ProviderTokenUsage(input_tokens=-1)
+        with pytest.raises(ValidationError) as exc_info:
+            ProviderTokenUsage(surprise_counter=5)
+        assert "surprise_counter" in str(exc_info.value)
+        usage = ProviderTokenUsage(input_tokens=100, output_tokens=50)
+        assert usage.input_tokens == 100
 
     def test_run_completed_status_closed(self):
         with pytest.raises(ValidationError):

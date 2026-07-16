@@ -92,13 +92,53 @@ def derive_idempotency_key(
     event_type: "CedEventType | str", *parts: Any
 ) -> str:
     """
-    Deterministic idempotency key: SHA-256 over the canonical JSON array
-    ``[event_type, *parts]`` (§9.2 col 7 identity — e.g. run, phase, round,
-    agent). Distinct from event_id: two emissions of the SAME canonical fact
-    share the SAME idempotency key.
+    Low-level deterministic key over explicit parts (canonical JSON array).
+    The CONTRACT key for events is ``derive_event_idempotency_key`` below —
+    this helper remains only as a collision-free primitive.
     """
     et = CedEventType(event_type)
     return "idem_" + canonical_identity_digest([et.value, *parts])
+
+
+def derive_event_idempotency_key(
+    event_type: "CedEventType | str",
+    *,
+    session_id: str,
+    run_id: Optional[str] = None,
+    phase: Optional[str] = None,
+    round_index: Optional[int] = None,
+    payload: Dict[str, Any],
+) -> str:
+    """
+    THE executable identity contract (round 2, finding 1): the idempotency
+    key is derived from the event's CONTRACT_MATRIX identity fields —
+    extracted from the envelope (session_id/run_id/phase/round_index) or the
+    payload — as a canonical JSON array of [field_name, value] pairs
+    (labeled, type-preserving, collision-free). A missing identity field is
+    a contract violation. Every draft/sealed event is verified against this
+    derivation — a caller-supplied wrong key is rejected.
+    """
+    et = CedEventType(event_type)
+    from .contract_matrix import CONTRACT_MATRIX
+    envelope_values: Dict[str, Any] = {
+        "session_id": session_id,
+        "run_id": run_id,
+        "phase": phase,
+        "round_index": round_index,
+    }
+    labeled_parts: list = []
+    for field_name in CONTRACT_MATRIX[et].idempotency_identity:
+        if field_name in envelope_values:
+            value = envelope_values[field_name]
+        else:
+            value = payload.get(field_name)
+        if value is None:
+            raise ValueError(
+                f"cannot derive idempotency key for {et.value}: identity "
+                f"field {field_name!r} is missing"
+            )
+        labeled_parts.append([field_name, value])
+    return "idem_" + canonical_identity_digest([et.value, labeled_parts])
 
 
 def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
@@ -114,6 +154,9 @@ def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
         raise ValueError("session_id must be non-empty")
     if not model.idempotency_key.strip():
         raise ValueError("idempotency_key must be non-empty and deterministic")
+    if model.causal_parent_id is not None and \
+            model.causal_parent_id == model.event_id:
+        raise ValueError("an event cannot be its own causal parent")
 
     # Typed stream contract (session/run sequencing — audited).
     if model.event_type in SESSION_SCOPED_TYPES:
@@ -143,12 +186,22 @@ def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
                 f"{model.event_type.value} requires envelope field "
                 f"{field_name!r} (contract matrix)"
             )
-    if contract.receipt_required:
-        if model.receipt_ref is None or not model.receipt_ref.strip():
+
+    # Receipt rule (round 2, finding 5): required / pending / none.
+    if contract.receipt == "required":
+        if model.receipt_ref is None:
             raise ValueError(
                 f"{model.event_type.value} requires a receipt_ref — the "
                 "immutable provider receipt is part of the contract"
             )
+    elif contract.receipt == "none":
+        if model.receipt_ref is not None:
+            raise ValueError(
+                f"{model.event_type.value} carries no receipt — a "
+                "receipt_ref here is a contract violation"
+            )
+    # "optional_pending_integration": present-or-absent, format-checked by
+    # the field pattern when present.
 
     # Envelope-level pairing/version re-check + payload strict re-validation.
     from .payloads import PAYLOAD_MODELS
@@ -163,6 +216,24 @@ def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
         raise ValueError(
             f"payload_version mismatch for {model.payload_schema}: expected "
             f"{payload_model.PAYLOAD_VERSION}, got {model.payload_version}"
+        )
+
+    # Executable identity (round 2, finding 1): the supplied key must equal
+    # the contract-derived key for this event's identity fields.
+    expected_key = derive_event_idempotency_key(
+        model.event_type,
+        session_id=model.session_id,
+        run_id=model.run_id,
+        phase=model.phase,
+        round_index=model.round_index,
+        payload=model.payload,
+    )
+    if model.idempotency_key != expected_key:
+        raise ValueError(
+            f"idempotency_key does not match the contract-derived identity "
+            f"for {model.event_type.value} "
+            f"(identity fields: "
+            f"{CONTRACT_MATRIX[model.event_type].idempotency_identity})"
         )
 
     # Canonical-JSON finiteness (rejects NaN/Infinity smuggled past typing).
@@ -186,8 +257,10 @@ class _EnvelopeBase(BaseModel):
     schema_version:   int = SCHEMA_VERSION
     payload_schema:   str
     payload_version:  int
+    # Bounded, safe identifier format (round 2, finding 2).
     event_id:         str = Field(
-        default_factory=lambda: "evt_" + uuid.uuid4().hex)
+        default_factory=lambda: "evt_" + uuid.uuid4().hex,
+        pattern=r"^evt_[0-9A-Za-z_-]{3,64}$")
     session_id:       str
     run_id:           Optional[str] = None
     event_type:       CedEventType
@@ -195,9 +268,16 @@ class _EnvelopeBase(BaseModel):
     subject_id:       Optional[str] = None  # anonymous pre-reveal (blind events)
     phase:            Optional[PhaseLiteral] = None
     round_index:      Optional[int] = Field(default=None, ge=0)
-    causal_parent_id: Optional[str] = None
-    receipt_ref:      Optional[str] = None
-    artifact_digest:  Optional[str] = None
+    causal_parent_id: Optional[str] = Field(
+        default=None, pattern=r"^evt_[0-9A-Za-z_-]{3,64}$")
+    # Typed receipt reference (round 2, finding 5): the sha256 digest under
+    # which the immutable AtomicReceiptStore record is addressable. Format is
+    # verifiable without store access; content verification happens at
+    # projection-integration time.
+    receipt_ref:      Optional[str] = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    artifact_digest:  Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$")
     idempotency_key:  str
     payload:          Dict[str, Any] = Field(default_factory=dict)
 
@@ -328,33 +408,34 @@ def build_draft(
     session_id: str,
     payload: Dict[str, Any],
     run_id: Optional[str] = None,
-    idempotency_key: Optional[str] = None,
-    idempotency_parts: Optional[list] = None,
     **envelope: Any,
 ) -> CedEventDraft:
     """
     Ergonomic constructor: fills payload_schema/payload_version from the
-    registered payload model (still fully validated afterwards). The caller
-    must supply either an explicit idempotency_key or the deterministic
-    identity parts.
+    registered payload model and derives the idempotency key from the
+    CONTRACT identity fields itself (round 2, finding 1) — there is no
+    public way to supply an arbitrary key, and the contract check rejects a
+    wrong one on direct CedEventDraft construction anyway.
     """
     et = CedEventType(event_type)
     from .payloads import PAYLOAD_MODELS
     payload_model = PAYLOAD_MODELS[et]
-    if idempotency_key is None:
-        if not idempotency_parts:
-            raise ValueError(
-                "provide idempotency_key or idempotency_parts — idempotency "
-                "identity is never implicit"
-            )
-        idempotency_key = derive_idempotency_key(et, *idempotency_parts)
+    normalized = payload_model(**payload).model_dump(mode="json")
+    idempotency_key = derive_event_idempotency_key(
+        et,
+        session_id=session_id,
+        run_id=run_id,
+        phase=envelope.get("phase"),
+        round_index=envelope.get("round_index"),
+        payload=normalized,
+    )
     return CedEventDraft(
         event_type=et,
         session_id=session_id,
         run_id=run_id,
         payload_schema=payload_model.PAYLOAD_SCHEMA,
         payload_version=payload_model.PAYLOAD_VERSION,
-        payload=payload,
+        payload=normalized,
         idempotency_key=idempotency_key,
         **envelope,
     )

@@ -51,6 +51,57 @@ worktree off origin/main).
 10. **UTC enforcement**: `emitted_at` must be timezone-aware UTC — naive or
     non-UTC clocks are rejected, never silently normalized.
 
+## Hardening round 2 (adversarial review of de52ad5 — all 7 findings closed)
+
+1. **Executable idempotency identity**: `derive_event_idempotency_key()` is
+   THE contract — identity fields per the matrix, extracted from envelope or
+   payload as labeled canonical-JSON pairs. `build_draft()` derives the key
+   itself (no public arbitrary-key path) and every draft/sealed event is
+   verified against the derivation — a caller-supplied wrong key rejects.
+   Identity rows fixed: provider events carry `attempt_index` (a retry is a
+   NEW canonical attempt); ratification votes are per
+   (ratification_id, voter_id); blocking objections per
+   (ratification_id, provider_id); Phase-19 repair re-votes mint NEW
+   ratification_ids — new canonical events, never conflicts. 22/22 identity
+   tests (same→same key, identity change→new key, same identity + different
+   content→conflict, wrong key→reject).
+2. **Global event_id uniqueness**: ledger keeps a global event-id index —
+   a reused event_id claiming a different fact is a conflict (same- and
+   cross-stream); idempotent replay returns the ORIGINAL event/id. Bounded
+   safe id format (`evt_[0-9A-Za-z_-]{3,64}`). **v1 causality policy LOCKED**:
+   `causal_parent_id` must reference an already-recorded event (globally;
+   cross-stream parents explicitly allowed, e.g. session.created →
+   run.started); self-parent refused; deeper type-level causality deferred
+   to the emission slice — stated, not ambiguous.
+3. **Reveal store concurrency**: check-then-write is atomic under an internal
+   lock (register/close/is_closed/reads); racing identical registrations are
+   idempotent, racing conflicting ones have one winner + one conflict, and a
+   NEVER-vs-revealable race can never downgrade a registered policy.
+4. **Parent payload parity completed**: `section_winner.selected` carries
+   `assembly_flags` (closed PenaltyFlag list, dup-free, absent when
+   unresolved); `assembly.completed` carries `flags_by_section` (closed
+   section keys ⊆ assembled sections, dup-free flag lists).
+5. **Receipt contract decided**: `receipt_ref` = `sha256:<64 hex>` — the
+   digest addressing the immutable AtomicReceiptStore record; format is
+   verifiable without store access, content verification happens at
+   projection integration. Rules: `required` for provider.completed;
+   `optional_pending_integration` for provider.failed /
+   ratification_vote.recorded / blocking_objection.raised (runtime does not
+   mint those receipts yet — stated honestly); `none` elsewhere, where a
+   present receipt_ref is itself a violation.
+6. **Frozen registries**: `CONTRACT_MATRIX` and `PAYLOAD_MODELS` are
+   `MappingProxyType` views over private dicts; mutation raises TypeError;
+   matrix rows are frozen dataclasses.
+7. **Reserved role-row fields**: a raw role_history row must carry EXACTLY
+   {phase, round_index, agent_id, role} — a forged `recorded_index`/
+   `schema`/`schema_name` or any unknown key is rejected, never silently
+   replaced. `RoleDisplayRow` now carries an explicit `schema_version`.
+
+Extra coherence: AnonymousMapping non-empty context + `round_index ≥ 0` +
+≥1 subject; assembly requires exactly the five locked sections;
+`thin_sections` dup-free; typed non-negative `ProviderTokenUsage`; bounded
+patterns on event_id / causal_parent_id / receipt_ref / artifact_digest.
+
 ## What exists now
 
 Package: `backend/dialogues/projection/` — pure contracts, zero execution.

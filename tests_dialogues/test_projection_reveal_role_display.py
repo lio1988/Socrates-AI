@@ -16,6 +16,8 @@ Hardening round 1 additions (review findings 1, 2, 3, 7, 8):
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 from pydantic import ValidationError
 
@@ -281,6 +283,25 @@ class TestMapping:
                 real_subject_agent_ids=["agent_0", "agent_0"],
             )
 
+    def test_negative_round_index_rejected(self):
+        with pytest.raises(ValidationError):
+            build_mapping(
+                session_id="sess_x", phase="synthesis", round_index=-1,
+                evaluator_id="agent_3",
+                purpose=EvaluationPurpose.SECTION_SCORE,
+                real_subject_agent_ids=list(SUBJECTS),
+            )
+
+    def test_empty_subject_list_rejected(self):
+        with pytest.raises((ValidationError, ValueError),
+                           match="at least one subject"):
+            build_mapping(
+                session_id="sess_x", phase="synthesis", round_index=0,
+                evaluator_id="agent_3",
+                purpose=EvaluationPurpose.SECTION_SCORE,
+                real_subject_agent_ids=[],
+            )
+
 
 # ── store: controlled reveal + write-once + deep immunity ───────────────────
 
@@ -394,6 +415,107 @@ class TestRevealPolicyStore:
             store.evaluator_view(**_CTX)
 
 
+class TestRevealStoreConcurrency:
+    """Round 2, finding 3: check-then-write is atomic — racing registrations
+    can never overwrite each other."""
+
+    def test_concurrent_identical_registration_is_idempotent(self):
+        store = RevealPolicyStore()
+        n = 8
+        barrier = threading.Barrier(n)
+        errors = []
+
+        def worker():
+            barrier.wait()
+            try:
+                store.register(_mapping())
+            except Exception as exc:      # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+        assert store.evaluator_view(**_CTX) == \
+               list(_mapping().presentation_order)
+
+    def test_concurrent_conflicting_registration_one_winner_one_conflict(self):
+        store = RevealPolicyStore()
+        mapping_a = _mapping()
+        mapping_b = build_mapping(
+            session_id="sess_x", phase="synthesis", round_index=0,
+            evaluator_id="agent_3",
+            purpose=EvaluationPurpose.SECTION_SCORE,
+            real_subject_agent_ids=["agent_0", "agent_1"],  # different set
+        )
+        barrier = threading.Barrier(2)
+        errors = []
+
+        def worker(mapping):
+            barrier.wait()
+            try:
+                store.register(mapping)
+            except ValueError as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(m,))
+                   for m in (mapping_a, mapping_b)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(errors) == 1 and "conflicting" in str(errors[0])
+        stored_view = store.evaluator_view(**_CTX)
+        assert stored_view in (list(mapping_a.presentation_order),
+                               list(mapping_b.presentation_order))
+
+    def test_concurrent_never_vs_revealable_cannot_downgrade_policy(self):
+        store = RevealPolicyStore()
+        never = _mapping(policy=RevealPolicy.NEVER)
+        revealable = _mapping(policy=RevealPolicy.AFTER_EVALUATION_CLOSE)
+        barrier = threading.Barrier(2)
+        errors = []
+
+        def worker(mapping):
+            barrier.wait()
+            try:
+                store.register(mapping)
+            except ValueError as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(m,))
+                   for m in (never, revealable)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        # Exactly one won; the loser conflicted — no silent overwrite.
+        assert len(errors) == 1 and "conflicting" in str(errors[0])
+        # Re-registering both proves write-once: one idempotent, one conflict.
+        outcomes = []
+        for m in (never, revealable):
+            try:
+                store.register(m)
+                outcomes.append("idempotent")
+            except ValueError:
+                outcomes.append("conflict")
+        assert sorted(outcomes) == ["conflict", "idempotent"]
+        # If NEVER won, identities stay sealed forever.
+        store.close_evaluation(**_CTX)
+        try:
+            store.register(never)
+            never_won = True
+        except ValueError:
+            never_won = False
+        if never_won:
+            with pytest.raises(RevealSealedError, match="NEVER"):
+                store.reveal(**_CTX)
+        else:
+            assert store.reveal(**_CTX) == dict(revealable.assignments)
+
+
 # ── role display: strict projection, no silent repair (finding 7) ──────────
 
 class TestRoleDisplay:
@@ -445,6 +567,20 @@ class TestRoleDisplay:
         with pytest.raises(ValueError,
                            match="violates the role display contract"):
             project_role_history([{**self.ROWS[0], "leaked_score": 9.1}])
+
+    def test_raw_recorded_index_rejected(self):
+        # Round 2, finding 7: a forged reserved field is REJECTED, never
+        # silently replaced by the backend-owned value.
+        with pytest.raises(ValueError, match="reserved or unknown"):
+            project_role_history([{**self.ROWS[0], "recorded_index": 99}])
+
+    def test_raw_schema_field_rejected(self):
+        with pytest.raises(ValueError, match="reserved or unknown"):
+            project_role_history([{**self.ROWS[0],
+                                   "schema": "ced_role_display_v1"}])
+        with pytest.raises(ValueError, match="reserved or unknown"):
+            project_role_history([{**self.ROWS[0],
+                                   "schema_name": "ced_role_display_v1"}])
 
     def test_rows_are_frozen(self):
         row = project_role_history(self.ROWS)[0]

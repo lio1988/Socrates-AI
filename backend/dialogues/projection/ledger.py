@@ -54,11 +54,28 @@ from .taxonomy import run_stream_id, session_stream_id
 
 
 class CedEventConflictError(RuntimeError):
-    """Same stream + same idempotency_key + DIFFERENT semantic content."""
+    """Same stream + same idempotency_key + DIFFERENT semantic content,
+    or a reused event_id claiming a different canonical fact."""
+
+
+class CedCausalityError(RuntimeError):
+    """causal_parent_id violates the v1 causality policy (see append())."""
 
 
 class EventLedger:
-    """In-memory, append-only, per-stream event log with idempotent appends."""
+    """In-memory, append-only, per-stream event log with idempotent appends.
+
+    Round 2 additions (finding 2):
+    - GLOBAL event_id uniqueness: a reused event_id claiming a different
+      canonical fact is a conflict (idempotent replay of the same fact keeps
+      returning the original event regardless of the replay draft's own
+      event_id — key-based dedupe wins first).
+    - v1 causality policy, LOCKED: a non-None causal_parent_id must reference
+      an event that ALREADY exists in this ledger (globally — cross
+      session/run stream parents are explicitly allowed, e.g. session.created
+      → run.started); self-parenting is refused. Deeper semantic causality
+      (type-level parent/child rules) is deferred to the emission slice.
+    """
 
     def __init__(self, clock: Optional[Callable[[], datetime]] = None) -> None:
         self._clock: Callable[[], datetime] = clock or _utcnow
@@ -66,6 +83,8 @@ class EventLedger:
         self._events_by_stream: Dict[str, List[CedEpistemicEvent]] = {}
         # stream_id -> idempotency_key -> (index, semantic_digest)
         self._index_by_key: Dict[str, Dict[str, Tuple[int, str]]] = {}
+        # event_id -> (stream_id, index)  — GLOBAL uniqueness (round 2)
+        self._event_id_index: Dict[str, Tuple[str, int]] = {}
 
     # ── internal helpers (call under lock) ────────────────────────────────
 
@@ -123,6 +142,30 @@ class EventLedger:
             if existing is not None:
                 return existing.model_copy(deep=True)
 
+            # Global event_id uniqueness (round 2, finding 2): reaching here
+            # means this is NOT an idempotent replay, so a known event_id is
+            # a different fact trying to reuse an identity.
+            if draft.event_id in self._event_id_index:
+                raise CedEventConflictError(
+                    f"event_id {draft.event_id!r} is already bound to a "
+                    "different canonical fact — event ids are globally "
+                    "unique (causal references would become ambiguous)"
+                )
+
+            # v1 causality policy (round 2, finding 2): parent must already
+            # exist globally (cross-stream allowed); self-parent is refused.
+            if draft.causal_parent_id is not None:
+                if draft.causal_parent_id == draft.event_id:
+                    raise CedCausalityError(
+                        "an event cannot be its own causal parent"
+                    )
+                if draft.causal_parent_id not in self._event_id_index:
+                    raise CedCausalityError(
+                        f"causal_parent_id {draft.causal_parent_id!r} does "
+                        "not reference any recorded event — parents must "
+                        "exist before their children"
+                    )
+
             events = self._events_by_stream.get(stream)
             next_sequence = (len(events) if events is not None else 0) + 1
 
@@ -141,6 +184,7 @@ class EventLedger:
                 self._index_by_key[stream] = {}
             events.append(sealed)
             self._index_by_key[stream][key] = (len(events) - 1, digest)
+            self._event_id_index[draft.event_id] = (stream, len(events) - 1)
 
         return sealed.model_copy(deep=True)
 
@@ -192,4 +236,14 @@ class EventLedger:
             if hit is None:
                 return None
             stored = self._events_by_stream[stream_id][hit[0]]
+        return stored.model_copy(deep=True)
+
+    def find_by_event_id(self, event_id: str) -> Optional[CedEpistemicEvent]:
+        """Global event lookup (event ids are globally unique)."""
+        with self._lock:
+            hit = self._event_id_index.get(event_id)
+            if hit is None:
+                return None
+            stream_id, index = hit
+            stored = self._events_by_stream[stream_id][index]
         return stored.model_copy(deep=True)

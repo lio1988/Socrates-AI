@@ -44,6 +44,13 @@ from .taxonomy import PhaseLiteral, RoleLiteral
 
 
 ROLE_DISPLAY_SCHEMA = "ced_role_display_v1"
+ROLE_DISPLAY_VERSION = 1
+
+#: The EXACT key set of a canonical role_history row. A raw row carrying a
+#: reserved/backend-owned key (recorded_index, schema, schema_name) or any
+#: unknown key is rejected — silently replacing a forged reserved field
+#: would itself be silent repair (round 2, finding 7).
+CANONICAL_ROW_KEYS = frozenset({"phase", "round_index", "agent_id", "role"})
 
 
 class RoleDisplayRow(BaseModel):
@@ -57,6 +64,7 @@ class RoleDisplayRow(BaseModel):
         validation_alias=AliasChoices("schema", "schema_name"),
         serialization_alias="schema",
     )
+    schema_version: int = ROLE_DISPLAY_VERSION
     phase:       PhaseLiteral
     round_index: int = Field(ge=0)
     agent_id:    str = Field(min_length=1)
@@ -70,6 +78,11 @@ class RoleDisplayRow(BaseModel):
         if self.schema_name != ROLE_DISPLAY_SCHEMA:
             raise ValueError(
                 f"unknown role display schema: {self.schema_name!r}"
+            )
+        if self.schema_version != ROLE_DISPLAY_VERSION:
+            raise ValueError(
+                f"unsupported role display schema_version "
+                f"{self.schema_version}"
             )
         return self
 
@@ -85,6 +98,16 @@ def project_role_history(
     """
     rows: List[RoleDisplayRow] = []
     for index, raw in enumerate(role_history):
+        raw_keys = set(raw)
+        if raw_keys != CANONICAL_ROW_KEYS:
+            unexpected = sorted(raw_keys - CANONICAL_ROW_KEYS)
+            missing = sorted(CANONICAL_ROW_KEYS - raw_keys)
+            raise ValueError(
+                f"role_history[{index}] violates the role display contract "
+                f"— canonical rows carry exactly {sorted(CANONICAL_ROW_KEYS)} "
+                f"(unexpected={unexpected}, missing={missing}); reserved or "
+                "unknown keys are rejected, never replaced"
+            )
         try:
             rows.append(RoleDisplayRow.model_validate(
                 {**dict(raw), "recorded_index": index}
