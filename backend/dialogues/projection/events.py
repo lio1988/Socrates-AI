@@ -1,9 +1,10 @@
 """
 Council Live View Foundation — versioned read-only CED event envelope.
 
-Strict, frozen, versioned contract (audited):
+Strict, frozen, versioned contract (audited + hardening round 1):
 
-    schema            = ced_epistemic_event_v1   (wire name "schema")
+    schema            = ced_epistemic_event_v1   (wire name "schema";
+                        accepted on BOTH read and write via validation alias)
     schema_version    = 1                        (envelope version)
     payload_schema    — MUST equal the registered payload model's name
     payload_version   — MUST equal the registered payload model's version
@@ -13,12 +14,16 @@ Strict, frozen, versioned contract (audited):
     session_id        — always required
     run_id            — typed stream contract: None on session-scoped events,
                         required non-sentinel string on run-scoped events
-    event_type        — closed dotted taxonomy (taxonomy.py)
+    event_type        — closed dotted taxonomy; canonically parsed to the
+                        enum on validation (wire strings round-trip)
     actor_id / subject_id — optional; subject is the ANONYMOUS id pre-reveal
-    phase / round_index   — required for PHASE_REQUIRED_TYPES
-    emitted_at        — assigned ONLY by the ledger; advisory display data
+    phase / round_index   — closed PhaseLiteral / int ≥ 0; REQUIRED for the
+                        matrix's phase-scoped event types
+    emitted_at        — assigned ONLY by the ledger; MUST be timezone-aware
+                        UTC (naive or non-UTC datetimes are rejected)
     causal_parent_id  — event_id of the causing event (optional)
-    receipt_ref       — AtomicReceiptStore digest reference (optional)
+    receipt_ref       — AtomicReceiptStore digest reference; REQUIRED where
+                        the contract matrix says so (provider.completed)
     artifact_digest   — single digest for non-move artifacts (optional)
     raw_digest / validated_digest — REQUIRED inside move.validated payloads
     payload           — validated + normalized by the event's typed model
@@ -27,6 +32,10 @@ Semantic identity (audited idempotency rule): ``semantic_digest`` is computed
 over canonical sorted UTF-8 JSON of the draft **excluding event_id** — and
 drafts structurally exclude ``sequence`` and ``emitted_at``, so all three
 volatile fields are outside the semantic identity by construction.
+
+Deterministic keys (hardening round 1, finding 8): identity parts are encoded
+as a canonical JSON array — never "|".join — so ("a|b","c") and ("a","b|c")
+can no longer collide.
 
 Nothing here executes or observes CED. The package imports nothing from
 ced.py, providers, registry, or models — runtime-inert until the flag-gated
@@ -39,15 +48,15 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .taxonomy import (
     FORBIDDEN_RUN_ID_SENTINELS,
-    PHASE_REQUIRED_TYPES,
     SESSION_SCOPED_TYPES,
     CedEventType,
+    PhaseLiteral,
     run_stream_id,
     session_stream_id,
 )
@@ -66,18 +75,30 @@ def sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def canonical_identity_digest(parts: List[Any]) -> str:
+    """
+    Collision-free deterministic digest of identity parts: canonical JSON
+    array (type-preserving, no delimiter ambiguity), UTF-8, SHA-256.
+    Parts must be JSON-serializable and finite.
+    """
+    encoded = json.dumps(
+        parts, sort_keys=False, ensure_ascii=False,
+        separators=(",", ":"), allow_nan=False,
+    )
+    return sha256_hex(encoded)
+
+
 def derive_idempotency_key(
     event_type: "CedEventType | str", *parts: Any
 ) -> str:
     """
-    Deterministic idempotency key: SHA-256 over the event type plus the stable
-    identity parts of the canonical fact (§9.2 col 7 — e.g. run, phase, round,
+    Deterministic idempotency key: SHA-256 over the canonical JSON array
+    ``[event_type, *parts]`` (§9.2 col 7 identity — e.g. run, phase, round,
     agent). Distinct from event_id: two emissions of the SAME canonical fact
     share the SAME idempotency key.
     """
     et = CedEventType(event_type)
-    joined = "|".join([et.value, *[str(p) for p in parts]])
-    return "idem_" + sha256_hex(joined)
+    return "idem_" + canonical_identity_digest([et.value, *parts])
 
 
 def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
@@ -113,15 +134,24 @@ def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
                 "events, never as a sentinel string"
             )
 
-    if model.event_type in PHASE_REQUIRED_TYPES:
-        if model.phase is None or model.round_index is None:
+    # Matrix-driven envelope requirements (hardening round 1, finding 6).
+    from .contract_matrix import CONTRACT_MATRIX
+    contract = CONTRACT_MATRIX[model.event_type]
+    for field_name in contract.required_envelope:
+        if getattr(model, field_name, None) is None:
             raise ValueError(
-                f"{model.event_type.value} requires envelope phase and "
-                "round_index"
+                f"{model.event_type.value} requires envelope field "
+                f"{field_name!r} (contract matrix)"
+            )
+    if contract.receipt_required:
+        if model.receipt_ref is None or not model.receipt_ref.strip():
+            raise ValueError(
+                f"{model.event_type.value} requires a receipt_ref — the "
+                "immutable provider receipt is part of the contract"
             )
 
     # Envelope-level pairing/version re-check + payload strict re-validation.
-    from .payloads import PAYLOAD_MODELS  # local import: no cycle at import time
+    from .payloads import PAYLOAD_MODELS
     payload_model = PAYLOAD_MODELS[model.event_type]
     if model.payload_schema != payload_model.PAYLOAD_SCHEMA:
         raise ValueError(
@@ -144,10 +174,15 @@ def _contract_check(model: "CedEventDraft | CedEpistemicEvent") -> None:
 
 class _EnvelopeBase(BaseModel):
     """Fields shared by drafts and sealed events."""
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True, populate_by_name=True,
+    )
 
-    schema_name:      str = Field(default=SCHEMA_NAME,
-                                  serialization_alias="schema")
+    schema_name:      str = Field(
+        default=SCHEMA_NAME,
+        validation_alias=AliasChoices("schema", "schema_name"),
+        serialization_alias="schema",
+    )
     schema_version:   int = SCHEMA_VERSION
     payload_schema:   str
     payload_version:  int
@@ -158,8 +193,8 @@ class _EnvelopeBase(BaseModel):
     event_type:       CedEventType
     actor_id:         Optional[str] = None
     subject_id:       Optional[str] = None  # anonymous pre-reveal (blind events)
-    phase:            Optional[str] = None
-    round_index:      Optional[int] = None
+    phase:            Optional[PhaseLiteral] = None
+    round_index:      Optional[int] = Field(default=None, ge=0)
     causal_parent_id: Optional[str] = None
     receipt_ref:      Optional[str] = None
     artifact_digest:  Optional[str] = None
@@ -175,11 +210,16 @@ class _EnvelopeBase(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _normalize_payload(cls, values: Any) -> Any:
+    def _normalize(cls, values: Any) -> Any:
         """
-        Validate the payload against its typed model and store the NORMALIZED
-        dump, so semantic digests are canonical. Pairing/version violations
-        are rejected here (and re-checked in the after-validator).
+        Canonical parsing + payload normalization (wire round-trip support):
+        - event_type strings are parsed to the enum HERE, so strict field
+          validation receives the canonical enum on both construction and
+          wire re-validation;
+        - the payload is validated against its typed model and stored as the
+          model's normalized JSON dump, so semantic digests are canonical.
+        Pairing/version violations are rejected here (and re-checked in the
+        after-validator).
         """
         if not isinstance(values, dict):
             return values
@@ -188,6 +228,8 @@ class _EnvelopeBase(BaseModel):
             event_type = CedEventType(raw_type)
         except (ValueError, TypeError):
             return values  # let field validation report the unknown type
+        values["event_type"] = event_type  # canonical enum on the field
+
         payload_schema = values.get("payload_schema")
         payload_version = values.get("payload_version")
         if payload_schema is None or payload_version is None:
@@ -231,15 +273,32 @@ class CedEpistemicEvent(_EnvelopeBase):
     """
     The sealed, immutable event as it exists on the ledger. Constructed ONLY
     by EventLedger.append(): sequence is monotonic gap-free per stream and
-    STARTS AT 1; emitted_at is ledger-assigned and advisory (ordering is by
-    sequence, never by timestamp).
+    STARTS AT 1; emitted_at is ledger-assigned, timezone-aware UTC, and
+    advisory (ordering is by sequence, never by timestamp).
+
+    Wire round-trip is part of the contract:
+    ``CedEpistemicEvent.model_validate(sealed.wire_dict())`` and
+    ``model_validate_json(...)`` reproduce an equal event.
     """
     sequence:   int = Field(ge=1)
-    emitted_at: datetime
+    # strict=False on this one field so the ISO-8601 wire form re-parses;
+    # UTC-awareness is enforced below regardless of input form.
+    emitted_at: datetime = Field(strict=False)
 
     @model_validator(mode="after")
     def _check_contract(self) -> "CedEpistemicEvent":
         _contract_check(self)
+        offset = self.emitted_at.utcoffset()
+        if self.emitted_at.tzinfo is None or offset is None:
+            raise ValueError(
+                "emitted_at must be timezone-aware UTC (naive datetime "
+                "rejected)"
+            )
+        if offset.total_seconds() != 0:
+            raise ValueError(
+                f"emitted_at must be UTC (offset {offset} rejected — the "
+                "contract does not silently normalize non-UTC clocks)"
+            )
         return self
 
     def wire_dict(self) -> Dict[str, Any]:

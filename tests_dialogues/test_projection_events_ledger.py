@@ -1,22 +1,25 @@
 """
-Council Live View Foundation — audited contract tests: envelope + ledger.
+Council Live View Foundation — hardened contract tests: envelope + ledger.
 
-Explicit audit cases covered here:
-- session.created stream semantics (typed run_id=None, session stream,
-  sentinel rejection)
-- sequence starts at 1; gap-free; failed append leaves no gap
-- duplicate does not consume sequence; same key/different content → conflict
-- payload extra-field rejection; wrong payload type; wrong event/payload
-  pairing; payload-version mismatch; NaN/Infinity rejection
-- immutable read results; cross-run/cross-stream isolation
-- deterministic injected clock; no global ledger singleton
-- production package runtime-inert
+Hardening round 1 additions (review findings 2, 4, 5, 8, 10):
+- wire round-trip (dict AND json), unknown wire field/schema rejected
+- deep immutability: mutating returned events or original drafts cannot
+  change ledger history
+- failure atomicity: exact duplicate never calls the clock; clock failure or
+  sealed-validation failure leaves no stream/index; no gap after failure
+- concurrency: racing identical appends publish exactly one event; racing
+  conflicting appends have one winner and one CedEventConflictError
+- canonical identity keys: no delimiter collisions
+- UTC enforcement: naive / non-UTC clocks rejected, UTC accepted
+- receipt requirement: provider.completed must carry receipt_ref
 """
 
 from __future__ import annotations
 
+import json
 import pathlib
-from datetime import datetime, timezone
+import threading
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -24,6 +27,7 @@ from pydantic import ValidationError
 from backend.dialogues.projection import (
     SCHEMA_NAME,
     SCHEMA_VERSION,
+    CedEpistemicEvent,
     CedEventConflictError,
     CedEventDraft,
     CedEventType,
@@ -35,6 +39,8 @@ from backend.dialogues.projection import (
     semantic_digest,
     session_stream_id,
 )
+
+UTC_FIXED = datetime(2026, 7, 16, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def _draft(**overrides) -> CedEventDraft:
@@ -62,6 +68,23 @@ def _session_created(session_id="sess_x", question="What is knowledge?"):
     )
 
 
+def _move_validated(**overrides) -> CedEventDraft:
+    kwargs = dict(
+        event_type=CedEventType.MOVE_VALIDATED,
+        session_id="sess_x",
+        run_id="run_1",
+        phase="synthesis",
+        round_index=0,
+        payload=dict(
+            move_id="m1", task_id="t1", agent_id="agent_0", role="socrates",
+            confidence=0.7, raw_digest="a" * 64, validated_digest="b" * 64,
+        ),
+        idempotency_parts=["m1"],
+    )
+    kwargs.update(overrides)
+    return build_draft(**kwargs)
+
+
 # ── envelope contract ────────────────────────────────────────────────────────
 
 class TestEnvelopeContract:
@@ -86,7 +109,7 @@ class TestEnvelopeContract:
                 session_id="sess_x", run_id="run_1",
                 phase="opening", round_index=0,
                 idempotency_key="idem_k",
-                payload={"agent_id": "a", "role": "r"},
+                payload={"agent_id": "a", "role": "socrates"},
             )
 
     def test_unsupported_envelope_version_rejected(self):
@@ -100,13 +123,12 @@ class TestEnvelopeContract:
                 session_id="sess_x", run_id="run_1",
                 phase="opening", round_index=0,
                 idempotency_key="idem_k",
-                payload={"agent_id": "a", "role": "r"},
+                payload={"agent_id": "a", "role": "socrates"},
             )
 
     def test_payload_extra_field_rejected(self):
-        # Must fail BECAUSE of the smuggled field, not for any other reason.
         with pytest.raises(ValidationError) as exc_info:
-            _draft(payload={"agent_id": "a", "role": "r",
+            _draft(payload={"agent_id": "a", "role": "socrates",
                             "smuggled": "field"})
         text = str(exc_info.value)
         assert "smuggled" in text
@@ -122,7 +144,7 @@ class TestEnvelopeContract:
     def test_payload_wrong_type_rejected(self):
         # strict typed payloads: no lax coercion.
         with pytest.raises(ValidationError) as exc_info:
-            _draft(payload={"agent_id": "a", "role": 42})
+            _draft(payload={"agent_id": 42, "role": "socrates"})
         assert "valid string" in str(exc_info.value)
         with pytest.raises(ValidationError) as exc_info:
             build_draft(
@@ -145,7 +167,7 @@ class TestEnvelopeContract:
                 session_id="sess_x", run_id="run_1",
                 phase="opening", round_index=0,
                 idempotency_key="idem_k",
-                payload={"agent_id": "a", "role": "r"},
+                payload={"agent_id": "a", "role": "socrates"},
             )
 
     def test_payload_version_mismatch_rejected(self):
@@ -157,47 +179,55 @@ class TestEnvelopeContract:
                 session_id="sess_x", run_id="run_1",
                 phase="opening", round_index=0,
                 idempotency_key="idem_k",
-                payload={"agent_id": "a", "role": "r"},
+                payload={"agent_id": "a", "role": "socrates"},
             )
 
     def test_move_validated_requires_split_hex_digests(self):
-        payload = dict(
-            move_id="m1", task_id="t1", agent_id="agent_0", role="socrates",
-            confidence=0.7, raw_digest="a" * 64,
-        )
+        base = _move_validated().payload
+        incomplete = {k: v for k, v in base.items() if k != "validated_digest"}
         with pytest.raises(ValidationError) as exc_info:
-            build_draft(event_type=CedEventType.MOVE_VALIDATED,
-                        session_id="s", run_id="r", payload=payload,
-                        idempotency_parts=["m1"])
+            _move_validated(payload=incomplete)
         text = str(exc_info.value)                  # validated_digest missing
         assert "validated_digest" in text and "Field required" in text
         with pytest.raises(ValidationError) as exc_info:
-            build_draft(event_type=CedEventType.MOVE_VALIDATED,
-                        session_id="s", run_id="r",
-                        payload={**payload, "validated_digest": "XYZ"},
-                        idempotency_parts=["m1"])
+            _move_validated(payload={**base, "validated_digest": "XYZ"})
         text = str(exc_info.value)                  # not a sha256 hex digest
         assert "validated_digest" in text and "match pattern" in text
-        d = build_draft(event_type=CedEventType.MOVE_VALIDATED,
-                        session_id="s", run_id="r",
-                        payload={**payload, "validated_digest": "b" * 64},
-                        idempotency_parts=["m1"])
+        d = _move_validated()
         assert d.payload["raw_digest"] != d.payload["validated_digest"]
 
+    def test_move_validated_requires_envelope_phase(self):
+        # Hardening round 1 finding 6: phase/round are first-class for moves.
+        with pytest.raises(ValidationError, match="phase"):
+            _move_validated(phase=None, round_index=None)
+
     def test_nan_and_infinity_rejected(self):
-        base = dict(move_id="m1", task_id="t1", agent_id="a", role="r",
-                    raw_digest="a" * 64, validated_digest="b" * 64)
+        base = _move_validated().payload
         for bad in (float("nan"), float("inf")):
             with pytest.raises(ValidationError) as exc_info:
-                build_draft(event_type=CedEventType.MOVE_VALIDATED,
-                            session_id="s", run_id="r",
-                            payload={**base, "confidence": bad},
-                            idempotency_parts=["m1"])
+                _move_validated(payload={**base, "confidence": bad})
             assert "finite" in str(exc_info.value)
 
     def test_phase_required_for_role_assigned(self):
         with pytest.raises(ValidationError, match="phase"):
-            _draft(phase=None)
+            _draft(phase=None, round_index=None)
+
+    def test_provider_completed_requires_receipt_ref(self):
+        payload = dict(task_id="t1", provider_id="p1",
+                       returned_model="claude-opus-4-8", latency_ms=812.5)
+        with pytest.raises(ValidationError, match="receipt_ref"):
+            build_draft(
+                event_type=CedEventType.PROVIDER_COMPLETED,
+                session_id="sess_x", run_id="run_1",
+                payload=payload, idempotency_parts=["t1", "p1", 0],
+            )
+        d = build_draft(
+            event_type=CedEventType.PROVIDER_COMPLETED,
+            session_id="sess_x", run_id="run_1",
+            receipt_ref="rcpt_" + "c" * 12,
+            payload=payload, idempotency_parts=["t1", "p1", 0],
+        )
+        assert d.receipt_ref is not None
 
     def test_empty_idempotency_key_rejected(self):
         with pytest.raises(ValidationError,
@@ -217,7 +247,7 @@ class TestEnvelopeContract:
                 event_type=CedEventType.ROLE_ASSIGNED,
                 session_id="sess_x", run_id="run_1",
                 phase="opening", round_index=0,
-                payload={"agent_id": "a", "role": "r"},
+                payload={"agent_id": "a", "role": "socrates"},
                 # idempotency_key deliberately omitted
             )
         errors = exc_info.value.errors()
@@ -241,16 +271,43 @@ class TestEnvelopeContract:
         with pytest.raises(ValidationError, match="frozen"):
             d.session_id = "sess_hijack"
 
+
+# ── wire round-trip (hardening round 1, finding 5) ───────────────────────────
+
+class TestWireRoundTrip:
+    def _sealed(self) -> CedEpistemicEvent:
+        return EventLedger(clock=lambda: UTC_FIXED).append(_draft())
+
     def test_wire_dict_uses_schema_alias(self):
-        ledger = EventLedger()
-        sealed = ledger.append(_draft())
-        wire = sealed.wire_dict()
+        wire = self._sealed().wire_dict()
         assert wire["schema"] == SCHEMA_NAME
         assert "schema_name" not in wire
         assert wire["payload_schema"] == "role.assigned.payload"
         assert wire["event_type"] == "role.assigned"
         assert wire["sequence"] == 1
         assert "+00:00" in wire["emitted_at"] or wire["emitted_at"].endswith("Z")
+
+    def test_wire_dict_round_trips_to_equal_event(self):
+        sealed = self._sealed()
+        assert CedEpistemicEvent.model_validate(sealed.wire_dict()) == sealed
+
+    def test_wire_json_round_trips_to_equal_event(self):
+        sealed = self._sealed()
+        wire_json = json.dumps(sealed.wire_dict())
+        assert CedEpistemicEvent.model_validate_json(wire_json) == sealed
+
+    def test_unknown_wire_field_rejected(self):
+        wire = self._sealed().wire_dict()
+        wire["forged_field"] = 1
+        with pytest.raises(ValidationError) as exc_info:
+            CedEpistemicEvent.model_validate(wire)
+        assert "forged_field" in str(exc_info.value)
+
+    def test_unknown_wire_schema_rejected(self):
+        wire = self._sealed().wire_dict()
+        wire["schema"] = "ced_epistemic_event_v999"
+        with pytest.raises(ValidationError, match="unknown schema name"):
+            CedEpistemicEvent.model_validate(wire)
 
 
 # ── session/run stream semantics ─────────────────────────────────────────────
@@ -311,6 +368,18 @@ class TestIdempotencySemantics:
         b = derive_idempotency_key(CedEventType.RUN_STARTED, "r", "p", 0)
         assert a != b
 
+    def test_no_delimiter_collision_in_identity_parts(self):
+        # Hardening round 1 finding 8: ("a|b","c") vs ("a","b|c") must differ.
+        a = derive_idempotency_key(CedEventType.RUN_STARTED, "a|b", "c")
+        b = derive_idempotency_key(CedEventType.RUN_STARTED, "a", "b|c")
+        assert a != b
+
+    def test_identity_parts_are_type_preserving(self):
+        # int 0 and str "0" are different identity parts (canonical JSON).
+        a = derive_idempotency_key(CedEventType.PHASE_STARTED, "r", "p", 0)
+        b = derive_idempotency_key(CedEventType.PHASE_STARTED, "r", "p", "0")
+        assert a != b
+
     def test_semantic_digest_excludes_event_id(self):
         d1 = _draft(event_id="evt_aaaa")
         d2 = _draft(event_id="evt_bbbb")
@@ -326,7 +395,8 @@ class TestIdempotencySemantics:
         ledger = EventLedger()
         first = ledger.append(_draft(event_id="evt_1st"))
         dup = ledger.append(_draft(event_id="evt_2nd"))  # same semantics
-        assert dup is first
+        assert dup == first
+        assert dup.sequence == 1
         assert ledger.event_count("run:run_1") == 1
         nxt = ledger.append(_draft(
             payload={"agent_id": "agent_1", "role": "empiricist"},
@@ -387,7 +457,6 @@ class TestEventLedger:
         assert isinstance(view, tuple)
         assert isinstance(ledger.events_since("run:run_1"), tuple)
         assert isinstance(ledger.stream_ids(), tuple)
-        # a fresh tuple each call; ledger state cannot be reached through it
         assert ledger.events_for_run("run_1") == view
         assert ledger.event_count("run:run_1") == 1
 
@@ -425,18 +494,16 @@ class TestEventLedger:
         ledger = EventLedger()
         sealed = ledger.append(_draft())
         assert ledger.find_by_idempotency_key(
-            "run:run_1", sealed.idempotency_key) is sealed
+            "run:run_1", sealed.idempotency_key) == sealed
         assert ledger.find_by_idempotency_key("run:run_1", "idem_no") is None
 
     def test_deterministic_injected_clock(self):
-        fixed = datetime(2026, 7, 16, 12, 0, 0, tzinfo=timezone.utc)
-        ledger = EventLedger(clock=lambda: fixed)
+        ledger = EventLedger(clock=lambda: UTC_FIXED)
         sealed = ledger.append(_draft())
-        assert sealed.emitted_at == fixed
+        assert sealed.emitted_at == UTC_FIXED
 
     def test_ordering_authority_is_sequence_not_timestamp(self):
-        fixed = datetime(2026, 7, 16, 12, 0, 0, tzinfo=timezone.utc)
-        ledger = EventLedger(clock=lambda: fixed)   # identical timestamps
+        ledger = EventLedger(clock=lambda: UTC_FIXED)  # identical timestamps
         e1 = ledger.append(_draft())
         e2 = ledger.append(_draft(
             payload={"agent_id": "agent_1", "role": "empiricist"},
@@ -456,6 +523,143 @@ class TestEventLedger:
         for et, model in PAYLOAD_MODELS.items():
             assert model.PAYLOAD_SCHEMA == f"{et.value}.payload"
             assert isinstance(model.PAYLOAD_VERSION, int)
+
+
+# ── deep immutability (hardening round 1, finding 2) ─────────────────────────
+
+class TestDeepImmutability:
+    def test_mutating_returned_event_payload_cannot_change_ledger(self):
+        ledger = EventLedger()
+        ledger.append(_draft())
+        returned = ledger.events_for_run("run_1")[0]
+        returned.payload["role"] = "hijacked"          # dict inside frozen model
+        assert ledger.events_for_run("run_1")[0].payload["role"] == "socrates"
+        assert ledger.find_by_idempotency_key(
+            "run:run_1", returned.idempotency_key
+        ).payload["role"] == "socrates"
+
+    def test_mutating_append_return_value_cannot_change_ledger(self):
+        ledger = EventLedger()
+        sealed = ledger.append(_draft())
+        sealed.payload["role"] = "hijacked"
+        assert ledger.events_for_run("run_1")[0].payload["role"] == "socrates"
+
+    def test_mutating_original_draft_payload_cannot_change_sealed_event(self):
+        ledger = EventLedger()
+        draft = _draft()
+        sealed = ledger.append(draft)
+        draft.payload["role"] = "hijacked"             # post-append mutation
+        assert sealed.payload["role"] == "socrates"
+        assert ledger.events_for_run("run_1")[0].payload["role"] == "socrates"
+
+
+# ── failure atomicity + clock discipline (finding 4) ─────────────────────────
+
+class TestFailureAtomicity:
+    def test_exact_duplicate_does_not_call_clock(self):
+        calls = []
+
+        def counting_clock():
+            calls.append(1)
+            return UTC_FIXED
+
+        ledger = EventLedger(clock=counting_clock)
+        first = ledger.append(_draft())
+        assert len(calls) == 1
+        # Break the clock: an exact duplicate must STILL be returned.
+        ledger._clock = lambda: (_ for _ in ()).throw(RuntimeError("clock down"))
+        dup = ledger.append(_draft())
+        assert dup == first
+        assert len(calls) == 1
+
+    def test_clock_failure_on_new_event_leaves_no_stream_or_index(self):
+        def broken_clock():
+            raise RuntimeError("clock down")
+
+        ledger = EventLedger(clock=broken_clock)
+        with pytest.raises(RuntimeError, match="clock down"):
+            ledger.append(_draft())
+        assert ledger.stream_ids() == ()
+        assert ledger.event_count("run:run_1") == 0
+        assert ledger.find_by_idempotency_key(
+            "run:run_1", _draft().idempotency_key) is None
+
+    def test_sealed_validation_failure_leaves_no_empty_stream(self):
+        # A naive clock makes sealed construction fail (UTC contract) AFTER
+        # the clock call — the ledger must still be untouched.
+        ledger = EventLedger(clock=lambda: datetime(2026, 7, 16, 12, 0, 0))
+        with pytest.raises(ValidationError, match="timezone-aware"):
+            ledger.append(_draft())
+        assert ledger.stream_ids() == ()
+        assert ledger.event_count("run:run_1") == 0
+
+    def test_concurrent_identical_append_publishes_exactly_one_event(self):
+        ledger = EventLedger()
+        n = 8
+        barrier = threading.Barrier(n)
+        results, errors = [], []
+
+        def worker():
+            barrier.wait()
+            try:
+                results.append(ledger.append(_draft()))
+            except Exception as exc:      # noqa: BLE001 — collected for assert
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+        assert ledger.event_count("run:run_1") == 1
+        assert all(r.sequence == 1 for r in results)
+        assert len({r.event_id for r in results}) == 1
+
+    def test_concurrent_conflicting_append_has_one_winner_and_one_conflict(self):
+        ledger = EventLedger()
+        barrier = threading.Barrier(2)
+        results, errors = [], []
+
+        def worker(draft):
+            barrier.wait()
+            try:
+                results.append(ledger.append(draft))
+            except CedEventConflictError as exc:
+                errors.append(exc)
+
+        a = _draft()   # same key,
+        b = _draft(payload={"agent_id": "agent_0", "role": "empiricist"})
+        threads = [threading.Thread(target=worker, args=(d,)) for d in (a, b)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(results) == 1 and len(errors) == 1
+        assert ledger.event_count("run:run_1") == 1
+        assert ledger.events_for_run("run_1")[0].payload["role"] == \
+               results[0].payload["role"]
+
+
+# ── UTC enforcement (hardening round 1, finding 10) ──────────────────────────
+
+class TestUtcEnforcement:
+    def test_naive_clock_rejected(self):
+        ledger = EventLedger(clock=lambda: datetime(2026, 7, 16, 12, 0, 0))
+        with pytest.raises(ValidationError, match="timezone-aware"):
+            ledger.append(_draft())
+
+    def test_non_utc_clock_rejected(self):
+        athens = timezone(timedelta(hours=3))
+        ledger = EventLedger(
+            clock=lambda: datetime(2026, 7, 16, 15, 0, 0, tzinfo=athens))
+        with pytest.raises(ValidationError, match="must be UTC"):
+            ledger.append(_draft())
+
+    def test_utc_aware_clock_accepted(self):
+        ledger = EventLedger(clock=lambda: UTC_FIXED)
+        sealed = ledger.append(_draft())
+        assert sealed.emitted_at.utcoffset() == timedelta(0)
 
 
 # ── runtime-inertness guard ──────────────────────────────────────────────────
@@ -482,7 +686,7 @@ class TestRuntimeInertness:
             / "backend" / "dialogues" / "projection"
         )
         sources = list(pkg_dir.glob("*.py"))
-        assert len(sources) >= 6, "projection package sources not found"
+        assert len(sources) >= 7, "projection package sources not found"
         for src in sources:
             text = src.read_text(encoding="utf-8")
             for fragment in self.FORBIDDEN_IMPORT_FRAGMENTS:

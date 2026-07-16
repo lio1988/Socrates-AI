@@ -20,19 +20,26 @@ guarded by a byte-identical FinalResponse test.
 
 from .taxonomy import (
     FORBIDDEN_RUN_ID_SENTINELS,
+    PENALTY_FLAG_NAMES,
+    PHASE_NAMES,
     PHASE_REQUIRED_TYPES,
+    ROLE_NAMES,
+    SECTION_NAMES,
     SESSION_SCOPED_TYPES,
+    VERDICT_NAMES,
     CedEventType,
     run_stream_id,
     session_stream_id,
 )
-from .payloads import PAYLOAD_MODELS, BasePayload
+from .contract_matrix import CONTRACT_MATRIX, EventContract
+from .payloads import PAYLOAD_MODELS, AssemblySectionRef, BasePayload
 from .events import (
     SCHEMA_NAME,
     SCHEMA_VERSION,
     CedEpistemicEvent,
     CedEventDraft,
     build_draft,
+    canonical_identity_digest,
     derive_idempotency_key,
     semantic_digest,
     sha256_hex,
@@ -61,15 +68,24 @@ from .role_display import (
 )
 
 __all__ = [
-    # taxonomy / streams
+    # taxonomy / streams / vocabularies
     "FORBIDDEN_RUN_ID_SENTINELS",
+    "PENALTY_FLAG_NAMES",
+    "PHASE_NAMES",
     "PHASE_REQUIRED_TYPES",
+    "ROLE_NAMES",
+    "SECTION_NAMES",
     "SESSION_SCOPED_TYPES",
+    "VERDICT_NAMES",
     "CedEventType",
     "run_stream_id",
     "session_stream_id",
+    # contract matrix
+    "CONTRACT_MATRIX",
+    "EventContract",
     # payloads
     "PAYLOAD_MODELS",
+    "AssemblySectionRef",
     "BasePayload",
     # envelope
     "SCHEMA_NAME",
@@ -77,6 +93,7 @@ __all__ = [
     "CedEpistemicEvent",
     "CedEventDraft",
     "build_draft",
+    "canonical_identity_digest",
     "derive_idempotency_key",
     "semantic_digest",
     "sha256_hex",

@@ -1,9 +1,55 @@
 # Council Live View Foundation — Slice 0 (+ inert ledger half of Slice 1)
 
-Status: **implemented, runtime-inert, contract-audited**. Parent decision
-record: [KARPATHY_LLM_COUNCIL_MAPPING.md](KARPATHY_LLM_COUNCIL_MAPPING.md)
+Status: **implemented, runtime-inert, contract-audited, hardened (review
+round 1)**. Parent decision record:
+[KARPATHY_LLM_COUNCIL_MAPPING.md](KARPATHY_LLM_COUNCIL_MAPPING.md)
 (§9, §14, §18). Branch: `feature/council-live-view-foundation` (isolated
 worktree off origin/main).
+
+## Hardening round 1 (adversarial review of f8124d0 — all 10 findings closed)
+
+1. **NEVER-policy downgrade (critical)**: the sealed mapping digest now covers
+   schema/version, full context, **reveal policy**, assignments AND order;
+   `register()` is write-once — identical re-registration is idempotent, ANY
+   difference (policy-only included) is a conflict; never overwrite.
+2. **Deep immutability**: ledger and reveal store keep their own deep copies
+   and return fresh deep copies — mutating a returned event's payload, an
+   original draft, a registered mapping or a returned view can never change
+   recorded history.
+3. **Canonical verification**: `verify_mapping()` re-derives seed, aliases and
+   canonical order from context + real subjects and requires exact equality
+   BEFORE digest comparison — recomputing digests over a non-canonical
+   mapping cannot make it verify (SHA-256 is integrity, not a MAC).
+   Structural uniqueness (duplicate aliases/reals, self-subject) rejects at
+   model construction.
+4. **Failure atomicity**: dedupe check happens BEFORE the clock (an exact
+   duplicate returns even with a broken clock); clock or sealed-validation
+   failure leaves no stream/index/sequence behind; concurrency-safe
+   check → clock → re-check-under-lock → construct → append.
+5. **Wire round-trip**: `"schema"` is a validation alias too; `event_type` is
+   canonically parsed to the enum; `model_validate(wire_dict)` and
+   `model_validate_json` reproduce equal events; same alias policy on reveal
+   and role-display schemas.
+6. **Parent-mapping payload parity**: explicit `CONTRACT_MATRIX` (22/22 —
+   required envelope/payload, optional payload, idempotency identity,
+   receipt requirement, projection rule), enforced at runtime
+   (envelope/receipt) and by tests (payload fields). `draft.created` carries
+   `sections_present`; `peer_score.completed` carries score/kind/section/
+   draft/penalty-flags; `assembly.completed` carries section refs;
+   `blocking_objection.raised` carries `provider_id`; `runner_up.replaced`
+   carries `via`; `move.validated` requires envelope phase/round.
+7. **Role display without silent repair**: raw rows are validated verbatim by
+   a strict model (float/bool round_index, None/non-canonical role, unknown
+   extra field → reject; the old `str()`/`int()` coercions are gone).
+8. **No delimiter collisions**: idempotency keys and reveal seeds derive from
+   canonical JSON arrays (type-preserving), never `"|"` joins.
+9. **Semantic coherence**: quorum `valid ≤ expected`; a COMPLETED peer score
+   must carry a real score; unresolved winners carry no selection data (and
+   resolved ones must); assembly refs must agree with `unresolved_sections`;
+   sections/roles/phases/verdicts/severity/statuses are closed Literals with
+   tested parity against the canonical `models.py` enums.
+10. **UTC enforcement**: `emitted_at` must be timezone-aware UTC — naive or
+    non-UTC clocks are rejected, never silently normalized.
 
 ## What exists now
 

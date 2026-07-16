@@ -1,15 +1,17 @@
 """
-Council Live View Foundation — audited contract tests: reveal + role display.
+Council Live View Foundation — hardened contract tests: reveal + role display.
 
-Explicit audit cases covered here:
-- alias scope differs by evaluator (and by phase/round/purpose)
-- mapping tamper detection; forged registration refused
-- reveal before close refused; NEVER policy remains unrevealable
-- reveal layer is not a scheduler (tripwire on upstream self-subject bug)
-- role_history malformed row refused (no silent repair)
-- role display never recalculates roles (verbatim projection, even of rows a
-  scheduler would never produce)
-- projection matches a REAL offline CEDOrchestrator run exactly
+Hardening round 1 additions (review findings 1, 2, 3, 7, 8):
+- NEVER policy cannot be downgraded by re-registration; register never
+  overwrites; identical re-registration is idempotent
+- deep immutability at the store boundary (mutating registered mappings or
+  returned views cannot change the store)
+- CANONICAL forgery detection: recomputed digests over non-canonical aliases
+  or non-canonical order still fail verification
+- structural rejection at the model: duplicate aliases, duplicate real
+  subjects, manually constructed self-subject mappings
+- canonical JSON seed derivation: no delimiter collisions
+- role display: strict validation, no silent repair (float/bool/None/extra)
 """
 
 from __future__ import annotations
@@ -20,9 +22,11 @@ from pydantic import ValidationError
 from backend.dialogues.projection import (
     AnonymousMapping,
     EvaluationPurpose,
+    REVEAL_CONTRACT_SCHEMA,
     RevealPolicy,
     RevealPolicyStore,
     RevealSealedError,
+    RoleDisplayRow,
     SelfSubjectError,
     anonymous_subject_id,
     build_mapping,
@@ -32,6 +36,7 @@ from backend.dialogues.projection import (
     project_role_history,
     verify_mapping,
 )
+from backend.dialogues.projection.reveal import _compute_digests
 
 SUBJECTS = ["agent_0", "agent_1", "agent_2"]
 
@@ -88,6 +93,14 @@ class TestPermutationAndAliasScope:
         ]
         assert all(v != base for v in variants)
 
+    def test_no_delimiter_collision_in_seed_context(self):
+        # Hardening round 1 finding 8: canonical JSON, not "|" joins.
+        a = derive_permutation_seed("s|x", "p", 0, "e",
+                                    EvaluationPurpose.MOVE_SCORE)
+        b = derive_permutation_seed("s", "x|p", 0, "e",
+                                    EvaluationPurpose.MOVE_SCORE)
+        assert a != b
+
     def test_alias_scope_differs_by_evaluator(self):
         """The SAME subject gets a DIFFERENT anonymous id per evaluator."""
         seed_a = derive_permutation_seed(
@@ -126,13 +139,12 @@ class TestPermutationAndAliasScope:
         assert len(orders) > 1
 
 
-# ── mapping: sealing, forgery, non-scheduler tripwire ───────────────────────
+# ── mapping: sealing, canonical forgery, structural integrity ───────────────
 
 class TestMapping:
     def test_build_is_deterministic(self):
         m1, m2 = _mapping(), _mapping()
-        assert m1.assignments == m2.assignments
-        assert m1.presentation_order == m2.presentation_order
+        assert m1 == m2
         assert m1.mapping_digest == m2.mapping_digest
         assert m1.permutation_digest == m2.permutation_digest
 
@@ -165,17 +177,93 @@ class TestMapping:
         )
         assert verify_mapping(forged) is False
 
+    def test_recomputed_digest_cannot_validate_noncanonical_alias(self):
+        """
+        Finding 3: SHA-256 is not a MAC. An attacker who invents arbitrary
+        aliases and RECOMPUTES both digests must still fail, because
+        verification re-derives the canonical aliases from context.
+        """
+        m = _mapping()
+        fake_assignments = {
+            f"anon_forged_{i:02d}": real
+            for i, real in enumerate(m.assignments.values())
+        }
+        fake_order = list(fake_assignments.keys())
+        pd, md = _compute_digests(
+            m.context_key(), m.reveal_policy, fake_assignments, fake_order)
+        forged = AnonymousMapping(
+            **{**m.model_dump(exclude={
+                "assignments", "presentation_order",
+                "permutation_digest", "mapping_digest"}),
+               "assignments": fake_assignments,
+               "presentation_order": fake_order,
+               "permutation_digest": pd,
+               "mapping_digest": md},
+        )
+        assert verify_mapping(forged) is False
+
+    def test_recomputed_digest_cannot_validate_noncanonical_order(self):
+        """Canonical aliases but attacker-chosen order + recomputed digests
+        must still fail verification."""
+        m = _mapping()
+        reordered = list(reversed(m.presentation_order))
+        assert reordered != list(m.presentation_order)
+        pd, md = _compute_digests(
+            m.context_key(), m.reveal_policy, dict(m.assignments), reordered)
+        forged = AnonymousMapping(
+            **{**m.model_dump(exclude={
+                "presentation_order", "permutation_digest", "mapping_digest"}),
+               "presentation_order": reordered,
+               "permutation_digest": pd,
+               "mapping_digest": md},
+        )
+        assert verify_mapping(forged) is False
+
+    def test_duplicate_presentation_alias_rejected(self):
+        m = _mapping()
+        dup_order = list(m.presentation_order)
+        dup_order[1] = dup_order[0]
+        with pytest.raises(ValidationError, match="duplicate aliases"):
+            AnonymousMapping(
+                **{**m.model_dump(exclude={"presentation_order"}),
+                   "presentation_order": dup_order},
+            )
+
+    def test_duplicate_real_subject_values_rejected(self):
+        m = _mapping()
+        dup_assignments = dict(m.assignments)
+        first, second = m.presentation_order[0], m.presentation_order[1]
+        dup_assignments[second] = dup_assignments[first]
+        with pytest.raises(ValidationError, match="same real subject"):
+            AnonymousMapping(
+                **{**m.model_dump(exclude={"assignments"}),
+                   "assignments": dup_assignments},
+            )
+
+    def test_self_subject_in_manually_constructed_mapping_rejected(self):
+        m = _mapping()
+        self_assignments = dict(m.assignments)
+        self_assignments[m.presentation_order[0]] = m.evaluator_id
+        with pytest.raises((SelfSubjectError, ValidationError),
+                           match="eligibility"):
+            AnonymousMapping(
+                **{**m.model_dump(exclude={"assignments"}),
+                   "assignments": self_assignments},
+            )
+
     def test_mapping_is_frozen(self):
         m = _mapping()
         with pytest.raises(ValidationError, match="frozen"):
             m.mapping_digest = "0" * 64
 
+    def test_mapping_wire_alias_round_trip(self):
+        m = _mapping()
+        wire = m.model_dump(by_alias=True, mode="json")
+        assert wire["schema"] == REVEAL_CONTRACT_SCHEMA
+        assert "schema_name" not in wire
+        assert AnonymousMapping.model_validate(wire) == m
+
     def test_self_subject_tripwire_refuses_never_repairs(self):
-        """
-        Not-a-scheduler rule: a self-subject in the input is an UPSTREAM
-        eligibility bug. The reveal layer raises; it must not silently drop
-        the evaluator from the subject list (that would be scheduling).
-        """
         with pytest.raises(SelfSubjectError, match="own output"):
             build_mapping(
                 session_id="sess_x", phase="synthesis", round_index=0,
@@ -194,7 +282,7 @@ class TestMapping:
             )
 
 
-# ── store: controlled reveal ────────────────────────────────────────────────
+# ── store: controlled reveal + write-once + deep immunity ───────────────────
 
 class TestRevealPolicyStore:
     def test_pre_close_view_is_anonymous_only(self):
@@ -225,6 +313,29 @@ class TestRevealPolicyStore:
         with pytest.raises(RevealSealedError, match="NEVER"):
             store.reveal(**_CTX)
 
+    def test_never_policy_cannot_be_downgraded_by_reregistration(self):
+        """
+        Finding 1 (critical): a canonical, digest-valid mapping for the SAME
+        context with a WEAKER policy must be a registration conflict — a
+        registered NEVER mapping is never overwritten and never revealed.
+        """
+        store = RevealPolicyStore()
+        store.register(_mapping(policy=RevealPolicy.NEVER))
+        downgraded = _mapping(policy=RevealPolicy.AFTER_EVALUATION_CLOSE)
+        assert verify_mapping(downgraded) is True   # canonical, valid digests
+        with pytest.raises(ValueError, match="conflicting"):
+            store.register(downgraded)
+        store.close_evaluation(**_CTX)
+        with pytest.raises(RevealSealedError, match="NEVER"):
+            store.reveal(**_CTX)
+
+    def test_identical_reregistration_is_idempotent(self):
+        store = RevealPolicyStore()
+        store.register(_mapping())
+        store.register(_mapping())      # exact same record: no error
+        assert store.evaluator_view(**_CTX) == \
+               list(_mapping().presentation_order)
+
     def test_register_rejects_forged_mapping(self):
         store = RevealPolicyStore()
         m = _mapping()
@@ -247,13 +358,43 @@ class TestRevealPolicyStore:
         with pytest.raises(ValueError, match="conflicting"):
             store.register(conflicting)
 
+    def test_mutating_mapping_after_register_cannot_change_store(self):
+        store = RevealPolicyStore()
+        m = _mapping()
+        store.register(m)
+        # frozen blocks attribute assignment, but the dict itself is
+        # reachable on the CALLER's object — the store must hold its own copy.
+        m.assignments[m.presentation_order[0]] = "agent_impostor"
+        store.close_evaluation(**_CTX)
+        revealed = store.reveal(**_CTX)
+        assert "agent_impostor" not in revealed.values()
+        assert set(revealed.values()) == set(SUBJECTS)
+
+    def test_mutating_evaluator_view_cannot_change_store(self):
+        store = RevealPolicyStore()
+        m = _mapping()
+        store.register(m)
+        view = store.evaluator_view(**_CTX)
+        view.clear()
+        view.append("anon_fake")
+        assert store.evaluator_view(**_CTX) == list(m.presentation_order)
+
+    def test_mutating_revealed_dict_cannot_change_store(self):
+        store = RevealPolicyStore()
+        m = _mapping()
+        store.register(m)
+        store.close_evaluation(**_CTX)
+        revealed = store.reveal(**_CTX)
+        revealed[m.presentation_order[0]] = "agent_impostor"
+        assert store.reveal(**_CTX) == dict(m.assignments)
+
     def test_unknown_context_raises(self):
         store = RevealPolicyStore()
         with pytest.raises(KeyError):
             store.evaluator_view(**_CTX)
 
 
-# ── role display: projection of canonical role_history ─────────────────────
+# ── role display: strict projection, no silent repair (finding 7) ──────────
 
 class TestRoleDisplay:
     ROWS = [
@@ -275,14 +416,46 @@ class TestRoleDisplay:
         ]
         assert [r.recorded_index for r in rows] == [0, 1, 2]
 
-    def test_malformed_row_is_refused_not_repaired(self):
-        with pytest.raises(ValueError, match="missing required keys"):
+    def test_missing_key_refused_not_repaired(self):
+        with pytest.raises(ValueError,
+                           match="violates the role display contract"):
             project_role_history([{"phase": "opening", "round_index": 0}])
+
+    def test_float_round_index_rejected(self):
+        with pytest.raises(ValueError,
+                           match="violates the role display contract"):
+            project_role_history([{**self.ROWS[0], "round_index": 1.9}])
+
+    def test_bool_round_index_rejected(self):
+        with pytest.raises(ValueError,
+                           match="violates the role display contract"):
+            project_role_history([{**self.ROWS[0], "round_index": True}])
+
+    def test_none_role_rejected(self):
+        with pytest.raises(ValueError,
+                           match="violates the role display contract"):
+            project_role_history([{**self.ROWS[0], "role": None}])
+
+    def test_noncanonical_role_word_rejected(self):
+        with pytest.raises(ValueError,
+                           match="violates the role display contract"):
+            project_role_history([{**self.ROWS[0], "role": "chairman"}])
+
+    def test_extra_canonical_row_field_rejected(self):
+        with pytest.raises(ValueError,
+                           match="violates the role display contract"):
+            project_role_history([{**self.ROWS[0], "leaked_score": 9.1}])
 
     def test_rows_are_frozen(self):
         row = project_role_history(self.ROWS)[0]
         with pytest.raises(ValidationError, match="frozen"):
             row.agent_id = "agent_hijack"
+
+    def test_row_wire_alias_round_trip(self):
+        row = project_role_history(self.ROWS)[0]
+        wire = row.model_dump(by_alias=True, mode="json")
+        assert wire["schema"] == "ced_role_display_v1"
+        assert RoleDisplayRow.model_validate(wire) == row
 
     def test_group_by_round(self):
         grouped = group_by_round(project_role_history(self.ROWS))
@@ -310,7 +483,6 @@ class TestRoleDisplay:
     def test_no_inferred_primary_role(self):
         """The projection exposes only recorded per-phase rows — it computes
         no aggregate/primary role for an agent."""
-        from backend.dialogues.projection import RoleDisplayRow
         assert "primary_role" not in RoleDisplayRow.model_fields
         rows = project_role_history(self.ROWS)
         agent_1_rows = [r for r in rows if r.agent_id == "agent_1"]

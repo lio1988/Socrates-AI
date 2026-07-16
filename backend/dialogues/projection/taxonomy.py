@@ -1,8 +1,9 @@
 """
-Council Live View Foundation — closed event taxonomy + typed stream contract.
+Council Live View Foundation — closed event taxonomy, typed stream contract,
+and closed projection vocabularies.
 
 The taxonomy is CLOSED: exactly these dotted names, nothing else. Adding an
-event type is a contract change (new payload model + registry entry + tests),
+event type is a contract change (new payload model + matrix row + tests),
 never an ad-hoc string.
 
 Stream contract (session/run sequencing, audited):
@@ -16,12 +17,18 @@ Stream contract (session/run sequencing, audited):
   violation. Run-scoped events sequence on ``run:<run_id>``.
 - ``stream_id`` is DERIVED (``session:…`` / ``run:…``), never caller-asserted,
   so an event can never claim membership in a stream its ids do not define.
+
+Closed vocabularies (hardening round 1): sections, roles, phases, verdicts,
+penalty flags and status words are Literals mirroring the canonical CED enums
+— free-text "any non-empty string" is not a contract. Tests assert parity
+with backend.dialogues.models; the production package itself still imports
+nothing from models (runtime inertness holds).
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import FrozenSet
+from typing import FrozenSet, Literal, Tuple, get_args
 
 
 class CedEventType(str, Enum):
@@ -56,9 +63,12 @@ SESSION_SCOPED_TYPES: FrozenSet[CedEventType] = frozenset({
 })
 
 #: Event types whose envelope MUST carry phase + round_index.
+#: Hardening round 1: move.validated added — phase/round context is
+#: first-class for validated moves (parent mapping §9.2).
 PHASE_REQUIRED_TYPES: FrozenSet[CedEventType] = frozenset({
     CedEventType.ROLE_ASSIGNED,
     CedEventType.PHASE_STARTED,
+    CedEventType.MOVE_VALIDATED,
 })
 
 #: Sentinel spellings that are NEVER a valid run_id (typed-stream rule:
@@ -76,3 +86,72 @@ def session_stream_id(session_id: str) -> str:
 def run_stream_id(run_id: str) -> str:
     """Typed stream id for run-scoped sequencing."""
     return f"run:{run_id}"
+
+
+# ── closed projection vocabularies (Literals + runtime tuples) ──────────────
+# Mirrors of the canonical CED enums. Parity with backend.dialogues.models is
+# asserted in tests (the production package never imports models).
+
+SectionLiteral = Literal[
+    "core_answer", "crucial_stress_test", "blind_spots", "nuance",
+    "final_verdict",
+]
+SECTION_NAMES: Tuple[str, ...] = get_args(SectionLiteral)
+
+RoleLiteral = Literal[
+    "socrates", "elenchus_critic", "empiricist", "maieutic_reconstructor",
+    "synthesizer", "reflector", "final_evaluator",
+]
+ROLE_NAMES: Tuple[str, ...] = get_args(RoleLiteral)
+
+PhaseLiteral = Literal[
+    "opening", "initial_response", "elenchus", "reflection",
+    "reconstruction", "synthesis", "ratification", "complete",
+]
+PHASE_NAMES: Tuple[str, ...] = get_args(PhaseLiteral)
+
+PenaltyFlagLiteral = Literal[
+    "unsupported_claim", "overconfidence", "vague", "logical_gap",
+    "irrelevant", "rhetorical_fluff", "unfair_attack", "missed_uncertainty",
+    "schema_violation",
+]
+PENALTY_FLAG_NAMES: Tuple[str, ...] = get_args(PenaltyFlagLiteral)
+
+VerdictLiteral = Literal["accept", "accept_with_caveat", "blocking_objection"]
+VERDICT_NAMES: Tuple[str, ...] = get_args(VerdictLiteral)
+
+QuorumStatusLiteral = Literal[
+    "complete", "partial", "timeout", "failed", "quorum_failed",
+    "disabled", "unavailable",
+]
+
+ProviderFailureStatusLiteral = Literal[
+    "degraded", "fallback", "error", "timeout", "unavailable",
+    "missing_key", "invalid_json", "schema_error", "rate_limited", "disabled",
+]
+
+FailureCategoryLiteral = Literal[
+    "timeout", "rate_limit", "invalid_response", "schema", "auth",
+    "network", "refusal", "unknown",
+]
+
+WithheldStatusLiteral = Literal[
+    "repair_required", "ratification_failed", "ratification_quorum_failed",
+    "quorum_failed", "blocked",
+]
+
+RatificationStatusLiteral = Literal[
+    "ratified", "ratified_with_caveats", "repair_required",
+    "ratification_failed", "ratification_quorum_failed", "blocked",
+    "unresolved", "quorum_failed",
+]
+
+LeaderboardStatusLiteral = Literal[
+    "complete", "partial", "unavailable", "disabled", "failed",
+]
+
+#: Phase 19 runner-up provenance: peer-score ranking, or deterministic
+#: draft_id order when no scores exist.
+ViaLiteral = Literal["peer_score_ranking", "deterministic_draft_order"]
+
+ScoredKindLiteral = Literal["move", "section"]

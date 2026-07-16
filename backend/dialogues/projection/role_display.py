@@ -1,11 +1,11 @@
 """
-Council Live View Foundation — role display contract (§6.2, audited).
+Council Live View Foundation — role display contract (§6.2, hardened).
 
 The future UI must show the REAL Socrates role loop, derived EXCLUSIVELY from
 canonical ``SessionState.role_history`` rows (``{phase, round_index, agent_id,
 role}``) or their future ledger projection.
 
-Locked rules (mapping §8, audited):
+Locked rules (mapping §8, hardening round 1 finding 7):
 
 - **No role recalculation.** This module never invokes or reimplements
   ``assign_roles_for_phase`` / ``assign_primary_roles`` — even a row that
@@ -15,9 +15,11 @@ Locked rules (mapping §8, audited):
 - **No inferred primary role.** The projection reports exactly the per-phase
   assignments that were recorded; it never derives a "primary" or "dominant"
   role for an agent.
-- **No silent repair of malformed rows.** A row missing a required key is a
-  contract error and raises; the projection never fills in, reorders, or
-  corrects canonical data.
+- **No silent repair — enforced, not just documented.** The raw row is
+  validated as-is by a strict model: a float or bool ``round_index``, a
+  ``None`` role, a non-canonical phase/role word, or an unknown extra field
+  is REJECTED, never coerced (the old ``str(...)``/``int(...)`` conversions
+  were themselves silent repair and are gone).
 - Anonymous labels (reveal.py) never replace persistent agent identity here —
   role display is post-blind and identity-bearing by design. The frontend
   renders these rows; it never computes them.
@@ -29,52 +31,69 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
+
+from .taxonomy import PhaseLiteral, RoleLiteral
 
 
 ROLE_DISPLAY_SCHEMA = "ced_role_display_v1"
 
-_REQUIRED_ROW_KEYS = ("phase", "round_index", "agent_id", "role")
-
 
 class RoleDisplayRow(BaseModel):
-    """One canonical role assignment, frozen for display."""
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """One canonical role assignment, frozen for display. Strict: canonical
+    rows are validated verbatim — wrong types and unknown fields reject."""
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True,
+                              populate_by_name=True)
 
-    schema_name: str = Field(default=ROLE_DISPLAY_SCHEMA,
-                             serialization_alias="schema")
-    phase:       str
-    round_index: int
-    agent_id:    str
-    role:        str
+    schema_name: str = Field(
+        default=ROLE_DISPLAY_SCHEMA,
+        validation_alias=AliasChoices("schema", "schema_name"),
+        serialization_alias="schema",
+    )
+    phase:       PhaseLiteral
+    round_index: int = Field(ge=0)
+    agent_id:    str = Field(min_length=1)
+    role:        RoleLiteral
     # Position within the recorded role_history — preserves canonical order
-    # even inside groupings.
+    # even inside groupings. Backend-owned; never part of the raw row.
     recorded_index: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _check_schema(self) -> "RoleDisplayRow":
+        if self.schema_name != ROLE_DISPLAY_SCHEMA:
+            raise ValueError(
+                f"unknown role display schema: {self.schema_name!r}"
+            )
+        return self
 
 
 def project_role_history(
     role_history: List[Mapping[str, Any]],
 ) -> List[RoleDisplayRow]:
     """
-    Pure projection of canonical role_history rows. Raises on any missing or
-    malformed key — the projection NEVER repairs, recalculates, or invents
-    canonical data.
+    Pure projection of canonical role_history rows. The ENTIRE raw row is
+    handed to the strict model — any missing key, wrong type, non-canonical
+    value or unknown extra field raises. The projection NEVER repairs,
+    recalculates, or invents canonical data.
     """
     rows: List[RoleDisplayRow] = []
     for index, raw in enumerate(role_history):
-        missing = [k for k in _REQUIRED_ROW_KEYS if k not in raw]
-        if missing:
+        try:
+            rows.append(RoleDisplayRow.model_validate(
+                {**dict(raw), "recorded_index": index}
+            ))
+        except ValidationError as exc:
             raise ValueError(
-                f"role_history[{index}] is missing required keys: {missing} "
-                "— refusing to project malformed canonical data"
-            )
-        rows.append(RoleDisplayRow(
-            phase=str(raw["phase"]),
-            round_index=int(raw["round_index"]),
-            agent_id=str(raw["agent_id"]),
-            role=str(raw["role"]),
-            recorded_index=index,
-        ))
+                f"role_history[{index}] violates the role display contract "
+                f"— refusing to project malformed canonical data: {exc}"
+            ) from exc
     return rows
 
 

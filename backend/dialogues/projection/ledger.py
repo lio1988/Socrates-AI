@@ -1,5 +1,5 @@
 """
-Council Live View Foundation — append-only in-memory Event Ledger (audited).
+Council Live View Foundation — append-only in-memory Event Ledger (hardened).
 
 Guarantees, each locked by tests:
 
@@ -8,15 +8,25 @@ Guarantees, each locked by tests:
   assigned only at append; callers can never claim one.
 - **Idempotent vs conflicting appends**:
     same stream + same idempotency_key + same semantic content
-        → return the EXISTING sealed event; no new sequence consumed
+        → return the existing sealed fact; no new sequence consumed
     same stream + same idempotency_key + DIFFERENT semantic content
         → raise CedEventConflictError; no mutation; no sequence consumed
   Semantic content = canonical sorted UTF-8 JSON excluding event_id
   (sequence / emitted_at are structurally absent from drafts).
-- **Failed append consumes no sequence**: validation, revalidation, digest
-  computation and the conflict check all happen BEFORE a sequence is
-  assigned; a raising append leaves the stream exactly as it was.
-- **Immutable returned history**: reads return fresh tuples of frozen models.
+- **Failure atomicity (hardening round 1, finding 4)**: the duplicate/conflict
+  check happens BEFORE the clock is called, so an exact duplicate is returned
+  even if the clock is broken; a clock failure or sealed-validation failure
+  on a new event leaves NO empty stream, NO index entry, NO consumed
+  sequence — internal maps are only created after the sealed event has been
+  successfully constructed.
+- **Concurrency-safe**: check → clock (outside lock) → re-check under the
+  lock → construct → append atomically. Two racing identical appends publish
+  exactly one event; racing conflicting appends yield one winner and one
+  CedEventConflictError.
+- **Deep immutability (hardening round 1, finding 2)**: the ledger stores its
+  own deep copies and every read/append returns fresh deep copies — mutating
+  a returned event's payload (or the original draft) can never change ledger
+  history. Reads return fresh tuples of frozen models.
 - **Cross-stream isolation**: one stream's events are never visible through
   another stream's reads; the same idempotency_key in two different streams
   is two distinct facts.
@@ -26,8 +36,8 @@ Guarantees, each locked by tests:
   (the clock) runs OUTSIDE the internal lock; under the lock there are only
   pure dict operations and internal model construction.
 - **Deterministic injected clock**: ``EventLedger(clock=...)`` makes
-  emitted_at reproducible in tests. (Event ids are caller/draft-side, so id
-  determinism is injected at draft construction.)
+  emitted_at reproducible in tests. The clock MUST return timezone-aware UTC
+  datetimes — the sealed-event contract rejects naive or non-UTC values.
 
 The ledger records; it never decides. It knows nothing about roles, scores,
 or ratification semantics.
@@ -57,48 +67,84 @@ class EventLedger:
         # stream_id -> idempotency_key -> (index, semantic_digest)
         self._index_by_key: Dict[str, Dict[str, Tuple[int, str]]] = {}
 
+    # ── internal helpers (call under lock) ────────────────────────────────
+
+    def _existing(
+        self, stream: str, key: str, digest: str
+    ) -> Optional[CedEpistemicEvent]:
+        """Return the existing event for (stream, key) or raise on conflict.
+        Pure lookup: creates nothing."""
+        key_index = self._index_by_key.get(stream)
+        if not key_index:
+            return None
+        hit = key_index.get(key)
+        if hit is None:
+            return None
+        existing_index, existing_digest = hit
+        if existing_digest == digest:
+            return self._events_by_stream[stream][existing_index]
+        raise CedEventConflictError(
+            f"idempotency_key {key!r} already bound to different semantic "
+            f"content on stream {stream!r} — refusing to record a "
+            "contradictory fact"
+        )
+
     # ── write path ────────────────────────────────────────────────────────
 
     def append(self, draft: CedEventDraft) -> CedEpistemicEvent:
         """
         Seal and append a draft. Idempotent on identical semantic content;
         conflicting content under a reused key raises CedEventConflictError.
-        A raising append consumes no sequence and mutates nothing.
+        A raising append consumes no sequence and mutates nothing — not even
+        an empty stream entry.
         """
         # Re-validate defensively (closes any post-construction payload-dict
         # mutation hole) — OUTSIDE the lock, like every non-pure step.
-        draft = CedEventDraft.model_validate(
-            {**draft.model_dump(), "event_type": draft.event_type}
-        )
+        draft = CedEventDraft.model_validate(draft.model_dump())
         digest = semantic_digest(draft)
-        emitted_at = self._clock()          # injected callable: never under lock
         stream = draft.stream_id
+        key = draft.idempotency_key
+
+        # First check: an exact duplicate returns WITHOUT touching the clock
+        # (finding 4 — a broken clock must not break idempotent replay).
+        with self._lock:
+            existing = self._existing(stream, key, digest)
+        if existing is not None:
+            return existing.model_copy(deep=True)
+
+        # Only a genuinely new fact consumes a clock reading. The injected
+        # callable runs outside the lock. If it raises, nothing was mutated.
+        emitted_at = self._clock()
 
         with self._lock:
-            events = self._events_by_stream.setdefault(stream, [])
-            key_index = self._index_by_key.setdefault(stream, {})
+            # Re-check under the lock: another thread may have appended the
+            # same key while we were reading the clock.
+            existing = self._existing(stream, key, digest)
+            if existing is not None:
+                return existing.model_copy(deep=True)
 
-            hit = key_index.get(draft.idempotency_key)
-            if hit is not None:
-                existing_index, existing_digest = hit
-                if existing_digest == digest:
-                    return events[existing_index]      # idempotent duplicate
-                raise CedEventConflictError(
-                    f"idempotency_key {draft.idempotency_key!r} already bound "
-                    f"to different semantic content on stream {stream!r} — "
-                    "refusing to record a contradictory fact"
-                )
+            events = self._events_by_stream.get(stream)
+            next_sequence = (len(events) if events is not None else 0) + 1
 
+            # Construct BEFORE mutating any ledger structure: a validation
+            # failure here (e.g. a naive/non-UTC clock) leaves no empty
+            # stream and no index entry.
             sealed = CedEpistemicEvent(
-                **{**draft.model_dump(), "event_type": draft.event_type},
-                sequence=len(events) + 1,               # sequences start at 1
+                **draft.model_dump(),
+                sequence=next_sequence,
                 emitted_at=emitted_at,
             )
-            events.append(sealed)
-            key_index[draft.idempotency_key] = (len(events) - 1, digest)
-            return sealed
 
-    # ── read path (immutable results; fresh tuples of frozen models) ─────
+            if events is None:
+                events = []
+                self._events_by_stream[stream] = events
+                self._index_by_key[stream] = {}
+            events.append(sealed)
+            self._index_by_key[stream][key] = (len(events) - 1, digest)
+
+        return sealed.model_copy(deep=True)
+
+    # ── read path (fresh deep copies in fresh tuples, every call) ─────────
 
     def stream_ids(self) -> Tuple[str, ...]:
         with self._lock:
@@ -111,7 +157,8 @@ class EventLedger:
     def events_for_stream(self, stream_id: str) -> Tuple[CedEpistemicEvent, ...]:
         """All events for one stream, in sequence order."""
         with self._lock:
-            return tuple(self._events_by_stream.get(stream_id, []))
+            stored = list(self._events_by_stream.get(stream_id, []))
+        return tuple(e.model_copy(deep=True) for e in stored)
 
     def events_for_run(self, run_id: str) -> Tuple[CedEpistemicEvent, ...]:
         return self.events_for_stream(run_stream_id(run_id))
@@ -135,7 +182,7 @@ class EventLedger:
             selected = [e for e in events if e.sequence > after_sequence]
         if limit is not None:
             selected = selected[: max(0, limit)]
-        return tuple(selected)
+        return tuple(e.model_copy(deep=True) for e in selected)
 
     def find_by_idempotency_key(
         self, stream_id: str, idempotency_key: str
@@ -144,4 +191,5 @@ class EventLedger:
             hit = self._index_by_key.get(stream_id, {}).get(idempotency_key)
             if hit is None:
                 return None
-            return self._events_by_stream[stream_id][hit[0]]
+            stored = self._events_by_stream[stream_id][hit[0]]
+        return stored.model_copy(deep=True)
