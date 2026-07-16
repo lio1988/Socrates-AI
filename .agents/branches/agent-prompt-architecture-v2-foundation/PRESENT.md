@@ -4,9 +4,31 @@ Snapshot date: 2026-07-16
 PR: `#68 — Add Agent Prompt Architecture v2 foundations`  
 Base branch: `main`  
 Original #68 foundation head before agent-handoff files: `80b67cb607c47f0c950ac867a29822a1b180051c`  
-Latest parent before this `PRESENT.md` commit: `4feb7d7560086c79bd052433e0b22f47566854f8`
+Handoff workspace head before this status update: `b040599b042d00eead54a1ad1f27b66de4918755`
 
 Always verify the live head with Git/GitHub before editing. This file records the handoff state, not an immutable ref.
+
+## Branch synchronization state
+
+The latest verified comparison after creating the handoff workspace reported:
+
+```text
+status: diverged
+branch ahead of main: 16 commits
+branch behind main: 2 commits
+current main at comparison: b699dad275a9c8824811b0c7307a688f700d3eb2
+merge base: 0cfedc66f7ae6c072f2e7ef30df1d818627f66be
+```
+
+Do not merge or rebase blindly.
+
+Before implementation work:
+
+1. inspect the two commits added to `main` after the merge base;
+2. determine whether they overlap prompt, provider, Kernel, Consultation, governance, README, or test files;
+3. choose an explicit synchronization strategy;
+4. preserve the exact reviewed branch tree and record the new head;
+5. rerun affected tests after synchronization.
 
 ## PR state
 
@@ -136,12 +158,14 @@ foundation source: implemented
 focused foundation evidence: reported, not independently revalidated in this handoff
 canonical runtime wiring: not implemented
 repository-wide validation: not established
+branch synchronization: required; branch is behind main by 2 commits
 PR state: draft
 shipped: no
 ```
 
 ## Known risks
 
+- The branch is diverged from `main`; synchronization may expose conflicts or invalidate earlier test claims.
 - The Constitution is long and may contain redundancy; reductions must not weaken invariants.
 - Prompt cost/latency has not been measured across providers.
 - Identity projection eligibility rules are not yet implemented.
@@ -155,16 +179,18 @@ shipped: no
 
 ## Exact next action
 
-Perform `PLANS.md` Gate 0 only:
+Perform synchronization inspection followed by `PLANS.md` Gate 0 only:
 
-1. fetch and inspect the live PR #68 diff;
-2. verify every documentation status against current code;
-3. update stale optional-Kernel wording to the mandatory end-state requirement;
-4. retain explicit statements that runtime integration is still absent;
-5. run the focused Agent Prompt Architecture tests on the real branch checkout;
-6. update this file with the exact head, commands, and results.
+1. inspect the two commits by which the branch is behind `main`;
+2. inspect the live PR #68 diff;
+3. select and document the safe synchronization strategy;
+4. verify every documentation status against current code;
+5. update stale optional-Kernel wording to the mandatory end-state requirement;
+6. retain explicit statements that runtime integration is still absent;
+7. run the focused Agent Prompt Architecture tests on the synchronized real branch checkout;
+8. update this file with the exact head, commands, and results.
 
-Do not begin Kernel runtime wiring until branch truth and foundation validation are clean.
+Do not begin Kernel runtime wiring until synchronization, branch truth, and foundation validation are clean.
 
 ## Handoff completion rule
 
