@@ -4,7 +4,7 @@ Snapshot date: 2026-07-16
 PR: `#68 — Add Agent Prompt Architecture v2 foundations`  
 Base branch: `main`  
 Original #68 foundation head before agent-handoff files: `80b67cb607c47f0c950ac867a29822a1b180051c`  
-Handoff workspace head before this status update: `b040599b042d00eead54a1ad1f27b66de4918755`
+Handoff head before this final status commit: `e42f65523fccdbbd8709090a70aa0dc9f88a88d7`
 
 Always verify the live head with Git/GitHub before editing. This file records the handoff state, not an immutable ref.
 
@@ -14,7 +14,7 @@ The latest verified comparison after creating the handoff workspace reported:
 
 ```text
 status: diverged
-branch ahead of main: 16 commits
+branch ahead of main: 16 commits at comparison time
 branch behind main: 2 commits
 current main at comparison: b699dad275a9c8824811b0c7307a688f700d3eb2
 merge base: 0cfedc66f7ae6c072f2e7ef30df1d818627f66be
@@ -26,22 +26,30 @@ Before implementation work:
 
 1. inspect the two commits added to `main` after the merge base;
 2. determine whether they overlap prompt, provider, Kernel, Consultation, governance, README, or test files;
-3. choose an explicit synchronization strategy;
-4. preserve the exact reviewed branch tree and record the new head;
-5. rerun affected tests after synchronization.
+3. investigate the current non-mergeable PR state and identify actual conflicts;
+4. choose an explicit synchronization strategy;
+5. preserve the exact reviewed branch tree and record the new head;
+6. rerun affected tests after synchronization.
 
 ## PR state
 
-At the last verified PR inspection:
+The final verified PR inspection before this status commit reported:
 
-- PR #68 was open;
-- it was a draft;
-- it was mergeable;
-- base was `main`;
-- no merged state was reported;
-- no GitHub combined-status checks were reported for the then-current head.
+```text
+state: open
+draft: true
+merged: false
+mergeable: false
+head before this status commit: e42f65523fccdbbd8709090a70aa0dc9f88a88d7
+commits: 17
+changed files: 16
+additions: 3642
+deletions: 0
+```
 
-Do not mark it ready or merge it based on this snapshot alone.
+No GitHub combined-status checks were observed for the latest inspected head.
+
+Do not mark the PR ready and do not merge it until divergence/conflicts are resolved and validation is rerun.
 
 ## Original #68 foundation diff
 
@@ -158,7 +166,8 @@ foundation source: implemented
 focused foundation evidence: reported, not independently revalidated in this handoff
 canonical runtime wiring: not implemented
 repository-wide validation: not established
-branch synchronization: required; branch is behind main by 2 commits
+branch synchronization: required; branch is behind main
+PR mergeability: false at final inspection
 PR state: draft
 shipped: no
 ```
@@ -166,6 +175,7 @@ shipped: no
 ## Known risks
 
 - The branch is diverged from `main`; synchronization may expose conflicts or invalidate earlier test claims.
+- PR #68 is currently reported as not mergeable.
 - The Constitution is long and may contain redundancy; reductions must not weaken invariants.
 - Prompt cost/latency has not been measured across providers.
 - Identity projection eligibility rules are not yet implemented.
@@ -179,16 +189,17 @@ shipped: no
 
 ## Exact next action
 
-Perform synchronization inspection followed by `PLANS.md` Gate 0 only:
+Perform synchronization/conflict inspection followed by `PLANS.md` Gate 0 only:
 
 1. inspect the two commits by which the branch is behind `main`;
-2. inspect the live PR #68 diff;
+2. inspect the live PR #68 diff and conflict state;
 3. select and document the safe synchronization strategy;
-4. verify every documentation status against current code;
-5. update stale optional-Kernel wording to the mandatory end-state requirement;
-6. retain explicit statements that runtime integration is still absent;
-7. run the focused Agent Prompt Architecture tests on the synchronized real branch checkout;
-8. update this file with the exact head, commands, and results.
+4. resolve only verified conflicts without discarding the reviewed #68 foundation;
+5. verify every documentation status against current code;
+6. update stale optional-Kernel wording to the mandatory end-state requirement;
+7. retain explicit statements that runtime integration is still absent;
+8. run the focused Agent Prompt Architecture tests on the synchronized real branch checkout;
+9. update this file with the exact head, commands, and results.
 
 Do not begin Kernel runtime wiring until synchronization, branch truth, and foundation validation are clean.
 
