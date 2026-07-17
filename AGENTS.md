@@ -7,21 +7,38 @@ This file is the repository-level entry point for coding agents.
 Before editing any file:
 
 1. Confirm the current Git branch, head commit, worktree state, remotes, and PR target.
-2. Locate the matching branch workspace under `.agents/branches/`.
-3. Read, in this exact order:
+2. Read `.agents/user/ME.md` for prompt-safe collaboration and durable product context.
+3. Locate the matching branch workspace under `.agents/branches/`.
+4. Read, in this exact order:
    - the branch `README.md`;
    - `PRESENT.md`;
    - `MEMORY.md`;
    - `PLANS.md`.
-4. Read every canonical document linked from the branch README.
-5. Compare the stated branch status with the actual source, tests, commits, PR metadata, and base branch.
-6. Correct stale handoff documentation before relying on it.
+5. Read every canonical document linked from the branch README.
+6. Compare the stated branch status with the actual source, tests, commits, PR metadata, and base branch.
+7. Correct stale handoff documentation before relying on it.
 
 For branch `feature/openclaw-memory-ab-attestation`, the required workspace is:
 
 ```text
 .agents/branches/feature-openclaw-memory-ab-attestation/
 ```
+
+## User-context boundary
+
+`.agents/user/ME.md` explains how to collaborate with the project owner and records durable project intent relevant to all agents.
+
+It is not proof of:
+
+- current code behavior;
+- passing tests;
+- Git or PR state;
+- runtime activation;
+- merge or release status.
+
+Do not infer or store additional personal information. Never add credentials, contact details, addresses, health/legal/financial records, private messages, or speculative personal claims to repository guidance.
+
+When user preferences conflict with verified repository state, report the conflict and preserve the verified technical truth. When a durable product requirement conflicts with an implementation, treat that as planned work rather than pretending the code already complies.
 
 ## Source-of-truth hierarchy
 
@@ -34,9 +51,10 @@ When sources disagree, use this order:
 5. branch `PRESENT.md`;
 6. branch `MEMORY.md`;
 7. branch `PLANS.md`;
-8. historical prose, chat summaries, and old phase notes.
+8. `.agents/user/ME.md` for collaboration preferences and durable product intent only;
+9. historical prose, chat summaries, and old phase notes.
 
-Do not treat a plan, README statement, PR body, previous agent report, or local-only change as proof that behavior exists on the remote branch.
+Do not treat a plan, README statement, PR body, previous agent report, local-only change, or user-profile statement as proof that behavior exists on the remote branch.
 
 ## Required branch handoff files
 
