@@ -1,0 +1,20 @@
+---
+description: Mandatory Socrates AI repository, user-context, and branch-handoff reading order
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+Before editing this repository, read and follow:
+
+1. `AGENTS.md`
+2. `.agents/user/ME.md`
+3. `CURSOR.md`
+4. `.agents/branches/feature-openclaw-memory-ab-attestation/README.md`
+5. `.agents/branches/feature-openclaw-memory-ab-attestation/PRESENT.md`
+6. `.agents/branches/feature-openclaw-memory-ab-attestation/MEMORY.md`
+7. `.agents/branches/feature-openclaw-memory-ab-attestation/PLANS.md`
+
+Then inspect the current source, tests, Git state, and live PR metadata.
+
+The user profile is collaboration context, not proof of code state. Do not infer or store additional personal data. Preserve strict evidence, no-self-approval, exact-model, immutable-record, and branch-handoff requirements.
