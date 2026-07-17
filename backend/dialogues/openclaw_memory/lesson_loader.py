@@ -22,6 +22,8 @@ never parsed as a real lesson.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +103,24 @@ class MemoryLesson:
         }
 
 
+def memory_lesson_fingerprint(lesson: MemoryLesson) -> str:
+    """Bind evidence to the exact canonical lesson record, not only its ID.
+
+    The fingerprint includes lifecycle status and every behavioral field. A
+    lesson edited under the same ``LESSON-*`` identifier therefore cannot reuse
+    A/B evidence produced for the previous content.
+    """
+    if not isinstance(lesson, MemoryLesson):
+        raise ValueError("memory_lesson_fingerprint requires a MemoryLesson")
+    payload = json.dumps(
+        lesson.to_record(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def default_lessons_path() -> Path:
     """Absolute path to the canonical MEMORY_LESSONS.md source."""
     repo_root = Path(__file__).resolve().parents[3]
@@ -149,7 +169,7 @@ def _build_lesson(lesson_id: str, name: str, labels: dict[str, str]) -> MemoryLe
 
 
 def parse_memory_lessons(text: str) -> list[MemoryLesson]:
-    """Parse Markdown lesson text into an ordered list of :class:`MemoryLesson`.
+    """Parse Markdown text into an ordered list of :class:`MemoryLesson`.
 
     Deterministic: output order matches source order. Fenced code blocks (```)
     are skipped so the ``LESSON-0000`` template is ignored. Raises

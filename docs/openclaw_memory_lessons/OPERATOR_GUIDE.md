@@ -74,7 +74,7 @@ SELF_REVISION_PIPELINE.md
 The pipeline report shows each agent’s verified evidence, proposal status, and
 next governed action. Nothing becomes active merely because it appears there.
 
-## Mode E — Lesson A/B test (before promoting a lesson)
+## Mode E — Whole-council Lesson A/B test
 
 ```powershell
 .\.venv\Scripts\python.exe -c "
@@ -87,8 +87,9 @@ print(report['verdict'], report['mean_score_delta'])
 ```
 
 Matched-pair: same question, councils with vs without the lesson. Verdicts:
-`helped` / `harmed` / `no_effect` / `untested`. The harness reports; you
-decide.
+`helped` / `harmed` / `no_effect` / `untested`. This `lesson_ab_v2` report may
+support global curation, but it is deliberately insufficient for personal agent
+Memory because the treatment covers a whole council.
 
 ## Mode F — Human promotion checklist (the only step that changes status)
 
@@ -164,6 +165,51 @@ and names a review artifact. Use `--action retire_principle` for a reviewed
 retirement. Evidence still requires a separate agent proposal, evaluation,
 non-self approval, and recoverable application.
 
+## Mode G4 — Attest bound single-agent Lesson A/B Memory evidence
+
+The ordinary Mode E report is whole-council evidence and cannot enter one
+agent's Memory. Mode G4 accepts only an
+`openclaw_agent_lesson_ab_attestation_v1` envelope containing:
+
+- a nested `openclaw_agent_lesson_ab_v1` report with
+  `treatment_scope="single_agent"`;
+- the exact curated lesson SHA-256 fingerprint;
+- the exact governed target Identity SHA-256 fingerprint;
+- the matched experiment/configuration SHA-256 fingerprint.
+
+Helped result → link evidence:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_lesson_ab.py `
+  local_apprentice_001 `
+  --report runs\agent_lesson_ab\lesson-0007-helped-attestation.json `
+  --action link `
+  --verified-by "Your Name"
+```
+
+Harmful post-link result → unlink/revert evidence:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\openclaw_attest_lesson_ab.py `
+  local_apprentice_001 `
+  --report runs\agent_lesson_ab\lesson-0007-harmed-attestation.json `
+  --action unlink `
+  --verified-by "Your Name"
+```
+
+The verifier named on the command must match the verifier inside the nested
+report. New evidence is refused if the lesson content/status changed under the
+same ID, if the governed target Identity changed, or if any binding is not
+canonical lowercase SHA-256. Link evidence additionally requires a curated
+`stable`/`verified` lesson and a clean helped verdict with no regressions.
+Unlink evidence requires a concrete harmed verdict and a lesson currently linked
+to that exact target state.
+
+The command writes only immutable evidence; it never edits
+`MEMORY_LESSONS.md`, the agent profile, or lifecycle state. See
+[AGENT_LESSON_AB_ATTESTATION.md](AGENT_LESSON_AB_ATTESTATION.md) for the exact
+envelope and experiment-manifest contract.
+
 ## Mode H — Bounded self-review package (agent proposes, nothing activates)
 
 ```powershell
@@ -172,8 +218,8 @@ non-self approval, and recoverable application.
 
 Builds the snapshot/summary/instruction artifacts an agent may use to author
 one descriptive proposal. Evidence comes only from the trusted registry
-(Mode G1/G2/G3). Evaluation, named non-self approval, recoverable application,
-probation, and confirmation/rollback all still follow — see
+(Mode G1/G2/G3/G4). Evaluation, named non-self approval, recoverable
+application, probation, and confirmation/rollback all still follow — see
 [SELF_REVISION_GOVERNANCE.md](SELF_REVISION_GOVERNANCE.md).
 
 ## Mode I — Recover an interrupted revision transaction
@@ -209,6 +255,10 @@ view and the audit files above are the ground truth.
   adjacent loss→win window of the requested size.
 - **Soul refused** — confirm both review flags and cite existing evidence for
   the same agent.
+- **Lesson A/B Memory attestation refused** — confirm the envelope and nested
+  report schemas, target/verifier, exact lesson and Identity fingerprints,
+  experiment fingerprint, observation date, and compatible helped/harmed
+  verdict.
 
 ## The constitution (what no mode can do)
 

@@ -9,7 +9,10 @@ code should not hand-wire them. This facade always composes:
 - terminal-aware recoverable application transaction coordinator.
 
 Every mutating method reloads current state and trusted evidence. Callers provide
-named actors and references, not precomputed `passed=True` decisions or profiles.
+named actors, references, and—when evaluating personal Memory changes—the
+trusted current lesson fingerprint map. They never provide precomputed
+``passed=True`` decisions or replacement profiles.
+
 No provider calls and no CED authority path exist here.
 """
 
@@ -17,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, Optional, Tuple
+from typing import Iterable, Mapping, Tuple
 
 from .identity_profile import AgentIdentityProfile
 from .identity_registry import IdentityRegistry
@@ -107,6 +110,7 @@ class GovernedSelfRevisionSystem:
         *,
         evaluated_by: str,
         stable_lesson_ids: Iterable[str] = (),
+        lesson_fingerprints: Mapping[str, str] | None = None,
         evaluated_on: str = "",
     ) -> RevisionEvaluation:
         return self.lifecycle_registry.record_evaluation(
@@ -115,6 +119,7 @@ class GovernedSelfRevisionSystem:
             current_profile=self.profile(agent_id),
             evidence_manifest=self.trusted_manifest(agent_id),
             stable_lesson_ids=stable_lesson_ids,
+            lesson_fingerprints=lesson_fingerprints,
             evaluated_by=evaluated_by,
             evaluated_on=evaluated_on,
         )
@@ -128,6 +133,7 @@ class GovernedSelfRevisionSystem:
         decided_by: str,
         decision_reference: str,
         stable_lesson_ids: Iterable[str] = (),
+        lesson_fingerprints: Mapping[str, str] | None = None,
         decided_on: str = "",
     ):
         return self.lifecycle_registry.record_decision(
@@ -136,6 +142,7 @@ class GovernedSelfRevisionSystem:
             current_profile=self.profile(agent_id),
             evidence_manifest=self.trusted_manifest(agent_id),
             stable_lesson_ids=stable_lesson_ids,
+            lesson_fingerprints=lesson_fingerprints,
             decision=decision,
             decided_by=decided_by,
             decision_reference=decision_reference,
@@ -150,6 +157,7 @@ class GovernedSelfRevisionSystem:
         applied_by: str,
         application_reference: str,
         stable_lesson_ids: Iterable[str] = (),
+        lesson_fingerprints: Mapping[str, str] | None = None,
         applied_on: str = "",
     ) -> AgentIdentityProfile:
         """Apply only through the write-ahead transaction coordinator."""
@@ -158,6 +166,7 @@ class GovernedSelfRevisionSystem:
             proposal_id,
             evidence_manifest=self.trusted_manifest(agent_id),
             stable_lesson_ids=stable_lesson_ids,
+            lesson_fingerprints=lesson_fingerprints,
             applied_by=applied_by,
             application_reference=application_reference,
             applied_on=applied_on,

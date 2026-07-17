@@ -25,6 +25,7 @@ from .lesson_loader import (
     default_lessons_path,
     load_memory_lessons,
     load_stable_lessons,
+    memory_lesson_fingerprint,
     parse_memory_lessons,
 )
 from .lesson_retriever import (
@@ -65,6 +66,33 @@ from .lesson_ab import (
     run_lesson_ab,
 )
 
+
+def _fingerprint_map(lessons):
+    return {
+        lesson.lesson_id: memory_lesson_fingerprint(lesson)
+        for lesson in lessons
+    }
+
+
+def load_lesson_fingerprints(path=None):
+    """Return fingerprints for every current curated lesson, including deprecated.
+
+    Governed Memory evaluation uses this complete map so a linked lesson can be
+    safely unlinked even after its global status becomes ``deprecated``.
+    """
+    return _fingerprint_map(
+        load_memory_lessons(path, include_deprecated=True))
+
+
+def load_stable_lesson_fingerprints(path=None):
+    """Return fingerprints only for current ``stable`` / ``verified`` lessons.
+
+    This narrower helper is useful for link eligibility. For lifecycle binding
+    checks use :func:`load_lesson_fingerprints` so unlink remains possible.
+    """
+    return _fingerprint_map(load_stable_lessons(path))
+
+
 __all__ = [
     "LESSON_STATUSES",
     "STABLE_OR_VERIFIED",
@@ -73,6 +101,9 @@ __all__ = [
     "default_lessons_path",
     "load_memory_lessons",
     "load_stable_lessons",
+    "load_lesson_fingerprints",
+    "load_stable_lesson_fingerprints",
+    "memory_lesson_fingerprint",
     "parse_memory_lessons",
     "DEFAULT_MAX_LESSONS",
     "RetrievedLesson",
