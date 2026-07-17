@@ -16,14 +16,23 @@ Observer enabled ⇒ deterministic event sequence in the injected `EventLedger`.
        run-to-run byte-identity after canonicalization, and that the raw dumps
        differ ONLY in the four known volatile fields. **← current step; STOP
        before commit for review.**
-3. [ ] Design the injected observer seam (interface + where it attaches in
-       `ced.py`), reviewed before implementation.
-4. [ ] Implement the hook: default-off, DI, failure-isolated; emit drafts
-       from already-computed canonical facts only; ledger owns sequence.
-5. [ ] Extend the golden test: observer-disabled ⇒ baseline; observer-enabled-
-       but-raising ⇒ baseline + run unaffected; observer-enabled ⇒ expected
-       deterministic event sequence.
-6. [ ] Full `tests_dialogues` green; `ced.py` diff minimal and justified.
+3. [x] Design the injected observer seam — reviewed & APPROVED with two locked
+       adjustments (deterministic `run_id` from `session_id`; defer
+       `phase.started`).
+4. [x] Implement the hook: default-off, DI, single failure-isolation choke
+       (`_emit_event`); emit `session.created`/`run.started`/`role.assigned`/
+       `run.completed` from already-computed canonical facts; ledger owns
+       sequence. New `projection/observer.py`; `build_council` gains an
+       `event_observer` passthrough (DI wiring for the registry path).
+5. [x] Extend the golden test: explicit-None ⇒ baseline bytes; enabled ⇒
+       expected session/run streams + contiguous sequences + role_history
+       parity; raising ledger ⇒ baseline bytes + isolated failures;
+       record_failure also raising ⇒ baseline bytes; disabled ⇒ build() never
+       called + no ledger touched; two fresh ledgers ⇒ identical event view.
+       Both run paths, parametrized.
+6. [x] Full `tests_dialogues` green (**1778**); focused golden **21**;
+       `ced.py` diff +131/−7 (mostly the three new emit methods).
+       **← STOP before commit for review.**
 
 ## Validation gates
 

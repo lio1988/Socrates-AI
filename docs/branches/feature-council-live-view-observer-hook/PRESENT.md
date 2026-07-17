@@ -15,33 +15,62 @@ Exact current state for safe resumption. Keep current.
 
 ## Completed work (this branch)
 
-- Branch documentation folder created.
-- **Golden baseline test written** (`tests_dialogues/test_ced_observer_golden.py`):
-  locks the deterministic canonical `FinalResponse` for both `run_session` and
-  `run_registry_session` with the observer ABSENT. `canonical_final_response_bytes`
-  removes EXACTLY the four empirically-observed volatile paths
-  (`response_id`, `created_at`, `synthesis.answer_id`, `synthesis.assembled_at`)
-  and returns real UTF-8 bytes; the rest is byte-identical run-to-run. Boundary
-  test asserts observed differing paths ⊆ declared (non-empty) AND each declared
-  path exists in both raw dumps (no silent no-op on drift).
+- Golden baseline committed at `65b5f14` (observer-ABSENT determinism lock).
+- **Observer hook implemented** (uncommitted): `projection/observer.py`
+  (`CedEventObserver`, `ObserverFailure`, `derive_projection_run_id`); `ced.py`
+  DI seam (`event_observer=None` default; single `_emit_event` isolation choke;
+  `_emit_run_started`/`_emit_run_completed`; `role.assigned` from the new
+  `role_history` rows inside `_apply_phase_roles`); `build_council` gains an
+  `event_observer` passthrough. First slice emits `session.created`,
+  `run.started`, `role.assigned`, `run.completed` (per the review;
+  `phase.started` deferred).
+- Golden test extended with the 8 observer cases (both run paths).
 
-## Uncommitted (awaiting first observer-hook review)
+## Uncommitted (awaiting observer-hook review, before commit)
 
-- `tests_dialogues/test_ced_observer_golden.py` (new)
-- `docs/branches/feature-council-live-view-observer-hook/` (README, MEMORY,
-  PLAN, PRESENT)
+- `backend/dialogues/projection/observer.py` (new)
+- `backend/dialogues/projection/__init__.py` (export observer bridge)
+- `backend/dialogues/ced.py` (DI seam + emit sites; +131/−7)
+- `backend/dialogues/live_providers.py` (`event_observer` passthrough; +4/−2).
+  NOTE: this is FACTORY dependency-injection wiring only — `build_council`
+  forwards the caller's observer to the `CEDOrchestrator` constructor. No
+  provider, adapter, gating, or runtime behavior changes; it is NOT an
+  exception to the "no provider changes" boundary.
+- `tests_dialogues/test_ced_observer_golden.py` (extended)
+- this branch documentation folder
 
 ## Tests — exact results
 
-- `test_ced_observer_golden.py`: **7 passed** (legacy + registry canonical
-  determinism, raw-dumps-differ-only-in-volatile-fields, real-answer sanity,
-  canonicalizer-honesty).
-- `ced.py` UNCHANGED; no production code touched (verified `git status`).
+- `test_ced_observer_golden.py`: **25 passed** (7 baseline + 12 parametrized
+  observer + 2 authority-state parity + 2 exact-failure-sequence + 2
+  isolation-unit).
+- Four-file focused (projection + golden): **219 passed**.
+- Full `tests_dialogues`: **1782 passed** (no regression; disabled path
+  byte-for-byte unchanged).
+- Final review gates: `authority_state_snapshot` proves a RAISING observer
+  leaves the canonical SessionState (phases/roles/moves/drafts/scorecards/
+  assembly/ratification) identical to the observer-absent run on BOTH paths
+  (verdict `ratification_id`/`task_id`/`move_id` are random `_uid()` routing
+  ids — verified empirically — and are excluded as such); the failure
+  sequence is locked EXACTLY: legacy 18 = session.created, run.started,
+  15×role.assigned, run.completed; registry 17 = session.created,
+  run.started, 14×role.assigned, run.completed — every attempt isolated,
+  none stops the next, run.completed attempted after all prior failures.
+
+## Emitted event sequences (offline mock, both paths)
+
+- `session:<sid>` → `[1] session.created`.
+- LEGACY `run:<run_id>` → `[1] run.started`, `[2..16] role.assigned`
+  (opening→…→synthesis + `ratification` final_evaluator), `[17] run.completed`.
+- REGISTRY `run:<run_id>` → `[1] run.started`, `[2..15] role.assigned`
+  (NO ratification row — council ratification has no single Final Evaluator),
+  `[16] run.completed`. Events mirror `role_history` exactly; the path
+  difference is faithful, not fabricated.
 
 ## Blockers / next safe step
 
-- **STOP before commit** for the first observer-hook review of the golden test
-  + branch docs.
-- After sign-off: design the injected observer seam (reviewed), then implement
-  the default-off, failure-isolated hook, then extend the golden test with the
-  observer-disabled and observer-raises assertions.
+- **STOP before commit** for the observer-hook review (the limited runtime
+  diff: `ced.py`, `observer.py`, `build_council` passthrough, extended tests).
+- After sign-off: commit as a single checkpoint on this branch (no amend/force),
+  push, then the next hook slice adds `phase.started` via a real
+  `_advance_phase()` seam covering all transitions.

@@ -53,6 +53,11 @@ from .events import (
     sha256_hex,
 )
 from .ledger import CedCausalityError, CedEventConflictError, EventLedger
+from .observer import (
+    CedEventObserver,
+    ObserverFailure,
+    derive_projection_run_id,
+)
 from .reveal import (
     REVEAL_CONTRACT_SCHEMA,
     AnonymousMapping,
@@ -113,6 +118,10 @@ __all__ = [
     "CedCausalityError",
     "CedEventConflictError",
     "EventLedger",
+    # observer bridge (the only projection module CED imports)
+    "CedEventObserver",
+    "ObserverFailure",
+    "derive_projection_run_id",
     # reveal
     "REVEAL_CONTRACT_SCHEMA",
     "AnonymousMapping",
