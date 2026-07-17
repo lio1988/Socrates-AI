@@ -3,13 +3,13 @@
 Snapshot date: 2026-07-16  
 PR: `#62 — Add bound single-agent Lesson A/B Memory attestation`  
 Original remote PR head before handoff files: `0ea3bfb3dc4552616d44eda20a09fc67b107855b`  
-Handoff head before this final status commit: `c6ea524e761a73e05c4178ce1c0d9a30c3846e8f`
+Head before this user-context status commit: `8596bfe99c1d4ab492f67902ef979043734484e9`
 
 Always verify the live head, base, mergeability, and commit graph before editing. This file records a snapshot, not an immutable ref.
 
 ## PR and stack state
 
-The final PR inspection before this status commit reported:
+The last full PR inspection before the user-context commits reported:
 
 ```text
 PR: #62
@@ -19,7 +19,7 @@ merged: false
 mergeable: true
 base: feature/openclaw-attestation-bridges
 base SHA recorded by PR: 15483130d04bfe02a16efc3f589b8d78ff848210
-head before this status commit: c6ea524e761a73e05c4178ce1c0d9a30c3846e8f
+head at that inspection: c6ea524e761a73e05c4178ce1c0d9a30c3846e8f
 commits: 43
 changed files: 21
 additions: 3787
@@ -36,7 +36,7 @@ PR #61 merge commit: d2916038c8fdd633414d0a2d8dc0e272e9f2ec09
 
 PR #62 still targets the historical feature branch and has not been cleanly retargeted to `main`.
 
-## Verified divergence after handoff files
+## Verified divergence after the original branch handoff
 
 Comparison with the live feature-base branch reported:
 
@@ -58,6 +58,8 @@ PR branch ahead: 53 commits
 PR branch behind: 10 commits
 merge base: 8753c2c65697c1c4395a2674979a708d08ccd481
 ```
+
+These counts predate the user-context commits. Recompute before synchronization.
 
 Do not infer that GitHub’s `mergeable: true` means the stack is ready. The base relationship is stale and the branch is behind both the feature base and `main`.
 
@@ -83,7 +85,9 @@ tests_dialogues/test_openclaw_lesson_fingerprint.py
 tests_dialogues/test_openclaw_memory_evidence_binding.py
 ```
 
-The handoff added:
+## Agent handoff and user-context files
+
+The branch handoff added:
 
 ```text
 AGENTS.md
@@ -94,7 +98,28 @@ CLAUDE.md
 .agents/branches/feature-openclaw-memory-ab-attestation/PRESENT.md
 ```
 
-These six files are documentation-only and do not change G4 runtime/operator behavior.
+The project-owner collaboration context then added:
+
+```text
+.agents/user/README.md
+.agents/user/ME.md
+CURSOR.md
+.cursor/rules/00-socrates-ai-user-context.mdc
+```
+
+and updated:
+
+```text
+AGENTS.md
+CLAUDE.md
+.agents/branches/feature-openclaw-memory-ab-attestation/README.md
+```
+
+All agents are now directed to read `AGENTS.md`, then `.agents/user/ME.md`, then the active branch workspace. Claude and Cursor have explicit entry points.
+
+The user profile contains collaboration preferences and durable Socrates AI product intent only. It contains no credentials, contact information, addresses, health/legal/financial records, or private account data.
+
+These files are documentation/editor guidance only and do not change G4 runtime/operator behavior.
 
 ## Implemented on the inspected remote branch
 
@@ -167,11 +192,11 @@ The PR body lists commands for:
 
 However, the PR body does not state final exact pass counts for the current remote head, and no CI statuses were observed.
 
-For the six handoff files added after `0ea3bfb...`:
+For the handoff and user-context documentation changes:
 
 - no source behavior changed;
 - no tests were run as part of their creation;
-- no CI was triggered or observed by this handoff;
+- no CI was triggered or observed;
 - no merge/rebase/retarget was performed.
 
 Honest status:
@@ -180,6 +205,7 @@ Honest status:
 G4 source: implemented on remote branch
 focused tests: present; current exact remote-head results not independently established here
 full validation: not established for current synchronized target
+Claude/Cursor/user context: documented and connected
 PR state: draft
 stack synchronization: required
 retarget to main: not performed
@@ -198,7 +224,8 @@ shipped: no
 - exact replay and conflicting reference reuse must remain distinct;
 - docs and commands may become stale after parser hardening or synchronization;
 - local-only fixes may be confused with remote state;
-- no current GitHub CI status proves the branch.
+- no current GitHub CI status proves the branch;
+- editor-specific instructions must continue pointing to the single canonical `.agents/user/ME.md` rather than forking the user profile.
 
 ## Exact next action
 
@@ -206,7 +233,7 @@ Perform `PLANS.md` Gate 0 only:
 
 1. inspect the live remote commit graph after this status commit;
 2. inspect any local checkout for unpushed merge/fix work and record it separately;
-3. identify exactly why the branch is behind the old feature base by twenty commits and current `main` by ten commits;
+3. identify exactly why the branch is behind the old feature base and current `main`;
 4. reconstruct the intended PR #62-only diff on top of merged PR #61;
 5. write a reversible synchronization/retarget plan with recovery SHAs;
 6. do not change code or PR base until that plan is reviewed.
