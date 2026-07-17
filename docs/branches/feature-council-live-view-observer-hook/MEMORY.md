@@ -44,6 +44,25 @@ wherever found"); everything else — answer text, section winners,
 `selected_draft_id`, scores, ratification, audit — is byte-identical. Any new
 non-deterministic path therefore breaks the golden test (intended).
 
+## Future-slice blocker: random ratification routing IDs (LOCKED GATE)
+
+The authority-state parity work established empirically that on the registry
+path the `RatificationVerdict.task_id` / `.move_id` (and `ratification_id`)
+are **random `_uid()` routing identifiers**, unlike deliberation move ids /
+draft ids which are deterministic. Acceptable TODAY because this slice emits
+no ratification events. **BEFORE implementing `ratification_vote.recorded`,
+`blocking_objection.raised`, or `runner_up.replaced` emission**, one of the
+following must land first:
+
+- make the ratification task/move IDs deterministic (stable task identity,
+  like deliberation moves), OR
+- give the event contract a different deterministic `ratification_id` that
+  does not depend on those routing ids.
+
+Without this, ratification-event idempotency identity
+`(ratification_id, voter_id/provider_id)` would be built on random ids —
+replays would never dedupe and cross-run determinism would break.
+
 ## Important files
 
 - To change (later): `backend/dialogues/ced.py` — add the injected observer

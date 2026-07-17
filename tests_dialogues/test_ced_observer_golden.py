@@ -9,9 +9,13 @@ it changes nothing:
     observer disabled (added with the hook) → canonical bytes == baseline
     observer enabled but raising (later)    → canonical bytes == baseline
 
-The observer hook does not exist yet; this file locks only the observer-ABSENT
-baseline and the determinism boundary. The disabled/raises assertions are
-added with the hook, reusing `canonical_final_response_bytes` here.
+History: this file was created BEFORE the hook existed (commit 65b5f14) and
+locked the observer-ABSENT baseline first. The baseline classes below remain
+that pre-hook checkpoint, unmodified; the observer classes
+(`TestObserverEmission`, `TestAuthorityStateParity`, `TestExactFailureSequence`,
+`TestObserverIsolationUnit`) were added AFTER the hook implementation and
+prove — against that pre-locked baseline — that the hook changes nothing when
+disabled or raising.
 
 Determinism boundary (empirically established, not assumed): for a fixed
 `(question, session_id)`, both `run_session` and `run_registry_session`
@@ -26,8 +30,6 @@ four paths — random uuids + wall-clock timestamps:
 The canonicalizer removes EXACTLY those paths — no key-name filtering, no
 "strip wherever found" — so any OTHER non-determinism (a new differing path)
 breaks these tests, which is the whole point of a golden baseline.
-
-This module touches NO production code: `ced.py` is unchanged.
 """
 
 from __future__ import annotations
@@ -380,6 +382,18 @@ class TestObserverEmission:
         assert [e.sequence for e in run] == list(range(1, len(run) + 1))
         assert observer.failures == ()
 
+        # run.completed payload FIDELITY: it must project the actual final,
+        # not merely exist as the last event.
+        completed = run[-1]
+        assert completed.payload["ratification_status"] == \
+               final.ratification_status
+        if final.socratic_leaderboard is not None:
+            assert completed.payload["leaderboard_status"] == (
+                final.socratic_leaderboard.leaderboard_status.value
+            )
+        else:
+            assert "leaderboard_status" not in completed.payload
+
     def test_role_assigned_events_match_role_history_exactly(
         self, run_observed, run_baseline
     ):
@@ -503,3 +517,16 @@ class TestObserverIsolationUnit:
         _ = CedEventObserver(ledger)
         run_legacy_baseline("obs_disabled")
         assert ledger.stream_ids() == ()
+
+    def test_failure_history_is_bounded_with_visible_loss(self):
+        # A long-lived observer must not grow without limit: history caps at
+        # 256 (oldest drop first) while the total counter keeps counting.
+        observer = CedEventObserver(EventLedger())
+        for i in range(300):
+            observer.record_failure("role.assigned", "RuntimeError",
+                                    f"boom {i}")
+        assert observer.total_failure_count == 300
+        assert len(observer.failures) == 256
+        assert observer.dropped_failure_count == 44
+        assert observer.failures[0].message == "boom 44"    # oldest retained
+        assert observer.failures[-1].message == "boom 299"  # newest retained

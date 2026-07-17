@@ -11,11 +11,13 @@ Design (reviewed, Slice 1):
 - Dependency-injected: the caller constructs the observer around its own
   `EventLedger` and passes it to `CEDOrchestrator(event_observer=...)`. Default
   is `None` (disabled) — the single flag.
-- Failures are recorded on a **bounded, sanitized side channel on the
+- Failures are recorded on a **bounded diagnostic side channel on the
   observer** — never on `SessionState` / `FinalResponse` / `audit_summary`.
   That is the whole point: a raising ledger must leave the canonical
   `FinalResponse` byte-identical (the golden invariant), so the failure record
-  must live entirely off `FinalResponse`.
+  must live entirely off `FinalResponse`. The history is a bounded deque
+  (oldest records drop first); `total_failure_count` / `dropped_failure_count`
+  keep the loss visible.
 - `run_id` for the projection is a pure function of `session_id`
   (`derive_projection_run_id`): today's CED has no native run/attempt concept —
   each full `run_session()` / `run_registry_session()` builds one
@@ -27,14 +29,20 @@ Design (reviewed, Slice 1):
 from __future__ import annotations
 
 import threading
+from collections import deque
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Deque, Tuple
 
 from .events import CedEpistemicEvent, CedEventDraft, canonical_identity_digest
 from .ledger import EventLedger
 
-#: Bound on the sanitized failure message (no raw exception object is kept).
+#: Bound on the diagnostic failure message (no raw exception object is kept;
+#: the text is truncated, not redacted).
 _MAX_MESSAGE_CHARS = 256
+
+#: Bound on the retained failure HISTORY: a long-lived observer must not grow
+#: without limit. Oldest records drop first; the counters keep loss visible.
+_MAX_FAILURE_RECORDS = 256
 
 
 def derive_projection_run_id(session_id: str) -> str:
@@ -54,7 +62,8 @@ def derive_projection_run_id(session_id: str) -> str:
 
 @dataclass(frozen=True)
 class ObserverFailure:
-    """A bounded, sanitized record of one emit failure. No raw exception."""
+    """A bounded diagnostic record of one emit failure. No raw exception
+    object is kept; the message is truncated, not redacted."""
     event_type: str
     error_type: str
     message: str
@@ -63,12 +72,15 @@ class ObserverFailure:
 class CedEventObserver:
     """Bridge between CED emit sites and the append-only `EventLedger`.
 
-    Owns the ledger reference and the failure side channel. Thread-safe.
+    Owns the ledger reference and the bounded failure side channel.
+    Thread-safe.
     """
 
     def __init__(self, ledger: EventLedger) -> None:
         self.ledger = ledger
-        self._failures: List[ObserverFailure] = []
+        self._failures: Deque[ObserverFailure] = deque(
+            maxlen=_MAX_FAILURE_RECORDS)
+        self._total_failure_count = 0
         self._lock = threading.Lock()
 
     def append(self, draft: CedEventDraft) -> CedEpistemicEvent:
@@ -79,17 +91,33 @@ class CedEventObserver:
     def record_failure(
         self, event_type: str, error_type: str, message: str
     ) -> None:
-        """Record a bounded, sanitized failure. Never touches CED state."""
+        """Record a bounded diagnostic failure. Never touches CED state.
+        History is capped at `_MAX_FAILURE_RECORDS` (oldest drop first);
+        `total_failure_count` keeps counting past the cap."""
         failure = ObserverFailure(
             event_type=str(event_type),
             error_type=str(error_type),
             message=str(message)[:_MAX_MESSAGE_CHARS],
         )
         with self._lock:
+            self._total_failure_count += 1
             self._failures.append(failure)
 
     @property
     def failures(self) -> Tuple[ObserverFailure, ...]:
-        """Immutable snapshot of recorded failures."""
+        """Immutable snapshot of the RETAINED failures (most recent
+        `_MAX_FAILURE_RECORDS`)."""
         with self._lock:
             return tuple(self._failures)
+
+    @property
+    def total_failure_count(self) -> int:
+        """Every failure ever recorded, including dropped ones."""
+        with self._lock:
+            return self._total_failure_count
+
+    @property
+    def dropped_failure_count(self) -> int:
+        """How many old failure records the bounded history has discarded."""
+        with self._lock:
+            return max(0, self._total_failure_count - len(self._failures))
