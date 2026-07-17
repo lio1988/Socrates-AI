@@ -8,18 +8,22 @@ Branch purpose: add a strict, state-bound evidence bridge from matched single-ag
 
 Before editing this branch, read:
 
-1. [`PRESENT.md`](PRESENT.md) — current remote and PR truth;
-2. [`MEMORY.md`](MEMORY.md) — durable architecture decisions;
-3. [`PLANS.md`](PLANS.md) — ordered work and gates;
-4. [`AGENTS.md`](../../../AGENTS.md) — repository-wide agent contract;
-5. [`CLAUDE.md`](../../../CLAUDE.md) when using Claude Code;
-6. [`docs/openclaw_memory_lessons/AGENT_LESSON_AB_ATTESTATION.md`](../../../docs/openclaw_memory_lessons/AGENT_LESSON_AB_ATTESTATION.md);
-7. [`docs/openclaw_memory_lessons/G4_MEMORY_LIFECYCLE_BINDING.md`](../../../docs/openclaw_memory_lessons/G4_MEMORY_LIFECYCLE_BINDING.md);
-8. the G4 section of [`docs/openclaw_memory_lessons/OPERATOR_GUIDE.md`](../../../docs/openclaw_memory_lessons/OPERATOR_GUIDE.md);
-9. `scripts/openclaw_attest_lesson_ab.py`;
-10. `backend/dialogues/openclaw_identity/memory_evidence_binding.py`;
-11. the governed registry, facade, and transaction-coordinator changes;
-12. all five PR-owned test files and affected PR #61 regression tests.
+1. [`AGENTS.md`](../../../AGENTS.md) — repository-wide agent contract;
+2. [`.agents/user/ME.md`](../../user/ME.md) — project-owner collaboration profile and durable product intent;
+3. [`PRESENT.md`](PRESENT.md) — current remote and PR truth;
+4. [`MEMORY.md`](MEMORY.md) — durable architecture decisions;
+5. [`PLANS.md`](PLANS.md) — ordered work and gates;
+6. [`CLAUDE.md`](../../../CLAUDE.md) when using Claude Code;
+7. [`CURSOR.md`](../../../CURSOR.md) when using Cursor;
+8. [`docs/openclaw_memory_lessons/AGENT_LESSON_AB_ATTESTATION.md`](../../../docs/openclaw_memory_lessons/AGENT_LESSON_AB_ATTESTATION.md);
+9. [`docs/openclaw_memory_lessons/G4_MEMORY_LIFECYCLE_BINDING.md`](../../../docs/openclaw_memory_lessons/G4_MEMORY_LIFECYCLE_BINDING.md);
+10. the G4 section of [`docs/openclaw_memory_lessons/OPERATOR_GUIDE.md`](../../../docs/openclaw_memory_lessons/OPERATOR_GUIDE.md);
+11. `scripts/openclaw_attest_lesson_ab.py`;
+12. `backend/dialogues/openclaw_identity/memory_evidence_binding.py`;
+13. the governed registry, facade, and transaction-coordinator changes;
+14. all five PR-owned test files and affected PR #61 regression tests.
+
+`ME.md` explains how to collaborate with the user. It does not prove code state, tests, runtime behavior, or merge readiness. Do not infer or store additional personal information.
 
 Do not begin from a chat summary, an old PR body, or a local-only agent report when the remote branch can be inspected directly.
 
