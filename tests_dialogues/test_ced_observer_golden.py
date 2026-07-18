@@ -54,6 +54,7 @@ from backend.dialogues.projection import (
     derive_projection_run_id,
     run_stream_id,
     session_stream_id,
+    sha256_hex,
 )
 
 QUESTION = "Is knowledge merely justified true belief?"
@@ -375,12 +376,15 @@ class TestObserverEmission:
         assert sess[0].sequence == 1
         assert sess[0].payload == {"question": QUESTION}
 
-        # Run stream: run.started, then interleaved phase.started /
-        # role.assigned, then run.completed — contiguous sequences.
+        # Run stream: run.started, then interleaved phase/role/task (and, on
+        # the registry path, move.validated), then run.completed — contiguous.
         types = [e.event_type.value for e in run]
         assert types[0] == "run.started"
         assert types[-1] == "run.completed"
-        assert set(types[1:-1]) == {"role.assigned", "phase.started"}
+        middle = set(types[1:-1])
+        assert {"role.assigned", "phase.started", "task.created"} <= middle
+        assert middle <= {"role.assigned", "phase.started", "task.created",
+                          "move.validated", "provider.failed"}
         assert [e.sequence for e in run] == list(range(1, len(run) + 1))
         assert observer.failures == ()
 
@@ -480,43 +484,44 @@ class TestAuthorityStateParity:
         assert snap_absent["assembled_answer"] is not None
 
 
-def _expected_failure_sequence(roles_per_phase):
-    """Interleaved attempt order for a raising ledger: run lifecycle + one
-    phase.started per entered phase (7 working phases + COMPLETE) with that
-    phase's role.assigned attempts in between. Empirically locked from the
-    real emitted sequences (legacy roles [1,3,2,3,1,4,1] → 26 attempts;
-    registry [1,3,2,3,1,4,0] — council ratification has no evaluator role —
-    → 25 attempts)."""
-    seq = ["session.created", "run.started"]
-    for count in roles_per_phase:
-        seq.append("phase.started")
-        seq.extend(["role.assigned"] * count)
-    seq.append("phase.started")      # COMPLETE
-    seq.append("run.completed")
-    return seq
-
-
 @pytest.mark.parametrize(
-    "run_observed,roles_per_phase",
-    [(run_legacy_observed, [1, 3, 2, 3, 1, 4, 1]),
-     (run_registry_observed, [1, 3, 2, 3, 1, 4, 0])],
+    "run_observed,expected_total",
+    [(run_legacy_observed, 40), (run_registry_observed, 155)],
     ids=_RUNNER_IDS,
 )
 class TestExactFailureSequence:
     """Every emission attempt is isolated INDIVIDUALLY: no failure stops the
     subsequent emissions, and run.completed is still attempted after all
-    prior failures. Locked as an exact ordered sequence, not just non-empty."""
+    prior failures.
 
-    def test_raising_ledger_failure_sequence_is_exact(
-        self, run_observed, roles_per_phase
+    Locked TWO ways: (a) cross-mode parity — the raising-ledger attempt
+    sequence must equal ["session.created"] + the run-stream event types of
+    an ENABLED run of the same session (the round-4 invariant: success and
+    failure modes agree on how many emissions were attempted, in what
+    order); (b) an exact empirical total as a canary (legacy 40 = 1 session
+    + 1 started + 8 phase + 15 role + 14 deliberation tasks + 1 completed;
+    registry 155 adds 14 move.validated + 102 scoring tasks, minus the
+    legacy ratification role)."""
+
+    def test_raising_attempts_equal_enabled_emissions(
+        self, run_observed, expected_total
     ):
-        observer = CedEventObserver(_RaisingLedger())
-        run_observed(observer, "obs_fail_seq")
-        types = [f.event_type for f in observer.failures]
-        expected = _expected_failure_sequence(roles_per_phase)
-        assert types == expected
-        assert len(types) == sum(roles_per_phase) + 8 + 3
-        assert all(f.error_type == "RuntimeError" for f in observer.failures)
+        sid = "obs_fail_seq"
+        enabled = CedEventObserver(EventLedger())
+        run_observed(enabled, sid)
+        run_id = derive_projection_run_id(sid)
+        reference = ["session.created"] + [
+            e.event_type.value
+            for e in enabled.ledger.events_for_stream(run_stream_id(run_id))
+        ]
+
+        raising = CedEventObserver(_RaisingLedger())
+        run_observed(raising, sid)
+        types = [f.event_type for f in raising.failures]
+        assert types == reference
+        assert len(types) == expected_total
+        assert types[-1] == "run.completed"
+        assert all(f.error_type == "RuntimeError" for f in raising.failures)
 
 
 _CANONICAL_PHASE_SEQUENCE = [
@@ -700,6 +705,156 @@ class TestPhaseNoOpSuppression:
             "state.advance_phase must be called ONLY inside _advance_phase — "
             f"found {len(callers)} call sites"
         )
+
+
+def _run_events(ledger, sid, event_type):
+    run_id = derive_projection_run_id(sid)
+    return [e for e in ledger.events_for_stream(run_stream_id(run_id))
+            if e.event_type.value == event_type]
+
+
+@pytest.mark.parametrize("run_observed,run_baseline", _RUNNERS,
+                         ids=_RUNNER_IDS)
+class TestExecutionEvents:
+    """task.created parity with the canonical task_log (OBSERVED kinds only)
+    — deterministic task ids are what make this stream reproducible."""
+
+    def test_task_created_parity_with_task_log(self, run_observed,
+                                               run_baseline):
+        from backend.dialogues.ced import _OBSERVED_TASK_KINDS
+        sid = "exe_tasks"
+        observer = CedEventObserver(EventLedger())
+        _, ced = run_observed(observer, sid)
+        state = ced.get_session(sid)
+        expected = [e for e in state.task_log
+                    if e.task_kind in _OBSERVED_TASK_KINDS]
+        events = _run_events(observer.ledger, sid, "task.created")
+        assert len(events) == len(expected) > 0
+        for ev, entry in zip(events, expected):
+            assert ev.payload["task_id"] == entry.task_id
+            assert ev.payload["task_kind"] == entry.task_kind.value
+            assert ev.payload["agent_id"] == entry.agent_id
+            assert ev.payload["slot_index"] == entry.slot_index
+            assert ev.payload["attempt_index"] == entry.attempt_index
+            assert ev.payload["schema_name"] == entry.schema_name
+            assert ev.payload["context_hash"] == entry.context_hash
+
+    def test_task_ids_are_deterministic_not_random(self, run_observed,
+                                                   run_baseline):
+        import re
+        sid = "exe_task_ids"
+        observer = CedEventObserver(EventLedger())
+        _, ced = run_observed(observer, sid)
+        ids = [e.payload["task_id"]
+               for e in _run_events(observer.ledger, sid, "task.created")]
+        # Two deterministic families: "task_" (this slice's stamping) and the
+        # pre-existing "stask_" score-task ids — never the random _uid form.
+        assert ids and all(re.fullmatch(r"s?task_[0-9a-f]{1,12}", i)
+                           for i in ids)
+        # Deterministic across a FRESH identical run (the routing-id disease
+        # is cured for observed kinds).
+        observer2 = CedEventObserver(EventLedger())
+        run_observed(observer2, sid)
+        ids2 = [e.payload["task_id"]
+                for e in _run_events(observer2.ledger, sid, "task.created")]
+        assert ids == ids2
+
+
+class TestExecutionEventsRegistry:
+    """Registry-only facts: move.validated digests and provider.failed."""
+
+    def test_move_validated_parity_and_digests(self):
+        sid = "exe_moves"
+        observer = CedEventObserver(EventLedger())
+        _, ced = run_registry_observed(observer, sid)
+        state = ced.get_session(sid)
+        events = _run_events(observer.ledger, sid, "move.validated")
+        # One event per registry deliberation move (state.moves holds exactly
+        # those on this path).
+        assert len(events) == len(state.moves) > 0
+        moves_by_id = {m.move_id: m for m in state.moves}
+        for ev in events:
+            move = moves_by_id[ev.payload["move_id"]]
+            assert ev.payload["agent_id"] == move.agent_id
+            assert ev.payload["confidence"] == move.confidence
+            # validated_digest is recomputable from the canonical content.
+            recomputed = sha256_hex(json.dumps(
+                move.content, sort_keys=True, ensure_ascii=False,
+                separators=(",", ":")))
+            assert ev.payload["validated_digest"] == recomputed
+            assert ev.payload["raw_digest"] != ev.payload["validated_digest"]
+
+    def test_provider_failed_parity_with_failed_entries(self):
+        from backend.dialogues.ced import (
+            _FAILURE_CATEGORY_BY_STATUS, _OBSERVED_TASK_KINDS,
+        )
+        from backend.dialogues.models import ProviderStatus
+        from backend.dialogues.provider_registry import (
+            CouncilProviderRegistry, ScriptedMockProvider,
+            TimeoutScriptedProvider,
+        )
+        sid = "exe_provider_failed"
+        observer = CedEventObserver(EventLedger())
+        provider = FakeProvider()
+        agents = [SocraticAgent(f"agent_{i}", provider) for i in range(4)]
+        reg = CouncilProviderRegistry()
+        for a in (ScriptedMockProvider("mock_a"), ScriptedMockProvider("mock_b"),
+                  TimeoutScriptedProvider()):
+            reg.register(a)
+        ced = CEDOrchestrator(agents, provider, registry=reg,
+                              event_observer=observer)
+        asyncio.run(ced.run_registry_session(QUESTION, session_id=sid))
+        state = ced.get_session(sid)
+        failed_entries = [
+            e for e in state.task_log
+            if e.task_kind in _OBSERVED_TASK_KINDS
+            and e.provider_id is not None
+            and e.provider_status is not None
+            and e.provider_status != ProviderStatus.OK
+        ]
+        events = _run_events(observer.ledger, sid, "provider.failed")
+        assert len(events) == len(failed_entries) > 0
+        for ev, entry in zip(events, failed_entries):
+            assert ev.payload["task_id"] == entry.task_id
+            assert ev.payload["provider_id"] == entry.provider_id
+            assert ev.payload["status"] == entry.provider_status.value
+            assert ev.payload["failure_category"] == \
+                _FAILURE_CATEGORY_BY_STATUS.get(entry.provider_status,
+                                                "unknown")
+
+    def test_legacy_path_emits_no_provider_or_move_events(self):
+        sid = "exe_legacy_absence"
+        observer = CedEventObserver(EventLedger())
+        run_legacy_observed(observer, sid)
+        assert _run_events(observer.ledger, sid, "move.validated") == []
+        assert _run_events(observer.ledger, sid, "provider.failed") == []
+        # …but legacy deliberation tasks ARE projected.
+        assert _run_events(observer.ledger, sid, "task.created")
+
+    def test_ratification_tasks_stay_deferred(self):
+        sid = "exe_rat_deferred"
+        observer = CedEventObserver(EventLedger())
+        _, ced = run_registry_observed(observer, sid)
+        kinds = {e.payload["task_kind"]
+                 for e in _run_events(observer.ledger, sid, "task.created")}
+        assert "council_ratification" not in kinds
+        assert "tree_revision" not in kinds
+
+    def test_every_agent_task_gets_a_deterministic_id(self):
+        # Static guard: no AgentTask construction in ced.py may keep the random
+        # _uid default — every site passes an explicit deterministic task_id
+        # (or is an already-deterministic stask_ scoring task).
+        import pathlib
+        import re
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "backend" / "dialogues" / "ced.py").read_text(encoding="utf-8")
+        # Each `AgentTask(` opener must have a task_id= within its argument list.
+        for m in re.finditer(r"AgentTask\(", src):
+            window = src[m.start():m.start() + 400]
+            assert "task_id=" in window, (
+                "an AgentTask is built without an explicit deterministic "
+                f"task_id near offset {m.start()}"
+            )
 
 
 class TestObserverIsolationUnit:
