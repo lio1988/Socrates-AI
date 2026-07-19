@@ -24,6 +24,7 @@ from .projection import (
     CedEventType,
     build_draft,
     derive_projection_run_id,
+    sha256_hex,
 )
 from .models import (
     AgentMove,
@@ -71,6 +72,36 @@ from .providers import LLMProvider
 from .agent import SocraticAgent
 from .provider_registry import CouncilProviderRegistry
 from .role_assignment import assign_primary_roles, stable_hash
+
+
+# Council Live View — execution-events slice. Task kinds whose execution
+# facts are projected (deliberation + peer scoring). Ratification, tree and
+# lesson kinds stay DEFERRED — see
+# docs/branches/feature-council-live-view-execution-events/MEMORY.md.
+_OBSERVED_TASK_KINDS = frozenset({
+    TaskKind.SOCRATIC_QUESTION,
+    TaskKind.INITIAL_RESPONSE,
+    TaskKind.ELENCHUS_OBJECTION,
+    TaskKind.REFLECTION_REVISION,
+    TaskKind.RECONSTRUCTION_PROPOSAL,
+    TaskKind.SYNTHESIS_DRAFT,
+    TaskKind.MOVE_SCORE,
+    TaskKind.SECTION_SCORE,
+})
+
+# Closed mechanical ProviderStatus → FailureCategoryLiteral mapping for
+# provider.failed events. Only statuses that CARRY the category as canonical
+# evidence are mapped; everything else (error / degraded / fallback / disabled
+# / unavailable) is honestly "unknown" — UNAVAILABLE especially can mean
+# config, health-gate, policy, missing dependency, outage or network, so CED
+# never asserts "network" without evidence.
+_FAILURE_CATEGORY_BY_STATUS = {
+    ProviderStatus.TIMEOUT: "timeout",
+    ProviderStatus.RATE_LIMITED: "rate_limit",
+    ProviderStatus.INVALID_JSON: "invalid_response",
+    ProviderStatus.SCHEMA_ERROR: "schema",
+    ProviderStatus.MISSING_KEY: "auth",
+}
 
 
 # ── Deterministic per-phase role scheduling tables ────────────────────────────
@@ -618,16 +649,30 @@ class CEDOrchestrator:
     def _build_round_task(
         self, state: SessionState, agent_id: str,
         role: AgentRole, phase: DialogPhase,
+        round_index: Optional[int] = None,
     ) -> AgentTask:
         """Build the AgentTask that all available providers will answer this round."""
+        ri = round_index if round_index is not None else state.round_number
+        # No fabricated identity: an unmapped phase must fail before dispatch,
+        # never be silently coerced to INITIAL_RESPONSE.
+        try:
+            round_kind = PHASE_TASK_KIND[phase]
+        except KeyError as exc:
+            raise ValueError(
+                f"No canonical TaskKind for phase {phase.value!r} — refusing "
+                "to fabricate a task identity"
+            ) from exc
         return AgentTask(
+            task_id=self._deterministic_task_id(
+                state, agent_id, phase, role, round_kind, ri, 0, 0),
             session_id=state.session_id,
             agent_id=agent_id,
             role=role,
             phase=phase,
             question=state.question,
             output_schema={"_role": role.value, "_question": state.question},
-            round_number=state.round_number,
+            round_number=ri,
+            task_kind=round_kind,
         )
 
     async def run_registry_council_round(
@@ -669,6 +714,7 @@ class CEDOrchestrator:
             AgentState(agent_id=agent_id, primary_role=role, assigned_role=role),
         )
         task = self._build_round_task(state, agent_id, role, phase)
+        self._emit_task_created(state, task)   # before gather_council_round
         result = await self.registry.gather_council_round(
             task, agent_state, timeout_seconds=timeout_seconds
         )
@@ -718,7 +764,9 @@ class CEDOrchestrator:
 
         async def _one(index: int, agent_id: str, role: AgentRole) -> "ProviderResponse":
             adapter = adapters[index % len(adapters)]   # round-robin provider mapping
-            task = self._build_round_task(session_state, agent_id, role, phase)
+            task = self._build_round_task(session_state, agent_id, role, phase,
+                                          round_index=round_index)
+            self._emit_task_created(session_state, task)   # before run_adapter
             agent_state = session_state.agent_states.get(
                 agent_id,
                 AgentState(agent_id=agent_id, primary_role=role, assigned_role=role),
@@ -1007,13 +1055,19 @@ class CEDOrchestrator:
         deterministically-assigned agent/role, validated into moves, with
         per-phase quorum. Move ids come from task identity (NOT completion order).
         """
+        try:
+            task_kind = PHASE_TASK_KIND[phase]
+        except KeyError as exc:
+            raise ValueError(
+                f"No canonical TaskKind for phase {phase.value!r} — refusing "
+                "to fabricate a task identity"
+            ) from exc
         self._advance_phase(state, phase,
                             initial_entry=(phase == DialogPhase.OPENING))
         assignment = self._registry_phase_assignment(state, phase)
         self._apply_phase_roles(state, phase, assignment)
         items = sorted(assignment.items())
         adapters = self._ranked_adapters(state)   # Phase 21: analytics-informed routing
-        task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
         want_sections = (phase == DialogPhase.SYNTHESIS)
 
         def _build_task(agent_id: str, role: AgentRole, slot: int,
@@ -1022,6 +1076,9 @@ class CEDOrchestrator:
             if want_sections:
                 schema["_sections"] = True
             return AgentTask(
+                task_id=self._deterministic_task_id(
+                    state, agent_id, phase, role, task_kind,
+                    state.round_number, slot, attempt),
                 session_id=state.session_id, agent_id=agent_id, role=role, phase=phase,
                 question=state.question,
                 context=self._registry_phase_context(state, phase, agent_id),
@@ -1032,6 +1089,7 @@ class CEDOrchestrator:
         async def _one(slot: int, agent_id: str, role: AgentRole,
                        attempt: int = 0, offset: int = 0):
             task = _build_task(agent_id, role, slot, attempt)
+            self._emit_task_created(state, task)   # before run_adapter
             agent_state = state.agent_states.get(
                 agent_id, AgentState(agent_id=agent_id, primary_role=role, assigned_role=role))
             adapter = adapters[(slot + offset) % len(adapters)]   # round-robin mapping
@@ -1048,7 +1106,8 @@ class CEDOrchestrator:
                     # Deterministic identity — independent of which provider/when.
                     move.move_id = self._deterministic_move_id(
                         state, task.agent_id, phase, task.role,
-                        task.task_kind, task.slot_index, task.attempt_index)
+                        task.task_kind, task.round_number,
+                        task.slot_index, task.attempt_index)
                     move.task_kind = task.task_kind
                     move.slot_index = task.slot_index
                     move.attempt_index = task.attempt_index
@@ -1057,6 +1116,22 @@ class CEDOrchestrator:
                     self._record_task_log(state, task, move.move_id,
                                           provider_id=resp.provider_id,
                                           provider_status=resp.status)
+                    # Council Live View: move.validated — ONLY where a real
+                    # raw provider text exists (§6.4 raw + validated split;
+                    # the legacy in-process path has no raw artifact and
+                    # emits nothing rather than fabricating a digest). The
+                    # canonicalization/digests live inside the builder so a
+                    # non-finite content value stays observer-isolated.
+                    if (self._event_observer is not None
+                            and task.task_kind in _OBSERVED_TASK_KINDS
+                            and resp.raw_text is not None):
+                        self._emit_event(
+                            CedEventType.MOVE_VALIDATED,
+                            lambda move=move, task=task,
+                            raw_text=resp.raw_text:
+                            self._build_move_validated_event(
+                                state, task, move, raw_text),
+                        )
                 else:
                     # Failed provider → task trace only, NO fabricated move.
                     self._record_task_log(state, task, None,
@@ -1569,6 +1644,10 @@ class CEDOrchestrator:
 
         def _build_task(slot: int, adapter) -> AgentTask:
             return AgentTask(
+                task_id=self._deterministic_task_id(
+                    state, adapter.provider_id, DialogPhase.RATIFICATION,
+                    AgentRole.FINAL_EVALUATOR, TaskKind.COUNCIL_RATIFICATION,
+                    state.round_number, slot, round_index),
                 session_id=state.session_id,
                 agent_id=adapter.provider_id,          # the provider IS this council member
                 role=AgentRole.FINAL_EVALUATOR,
@@ -1805,7 +1884,8 @@ class CEDOrchestrator:
 
     def _deterministic_move_id(
         self, state: SessionState, agent_id: str, phase: DialogPhase,
-        role: AgentRole, task_kind: TaskKind, slot_index: int, attempt_index: int,
+        role: AgentRole, task_kind: TaskKind,
+        round_index: int, slot_index: int, attempt_index: int,
     ) -> str:
         """
         Deterministic, unique move id derived ONLY from stable task identity —
@@ -1813,27 +1893,68 @@ class CEDOrchestrator:
         return order may differ; this keeps move ids (and therefore scoring seeds,
         winners, leaderboard) identical regardless.
 
-        Identity = session_id | phase | round_number | agent_id | assigned_role |
-                   task_kind | slot_index | attempt_index.
+        Uses the same explicit, canonical identity fields as task_id, with only
+        a distinct versioned namespace/prefix. The round comes from the
+        corresponding AgentTask/phase call, never mutable state.round_number.
         """
-        key = "|".join([
-            state.session_id, phase.value, str(state.round_number),
-            agent_id, role.value, task_kind.value,
-            str(slot_index), str(attempt_index),
-        ])
-        return "move_" + format(stable_hash(key), "x")[:12]
+        canonical = json.dumps(
+            ["ced_move_v1", state.session_id, phase.value, round_index,
+             agent_id, role.value, task_kind.value, slot_index, attempt_index],
+            ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+        )
+        return "move_" + format(stable_hash(canonical), "064x")
+
+    def _deterministic_task_id(
+        self, state: SessionState, agent_id: str, phase: DialogPhase,
+        role: AgentRole, task_kind: TaskKind,
+        round_index: int, slot_index: int, attempt_index: int,
+    ) -> str:
+        """
+        Deterministic task id. Because task_id is now a LOAD-BEARING event
+        identity (the `task.created` idempotency key), it is encoded robustly
+        rather than as a short "|"-joined digest:
+
+        - versioned namespace ("ced_task_v1") so the identity scheme can evolve;
+        - canonical JSON array (type-preserving, delimiter-collision-free — a
+          component containing "|" can never alias another tuple);
+        - full 64-hex SHA-256 (no truncation);
+        - task_kind is MANDATORY (never a synthetic "none");
+        - round_index is EXPLICIT (callers thread the real phase round, e.g.
+          run_opening_phase(round_index=2) / gather_registry_phase_round) so
+          two rounds never collide when agent/role/slot/attempt coincide —
+          never the mutable state.round_number read implicitly.
+
+        models.py keeps its random default for compat; CED stamps explicitly,
+        exactly like move.move_id.
+        """
+        canonical = json.dumps(
+            ["ced_task_v1", state.session_id, phase.value, round_index,
+             agent_id, role.value, task_kind.value, slot_index, attempt_index],
+            ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+        )
+        return "task_" + format(stable_hash(canonical), "064x")
 
     def _dispatch(self, state: SessionState, agent: SocraticAgent,
                   role: AgentRole, phase: DialogPhase,
                   context: dict, extra_schema: dict,
                   task_kind: TaskKind, slot_index: int = 0,
-                  attempt_index: int = 0) -> AgentMove:
-        """Build an AgentTask, dispatch to the agent, record the move."""
+                  attempt_index: int = 0,
+                  round_index: Optional[int] = None) -> AgentMove:
+        """Build an AgentTask, dispatch to the agent, record the move.
+
+        round_index is the EXPLICIT phase round (falls back to
+        state.round_number). It must reach both the task identity and the
+        AgentTask.round_number so different phase rounds never collide."""
+        ri = round_index if round_index is not None else state.round_number
         schema = {"_role": role.value, **extra_schema}
         move_id = self._deterministic_move_id(
-            state, agent.agent_id, phase, role, task_kind, slot_index, attempt_index
+            state, agent.agent_id, phase, role, task_kind,
+            ri, slot_index, attempt_index
         )
         task = AgentTask(
+            task_id=self._deterministic_task_id(
+                state, agent.agent_id, phase, role, task_kind,
+                ri, slot_index, attempt_index),
             session_id=state.session_id,
             agent_id=agent.agent_id,
             role=role,
@@ -1841,11 +1962,12 @@ class CEDOrchestrator:
             question=state.question,
             context=context,
             output_schema=schema,
-            round_number=state.round_number,
+            round_number=ri,
             task_kind=task_kind,
             slot_index=slot_index,
             attempt_index=attempt_index,
         )
+        self._emit_task_created(state, task)   # at creation, before execution
         move = agent.execute(task)
         # Deterministic identity (drives reproducible shadow-scoring seeds).
         move.move_id = move_id
@@ -1890,6 +2012,92 @@ class CEDOrchestrator:
             debug_context=(dict(task.context) if self.debug_task_log else None),
         )
         state.task_log.append(entry)
+        # Council Live View: provider.failed is an EXECUTION-OUTCOME fact and
+        # belongs here (task.created is emitted at CONSTRUCTION time, before
+        # dispatch — see _emit_task_created). Legacy entries carry
+        # provider_id=None → no provider events on the in-process path.
+        if (self._event_observer is not None
+                and entry.task_kind in _OBSERVED_TASK_KINDS
+                and entry.provider_id is not None
+                and entry.provider_status is not None
+                and entry.provider_status != ProviderStatus.OK):
+            run_id = derive_projection_run_id(state.session_id)
+            category = _FAILURE_CATEGORY_BY_STATUS.get(
+                entry.provider_status, "unknown")
+            self._emit_event(
+                CedEventType.PROVIDER_FAILED,
+                lambda entry=entry, run_id=run_id, category=category:
+                build_draft(
+                    event_type=CedEventType.PROVIDER_FAILED,
+                    session_id=state.session_id,
+                    run_id=run_id,
+                    payload={
+                        "task_id": entry.task_id,
+                        "provider_id": entry.provider_id,
+                        "status": entry.provider_status.value,
+                        "failure_category": category,
+                        "attempt_index": entry.attempt_index,
+                    },
+                ),
+            )
+
+    def _emit_task_created(self, state: SessionState, task: AgentTask) -> None:
+        """Project task.created at CONSTRUCTION time — before agent.execute /
+        registry.run_adapter — so the fact ("this task was created") is true
+        even if the execution then throws and no TaskLogEntry is ever written.
+        OBSERVED kinds only. Emitted exactly once per task; the task-log
+        chokepoint no longer emits creation events."""
+        if (self._event_observer is None
+                or task.task_kind not in _OBSERVED_TASK_KINDS):
+            return
+        run_id = derive_projection_run_id(state.session_id)
+        self._emit_event(
+            CedEventType.TASK_CREATED,
+            lambda: build_draft(
+                event_type=CedEventType.TASK_CREATED,
+                session_id=state.session_id,
+                run_id=run_id,
+                payload={
+                    "task_id": task.task_id,
+                    "task_kind": task.task_kind.value,
+                    "agent_id": task.agent_id,
+                    "slot_index": task.slot_index,
+                    "attempt_index": task.attempt_index,
+                    "schema_name": str(
+                        task.output_schema.get("_role", task.role.value)),
+                    "context_hash": self._context_hash(task.context),
+                },
+            ),
+        )
+
+    def _build_move_validated_event(
+        self, state: SessionState, task: AgentTask, move: AgentMove,
+        raw_text: str,
+    ) -> CedEventDraft:
+        """Build the move.validated draft, including the canonicalization +
+        digests, INSIDE the _emit_event isolation choke — so a non-finite
+        value in move.content raises here (ValueError from allow_nan=False)
+        and is recorded as an isolated observer failure, never a CED failure."""
+        validated_json = json.dumps(
+            move.content, sort_keys=True, ensure_ascii=False,
+            separators=(",", ":"), allow_nan=False,
+        )
+        return build_draft(
+            event_type=CedEventType.MOVE_VALIDATED,
+            session_id=state.session_id,
+            run_id=derive_projection_run_id(state.session_id),
+            phase=task.phase.value,
+            round_index=task.round_number,
+            payload={
+                "move_id": move.move_id,
+                "task_id": task.task_id,
+                "agent_id": task.agent_id,
+                "role": task.role.value,
+                "confidence": move.confidence,
+                "raw_digest": sha256_hex(raw_text),
+                "validated_digest": sha256_hex(validated_json),
+            },
+        )
 
     # ── Phase methods ─────────────────────────────────────────────────────────
 
@@ -1916,6 +2124,7 @@ class CEDOrchestrator:
             context={},
             extra_schema={},
             task_kind=TaskKind.SOCRATIC_QUESTION,
+            round_index=round_index,
         )
 
     def run_initial_response_phase(self, session_id: str) -> List[AgentMove]:
@@ -2330,6 +2539,7 @@ class CEDOrchestrator:
 
         async def _one(phase, move, voter, slot):
             task = self._build_move_score_task(state, move, voter.provider_id, phase, slot)
+            self._emit_task_created(state, task)   # before run_adapter
             astate = AgentState(agent_id=voter.provider_id,
                                 primary_role=AgentRole.FINAL_EVALUATOR,
                                 assigned_role=AgentRole.FINAL_EVALUATOR)
@@ -2713,6 +2923,7 @@ class CEDOrchestrator:
         async def _one(draft, voter, section, content, vslot):
             task = self._build_section_score_task(
                 state, draft, section, voter.provider_id, content, vslot)
+            self._emit_task_created(state, task)   # before run_adapter
             astate = AgentState(agent_id=voter.provider_id,
                                 primary_role=AgentRole.FINAL_EVALUATOR,
                                 assigned_role=AgentRole.FINAL_EVALUATOR)
@@ -2824,6 +3035,10 @@ class CEDOrchestrator:
                 "draft_under_revision. Keep what is genuinely strong; rewrite "
                 "what is weak. Do not change things merely to look different.")
             task = AgentTask(
+                task_id=self._deterministic_task_id(
+                    state, agent_id, DialogPhase.SYNTHESIS,
+                    AgentRole.SYNTHESIZER, TaskKind.TREE_REVISION,
+                    state.round_number, i, 0),
                 session_id=state.session_id, agent_id=agent_id,
                 role=AgentRole.SYNTHESIZER, phase=DialogPhase.SYNTHESIS,
                 question=state.question, context=context,
@@ -2852,7 +3067,7 @@ class CEDOrchestrator:
             move = resp.parsed_move
             move.move_id = self._deterministic_move_id(
                 state, agent_id, DialogPhase.SYNTHESIS, AgentRole.SYNTHESIZER,
-                TaskKind.TREE_REVISION, i, 0)
+                TaskKind.TREE_REVISION, task.round_number, i, 0)
             move.task_kind = TaskKind.TREE_REVISION
             move.slot_index = i
             move.attempt_index = 0

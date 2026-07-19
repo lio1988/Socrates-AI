@@ -314,10 +314,19 @@ def test_attest_resolution_refuses_unmatched_windows(attest_script, tmp_path,
 # live in production, not only against duck-typed fixtures.)
 # --------------------------------------------------------------------------- #
 
-def _with_modified_card(state, **updates):
-    """Copy the session with ONE real scorecard modified (fixture untouched)."""
+def _with_modified_card(state, final, **updates):
+    """Copy the session with one tree-referenced real scorecard modified."""
+    log = final.audit_summary["deliberation_tree"]["expansion_log"]
+    tree_draft_ids = {
+        draft_id
+        for entry in log if entry.get("ok") is True
+        for draft_id in (entry["parent"], entry["child"])
+    }
     cards = list(state.draft_scorecards)
-    index = next(i for i, card in enumerate(cards) if card.section_scores)
+    index = next(
+        i for i, card in enumerate(cards)
+        if card.draft_id in tree_draft_ids and card.section_scores
+    )
     cards[index] = cards[index].model_copy(update=updates)
     return state.model_copy(update={"draft_scorecards": cards}), cards[index]
 
@@ -326,7 +335,7 @@ def test_non_ok_scorecard_with_scores_fails_closed(live_session):
     from backend.dialogues.models import ProviderStatus
     state, final = live_session
     broken_state, card = _with_modified_card(
-        state, provider_status=ProviderStatus.ERROR)
+        state, final, provider_status=ProviderStatus.ERROR)
     assert card.section_scores                       # contradiction is real
     with pytest.raises(ValueError, match="non-OK scorecard"):
         extract_tree_revision_observations(broken_state, final)
@@ -338,7 +347,7 @@ def test_non_ok_scorecard_without_scores_is_ignored_not_fabricated(
     state, final = live_session
     baseline = extract_tree_revision_observations(state, final)
     skipped_state, card = _with_modified_card(
-        state, provider_status=ProviderStatus.ERROR, section_scores=[])
+        state, final, provider_status=ProviderStatus.ERROR, section_scores=[])
     observations = extract_tree_revision_observations(skipped_state, final)
     # The failed voter's scores simply vanish from the matched intersection:
     # never an error, never a fabricated zero, never MORE evidence.
