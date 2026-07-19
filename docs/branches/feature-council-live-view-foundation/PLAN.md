@@ -13,7 +13,7 @@ See [README.md](README.md). In scope: contracts + in-memory ledger + reveal /
 role-display + tests + docs. Out of scope (later slices): emission hook,
 transport, frontend, receipt/conversation projection, OpenRouterAdapter.
 
-## Implementation steps
+## Ordered implementation steps
 
 - [x] Slice 0 foundation: taxonomy, envelope, ledger, reveal, role display,
       tests, docs (`f8124d0`).
@@ -38,6 +38,22 @@ transport, frontend, receipt/conversation projection, OpenRouterAdapter.
       hook in `ced.py`, failure-isolated, byte-identical `FinalResponse`
       golden test.
 
+## Completed
+
+- The runtime-inert projection contracts, ledger, reveal policy, strict role
+  display, architecture documentation, and adversarial review rounds 1–4 are
+  complete at the verified implementation head.
+- PR #71 is open as a Draft and this implementation branch is review-only.
+
+## Remaining / deferred work
+
+- Diagnose the repository-level GitHub Actions `startup_failure` before
+  landing.
+- Re-run the stack landing audit after Actions and branch-documentation gates
+  are green.
+- Observer emission, phase events, execution events, transport, and frontend
+  remain separate stacked or future slices; none belongs in this branch.
+
 ## Validation gates (every commit)
 
 1. Focused: the three `test_projection_*` files green.
@@ -48,8 +64,7 @@ transport, frontend, receipt/conversation projection, OpenRouterAdapter.
 
 ## Stop conditions
 
-- Stop after each review round's commit + push; await the next review.
-- Do NOT open the Draft PR as "ready" or start Slice 1 until the foundation
-  review signs off.
+- Stop after this docs-only review fix and keep the branch frozen.
+- Do not make PR #71 ready or merge it until the landing audit is green.
 - Never amend or force-push; never touch the sibling dirty worktree's
   OpenClaw files.
