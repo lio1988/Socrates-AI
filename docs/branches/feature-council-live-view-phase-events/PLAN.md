@@ -2,50 +2,68 @@
 
 ## Success criterion
 
-See [README.md](README.md): full-coverage `phase.started` via one wrapper,
-canonical parity with `phase_history + [state.phase]`, no duplicates, no
-`phase_history` change, disabled/raising byte-identical.
+Provide full-coverage `phase.started` events through one CED wrapper, with
+canonical parity to `phase_history + [state.phase]`, no duplicates, no
+`phase_history` semantic change, and byte-identical results when the observer is
+disabled or raises.
 
-## Ordered steps
+## Scope
 
-1. [x] Branch off frozen observer tip `03ed887`; branch docs with the
-       code-grounded seam design (MEMORY.md).
-2. [x] **Design review gate** — APPROVED with two required adjustments:
-       (a) no-op suppression IN CED (approved signature with explicit
-       `round_index` + `initial_entry`/fresh-opening detection; never ledger
-       dedupe; never `state.round_number`); (b) registry RATIFICATION moved
-       to its true entry point (before `run_council_ratification`), COMPLETE
-       stays in `_build_council_final`.
-3. [x] Implemented: `_advance_phase` wrapper (canonical mutation FIRST,
-       suppressed-no-op check, emit SECOND via `_emit_event`); all 11 sites
-       replaced; registry RATIFICATION timing moved; opening passes its
-       explicit `round_index` + `initial_entry=True` (registry generic site:
-       `initial_entry=(phase == OPENING)`); `models.py` untouched.
-4. [x] Golden tests extended (16 new): exact canonical 8-phase sequence
-       (both paths); parity vs `phase_history + [state.phase]`;
-       phase-before-its-roles interleaving; run.started before first
-       phase / COMPLETE before run.completed; initial OPENING exactly once;
-       readiness fallback → zero phase events; mid-phase quorum fallback →
-       prefix up to blocked phase, no RATIFICATION/COMPLETE; no-op repeat →
-       no event AND no failure on raising observer; opening round_index=2
-       flows into the event; static guard: exactly ONE `.advance_phase(`
-       call site in ced.py; failure sequences locked EMPIRICALLY (legacy 26,
-       registry 25, interleaved order built from roles-per-phase
-       [1,3,2,3,1,4,1] / [1,3,2,3,1,4,0]).
-5. [x] Gates: golden 42/42; four-file focused 236; full `tests_dialogues`
-       **1799 passed**. **← STOP before commit for review.**
-6. [ ] Commit (`Add phase transition events to CED observer`), push, stacked
-       Draft PR (base: observer-hook) — after review.
+- Add the isolated `_advance_phase` event seam in `backend/dialogues/ced.py`.
+- Route every CED phase transition through that seam.
+- Cover legacy, registry, fallback, repeated-phase, and raising-observer paths.
+- Maintain this branch's documentation under
+  `docs/branches/feature-council-live-view-phase-events/`.
 
-## Validation gates (every commit)
+## Non-goals
 
-1. Golden file green; four-file focused green.
-2. Full `tests_dialogues` green.
-3. `git diff --cached --check` clean; only intended files.
-4. `models.py` untouched; `phase_history` parity in authority snapshot.
+- No changes to `backend/dialogues/models.py`.
+- No redesign of provider, canonical state, or `phase_history` semantics.
+- No execution-level task or move events; those belong to the next stack layer.
+- No landing, retargeting, or readiness-state changes for the stacked PRs.
+
+## Ordered implementation steps
+
+1. Branch from the frozen observer-hook implementation head.
+2. Approve the seam design, including CED-side no-op suppression and correct
+   registry RATIFICATION timing.
+3. Implement `_advance_phase` and replace all direct CED phase-advance sites.
+4. Extend golden coverage for exact phase sequences, parity, ordering,
+   fallbacks, repeated no-ops, explicit round identity, and observer isolation.
+5. Run the golden, focused, and full dialogue validation gates.
+6. Commit and push the phase-events implementation as stacked Draft PR #73.
+7. Freeze the implementation and permit only PR-scoped review or branch-doc
+   corrections.
+
+## Validation gates
+
+1. Golden observer suite: **42 passed**.
+2. Four focused observer/projection files: **236 passed**.
+3. Full `tests_dialogues`: **1799 passed**.
+4. `git diff --check` clean; only intended implementation/test/docs files.
+5. `models.py` untouched and `phase_history` authority parity preserved.
+6. Disabled and raising observers do not alter canonical outcomes.
 
 ## Stop conditions
 
-- STOP now for seam-design review (no implementation).
-- STOP before commit after implementation.
-- Never amend/force-push; PR #71/#72 unmerged; observer branch frozen.
+- Stop on any unexpected production/test change after the verified
+  implementation head.
+- Stop if a documentation-only review fix touches anything outside this
+  branch's documentation folder.
+- Never amend, rebase, force-push, merge, retarget, or mark the PR ready during
+  a frozen-stack audit.
+
+## Completed
+
+- The approved phase seam, all transition call-site replacements, registry
+  RATIFICATION timing, and the complete test matrix were implemented.
+- PR #73 was opened as a Draft on the observer-hook branch and frozen after
+  implementation verification.
+- The implementation gates above passed at verified implementation head
+  `e882dbd8df1af8effbd21fee86b4b3ce8e34deaa`.
+
+## Remaining / deferred work
+
+- Diagnose the repository-level GitHub Actions `startup_failure`.
+- Re-run the read-only landing audit after Actions can start jobs.
+- Actual bottom-up landing remains deferred pending an explicit GO.

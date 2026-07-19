@@ -1,58 +1,79 @@
 # PRESENT — feature/council-live-view-phase-events
 
-Exact current state for safe resumption. Keep current.
-
-## Branch / HEAD
+## Branch
 
 - Branch: `feature/council-live-view-phase-events`
-- Base / current HEAD: `03ed887` (frozen observer-hook tip; nothing committed
-  on this branch yet).
-- Stacked PRs: #71 (foundation → main, draft) and #72 (observer-hook →
-  foundation, draft, head `03ed887`) — both OPEN, both unmerged.
-- Worktree: `C:\Users\spirc\Desktop\Socrates-AI-live-view-foundation`.
+- Pull request: #73, stacked on
+  `feature/council-live-view-observer-hook`
+- Worktree: `C:\Users\spirc\Desktop\Socrates-AI-live-view-foundation`
 
-## Completed work (this branch)
+## Verified implementation head
 
-- Seam design APPROVED (with CED-side no-op suppression + registry
-  RATIFICATION timing move) and IMPLEMENTED per the approved signature.
-- `ced.py`: `_advance_phase` wrapper (the ONLY `state.advance_phase` caller
-  — static-guard-tested); 11 sites replaced; registry enters RATIFICATION
-  before `run_council_ratification`, `_build_council_final` keeps only
-  COMPLETE (final `phase_history` unchanged — byte/authority tests prove it).
-- Golden tests: 16 new phase-event tests (see PLAN step 4 for the list).
+`e882dbd8df1af8effbd21fee86b4b3ce8e34deaa`
 
-## Emitted sequences (empirical, offline mock)
+This commit is the last code/test commit covered by the exact validation results
+below. The actual branch head must be resolved dynamically with
+`git rev-parse HEAD`. The verified implementation head must be an ancestor of
+that dynamic head, and every intervening change must be confined to
+`docs/branches/feature-council-live-view-phase-events/`.
 
-- LEGACY run stream (25 events): run.started · phase.started[opening] ·
-  1 role · phase.started[initial_response] · 3 roles ·
-  phase.started[elenchus] · 2 roles · phase.started[reflection] · 3 roles ·
-  phase.started[reconstruction] · 1 role · phase.started[synthesis] ·
-  4 roles · phase.started[ratification] · 1 role ·
-  phase.started[complete] · run.completed.
-- REGISTRY run stream (24 events): same through synthesis; then
-  phase.started[ratification] (BEFORE council work; NO evaluator role) ·
-  phase.started[complete] · run.completed.
-- Readiness fallback: run.started · run.completed (zero phase events —
-  documented exception). Mid-phase quorum fallback: canonical prefix up to
-  and including the blocked phase; never RATIFICATION/COMPLETE.
-- Raising-ledger failure sequences (exact, empirically locked): legacy 26,
-  registry 25, interleaved in the same order as the enabled streams.
+## Completed work
 
-## Uncommitted (awaiting review, before commit)
+- Added the isolated `_advance_phase` wrapper as the sole CED
+  `state.advance_phase` caller.
+- Routed all 11 phase-transition sites through the wrapper while preserving
+  canonical mutation before observer emission.
+- Moved registry RATIFICATION to its true entry point while keeping COMPLETE in
+  `_build_council_final`.
+- Covered exact legacy/registry phase sequences, role interleaving, fallbacks,
+  repeated no-ops, explicit round identity, and raising-observer isolation.
+- Preserved `phase_history`, final-response bytes, and authority-state parity.
 
-- `backend/dialogues/ced.py` (wrapper + 11 site replacements)
-- `tests_dialogues/test_ced_observer_golden.py` (16 new tests)
-- this docs folder
+## Remaining / deferred work
 
-## Tests — exact results
+- Resolve the repository-level GitHub Actions startup failure and repeat the
+  landing audit.
+- Actual landing remains deferred until explicit approval.
+- Execution-level task/move events belong to PR #74, not this branch.
 
-- Golden file: **42 passed**. Four-file focused: **236 passed**.
-- Full `tests_dialogues`: **1799 passed** (byte-identical FinalResponse and
-  authority-state parity re-proven — the RATIFICATION timing move changed
-  nothing canonical).
+## Changed files
 
-## Blockers / next safe step
+The verified implementation changed:
 
-- **STOP before commit** for review of the implementation diff + sequences.
-- After sign-off: commit `Add phase transition events to CED observer`,
-  push, stacked Draft PR (base: `feature/council-live-view-observer-hook`).
+- `backend/dialogues/ced.py`
+- `tests_dialogues/test_ced_observer_golden.py`
+- `docs/branches/feature-council-live-view-phase-events/`
+
+Any commits after the verified implementation head may change only the final
+documentation path above.
+
+## Exact test results
+
+- Golden observer suite: **42 passed**.
+- Four focused observer/projection files: **236 passed**.
+- Full `tests_dialogues`: **1799 passed**.
+- `git diff --check`: clean.
+- FinalResponse bytes and authority-state parity: preserved.
+
+## Blockers
+
+- GitHub Actions run startup fails before job creation, so required hosted
+  checks cannot currently execute. This is an operational blocker, not a known
+  dialogue-test failure.
+
+## Worktree state
+
+The branch is expected to be clean after this documentation-only review fix.
+Verify dynamically with `git status --short`; do not store the current commit
+SHA as a self-referential literal.
+
+## Next safe step
+
+Diagnose the Actions `startup_failure` read-only, then repeat the landing audit
+without modifying or merging any Council Live View branch.
+
+## Frozen / review-only status
+
+PR #73 remains open, Draft, and frozen. Only documentation corrections or new
+findings exclusively within this PR's scope are permitted; no amend, rebase,
+force-push, retarget, readiness change, or merge.
