@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -34,8 +35,11 @@ def _utcnow() -> datetime:
 
 
 def _uid(prefix: str) -> str:
-    # Stable enough for local/offline dataset generation; not a security token.
-    return f"{prefix}{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    # Windows clocks may return the same timestamp for adjacent records. Keep
+    # the readable timestamp, but add an opaque suffix so distinct records
+    # cannot collapse when downstream miners index them by ID.
+    timestamp = _utcnow().strftime("%Y%m%d%H%M%S%f")
+    return f"{prefix}{timestamp}_{uuid.uuid4().hex}"
 
 
 _SECRET_PATTERN = re.compile(r"(sk|nvapi|xai|ghp|github_pat)-[A-Za-z0-9_\-]{6,}")

@@ -5,6 +5,10 @@ The triad loop ties pipeline, health audit, learner state, interaction cycle, an
 safe CED feedback into one deterministic integration facade.
 """
 
+import uuid
+from datetime import datetime, timezone
+
+from backend.dialogues import learning_foundation as foundation_mod
 from backend.dialogues.learning_live_learner import LearnerState
 from backend.dialogues.learning_triad_loop import (
     TriadLoopPolicy,
@@ -116,13 +120,40 @@ def test_build_ced_feedback_packet_contains_safe_fields():
     assert "interaction_cycle_id" in packet.evidence
 
 
-def test_triad_loop_is_deterministic_for_same_inputs_and_empty_prior_state():
+def test_triad_loop_is_deterministic_for_same_inputs_and_empty_prior_state(
+        monkeypatch):
+    frozen = datetime(2026, 7, 19, tzinfo=timezone.utc)
+    ids = iter(range(1, 20))
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen
+
+    monkeypatch.setattr(foundation_mod, "datetime", FrozenDateTime)
+    monkeypatch.setattr(
+        foundation_mod.uuid, "uuid4", lambda: uuid.UUID(int=next(ids)))
+
     result_a = run_triad_learning_loop(_state(), policy=TriadLoopPolicy.exploratory(), metadata={"same": True})
     result_b = run_triad_learning_loop(_state(), policy=TriadLoopPolicy.exploratory(), metadata={"same": True})
 
+    trace_ids_a = {trace.trace_id for trace in result_a.pipeline.dataset.traces}
+    trace_ids_b = {trace.trace_id for trace in result_b.pipeline.dataset.traces}
+    assert len(trace_ids_a) == len(result_a.pipeline.dataset.traces)
+    assert len(trace_ids_b) == len(result_b.pipeline.dataset.traces)
+    assert trace_ids_a.isdisjoint(trace_ids_b)
     assert result_a.loop_id == result_b.loop_id
     assert result_a.feedback_packet.packet_id == result_b.feedback_packet.packet_id
     assert result_a.learner_after_hash == result_b.learner_after_hash
+
+    semantic_change = run_triad_learning_loop(
+        _state("sess_triad_changed"),
+        policy=TriadLoopPolicy.exploratory(),
+        metadata={"same": True},
+    )
+    assert semantic_change.loop_id != result_a.loop_id
+    assert semantic_change.feedback_packet.packet_id != result_a.feedback_packet.packet_id
+    assert semantic_change.learner_after_hash != result_a.learner_after_hash
 
 
 def test_triad_loop_result_serializes_to_json():
