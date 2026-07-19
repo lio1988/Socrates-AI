@@ -46,6 +46,7 @@ from backend.dialogues import (
     SocraticAgent,
     build_council,
 )
+from backend.dialogues.models import DialogPhase
 from backend.dialogues.projection import (
     CedEventObserver,
     CedEventType,
@@ -374,11 +375,12 @@ class TestObserverEmission:
         assert sess[0].sequence == 1
         assert sess[0].payload == {"question": QUESTION}
 
-        # Run stream: run.started, role.assigned…, run.completed — contiguous.
+        # Run stream: run.started, then interleaved phase.started /
+        # role.assigned, then run.completed — contiguous sequences.
         types = [e.event_type.value for e in run]
         assert types[0] == "run.started"
         assert types[-1] == "run.completed"
-        assert set(types[1:-1]) == {"role.assigned"}
+        assert set(types[1:-1]) == {"role.assigned", "phase.started"}
         assert [e.sequence for e in run] == list(range(1, len(run) + 1))
         assert observer.failures == ()
 
@@ -478,9 +480,26 @@ class TestAuthorityStateParity:
         assert snap_absent["assembled_answer"] is not None
 
 
+def _expected_failure_sequence(roles_per_phase):
+    """Interleaved attempt order for a raising ledger: run lifecycle + one
+    phase.started per entered phase (7 working phases + COMPLETE) with that
+    phase's role.assigned attempts in between. Empirically locked from the
+    real emitted sequences (legacy roles [1,3,2,3,1,4,1] → 26 attempts;
+    registry [1,3,2,3,1,4,0] — council ratification has no evaluator role —
+    → 25 attempts)."""
+    seq = ["session.created", "run.started"]
+    for count in roles_per_phase:
+        seq.append("phase.started")
+        seq.extend(["role.assigned"] * count)
+    seq.append("phase.started")      # COMPLETE
+    seq.append("run.completed")
+    return seq
+
+
 @pytest.mark.parametrize(
-    "run_observed,expected_role_failures",
-    [(run_legacy_observed, 15), (run_registry_observed, 14)],
+    "run_observed,roles_per_phase",
+    [(run_legacy_observed, [1, 3, 2, 3, 1, 4, 1]),
+     (run_registry_observed, [1, 3, 2, 3, 1, 4, 0])],
     ids=_RUNNER_IDS,
 )
 class TestExactFailureSequence:
@@ -489,17 +508,198 @@ class TestExactFailureSequence:
     prior failures. Locked as an exact ordered sequence, not just non-empty."""
 
     def test_raising_ledger_failure_sequence_is_exact(
-        self, run_observed, expected_role_failures
+        self, run_observed, roles_per_phase
     ):
         observer = CedEventObserver(_RaisingLedger())
         run_observed(observer, "obs_fail_seq")
         types = [f.event_type for f in observer.failures]
-        expected = (["session.created", "run.started"]
-                    + ["role.assigned"] * expected_role_failures
-                    + ["run.completed"])
+        expected = _expected_failure_sequence(roles_per_phase)
         assert types == expected
-        assert len(types) == expected_role_failures + 3
+        assert len(types) == sum(roles_per_phase) + 8 + 3
         assert all(f.error_type == "RuntimeError" for f in observer.failures)
+
+
+_CANONICAL_PHASE_SEQUENCE = [
+    "opening", "initial_response", "elenchus", "reflection",
+    "reconstruction", "synthesis", "ratification", "complete",
+]
+
+
+def _phase_events(ledger, sid):
+    run_id = derive_projection_run_id(sid)
+    return [e for e in ledger.events_for_stream(run_stream_id(run_id))
+            if e.event_type.value == "phase.started"]
+
+
+@pytest.mark.parametrize("run_observed,run_baseline", _RUNNERS,
+                         ids=_RUNNER_IDS)
+class TestPhaseEvents:
+    """phase.started semantics: the canonical SessionState.phase just ENTERED
+    this phase and its work can begin — full coverage on both paths."""
+
+    def test_exact_canonical_phase_sequence(self, run_observed, run_baseline):
+        sid = "ph_seq"
+        observer = CedEventObserver(EventLedger())
+        run_observed(observer, sid)
+        assert [e.phase for e in _phase_events(observer.ledger, sid)] == \
+               _CANONICAL_PHASE_SEQUENCE
+
+    def test_parity_with_phase_history_plus_current(self, run_observed,
+                                                    run_baseline):
+        sid = "ph_parity"
+        observer = CedEventObserver(EventLedger())
+        _, ced = run_observed(observer, sid)
+        state = ced.get_session(sid)
+        expected = [p.value for p in state.phase_history] + [state.phase.value]
+        assert [e.phase for e in _phase_events(observer.ledger, sid)] == expected
+
+    def test_each_phase_started_precedes_its_role_assignments(
+        self, run_observed, run_baseline
+    ):
+        sid = "ph_order"
+        observer = CedEventObserver(EventLedger())
+        run_observed(observer, sid)
+        run_id = derive_projection_run_id(sid)
+        events = observer.ledger.events_for_stream(run_stream_id(run_id))
+        started_seq = {e.phase: e.sequence for e in events
+                       if e.event_type.value == "phase.started"}
+        for e in events:
+            if e.event_type.value == "role.assigned":
+                assert started_seq[e.phase] < e.sequence, (
+                    f"role.assigned@{e.phase} at seq {e.sequence} precedes "
+                    f"phase.started at seq {started_seq[e.phase]}"
+                )
+
+    def test_run_lifecycle_brackets_phase_events(self, run_observed,
+                                                 run_baseline):
+        sid = "ph_bracket"
+        observer = CedEventObserver(EventLedger())
+        run_observed(observer, sid)
+        run_id = derive_projection_run_id(sid)
+        events = observer.ledger.events_for_stream(run_stream_id(run_id))
+        by_type = {e.event_type.value: e.sequence for e in events
+                   if e.event_type.value in ("run.started", "run.completed")}
+        phases = _phase_events(observer.ledger, sid)
+        # run.started precedes the first phase.started; COMPLETE precedes
+        # run.completed.
+        assert by_type["run.started"] < phases[0].sequence
+        assert phases[-1].phase == "complete"
+        assert phases[-1].sequence < by_type["run.completed"]
+
+    def test_initial_opening_emitted_exactly_once(self, run_observed,
+                                                  run_baseline):
+        sid = "ph_opening_once"
+        observer = CedEventObserver(EventLedger())
+        run_observed(observer, sid)
+        openings = [e for e in _phase_events(observer.ledger, sid)
+                    if e.phase == "opening"]
+        assert len(openings) == 1
+        assert openings[0].round_index == 0
+
+
+class TestPhaseEventFallbacks:
+    """Fallback semantics: phase.started only for phases whose runner began."""
+
+    @staticmethod
+    def _registry_ced(adapters, observer):
+        from backend.dialogues.provider_registry import CouncilProviderRegistry
+        provider = FakeProvider()
+        agents = [SocraticAgent(f"agent_{i}", provider) for i in range(4)]
+        reg = CouncilProviderRegistry()
+        for a in adapters:
+            reg.register(a)
+        return CEDOrchestrator(agents, provider, registry=reg,
+                               event_observer=observer)
+
+    def test_readiness_fallback_emits_no_phase_events(self):
+        from backend.dialogues.provider_registry import ScriptedMockProvider
+        sid = "ph_fb_ready"
+        observer = CedEventObserver(EventLedger())
+        ced = self._registry_ced([ScriptedMockProvider("mock_a")], observer)
+        final = asyncio.run(ced.run_registry_session(QUESTION,
+                                                     session_id=sid))
+        assert final.ratification_status == "quorum_failed"
+        run_id = derive_projection_run_id(sid)
+        types = [e.event_type.value for e in
+                 observer.ledger.events_for_stream(run_stream_id(run_id))]
+        # No phase runner ever began: state.phase=OPENING is a construction
+        # default, not evidence of execution (the documented exception).
+        assert types == ["run.started", "run.completed"]
+        assert _phase_events(observer.ledger, sid) == []
+
+    def test_mid_phase_fallback_includes_only_started_phases(self):
+        from backend.dialogues.provider_registry import (
+            RateLimitedProvider, ScriptedMockProvider, TimeoutScriptedProvider,
+        )
+        sid = "ph_fb_quorum"
+        observer = CedEventObserver(EventLedger())
+        ced = self._registry_ced(
+            [ScriptedMockProvider("mock_a"), TimeoutScriptedProvider(),
+             RateLimitedProvider()],
+            observer,
+        )
+        final = asyncio.run(ced.run_registry_session(QUESTION,
+                                                     session_id=sid))
+        assert final.ratification_status == "quorum_failed"
+        phases = [e.phase for e in _phase_events(observer.ledger, sid)]
+        # The blocked phase DID start (advance happens before its tasks);
+        # nothing after it — and never RATIFICATION/COMPLETE.
+        assert phases, "the blocked phase must appear as started"
+        assert phases == _CANONICAL_PHASE_SEQUENCE[:len(phases)]
+        assert "ratification" not in phases
+        assert "complete" not in phases
+        run_id = derive_projection_run_id(sid)
+        types = [e.event_type.value for e in
+                 observer.ledger.events_for_stream(run_stream_id(run_id))]
+        assert types[-1] == "run.completed"
+
+
+class TestPhaseNoOpSuppression:
+    """Same-phase re-entry is suppressed in CED — never via ledger dedupe —
+    so enabled-success and enabled-failure agree on attempts."""
+
+    def test_repeat_same_phase_adds_no_event(self):
+        sid = "ph_noop_ok"
+        observer = CedEventObserver(EventLedger())
+        final, ced = run_legacy_observed(observer, sid)
+        state = ced.get_session(sid)
+        before = len(_phase_events(observer.ledger, sid))
+        ced._advance_phase(state, state.phase)      # COMPLETE → COMPLETE no-op
+        assert len(_phase_events(observer.ledger, sid)) == before
+
+    def test_repeat_same_phase_adds_no_failure_on_raising_observer(self):
+        observer = CedEventObserver(_RaisingLedger())
+        ced = _legacy_council(observer)
+        state = ced.create_session(QUESTION, session_id="ph_noop_raise")
+        ced._advance_phase(state, DialogPhase.OPENING, initial_entry=True)
+        assert len(observer.failures) == 1          # the fresh entry attempt
+        ced._advance_phase(state, DialogPhase.OPENING)   # no-op re-entry
+        assert len(observer.failures) == 1, (
+            "a suppressed no-op must not even ATTEMPT an emission"
+        )
+
+    def test_opening_round_index_flows_into_phase_event(self):
+        sid = "ph_round2"
+        observer = CedEventObserver(EventLedger())
+        ced = _legacy_council(observer)
+        ced.create_session(QUESTION, session_id=sid)
+        ced.run_opening_phase(sid, round_index=2)
+        openings = [e for e in _phase_events(observer.ledger, sid)
+                    if e.phase == "opening"]
+        assert len(openings) == 1
+        assert openings[0].round_index == 2
+
+    def test_static_guard_single_advance_phase_caller(self):
+        import pathlib
+        import re
+        ced_src = (pathlib.Path(__file__).resolve().parent.parent
+                   / "backend" / "dialogues" / "ced.py").read_text(
+                       encoding="utf-8")
+        callers = re.findall(r"\.advance_phase\(", ced_src)
+        assert len(callers) == 1, (
+            "state.advance_phase must be called ONLY inside _advance_phase — "
+            f"found {len(callers)} call sites"
+        )
 
 
 class TestObserverIsolationUnit:

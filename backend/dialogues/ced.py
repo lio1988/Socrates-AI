@@ -473,6 +473,57 @@ class CEDOrchestrator:
                     ),
                 )
 
+    def _advance_phase(
+        self,
+        state: SessionState,
+        new_phase: DialogPhase,
+        *,
+        round_index: int = 0,
+        initial_entry: bool = False,
+    ) -> None:
+        """The ONLY caller of state.advance_phase (canonical mutation FIRST),
+        plus the phase.started projection (failure-isolated, SECOND).
+
+        Locked semantics: phase.started means "the canonical SessionState.phase
+        just ENTERED this phase and its work can begin" — never a no-op
+        re-entry. Same-phase calls are suppressed HERE, in CED (never via
+        ledger dedupe, which would make enabled-success and enabled-failure
+        modes disagree on how many emissions were attempted). The single
+        exception is the fresh initial OPENING entry: state is CONSTRUCTED at
+        OPENING, so the very first opening advance is a no-op transition yet a
+        real phase start — detected strictly (initial_entry flag AND pristine
+        state) and emitted exactly once. round_index is the explicit
+        phase-entry identity (the opening round_index parameter), NOT
+        state.round_number.
+        """
+        previous = state.phase
+
+        fresh_opening_entry = (
+            initial_entry
+            and previous == DialogPhase.OPENING
+            and new_phase == DialogPhase.OPENING
+            and not state.phase_history
+            and not state.role_history
+            and not state.moves
+        )
+
+        state.advance_phase(new_phase)
+
+        if previous == new_phase and not fresh_opening_entry:
+            return
+
+        self._emit_event(
+            CedEventType.PHASE_STARTED,
+            lambda: build_draft(
+                event_type=CedEventType.PHASE_STARTED,
+                session_id=state.session_id,
+                run_id=derive_projection_run_id(state.session_id),
+                phase=new_phase.value,
+                round_index=round_index,
+                payload={},
+            ),
+        )
+
     # ── Council Live View emission (Slice 1) ──────────────────────────────────
 
     def _emit_event(
@@ -956,7 +1007,8 @@ class CEDOrchestrator:
         deterministically-assigned agent/role, validated into moves, with
         per-phase quorum. Move ids come from task identity (NOT completion order).
         """
-        state.advance_phase(phase)
+        self._advance_phase(state, phase,
+                            initial_entry=(phase == DialogPhase.OPENING))
         assignment = self._registry_phase_assignment(state, phase)
         self._apply_phase_roles(state, phase, assignment)
         items = sorted(assignment.items())
@@ -1108,6 +1160,10 @@ class CEDOrchestrator:
 
         # Phase 8C.1 — COUNCIL ratification through the registry (no single
         # Final Evaluator monopoly). Deliberation already used the registry above.
+        # phase.started semantics: enter RATIFICATION BEFORE the council work
+        # begins (the canonical transition used to be book-kept at final build;
+        # the final phase_history is identical either way).
+        self._advance_phase(state, DialogPhase.RATIFICATION)
         ratification = await self.run_council_ratification(state, timeout_seconds)
 
         # Phase 19 — ratification repair Option B (opt-in): when the council
@@ -1654,8 +1710,10 @@ class CEDOrchestrator:
         self, state: SessionState, ratification: CouncilRatification,
     ) -> FinalResponse:
         """Assemble the FinalResponse from a council ratification outcome."""
-        state.advance_phase(DialogPhase.RATIFICATION)
-        state.advance_phase(DialogPhase.COMPLETE)
+        # RATIFICATION is entered in run_registry_session BEFORE the council
+        # work (true phase.started semantics); only the terminal transition
+        # remains here.
+        self._advance_phase(state, DialogPhase.COMPLETE)
         assembled = state.assembled_answer
         harvest = self._sync_harvest(state)
         leaderboard = self.build_epistemic_leaderboard(state, harvest)
@@ -1838,7 +1896,8 @@ class CEDOrchestrator:
     def run_opening_phase(self, session_id: str, round_index: int = 0) -> AgentMove:
         """SOCRATES (deterministically assigned for this phase/round) asks one question."""
         state = self.get_session(session_id)
-        state.advance_phase(DialogPhase.OPENING)
+        self._advance_phase(state, DialogPhase.OPENING,
+                            round_index=round_index, initial_entry=True)
 
         assignment = self.assign_roles_for_phase(state, DialogPhase.OPENING, round_index)
         self._apply_phase_roles(state, DialogPhase.OPENING, assignment, round_index)
@@ -1862,7 +1921,7 @@ class CEDOrchestrator:
     def run_initial_response_phase(self, session_id: str) -> List[AgentMove]:
         """ELENCHUS_CRITIC, EMPIRICIST, and SYNTHESIZER give initial responses."""
         state = self.get_session(session_id)
-        state.advance_phase(DialogPhase.INITIAL_RESPONSE)
+        self._advance_phase(state, DialogPhase.INITIAL_RESPONSE)
 
         opening_moves = state.moves_for_phase(DialogPhase.OPENING)
         socratic_q = (
@@ -1889,7 +1948,7 @@ class CEDOrchestrator:
     def run_elenchus_phase(self, session_id: str) -> List[AgentMove]:
         """Deterministically-assigned critics challenge the initial responses."""
         state = self.get_session(session_id)
-        state.advance_phase(DialogPhase.ELENCHUS)
+        self._advance_phase(state, DialogPhase.ELENCHUS)
 
         initial_moves = state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
         # Agents see content but not the authoring agent IDs (minimal awareness)
@@ -1919,7 +1978,7 @@ class CEDOrchestrator:
         primary_role is preserved for use in subsequent phases.
         """
         state = self.get_session(session_id)
-        state.advance_phase(DialogPhase.REFLECTION)
+        self._advance_phase(state, DialogPhase.REFLECTION)
 
         initial_moves = state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
         elenchus_moves = state.moves_for_phase(DialogPhase.ELENCHUS)
@@ -1952,7 +2011,7 @@ class CEDOrchestrator:
         a stronger position from the surviving insights.
         """
         state = self.get_session(session_id)
-        state.advance_phase(DialogPhase.RECONSTRUCTION)
+        self._advance_phase(state, DialogPhase.RECONSTRUCTION)
 
         assignment = self.assign_roles_for_phase(state, DialogPhase.RECONSTRUCTION)
         self._apply_phase_roles(state, DialogPhase.RECONSTRUCTION, assignment)
@@ -1980,7 +2039,7 @@ class CEDOrchestrator:
         Multiple competing drafts feed the blind assembly step.
         """
         state = self.get_session(session_id)
-        state.advance_phase(DialogPhase.SYNTHESIS)
+        self._advance_phase(state, DialogPhase.SYNTHESIS)
 
         assignment = self.assign_roles_for_phase(state, DialogPhase.SYNTHESIS)
         self._apply_phase_roles(state, DialogPhase.SYNTHESIS, assignment)
@@ -3155,7 +3214,7 @@ class CEDOrchestrator:
           - A critical objection with no target_section hard-blocks the answer.
         """
         state = self.get_session(session_id)
-        state.advance_phase(DialogPhase.RATIFICATION)
+        self._advance_phase(state, DialogPhase.RATIFICATION)
 
         assembled = state.assembled_answer
         if assembled is None:
@@ -3246,7 +3305,7 @@ class CEDOrchestrator:
             ep_status = EpistemicStatus.UNCERTAIN
 
         # Advance to COMPLETE so RATIFICATION appears in phase_history.
-        state.advance_phase(DialogPhase.COMPLETE)
+        self._advance_phase(state, DialogPhase.COMPLETE)
 
         # Epistemic sync gate (final harvest) + CED-owned leaderboard.
         harvest = self._sync_harvest(state)
