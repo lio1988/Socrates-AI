@@ -16,8 +16,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
+from .projection import (
+    CedEventDraft,
+    CedEventObserver,
+    CedEventType,
+    build_draft,
+    derive_projection_run_id,
+)
 from .models import (
     AgentMove,
     AgentRole,
@@ -208,6 +215,7 @@ class CEDOrchestrator:
         trace_capturer=None,
         tree_expansions: int = 0,
         tree_exploration: float = 0.5,
+        event_observer: Optional[CedEventObserver] = None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -315,6 +323,13 @@ class CEDOrchestrator:
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
+        # Council Live View (Slice 1): optional, dependency-injected, read-only
+        # event observer. None (default) = disabled: emission is a no-op and the
+        # run is byte-for-byte the pre-hook behavior. When present, canonical CED
+        # facts are projected into the observer's EventLedger; any emit failure
+        # is isolated on the observer's own side channel and NEVER changes
+        # SessionState, FinalResponse, audit_summary, or control flow.
+        self._event_observer = event_observer
 
     def _phases_for_mode(self) -> List[DialogPhase]:
         """Phases to shadow-score given the configured mode ([] when OFF)."""
@@ -431,10 +446,108 @@ class CEDOrchestrator:
         Record an assignment into role_history and mirror it onto AgentState
         (assigned_role) so the current phase role is observable for debugging.
         """
+        observer = self._event_observer
+        start = len(state.role_history) if observer is not None else 0
         state.record_role_assignment(phase, round_index, assignment)
         for agent_id, role in assignment.items():
             if agent_id in state.agent_states:
                 state.agent_states[agent_id].assigned_role = role
+        # Council Live View: project the NEW canonical role_history rows (never
+        # a second, independent read of `assignment`) so the event cannot
+        # diverge from what CED actually stored. Emission happens only AFTER the
+        # canonical mutation is complete.
+        if observer is not None:
+            run_id = derive_projection_run_id(state.session_id)
+            for raw in state.role_history[start:]:
+                row = dict(raw)
+                self._emit_event(
+                    CedEventType.ROLE_ASSIGNED,
+                    lambda row=row, run_id=run_id: build_draft(
+                        event_type=CedEventType.ROLE_ASSIGNED,
+                        session_id=state.session_id,
+                        run_id=run_id,
+                        phase=row["phase"],
+                        round_index=row["round_index"],
+                        payload={"agent_id": row["agent_id"],
+                                 "role": row["role"]},
+                    ),
+                )
+
+    # ── Council Live View emission (Slice 1) ──────────────────────────────────
+
+    def _emit_event(
+        self,
+        event_type: CedEventType,
+        build: Callable[[], CedEventDraft],
+    ) -> None:
+        """The single failure-isolation choke for all event emission.
+
+        No-op when disabled (observer is None) — `build()` is never called.
+        When enabled, an append failure is caught and recorded on the
+        observer's side channel; a failure of the failure-recording itself is
+        also swallowed. Never catches BaseException; never touches
+        SessionState / FinalResponse / control flow. The sealed event returned
+        by the ledger is intentionally ignored.
+        """
+        observer = self._event_observer
+        if observer is None:
+            return
+        try:
+            observer.append(build())
+        except Exception as exc:   # emission must never take down a dialogue
+            try:
+                observer.record_failure(
+                    event_type=event_type.value,
+                    error_type=type(exc).__name__,
+                    message=str(exc)[:256],
+                )
+            except Exception:
+                pass
+
+    def _emit_run_started(self, state: SessionState) -> None:
+        """Emit session.created (session stream) + run.started (run stream) at
+        run entry, right after the SessionState exists."""
+        if self._event_observer is None:
+            return
+        run_id = derive_projection_run_id(state.session_id)
+        self._emit_event(
+            CedEventType.SESSION_CREATED,
+            lambda: build_draft(
+                event_type=CedEventType.SESSION_CREATED,
+                session_id=state.session_id,
+                payload={"question": state.question},
+            ),
+        )
+        self._emit_event(
+            CedEventType.RUN_STARTED,
+            lambda: build_draft(
+                event_type=CedEventType.RUN_STARTED,
+                session_id=state.session_id,
+                run_id=run_id,
+                payload={},
+            ),
+        )
+
+    def _emit_run_completed(self, final: FinalResponse) -> None:
+        """Emit run.completed once the FinalResponse is fully built."""
+        if self._event_observer is None:
+            return
+        payload = {
+            "ratification_status": final.ratification_status,
+        }
+        if final.socratic_leaderboard is not None:
+            payload["leaderboard_status"] = (
+                final.socratic_leaderboard.leaderboard_status.value
+            )
+        self._emit_event(
+            CedEventType.RUN_COMPLETED,
+            lambda: build_draft(
+                event_type=CedEventType.RUN_COMPLETED,
+                session_id=final.session_id,
+                run_id=derive_projection_run_id(final.session_id),
+                payload=payload,
+            ),
+        )
 
     def get_phase_role_plan(
         self, session_id: str
@@ -959,10 +1072,13 @@ class CEDOrchestrator:
             )
         state = self.create_session(question, session_id=session_id)
         sid = state.session_id
+        self._emit_run_started(state)
 
         ready, warning = self.registry.assess_readiness()
         if not ready:
-            return self._registry_fallback_final(state, warning, blocked_phase=None)
+            fallback = self._registry_fallback_final(state, warning, blocked_phase=None)
+            self._emit_run_completed(fallback)
+            return fallback
 
         # Phase 14: resolve relevant lessons ONCE per session (AI-ranked when
         # ai_learning; keyword otherwise) and cache for every phase context.
@@ -974,8 +1090,10 @@ class CEDOrchestrator:
             result = await self._run_registry_phase(state, phase, timeout_seconds)
             phase_results.append((phase, result))
             if not result.proceed:
-                return self._registry_fallback_final(state, result.warning, blocked_phase=phase,
-                                                     phase_results=phase_results)
+                fallback = self._registry_fallback_final(state, result.warning, blocked_phase=phase,
+                                                         phase_results=phase_results)
+                self._emit_run_completed(fallback)
+                return fallback
 
         # Downstream council machinery (reads CED-owned state.moves).
         self.build_section_drafts(sid)
@@ -1024,6 +1142,7 @@ class CEDOrchestrator:
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
         await self._self_improvement_ingest(state, final)
+        self._emit_run_completed(final)
         return final
 
     def _epistemic_consistency(self, state: SessionState) -> Dict[str, Any]:
@@ -3216,6 +3335,7 @@ class CEDOrchestrator:
         """Run a complete Socratic Council session end-to-end."""
         state = self.create_session(question, session_id=session_id)
         sid = state.session_id
+        self._emit_run_started(state)
 
         self.run_opening_phase(sid)
         self.run_initial_response_phase(sid)
@@ -3226,4 +3346,6 @@ class CEDOrchestrator:
         self.compute_shadow_scores(sid)        # move-level shadow scores
         self.score_section_drafts(sid)         # section-level scores
         self.assemble_sections(sid)            # blind section assembly
-        return self.run_ratification_phase(sid)
+        final = self.run_ratification_phase(sid)
+        self._emit_run_completed(final)
+        return final
