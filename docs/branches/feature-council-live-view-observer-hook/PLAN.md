@@ -6,7 +6,21 @@ Observer disabled (default) OR enabled-but-raising ⇒ byte-identical canonical
 `FinalResponse` vs the pre-hook baseline, no `SessionState`/authority change.
 Observer enabled ⇒ deterministic event sequence in the injected `EventLedger`.
 
-## Ordered steps
+## Scope
+
+- Dependency-injected `CedEventObserver` and bounded failure diagnostics.
+- Disabled-by-default CED emission seam and registry factory passthrough.
+- Initial session/run/role lifecycle events and golden determinism tests.
+- This branch-documentation folder.
+
+## Non-goals
+
+- No phase, task, provider-outcome, move-validation, ratification, transport,
+  frontend, or OpenRouter work.
+- No provider behavior, scoring, role, assembly, or ratification changes.
+- No global ledger or observer singleton.
+
+## Ordered implementation steps
 
 1. [x] Branch `feature/council-live-view-observer-hook` off `b645dcb`; branch
        docs.
@@ -34,6 +48,20 @@ Observer enabled ⇒ deterministic event sequence in the injected `EventLedger`.
        `ced.py` diff +131/−7 (mostly the three new emit methods).
        **← STOP before commit for review.**
 
+## Completed
+
+- Golden observer baseline, dependency-injected observer bridge, bounded
+  diagnostics, lifecycle/role emissions, registry fallback completion events,
+  and final review fixes are complete at the verified implementation head.
+- PR #72 is open as a stacked Draft and the implementation is review-only.
+
+## Remaining / deferred work
+
+- Diagnose the repository-level GitHub Actions `startup_failure`.
+- Re-run the bottom-up stack audit after operational checks are healthy.
+- Phase and execution events remain isolated in PRs #73 and #74; transport and
+  frontend remain future work.
+
 ## Validation gates
 
 1. Focused golden test green.
@@ -43,8 +71,6 @@ Observer enabled ⇒ deterministic event sequence in the injected `EventLedger`.
 
 ## Stop conditions
 
-- **STOP now**, before committing the golden baseline, for the first
-  observer-hook review.
-- Do not touch `ced.py` until the seam design is reviewed (step 3).
-- Never amend/force-push; never merge the foundation PR; never touch the
-  sibling worktree's OpenClaw files.
+- Stop after this docs-only review fix and keep the branch frozen.
+- Do not make PR #72 ready or merge it until the landing audit is green.
+- Never amend/force-push; never touch the sibling worktree's OpenClaw files.
