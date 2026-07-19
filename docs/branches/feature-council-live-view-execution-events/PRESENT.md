@@ -1,102 +1,86 @@
 # PRESENT — feature/council-live-view-execution-events
 
-Exact current state for safe resumption. Keep current.
-
-## Branch / HEAD
+## Branch
 
 - Branch: `feature/council-live-view-execution-events`
-- Base: `e882dbd` (frozen phase-events tip).
-- Current HEAD: `2678d63` (`Add execution events to CED observer`).
-- Stack: PR #71 (foundation→main) · #72 (observer→foundation) · #73
-  (phase-events→observer, head `e882dbd`) — all open drafts, unmerged.
-- Worktree: `C:\Users\spirc\Desktop\Socrates-AI-live-view-foundation`.
+- Pull request: #74, stacked on
+  `feature/council-live-view-phase-events`
+- Worktree: `C:\Users\spirc\Desktop\Socrates-AI-live-view-foundation`
 
-## Completed work (this branch)
+## Verified implementation head
 
-- Investigation surfaced the central finding: `AgentTask.task_id` was a RANDOM
-  `_uid()` — the same routing-id disease as the ratification gate. User
-  delegated the decision ("check all folders, decide the best"); decisions in
-  PLAN.md steps 2–3.
-- **Step 0 — deterministic task ids**: `_deterministic_task_id` stamped at the
-  5 random `AgentTask` sites (the 2 scoring sites were already `stask_`
-  deterministic). `models.py` untouched. Golden bytes + authority parity
-  unchanged (task_id is absent from `FinalResponse`).
-- **Emission** through the single `_record_task_log` chokepoint: `task.created`
-  (both paths, OBSERVED kinds), `provider.failed` (registry; legacy has no
-  providers); `move.validated` in `_absorb` (registry only; real raw/validated
-  digests; legacy fabricates nothing). Ratification/tree/lesson kinds deferred
-  behind the `_OBSERVED_TASK_KINDS` allowlist.
+`d00c867a27ddf94d99f562b81b538a090d274eeb`
 
-## Emitted counts (empirical, offline mock)
+This is the last code/test commit covered by the exact validation results below.
+Resolve the actual branch head dynamically with `git rev-parse HEAD`. The
+verified implementation head must be an ancestor of that dynamic head, and
+every intervening change must be confined to
+`docs/branches/feature-council-live-view-execution-events/`.
 
-- LEGACY run stream: 39 events (adds 14 `task.created` to the phase slice's 25;
-  no provider/move events — in-process path).
-- REGISTRY run stream: 154 events (adds `task.created` + `move.validated` for
-  deliberation AND all peer-scoring tasks).
-- Raising-ledger attempt totals (cross-mode parity, exact): legacy **40**,
-  registry **155** — each equals `["session.created"] + enabled run-stream
-  types`.
+## Completed work
+
+- Emits `task.created` before execution from all observed dispatch paths,
+  including standalone registry council and gather runners.
+- Keeps `provider.failed` as an outcome event with an honest closed
+  status-to-category mapping.
+- Emits registry `move.validated` from real raw and validated content without
+  fabricating legacy data.
+- Uses versioned canonical namespaces `ced_task_v1` and `ced_move_v1`, explicit
+  round identity, strict task kinds, and full 64-hex SHA-256 identifiers.
+- Runs strict move-digest canonicalization inside the observer isolation choke.
+- Prevents fabricated `TaskKind.INITIAL_RESPONSE` fallbacks.
+- Preserves `models.py`, provider semantics, FinalResponse bytes, and authority
+  state.
+
+## Remaining / deferred work
+
+- Resolve the repository-level GitHub Actions startup failure and repeat the
+  landing audit.
+- Defer `provider.requested`, `provider.completed`, legacy move validation, and
+  ratification/tree/lesson execution events.
+- Actual landing remains deferred until explicit approval.
 
 ## Changed files
 
-- `backend/dialogues/ced.py` (+144: helper, 5 task-id stamps, emission block)
-- `tests_dialogues/test_ced_observer_golden.py` (+205: 8 new tests, updated
-  stream/failure assertions)
-- this docs folder
-
-## Tests — exact results
-
-- Golden **50 passed**; four-file focused **244**; full `tests_dialogues`
-  **1807** (byte/authority parity re-proven — deterministic task ids and
-  emission changed nothing canonical).
-
-## PR #74 review fixes (uncommitted — awaiting pre-commit review)
-
-The real diff review of `2678d63` found 4 issues (all fixed, see PLAN step 10):
-task.created moved to construction time; `UNAVAILABLE` no longer invents
-"network"; move.validated digest built inside the isolation choke
-(`allow_nan=False`); task id hardened to versioned canonical-JSON 64-hex with
-a mandatory TaskKind. New event ordering (counts unchanged):
-`phase.started → role.assigned → task.created → [move.validated]`.
-
-Review round 2 (three more gaps, all fixed — see PLAN step 11): explicit
-`round_index` threaded into the task identity (opening round 0 ≠ round 2);
-`task.created` now emitted by the standalone `run_registry_council_round` /
-`gather_registry_phase_round` paths too (path-independent); `_build_round_task`
-RAISES on an unmapped phase instead of fabricating `INITIAL_RESPONSE`.
-
-Review round 3 (final blocker fixed — see PLAN step 12):
-
-- `_deterministic_move_id` takes explicit `round_index`, uses canonical
-  `ced_move_v1` JSON and emits full 64-hex IDs with the same identity fields
-  as task ids.
-- Legacy dispatch passes its explicit phase round; registry absorb and tree
-  revision use the corresponding `task.round_number`.
-- Main `_run_registry_phase` had one remaining fabricated TaskKind fallback;
-  strict lookup now occurs before phase mutation/dispatch.
-- The new move-id distribution exposed an order-dependent tree-evidence test
-  helper; it now selects a scorecard referenced by the actual expansion log.
-  Production extraction was already correct and is unchanged.
-
-Changed now:
+The verified implementation and PR review fix changed:
 
 - `backend/dialogues/ced.py`
 - `tests_dialogues/test_ced_observer_golden.py`
-- `tests_dialogues/test_openclaw_tree_evidence_bridge.py` (test-only linkage fix)
-- this docs folder
+- `tests_dialogues/test_openclaw_tree_evidence_bridge.py`
+- `docs/branches/feature-council-live-view-execution-events/`
 
-Final gates:
+Any commits after the verified implementation head may change only the final
+documentation path above.
 
-- focused red→green move/strict-lookup regressions: **3 passed**
-- golden: **71 passed**
-- stacked four-file projection/observer gate: **265 passed**
-- full `tests_dialogues`: **1828 passed**
-- `git diff --check`: clean
-- `backend/dialogues/models.py`: untouched
+## Exact test results
 
-## Blockers / next safe step
+- Golden observer suite: **71 passed**.
+- Four focused observer/projection files: **265 passed**.
+- Full `tests_dialogues`: **1828 passed**.
+- Focused strict-lookup/move regressions: **3 passed**.
+- `git diff --check`: clean.
+- `backend/dialogues/models.py`: untouched.
+- FinalResponse bytes, authority state, and provider semantics: preserved.
 
-- **STOP before commit** — final review-fix diff and gates are ready for GO.
-- After sign-off: commit as a PR #74 review-fix on this branch (no amend or
-  force-push; branch otherwise frozen), then push. Suggested message:
-  `Harden CED execution event semantics`.
+## Blockers
+
+- GitHub Actions run startup fails before job creation, so required hosted
+  checks cannot currently execute. This is an operational blocker, not a known
+  dialogue-test failure.
+
+## Worktree state
+
+The branch is expected to be clean after this documentation-only review fix.
+Verify dynamically with `git status --short`; do not store the current commit
+SHA as a self-referential literal.
+
+## Next safe step
+
+Diagnose the Actions `startup_failure` read-only, then repeat the landing audit
+without modifying or merging any Council Live View branch.
+
+## Frozen / review-only status
+
+PR #74 remains open, Draft, and frozen. Only documentation corrections or new
+findings exclusively within this PR's scope are permitted; no amend, rebase,
+force-push, retarget, readiness change, or merge.
