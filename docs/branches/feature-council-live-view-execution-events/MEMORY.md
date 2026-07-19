@@ -17,13 +17,10 @@ different payloads and different idempotency keys — the cross-fresh-ledger
 determinism every previous slice locked (test-8 pattern) would be impossible.
 
 **Prerequisite (Step 0): deterministic task identity in CED.** Precedents
-already in the codebase: `_deterministic_move_id` (stable task identity →
-move id; the legacy dispatcher already stamps `move.move_id` explicitly) and
-`stask_` score-task ids (`"stask_" + stable_hash(...)`, ced.py:2255). The fix
-stamps `task.task_id = "task_" + hash(session|phase|round|agent|role|kind|
-slot|attempt)` at the **7 AgentTask construction sites** (ced.py 623, 1024,
-1571, 1836, 2262, 2672, 2826). `models.py` untouched (default stays for
-compat; CED overrides explicitly, exactly like move_id).
+already in the codebase were `_deterministic_move_id` (the legacy dispatcher
+already stamped `move.move_id` explicitly) and `stask_` score-task ids. The
+fix stamps every CED-created `AgentTask` explicitly; `models.py` remains
+untouched for compatibility.
 
 Verified golden-neutral in principle: `task_id` appears NOWHERE in
 `FinalResponse` (`_task_log_summary` exposes only counts: entries/with_move/
@@ -34,6 +31,28 @@ Bonus: ratification tasks are built at one of those 7 sites, so their task
 ids ALSO become deterministic — materially shrinking the ratification-events
 gate (verdict `task_id` derives from it; `ratification_id`/`move_id` on
 verdicts remain to be addressed there).
+
+## Final task/move identity invariant
+
+Review hardened both execution identities before the observer events make
+them persistent:
+
+- `task_id = "task_" + 64 lowercase hex`, namespace `ced_task_v1`;
+- `move_id = "move_" + 64 lowercase hex`, namespace `ced_move_v1`;
+- both hash the same canonical JSON identity fields:
+  `session_id, phase, explicit round_index, agent_id, role, task_kind,
+  slot_index, attempt_index`;
+- the round is threaded from the real `AgentTask` or explicit phase call,
+  never re-read from mutable `state.round_number`;
+- unknown phases fail before phase mutation or dispatch; they are never
+  represented as `INITIAL_RESPONSE`.
+
+Changing the old 12-hex move ids changes deterministic scoring seeds and may
+therefore change which draft is selected by deterministic mock runs. Tests
+must select records by canonical tree/audit linkage, never incidental list
+order. This exposed one tree-evidence test helper that selected the first
+scorecard rather than a scorecard referenced by the expansion log; the test
+helper was corrected without changing production evidence extraction.
 
 ## Emission chokepoints (verified)
 

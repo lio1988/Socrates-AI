@@ -7,18 +7,18 @@ is today a random `_uid()` routing id, so deterministic task identity must
 land FIRST (same recipe as the existing deterministic `move_id`/`stask_`
 ids).
 
-**Success criterion.** Deterministic task ids (golden-byte-neutral, proven);
-`task.created` emitted from the single `_record_task_log` chokepoint on BOTH
-paths; `provider.failed` for every failed provider outcome (closed
-status→category mapping); `move.validated` with real raw/validated digests on
-the registry path; byte-identical `FinalResponse` and authority parity when
+**Success criterion.** Canonical deterministic task and move ids with explicit
+round identity; `task.created` emitted before execution on BOTH paths;
+`provider.failed` for every failed provider outcome (closed status→category
+mapping); `move.validated` with real raw/validated digests on the registry
+path; byte-identical `FinalResponse` and authority parity when
 disabled/raising; cross-fresh-ledger event-stream determinism (the test-8
-pattern) now possible BECAUSE task ids are deterministic.
+pattern) now possible BECAUSE execution identities are deterministic.
 
-**Scope.** `ced.py` (deterministic task_id stamping at the 7 AgentTask
-construction sites + emission at existing outcome sites), golden tests,
-branch docs. `models.py` untouched (the model default stays; CED stamps
-explicitly, exactly like `move.move_id`).
+**Scope.** `ced.py` (canonical task/move identity + event emission at canonical
+construction/outcome sites), golden tests, one tree-evidence test-order fix
+required by the new move-id distribution, branch docs. `models.py` untouched
+(the model defaults stay; CED stamps explicitly).
 
 **Non-goals / deferred (documented in MEMORY).** `provider.requested`
 (dispatch happens inside provider_registry; mocks lack a canonical

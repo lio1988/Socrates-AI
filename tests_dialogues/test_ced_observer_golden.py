@@ -747,10 +747,12 @@ class TestExecutionEvents:
         _, ced = run_observed(observer, sid)
         ids = [e.payload["task_id"]
                for e in _run_events(observer.ledger, sid, "task.created")]
-        # Two deterministic families: "task_" (this slice's stamping) and the
-        # pre-existing "stask_" score-task ids — never the random _uid form.
-        assert ids and all(re.fullmatch(r"s?task_[0-9a-f]{1,12}", i)
-                           for i in ids)
+        # Two deterministic families: hardened "task_"+64hex (this slice) and
+        # the pre-existing "stask_"+12hex score-task ids — never random _uid.
+        assert ids and all(
+            re.fullmatch(r"task_[0-9a-f]{64}", i)
+            or re.fullmatch(r"stask_[0-9a-f]{12}", i)
+            for i in ids)
         # Deterministic across a FRESH identical run (the routing-id disease
         # is cured for observed kinds).
         observer2 = CedEventObserver(EventLedger())
@@ -855,6 +857,349 @@ class TestExecutionEventsRegistry:
                 "an AgentTask is built without an explicit deterministic "
                 f"task_id near offset {m.start()}"
             )
+
+
+class TestTaskCreatedTiming:
+    """task.created is a CONSTRUCTION-time fact (PR #74 review fix 1): emitted
+    before the agent/provider runs, and NOT re-emitted by the task logger."""
+
+    def test_task_created_precedes_the_move_it_produces(self):
+        sid = "tc_order"
+        observer = CedEventObserver(EventLedger())
+        run_registry_observed(observer, sid)
+        run_id = derive_projection_run_id(sid)
+        events = observer.ledger.events_for_stream(run_stream_id(run_id))
+        created_seq = {e.payload["task_id"]: e.sequence for e in events
+                       if e.event_type.value == "task.created"}
+        for e in events:
+            if e.event_type.value == "move.validated":
+                tid = e.payload["task_id"]
+                assert created_seq[tid] < e.sequence
+
+    def test_task_created_survives_execution_exception(self):
+        # A task built then thrown-on during execution still has task.created,
+        # because the fact ("created") is true regardless of the outcome.
+        sid = "tc_throw"
+        observer = CedEventObserver(EventLedger())
+        ced = _legacy_council(observer)
+        ced.create_session(QUESTION, session_id=sid)
+        boom = ced.agents[0]
+        original = boom.execute
+
+        def raising(task):
+            raise RuntimeError("execute boom")
+
+        boom.execute = raising
+        with pytest.raises(RuntimeError, match="execute boom"):
+            ced.run_session(QUESTION, session_id=sid)
+        boom.execute = original
+        # The throwing agent's OWN task.created was emitted before the throw —
+        # the "created" fact holds even though no TaskLogEntry/move followed.
+        created = _run_events(observer.ledger, sid, "task.created")
+        assert any(e.payload["agent_id"] == boom.agent_id for e in created)
+        # …and that task never produced a move.validated (execution failed).
+        thrown_task_ids = {e.payload["task_id"] for e in created
+                           if e.payload["agent_id"] == boom.agent_id}
+        move_task_ids = {e.payload["task_id"]
+                         for e in _run_events(observer.ledger, sid,
+                                              "move.validated")}
+        assert thrown_task_ids.isdisjoint(move_task_ids)
+
+    def test_record_task_log_does_not_emit_task_created(self):
+        # The logger emits provider.failed only; construction events come from
+        # _emit_task_created (no double emission).
+        sid = "tc_no_dup"
+        observer = CedEventObserver(EventLedger())
+        _, ced = run_registry_observed(observer, sid)
+        state = ced.get_session(sid)
+        from backend.dialogues.ced import _OBSERVED_TASK_KINDS
+        # One task.created per observed task_log entry — never two.
+        observed_entries = sum(1 for e in state.task_log
+                               if e.task_kind in _OBSERVED_TASK_KINDS)
+        created = _run_events(observer.ledger, sid, "task.created")
+        assert len(created) == observed_entries
+        assert len({e.payload["task_id"] for e in created}) == len(created)
+
+
+class TestFailureCategoryMapping:
+    """PR #74 review fix 2: only evidence-carrying statuses map to a category;
+    UNAVAILABLE (and error/degraded/fallback/disabled) are honestly unknown."""
+
+    def test_unavailable_is_unknown_not_network(self):
+        from backend.dialogues.ced import _FAILURE_CATEGORY_BY_STATUS
+        from backend.dialogues.models import ProviderStatus
+        assert _FAILURE_CATEGORY_BY_STATUS.get(
+            ProviderStatus.UNAVAILABLE, "unknown") == "unknown"
+        for status in (ProviderStatus.ERROR, ProviderStatus.DEGRADED,
+                       ProviderStatus.FALLBACK, ProviderStatus.DISABLED):
+            assert _FAILURE_CATEGORY_BY_STATUS.get(status, "unknown") == \
+                "unknown"
+
+    def test_evidence_statuses_map_to_their_category(self):
+        from backend.dialogues.ced import _FAILURE_CATEGORY_BY_STATUS
+        from backend.dialogues.models import ProviderStatus
+        assert _FAILURE_CATEGORY_BY_STATUS[ProviderStatus.TIMEOUT] == "timeout"
+        assert _FAILURE_CATEGORY_BY_STATUS[ProviderStatus.RATE_LIMITED] == \
+            "rate_limit"
+        assert _FAILURE_CATEGORY_BY_STATUS[ProviderStatus.MISSING_KEY] == "auth"
+
+
+class TestMoveValidatedIsolation:
+    """PR #74 review fix 3: non-finite move content raises INSIDE the builder,
+    so it is an isolated observer failure — never a CED/protocol failure."""
+
+    def _one_task_move(self, content):
+        from backend.dialogues.models import AgentMove, AgentRole, DialogPhase
+        ced = _legacy_council(CedEventObserver(EventLedger()))
+        state = ced.create_session(QUESTION, session_id="mv_iso")
+        task = ced._build_round_task(
+            state, "agent_0", AgentRole.SYNTHESIZER, DialogPhase.SYNTHESIS)
+        move = AgentMove(task_id=task.task_id, agent_id="agent_0",
+                         role=AgentRole.SYNTHESIZER, phase=DialogPhase.SYNTHESIS,
+                         content=content, confidence=0.7)
+        return ced, state, task, move
+
+    def test_builder_raises_on_nan_content(self):
+        ced, state, task, move = self._one_task_move({"x": float("nan")})
+        with pytest.raises(ValueError):
+            ced._build_move_validated_event(state, task, move, "raw text")
+
+    def test_emit_isolates_nan_as_observer_failure(self):
+        ced, state, task, move = self._one_task_move({"x": float("inf")})
+        # Must NOT raise out of _emit_event; recorded as an isolated failure.
+        ced._emit_event(
+            CedEventType.MOVE_VALIDATED,
+            lambda: ced._build_move_validated_event(state, task, move, "raw"))
+        assert len(ced._event_observer.failures) == 1
+        assert ced._event_observer.failures[0].event_type == "move.validated"
+
+    def test_finite_content_builds_normally(self):
+        ced, state, task, move = self._one_task_move({"text": "ok"})
+        draft = ced._build_move_validated_event(state, task, move, "raw text")
+        assert draft.payload["move_id"] == move.move_id
+        assert draft.payload["raw_digest"] != draft.payload["validated_digest"]
+
+
+class TestDeterministicTaskIdHardening:
+    """PR #74 review fix 4: versioned, collision-resistant, full-width id."""
+
+    def _ced_state(self):
+        ced = _legacy_council(None)
+        return ced, ced.create_session(QUESTION, session_id="tid")
+
+    def test_id_is_task_prefix_plus_64_hex(self):
+        import re
+        from backend.dialogues.models import AgentRole, DialogPhase, TaskKind
+        ced, state = self._ced_state()
+        tid = ced._deterministic_task_id(
+            state, "agent_0", DialogPhase.OPENING, AgentRole.SOCRATES,
+            TaskKind.SOCRATIC_QUESTION, 0, 0, 0)
+        assert re.fullmatch(r"task_[0-9a-f]{64}", tid)
+
+    def test_delimiter_collision_resistance(self):
+        from backend.dialogues.models import AgentRole, DialogPhase, TaskKind
+        ced, state = self._ced_state()
+        a = ced._deterministic_task_id(
+            state, "agent_0|x", DialogPhase.OPENING, AgentRole.SOCRATES,
+            TaskKind.SOCRATIC_QUESTION, 0, 0, 0)
+        b = ced._deterministic_task_id(
+            state, "agent_0", DialogPhase.OPENING, AgentRole.SOCRATES,
+            TaskKind.SOCRATIC_QUESTION, 0, 0, 0)
+        # A "|" in one component can never make two different tuples alias.
+        assert a != b
+
+    def test_every_identity_field_changes_the_id(self):
+        from backend.dialogues.models import AgentRole, DialogPhase, TaskKind
+        ced, state = self._ced_state()
+        base = ced._deterministic_task_id(
+            state, "agent_0", DialogPhase.OPENING, AgentRole.SOCRATES,
+            TaskKind.SOCRATIC_QUESTION, 0, 0, 0)
+        variants = [
+            ced._deterministic_task_id(state, "agent_1", DialogPhase.OPENING,
+                                       AgentRole.SOCRATES,
+                                       TaskKind.SOCRATIC_QUESTION, 0, 0, 0),
+            ced._deterministic_task_id(state, "agent_0", DialogPhase.ELENCHUS,
+                                       AgentRole.SOCRATES,
+                                       TaskKind.SOCRATIC_QUESTION, 0, 0, 0),
+            ced._deterministic_task_id(state, "agent_0", DialogPhase.OPENING,
+                                       AgentRole.EMPIRICIST,
+                                       TaskKind.SOCRATIC_QUESTION, 0, 0, 0),
+            ced._deterministic_task_id(state, "agent_0", DialogPhase.OPENING,
+                                       AgentRole.SOCRATES,
+                                       TaskKind.INITIAL_RESPONSE, 0, 0, 0),
+            ced._deterministic_task_id(state, "agent_0", DialogPhase.OPENING,
+                                       AgentRole.SOCRATES,
+                                       TaskKind.SOCRATIC_QUESTION, 2, 0, 0),
+            ced._deterministic_task_id(state, "agent_0", DialogPhase.OPENING,
+                                       AgentRole.SOCRATES,
+                                       TaskKind.SOCRATIC_QUESTION, 0, 1, 0),
+            ced._deterministic_task_id(state, "agent_0", DialogPhase.OPENING,
+                                       AgentRole.SOCRATES,
+                                       TaskKind.SOCRATIC_QUESTION, 0, 0, 1),
+        ]
+        assert all(v != base for v in variants)
+        assert len(set(variants)) == len(variants)
+
+    def test_no_task_kind_is_none_anywhere(self):
+        # The demo round-task builder now supplies a real TaskKind (a None
+        # would raise on .value inside the id helper).
+        from backend.dialogues.models import AgentRole, DialogPhase
+        ced, state = self._ced_state()
+        task = ced._build_round_task(
+            state, "agent_0", AgentRole.SOCRATES, DialogPhase.OPENING)
+        assert task.task_id.startswith("task_")
+        assert task.task_kind is not None
+
+    def test_explicit_round_changes_opening_task_id(self):
+        # Integration (not just the unit helper): the SAME session at two
+        # opening rounds yields two different task ids — proves the explicit
+        # round is threaded end-to-end, not read from the mutable
+        # state.round_number.
+        def opening_task_id(round_index):
+            observer = CedEventObserver(EventLedger())
+            ced = _legacy_council(observer)
+            sid = "round_thread"
+            ced.create_session(QUESTION, session_id=sid)
+            ced.run_opening_phase(sid, round_index=round_index)
+            created = _run_events(observer.ledger, sid, "task.created")
+            assert len(created) == 1
+            return created[0].payload["task_id"]
+
+        assert opening_task_id(0) != opening_task_id(2)
+
+    def test_explicit_round_changes_opening_move_id(self):
+        # Real legacy integration: move identity must follow the same explicit
+        # phase round as the AgentTask, not the mutable state.round_number. Two
+        # agents make rounds 0 and 2 select the same Socrates, isolating round
+        # identity from agent identity.
+        def opening_move_id(round_index):
+            provider = FakeProvider()
+            agents = [
+                SocraticAgent(f"agent_{i}", provider) for i in range(2)
+            ]
+            ced = CEDOrchestrator(agents, provider)
+            sid = "move_round_thread"
+            state = ced.create_session(QUESTION, session_id=sid)
+            ced.run_opening_phase(sid, round_index=round_index)
+            assert len(state.moves) == 1
+            return state.moves[0].agent_id, state.moves[0].move_id
+
+        agent_0, move_0 = opening_move_id(0)
+        agent_2, move_2 = opening_move_id(2)
+        assert agent_0 == agent_2
+        assert move_0 != move_2
+
+    def test_task_and_move_ids_share_canonical_identity_fields(self):
+        import re
+        from backend.dialogues.models import AgentRole, DialogPhase, TaskKind
+        ced, state = self._ced_state()
+        fields = (
+            state, "agent_0", DialogPhase.OPENING, AgentRole.SOCRATES,
+            TaskKind.SOCRATIC_QUESTION,
+        )
+
+        task_0_a = ced._deterministic_task_id(*fields, 0, 0, 0)
+        task_0_b = ced._deterministic_task_id(*fields, 0, 0, 0)
+        move_0_a = ced._deterministic_move_id(*fields, 0, 0, 0)
+        move_0_b = ced._deterministic_move_id(*fields, 0, 0, 0)
+        task_2 = ced._deterministic_task_id(*fields, 2, 0, 0)
+        move_2 = ced._deterministic_move_id(*fields, 2, 0, 0)
+
+        assert task_0_a == task_0_b
+        assert move_0_a == move_0_b
+        assert task_0_a != task_2
+        assert move_0_a != move_2
+        assert re.fullmatch(r"task_[0-9a-f]{64}", task_0_a)
+        assert re.fullmatch(r"move_[0-9a-f]{64}", move_0_a)
+
+    def test_no_fabricated_task_kind_for_unmapped_phase(self):
+        # An unmapped phase must fail BEFORE dispatch — never be coerced to
+        # INITIAL_RESPONSE just to keep going.
+        from backend.dialogues.models import AgentRole, DialogPhase
+        ced, state = self._ced_state()
+        with pytest.raises(ValueError, match="No canonical TaskKind"):
+            ced._build_round_task(
+                state, "agent_0", AgentRole.SOCRATES, DialogPhase.COMPLETE)
+
+        registry_ced = _registry_council(None)
+        registry_state = registry_ced.create_session(
+            QUESTION, session_id="strict_registry_phase")
+        with pytest.raises(ValueError, match="No canonical TaskKind"):
+            asyncio.run(registry_ced._run_registry_phase(
+                registry_state, DialogPhase.COMPLETE, None))
+        assert registry_state.phase == DialogPhase.OPENING
+        assert registry_state.task_log == []
+
+
+class TestStandaloneRegistryEmission:
+    """Every observer-visible task construction emits task.created BEFORE
+    provider execution, regardless of which public runner the caller used
+    (PR #74 review fix 2 — no path-dependent event gaps)."""
+
+    @staticmethod
+    def _registry_ced(observer):
+        from backend.dialogues.provider_registry import (
+            CouncilProviderRegistry, ScriptedMockProvider,
+        )
+        provider = FakeProvider()
+        agents = [SocraticAgent(f"agent_{i}", provider) for i in range(4)]
+        reg = CouncilProviderRegistry()
+        for a in (ScriptedMockProvider("mock_a"), ScriptedMockProvider("mock_b")):
+            reg.register(a)
+        return CEDOrchestrator(agents, provider, registry=reg,
+                               event_observer=observer)
+
+    def test_run_registry_council_round_emits_task_created(self):
+        from backend.dialogues.models import AgentRole, DialogPhase
+        sid = "std_council"
+        observer = CedEventObserver(EventLedger())
+        ced = self._registry_ced(observer)
+        ced.create_session(QUESTION, session_id=sid)
+        result = asyncio.run(ced.run_registry_council_round(
+            sid, "agent_0", AgentRole.SOCRATES, DialogPhase.OPENING))
+        created = _run_events(observer.ledger, sid, "task.created")
+        assert len(created) == 1
+        assert created[0].payload["task_kind"] == "socratic_question"
+        assert result.proceed  # provider results unaffected
+
+    def test_gather_registry_phase_round_emits_one_per_task(self):
+        from backend.dialogues.models import DialogPhase
+        sid = "std_gather"
+        observer = CedEventObserver(EventLedger())
+        ced = self._registry_ced(observer)
+        state = ced.create_session(QUESTION, session_id=sid)
+        result = asyncio.run(ced.gather_registry_phase_round(
+            state, DialogPhase.INITIAL_RESPONSE))
+        assignment = ced.assign_roles_for_phase(
+            state, DialogPhase.INITIAL_RESPONSE)
+        created = _run_events(observer.ledger, sid, "task.created")
+        assert len(created) == len(assignment) > 0
+        assert result.proceed
+
+    def test_gather_registry_phase_round_threads_explicit_round(self):
+        from backend.dialogues.models import DialogPhase
+        def ids_for_round(ri):
+            observer = CedEventObserver(EventLedger())
+            ced = self._registry_ced(observer)
+            state = ced.create_session(QUESTION, session_id="std_round")
+            asyncio.run(ced.gather_registry_phase_round(
+                state, DialogPhase.INITIAL_RESPONSE, round_index=ri))
+            return sorted(e.payload["task_id"] for e in
+                          _run_events(observer.ledger, "std_round",
+                                      "task.created"))
+        assert ids_for_round(0) != ids_for_round(2)
+
+    def test_standalone_raising_ledger_stays_isolated(self):
+        from backend.dialogues.models import AgentRole, DialogPhase
+        sid = "std_iso"
+        observer = CedEventObserver(_RaisingLedger())
+        ced = self._registry_ced(observer)
+        ced.create_session(QUESTION, session_id=sid)
+        # A raising ledger must not break the round; results unaffected.
+        result = asyncio.run(ced.run_registry_council_round(
+            sid, "agent_0", AgentRole.SOCRATES, DialogPhase.OPENING))
+        assert result.proceed
+        assert observer.failures  # isolated failure recorded, run intact
 
 
 class TestObserverIsolationUnit:
