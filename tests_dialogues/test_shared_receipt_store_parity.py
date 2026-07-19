@@ -606,6 +606,15 @@ def test_load_final_stat_failure_is_safe_domain_error(
         dom, exception_cls, error_number, tmp_path, monkeypatch):
     store = dom.store_cls(tmp_path)
     final = store._path_for(_RID)
+
+    # _path_for()/containment resolution has separate coverage; this test
+    # isolates final existence-discovery failure and avoids platform-dependent
+    # Path.resolve() stat behavior on Windows.
+    def fixed_path_for(request_id):
+        assert request_id == _RID
+        return final
+
+    monkeypatch.setattr(store, "_path_for", fixed_path_for)
     path_type = type(final)
     real_stat = path_type.stat
     attempts = []
