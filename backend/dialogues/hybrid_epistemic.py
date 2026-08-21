@@ -115,6 +115,50 @@ class AnchorSpan(BaseModel):
 
     text: str
     offset: int = Field(ge=0)
+    #: Which document this points into. Two anchors in different documents are
+    #: never equivalent, however identical their wording.
+    source_id: str = "task"
+    #: Which version of that document. A quotation that matched an earlier
+    #: revision is not an observation of this one.
+    source_digest: str = ""
+
+    @property
+    def end(self) -> int:
+        return self.offset + len(self.text)
+
+
+#: An anchor pair must overlap by at least this share of the shorter span. High
+#: enough that only containment and endpoint differences qualify; a stray
+#: character of overlap between two unrelated passages does not.
+MATERIAL_OVERLAP_RATIO = 0.8
+
+
+def anchors_equivalent(a: "AnchorSpan", b: "AnchorSpan") -> bool:
+    """Do two anchors observe the same passage?
+
+    Deterministic and total: same document, same version of it, and character
+    intervals that materially overlap. Nothing about the text is compared beyond
+    its extent, so identical wording elsewhere in the document is not equivalent
+    and a paraphrase sharing no interval is not equivalent.
+
+    The threshold is measured against the SHORTER span, which is what makes
+    "Ben is not last." and "Ben is not last" the same anchor while keeping a
+    long passage from swallowing a short one it merely touches.
+    """
+    if a.source_id != b.source_id or a.source_digest != b.source_digest:
+        return False
+    overlap = min(a.end, b.end) - max(a.offset, b.offset)
+    if overlap <= 0:
+        return False
+    shortest = min(len(a.text), len(b.text))
+    if shortest == 0:
+        return False
+    return overlap / shortest >= MATERIAL_OVERLAP_RATIO
+
+
+def source_digest(text: str) -> str:
+    """Version identity for a source document."""
+    return _digest(text)[:32]
 
 
 class VerificationRecord(BaseModel):
@@ -473,6 +517,7 @@ def verify_task_internal(
     condition_tested: str,
     holds: Optional[bool],
     rationale: str,
+    source_id: str = "task",
     verifier_provider_id: Optional[str] = None,
     unresolved_citations: int = 0,
     objection_scope: Optional["ObjectionScope"] = None,
@@ -483,7 +528,10 @@ def verify_task_internal(
     False when it is violated, None when the check could not be completed. None
     becomes INCONCLUSIVE rather than a guess.
     """
-    spans = [AnchorSpan(text=t, offset=o) for t, o in cited_spans]
+    digest = source_digest(task_text)
+    spans = [AnchorSpan(text=t, offset=o, source_id=source_id,
+                        source_digest=digest)
+             for t, o in cited_spans]
     if holds is None:
         result = VerificationResult.INCONCLUSIVE
     else:
@@ -1154,8 +1202,23 @@ def parse_verification_response(
         return None
 
 
-def _anchor_keys(record: VerificationRecord) -> set:
-    return {(span.text, span.offset) for span in record.authoritative_inputs}
+def _share_an_anchor(records: Sequence[VerificationRecord]) -> bool:
+    """Did every record observe one passage in common?
+
+    Anchored on the first record's spans: a span shared by all of them is what
+    "they read the same thing" means. This says nothing about whether they read
+    it correctly - agreement on an anchor is agreement on the material, never on
+    the interpretation.
+    """
+    if not records:
+        return False
+    first, rest = records[0], records[1:]
+    for span in first.authoritative_inputs:
+        if all(any(anchors_equivalent(span, other)
+                   for other in record.authoritative_inputs)
+               for record in rest):
+            return True
+    return False
 
 
 def corroborated_verdict(
@@ -1201,8 +1264,7 @@ def corroborated_verdict(
         return (None, VerificationVerdict.CONFLICTING,
                 "verifiers disagree on the result")
 
-    shared = set.intersection(*(_anchor_keys(r) for r in independent))
-    if not shared:
+    if not _share_an_anchor(independent):
         return (None, VerificationVerdict.NO_ANCHOR_AGREEMENT,
                 "verifiers agreed on the verdict but cited different material")
 
