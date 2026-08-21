@@ -21,6 +21,7 @@ from backend.dialogues.hybrid_epistemic import (
     ObjectionState,
     SupportState,
     VerificationClass,
+    VerificationResult,
     VerificationVerdict,
     apply_verification,
     corroborated_verdict,
@@ -357,3 +358,82 @@ def test_dropped_spans_cannot_become_shared_anchors():
     target, verdict, _ = corroborated_verdict([a, b])
     assert target is None
     assert verdict is VerificationVerdict.NO_ANCHOR_AGREEMENT
+
+
+# ── objections that are not about the task ───────────────────────────────────
+
+def test_a_methodological_objection_needs_no_citation():
+    """"The enumeration was not systematic" says nothing the task can settle.
+
+    Demanding a task citation for it invites a fabricated one, or discards a
+    verifier for answering honestly. Four of six live verifiers were refused
+    this way.
+    """
+    record = parse_verification_response(
+        {"objection_concerns_the_task": False, "cited_spans": [],
+         "condition_tested": "whether the objection concerns the task",
+         "objection_holds": None,
+         "rationale": "It criticises how the answer was derived."},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is not None
+    assert record.result is VerificationResult.NOT_APPLICABLE
+    assert record.authoritative_inputs == []
+    assert record.method is None
+
+
+def test_not_applicable_records_never_validate_or_reject():
+    records = [
+        parse_verification_response(
+            {"objection_concerns_the_task": False, "cited_spans": [],
+             "condition_tested": "x", "objection_holds": None, "rationale": "r"},
+            task_text=TASK, claim_id="c", objection_id="o",
+            verifier_provider_id=seat)
+        for seat in ("seat0", "seat1", "seat2")
+    ]
+    target, verdict, reason = corroborated_verdict(records)
+    assert target is None
+    assert verdict is VerificationVerdict.NOT_TASK_CHECKABLE
+    assert "no claim the task can settle" in reason
+
+
+def test_a_not_applicable_record_cannot_corroborate_a_real_check():
+    """Mixing "not about the task" with a real check is not agreement."""
+    real = _record("seat0", holds=True)
+    not_applicable = parse_verification_response(
+        {"objection_concerns_the_task": False, "cited_spans": [],
+         "condition_tested": "x", "objection_holds": None, "rationale": "r"},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat1")
+    target, verdict, _ = corroborated_verdict([real, not_applicable])
+    assert target is None
+    assert verdict is VerificationVerdict.UNCORROBORATED
+
+
+def test_the_applicability_flag_does_not_excuse_a_fabricated_citation():
+    """Claiming the objection IS about the task still requires a real quote."""
+    record = parse_verification_response(
+        {"objection_concerns_the_task": True,
+         "cited_spans": ["Ben must present last"],
+         "condition_tested": "invented", "objection_holds": True,
+         "rationale": "r"},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is None
+
+
+def test_an_objection_declared_not_task_checkable_stays_unresolved():
+    state = _state()
+    records = [
+        parse_verification_response(
+            {"objection_concerns_the_task": False, "cited_spans": [],
+             "condition_tested": "x", "objection_holds": None, "rationale": "r"},
+            task_text=TASK, claim_id="c", objection_id="o",
+            verifier_provider_id=seat)
+        for seat in ("seat0", "seat1")
+    ]
+    verdict, _ = apply_verification(state, "o", records)
+    assert verdict is VerificationVerdict.NOT_TASK_CHECKABLE
+    assert state.objections["o"].state is ObjectionState.INCONCLUSIVE
+    assert state.objections["o"].is_destructive is False
+    assert state.assess_claim("c").support_state is SupportState.UNRESOLVED

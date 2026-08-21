@@ -403,20 +403,39 @@ position: the protocol locates your quotation itself. A quotation that does not
 occur in the original task is rejected outright and your whole check is
 discarded, so copy rather than paraphrase or summarise.
 
-If the task does not settle the objection, answer null. That is a real answer
-and the safer one: an unsettled objection stays unresolved and destroys nothing,
-while a wrong verdict can destroy a correct claim.
+FIRST decide whether the objection is even about the task. Some objections
+criticise the REASONING — "the enumeration was not systematic", "the previous
+move asserted too much". Those may be entirely fair and there is still nothing in
+the task to quote, because the task says nothing about anyone's reasoning. Say so
+with "objection_concerns_the_task": false and stop; you need no citation and you
+are not failing the check. Saying it is the check.
+
+Only when the objection asserts something about the task's own content — that a
+constraint permits something, that a stated order violates a rule — do you quote
+and decide.
+
+If the objection is about the task but the task does not settle it, answer null.
+That is a real answer and the safer one: an unsettled objection stays unresolved
+and destroys nothing, while a wrong verdict can destroy a correct claim.
 
 Your `content` MUST be a JSON object with EXACTLY these fields:
+  "objection_concerns_the_task" — true if it asserts something about the task,
+                       false if it criticises reasoning or a previous move
   "cited_spans"      — list of exact quotations copied from `original_task`
+                       (omit or leave empty when the field above is false)
   "condition_tested" — the exact condition you evaluated
   "objection_holds"  — true if the objection holds, false if it fails,
                        null if the task cannot settle it
   "rationale"        — why, referring to the text you quoted
-Example: {"content": {"cited_spans": ["Ben does not present last"],
+Example: {"content": {"objection_concerns_the_task": true,
+"cited_spans": ["Ben does not present last"],
 "condition_tested": "does the proposed order place Ben last?",
 "objection_holds": false, "rationale": "The proposed order has Ben second."},
-"confidence": 0.8}"""
+"confidence": 0.8}
+Not-about-the-task example: {"content": {"objection_concerns_the_task": false,
+"cited_spans": [], "condition_tested": "whether the objection concerns the task",
+"objection_holds": null, "rationale": "It criticises how the answer was derived,
+not what the task states."}, "confidence": 0.8}"""
 
 
 SCORE_CONTENT_DIRECTIVE = """\

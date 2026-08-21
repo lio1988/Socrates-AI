@@ -993,6 +993,8 @@ class VerificationVerdict(str, Enum):
     CONFLICTING = "conflicting"
     NO_ANCHOR_AGREEMENT = "no_anchor_agreement"
     NO_RECORDS = "no_records"
+    #: Every verifier reported the objection makes no claim about the task.
+    NOT_TASK_CHECKABLE = "not_task_checkable"
 
 
 #: Independent records that must agree before an objection may change state.
@@ -1046,6 +1048,29 @@ def parse_verification_response(
     raw_spans = content.get("cited_spans")
     condition = str(content.get("condition_tested") or "").strip()
     holds = content.get("objection_holds")
+
+    # An objection that criticises the reasoning rather than asserting something
+    # about the task cannot be checked against the task, and demanding a
+    # citation for it invites a fabricated one. The verifier says so, and the
+    # record carries NOT_APPLICABLE with no anchor.
+    if content.get("objection_concerns_the_task") is False:
+        return VerificationRecord(
+            verification_id=stable_id("ver", claim_id, objection_id,
+                                      "not_applicable", verifier_provider_id or ""),
+            claim_id=claim_id,
+            objection_id=objection_id,
+            verification_class=VerificationClass.NON_DEFINITIVE,
+            method=None,
+            condition_tested=condition or "whether the objection concerns the task",
+            result=VerificationResult.NOT_APPLICABLE,
+            rationale=str(content.get("rationale") or ""),
+            scope="none - the objection makes no claim about the task",
+            limitations=("Task-internal checking does not apply. This says "
+                         "nothing about whether the objection is a good one."),
+            provenance="classification",
+            verifier_provider_id=verifier_provider_id,
+        )
+
     if not isinstance(raw_spans, (list, tuple)) or not raw_spans or not condition:
         return None
     if holds not in (True, False, None):
@@ -1114,6 +1139,10 @@ def corroborated_verdict(
     usable = [r for r in records if r.result in (VerificationResult.VERIFIED,
                                                  VerificationResult.FALSIFIED)]
     if not usable:
+        if records and all(r.result is VerificationResult.NOT_APPLICABLE
+                           for r in records):
+            return (None, VerificationVerdict.NOT_TASK_CHECKABLE,
+                    "the objection makes no claim the task can settle")
         return None, VerificationVerdict.NO_RECORDS, "no usable verification record"
 
     by_verifier: Dict[str, VerificationRecord] = {}
