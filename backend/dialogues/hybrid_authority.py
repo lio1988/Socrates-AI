@@ -35,6 +35,9 @@ class AuthorityClass(str, Enum):
     LEARNING = "learning"
     #: Superseded. Retained for provenance and comparison only.
     LEGACY = "legacy"
+    #: Declared and deliberately unimplemented. Reserved so nothing quietly
+    #: fills the slot before its stage is reached.
+    RESERVED = "reserved"
 
 
 class SubsystemAuthority:
@@ -169,6 +172,37 @@ AUTHORITY_MAP: Tuple[SubsystemAuthority, ...] = (
         AuthorityClass.LEGACY,
         "abstract argumentation semantics",
         "Optional diagnostics. Never a hidden release authority."),
+
+    # ── infrastructure with authority over its own guarantees ────────────────
+    SubsystemAuthority(
+        "atomic receipt store", "backend.dialogues.openclaw_receipts",
+        AuthorityClass.AUTHORITATIVE,
+        "durable, atomic receipt persistence",
+        "Authoritative over what was recorded, never over whether it is true."),
+    SubsystemAuthority(
+        "conversation continuity", "backend.dialogues.conversation",
+        AuthorityClass.AUTHORITATIVE,
+        "multi-turn session identity and carry-over",
+        "Authoritative over which session a turn belongs to. Not over truth."),
+    SubsystemAuthority(
+        "event ledger / live projection", "backend.orchestrator.live_epistemics",
+        AuthorityClass.OBSERVER,
+        "execution events projected for viewing",
+        "Reads execution. Writes no authoritative state."),
+
+    # ── reserved: declared, deliberately unimplemented ───────────────────────
+    SubsystemAuthority(
+        "candidate tournament synthesis", "backend.dialogues.models",
+        AuthorityClass.RESERVED,
+        "FinalSynthesisMode.CANDIDATE_TOURNAMENT",
+        "Reserved for V2/V3 and raises NotImplementedError today. Kept declared "
+        "so the slot cannot be filled quietly by something else."),
+    SubsystemAuthority(
+        "external evidence substrate", "backend.evidence",
+        AuthorityClass.RESERVED,
+        "governed retrieval, citations and tool receipts for H3B",
+        "Empty by decision. H3B external verification stays blocked rather than "
+        "being simulated by a second model."),
 )
 
 #: Classes that may decide epistemic support, eligibility or release.
