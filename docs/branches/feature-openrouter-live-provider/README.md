@@ -1,6 +1,7 @@
 # Branch: feature/openrouter-live-provider
 
-Adds an opt-in strict OpenRouter adapter for the canonical `CouncilProviderRegistry` path.
+Adds an opt-in strict OpenRouter adapter for the canonical
+`CouncilProviderRegistry` path and the H1 Hybrid append-only shadow ledger.
 
 The default Socrates-AI runtime remains offline/deterministic. Live OpenRouter use requires explicit environment configuration.
 
@@ -34,6 +35,15 @@ The restored execution baseline is protected by:
 The fixtures preserve only retained evidence. Missing provider prose, score
 values, and clipped historical transcript sections are explicitly unavailable
 and were not reconstructed.
+
+## H1 HYBRID SHADOW
+
+The explicitly injected H1 observer records deterministic, append-only
+provenance after canonical finalization. It is disabled by default,
+non-authoritative, failure-isolated, replayable, conflict-safe, and absent from
+`SessionState`/`FinalResponse`. It changes no prompt, provider behavior, phase,
+role, score, assembly, ratification, release, learning, OpenClaw, or Live View
+authority. See `docs/HYBRID_V1_H1_SHADOW_IMPLEMENTATION.md`.
 
 ## Safety boundaries
 

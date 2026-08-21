@@ -208,6 +208,7 @@ class CEDOrchestrator:
         trace_capturer=None,
         tree_expansions: int = 0,
         tree_exploration: float = 0.5,
+        hybrid_shadow=None,
     ) -> None:
         if len(agents) < 2:
             raise ValueError("Council requires at least 2 agents.")
@@ -323,6 +324,34 @@ class CEDOrchestrator:
             str, Dict[str, "LLMProviderAdapter"]
         ] = {}
         self._session_adapter_orders: Dict[str, List["LLMProviderAdapter"]] = {}
+        # H1 Hybrid ledger: optional post-finalization observation only. It is
+        # deliberately absent from SessionState/FinalResponse and cannot affect
+        # canonical decisions. Capture failures stay on this bounded diagnostic
+        # side channel and are never promoted to answer authority.
+        self.hybrid_shadow = hybrid_shadow
+        self._hybrid_shadow_diagnostics: Dict[str, List[str]] = {}
+
+    def hybrid_shadow_failures(self, session_id: str) -> Tuple[str, ...]:
+        """Bounded observer-only diagnostics; never part of canonical state."""
+        return tuple(self._hybrid_shadow_diagnostics.get(session_id, ()))
+
+    def _capture_hybrid_shadow(
+        self, state: SessionState, final: FinalResponse,
+    ) -> None:
+        """Capture after canonical finalization, isolated from every authority path."""
+        if self.hybrid_shadow is None:
+            return
+        try:
+            provider_catalog = self._council_roster() if self.registry is not None else ()
+            self.hybrid_shadow.capture_session(
+                state, final, provider_catalog=provider_catalog,
+            )
+        except Exception as exc:
+            diagnostics = self._hybrid_shadow_diagnostics.setdefault(
+                state.session_id, [],
+            )
+            if len(diagnostics) < 3:
+                diagnostics.append(type(exc).__name__)
 
     def _phases_for_mode(self) -> List[DialogPhase]:
         """Phases to shadow-score given the configured mode ([] when OFF)."""
@@ -1074,6 +1103,7 @@ class CEDOrchestrator:
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
         await self._self_improvement_ingest(state, final)
+        self._capture_hybrid_shadow(state, final)
         return final
 
     def _epistemic_consistency(self, state: SessionState) -> Dict[str, Any]:
@@ -1380,6 +1410,7 @@ class CEDOrchestrator:
                 self.open_questions.ingest_session(state, final)
         except Exception:
             pass   # the living-system layer must never take down even a fallback
+        self._capture_hybrid_shadow(state, final)
         return final
 
     # ── Phase 8C.1: Socratic Council Ratification (council-level, registry) ────
@@ -3249,6 +3280,7 @@ class CEDOrchestrator:
             },
         )
         state.final_response = final
+        self._capture_hybrid_shadow(state, final)
         return final
 
     @staticmethod

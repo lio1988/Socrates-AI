@@ -42,3 +42,20 @@
   explicit.
 - This baseline does not contain Hybrid runtime records, shadow wiring, prompt
   changes, score changes, assembly changes, or ratification changes.
+
+## H1 SHADOW DECISIONS
+
+- H1 is explicit dependency injection and disabled by default.
+- `HybridEpistemicLedger` is separate from the deferred Council Live View
+  `EventLedger` and shared receipt stores.
+- capture runs exactly once after canonical finalization; capture failure is a
+  bounded observer-only diagnostic.
+- H1 record IDs, idempotency keys, sequence and replay are deterministic and do
+  not use random legacy auxiliary task IDs.
+- H1 stores provenance and content digests, not raw prompts, provider prose,
+  final-answer prose, secrets, or hidden reasoning.
+- quality-score records are always `quality_only`; no H2 epistemic authority is
+  implemented.
+- the first live shadow session found the correct benchmark order but preserved
+  two logically invalid canonical caveats, proving observation without hidden
+  intervention.

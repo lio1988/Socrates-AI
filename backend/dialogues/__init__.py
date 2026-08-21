@@ -84,6 +84,16 @@ from .provider_registry import (
     PROVIDER_TIMEOUT_SECONDS,
 )
 from .ced import CEDOrchestrator
+from .hybrid_shadow import (
+    HYBRID_SHADOW_SCHEMA_VERSION,
+    SHADOW_AUTHORITY,
+    HybridLedgerConflict,
+    HybridLedgerIntegrityError,
+    HybridRecordKind,
+    HybridShadowRecord,
+    HybridEpistemicLedger,
+    HybridShadowObserver,
+)
 from .conversation import (
     ConversationManager,
     ConversationSession,
@@ -260,6 +270,10 @@ __all__ = [
     "assign_primary_roles", "socrates_for_session",
     "Topic", "classify_topic",
     "CEDOrchestrator",
+    "HYBRID_SHADOW_SCHEMA_VERSION", "SHADOW_AUTHORITY",
+    "HybridLedgerConflict", "HybridLedgerIntegrityError",
+    "HybridRecordKind", "HybridShadowRecord",
+    "HybridEpistemicLedger", "HybridShadowObserver",
     "ConversationManager", "ConversationSession", "ConversationTurn",
     "PublicEpistemicMemory", "HiddenCedTrace", "ChatResponse",
     "build_full_brief", "save_conversation_json", "load_conversation_json",

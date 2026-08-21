@@ -77,5 +77,23 @@ Implementation and focused test scaffolding added.
 
 ## Remaining/deferred
 
-Optional real OpenRouter smoke with a user-supplied environment key. It was not
-run during this offline restoration audit.
+H2 and every later governing Hybrid stage remain deferred and require separate
+approval. No further paid run is authorized by H1 completion.
+
+## H1 SHADOW — COMPLETED
+
+1. Add versioned append-only shadow records with deterministic identity,
+   sequence, idempotency, conflict refusal and replay.
+2. Capture canonical sessions post-finalization only, behind explicit dependency
+   injection and with bounded failure isolation.
+3. Preserve byte-identical canonical state/output and unchanged providers,
+   roles, scoring, assembly and ratification.
+4. Protect exact-model provenance and prevent raw prompts, secrets and provider
+   prose from entering records.
+5. Validate focused, dialogue-wide and repository-wide offline gates.
+6. Run one explicitly approved heterogeneous OpenRouter Level-3 live shadow
+   session; do not rerun.
+
+H1 gates passed: 11 focused H1 tests, 1602 dialogue tests, 1909 repository-wide
+tests, compileall, diff check, deterministic replay, and one live session with
+168 replay-verified records and zero capture failures.

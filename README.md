@@ -543,6 +543,7 @@ Do not place provider keys in source files, HTML, frontend code, or commits.
 | `tests_dialogues/` | Canonical engine, learning, consultation, kernel, and governance regression suite. |
 | `docs/openclaw_memory_lessons/` | Detailed Memory, consultation, kernel, and evidence-boundary documentation. |
 | `docs/HYBRID_V1_H0_5_PRESERVATION_CONTRACT.md` | Normative pre-implementation preservation and non-duplicate-authority contract for Epistemic Hybrid v1. |
+| `docs/HYBRID_V1_H1_SHADOW_IMPLEMENTATION.md` | Implemented H1 append-only observation ledger, authority boundary, parity proof, and live evidence. |
 | `backend/dialogues/README.md` | Detailed technical reference and historical phase record. |
 | `socrates_ai.py`, `backend/orchestrator/` | Legacy reasoning family; not canonical. |
 
@@ -571,11 +572,22 @@ Do not place provider keys in source files, HTML, frontend code, or commits.
 
 - PR #62: bound single-agent Lesson A/B Memory link/unlink attestation.
 
+### Implemented on `feature/openrouter-live-provider`
+
+- strict exact-model OpenRouter council integration;
+- restored stable logical-agent to physical-model binding and typed confidence
+  propagation;
+- H1 append-only Hybrid ledger in explicit, disabled-by-default shadow mode;
+- deterministic/idempotent record identity, replay and conflict refusal;
+- failure-isolated post-finalization capture with no `SessionState`,
+  `FinalResponse`, prompt, scoring, assembly, ratification, or public-event
+  authority change.
+
 ### Planned or not yet connected to canonical runtime
 
 - automatic bounded Micro-Socratic Kernel invocation in the agent/CED path;
 - governed automatic handoff from the kernel to tools or External Consultation;
-- canonical append-only Epistemic Event Ledger for the `CEDOrchestrator` family;
+- governing Hybrid epistemic transitions beyond the H1 shadow ledger;
 - versioned public event projections;
 - robust FastAPI/SSE transport with replay and `Last-Event-ID`;
 - React/Vite Council Live View;

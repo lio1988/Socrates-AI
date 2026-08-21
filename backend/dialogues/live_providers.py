@@ -417,6 +417,7 @@ def build_council(
     phase_retry: bool = True, training_corpus=None, score_weighting: str = "uniform",
     cohesion_margin: float = 0.0, openclaw_lessons=None, trace_capturer=None,
     tree_expansions: int = 0, tree_exploration: float = 0.5,
+    hybrid_shadow=None,
 ) -> Tuple[Any, str]:
     """
     A ready-to-run council orchestrator. Same code path real or mock — mock by
@@ -448,5 +449,6 @@ def build_council(
                           openclaw_lessons=openclaw_lessons,
                           trace_capturer=trace_capturer,
                           tree_expansions=tree_expansions,
-                          tree_exploration=tree_exploration, **kwargs)
+                          tree_exploration=tree_exploration,
+                          hybrid_shadow=hybrid_shadow, **kwargs)
     return ced, mode

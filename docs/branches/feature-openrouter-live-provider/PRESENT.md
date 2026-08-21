@@ -20,7 +20,8 @@
 
 ## Remaining/deferred
 
-- perform one real smoke only with an explicitly supplied `OPENROUTER_API_KEY` and exact `OPENROUTER_MODEL`.
+- H2 quality/epistemic-support separation and all later governing Hybrid stages;
+- any additional paid benchmark.
 
 ## CANONICAL EXECUTION RESTORATION validation
 
@@ -33,6 +34,28 @@
   participated, logical-agent seat bindings stayed stable, role assignments
   rotated, and exact-model receipts verified;
 - no paid/live call, benchmark run, push, or PR action was performed.
+
+## H1 SHADOW IMPLEMENTATION
+
+- append-only `HybridEpistemicLedger` with deterministic sequence, record ID,
+  idempotency, hash-chain replay and immutable conflict refusal;
+- explicit post-finalization `HybridShadowObserver`, disabled by default;
+- no Hybrid field in canonical public or authority state;
+- exact model provenance and digest-only content capture;
+- capture failure isolated to a bounded non-authority diagnostic;
+- 11 focused H1 tests passed;
+- full dialogue suite: 1602 passed;
+- repository-wide suite: 1909 passed with the same 23 pre-existing warnings;
+- compileall and diff check passed.
+
+One explicitly approved paid session, `hybrid_h1_level3_live_001`, used exactly
+`openai/gpt-4.1-mini`, `openai/gpt-4o-mini`, and
+`meta-llama/llama-3.3-70b-instruct`. All 72 provider tasks returned `ok`; move
+score coverage was 24/26, section scores 29/30, and self-scoring violations were
+zero. The answer order was correct, but `ratified_with_caveats` preserved two
+logically invalid semantic caveats. H1 recorded 168 contiguous replay-verified
+records with zero capture failures and did not alter the result. No rerun was
+performed.
 
 ## H0 / H0.5 frozen assets
 
@@ -54,6 +77,7 @@
 - `backend/dialogues/demo_openrouter.py`
 - `tests_dialogues/test_openrouter_provider.py`
 - `backend/dialogues/ced.py`
+- `backend/dialogues/hybrid_shadow.py`
 - `backend/dialogues/reasoning_prompts.py`
 - `tests_dialogues/test_canonical_execution_restoration.py`
 - `tests_dialogues/test_identity_and_full_dialogue.py`
@@ -63,11 +87,13 @@
 - `tests_dialogues/test_h0_preservation_contract.py`
 - `tests_dialogues/fixtures/known_failures/`
 - `docs/HYBRID_V1_H0_5_PRESERVATION_CONTRACT.md`
+- `docs/HYBRID_V1_H1_SHADOW_IMPLEMENTATION.md`
+- `tests_dialogues/test_hybrid_shadow_h1.py`
 - branch docs
 
 ## Blockers
 
-No code blocker known. Live smoke requires the operator's OpenRouter key and exact model ID.
+No H1 blocker known. H2 is intentionally outside this approved scope.
 
 ## Worktree
 
@@ -75,7 +101,8 @@ Remote feature branch created from `main`; no merge to `main` performed.
 
 ## Next safe step
 
-Clone/switch to this branch, install requirements, run focused and full tests, then execute the opt-in OpenRouter smoke.
+Review the H1 shadow diff and live evidence. Do not start H2 without explicit
+approval.
 
 ## Status
 
