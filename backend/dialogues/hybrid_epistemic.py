@@ -138,6 +138,9 @@ class VerificationRecord(BaseModel):
     limitations: str = ""
     provenance: str = ""
     verifier_provider_id: Optional[str] = None
+    #: Citations this verifier supplied that are not in the task. They are
+    #: dropped, never repaired, and counted so unreliability stays visible.
+    unresolved_citations: int = 0
 
 
 # ── evidence ─────────────────────────────────────────────────────────────────
@@ -442,6 +445,7 @@ def verify_task_internal(
     holds: Optional[bool],
     rationale: str,
     verifier_provider_id: Optional[str] = None,
+    unresolved_citations: int = 0,
 ) -> VerificationRecord:
     """Build a task-internal verification record.
 
@@ -470,6 +474,7 @@ def verify_task_internal(
                      "it does not judge the reasoning that reads it."),
         provenance="task_internal",
         verifier_provider_id=verifier_provider_id,
+        unresolved_citations=unresolved_citations,
     )
     validate_verification_record(record, task_text=task_text)
     return record
@@ -1047,19 +1052,25 @@ def parse_verification_response(
         return None
 
     spans: List[Tuple[str, int]] = []
+    unresolved = 0
     for item in raw_spans:
         text = item.get("text") if isinstance(item, Mapping) else item
         if not isinstance(text, str) or not text.strip():
             return None
         located = locate_span(task_text, text)
         if located is None:
-            # The quotation is not in the task. Refused: this is the check that
-            # a model cannot satisfy by guessing, and the whole anchor rests on
-            # it. Any offset the model supplied is ignored either way.
-            return None
+            # Not in the task. Dropped rather than repaired, and counted.
+            # One live verifier cited seven spans, six of them real, and lost
+            # the seventh to a mangled em-dash; discarding the whole check for
+            # that helps nobody. A dropped span can never become a shared
+            # anchor, so padding with fabrications buys a verifier nothing.
+            unresolved += 1
+            continue
         offset, exact = located
         spans.append((exact, offset))
 
+    if not spans:
+        return None                # nothing the verifier cited is in the task
     try:
         return verify_task_internal(
             claim_id=claim_id,
@@ -1070,6 +1081,7 @@ def parse_verification_response(
             holds=holds,
             rationale=str(content.get("rationale") or ""),
             verifier_provider_id=verifier_provider_id,
+            unresolved_citations=unresolved,
         )
     except MalformedVerification:
         # A fabricated or misplaced citation. Refused, and it contributes

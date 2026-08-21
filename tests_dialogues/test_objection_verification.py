@@ -310,3 +310,50 @@ def test_the_replayed_live_run_still_destroys_nothing():
     target, verdict, _reason = corroborated_verdict(records)
     assert target is None
     assert verdict is VerificationVerdict.UNCORROBORATED
+
+
+# ── partial citation resolution ──────────────────────────────────────────────
+
+def test_a_mostly_sound_citation_list_survives_one_bad_span():
+    """The second live run: six real quotations, one mangled em-dash.
+
+    Discarding the whole check for a transcription artifact helps nobody, and a
+    dropped span can never become a shared anchor, so padding with fabrications
+    buys a verifier nothing.
+    """
+    record = parse_verification_response(
+        {"cited_spans": [C3, "Four people —6 mangled dash", C1],
+         "condition_tested": "c3", "objection_holds": False,
+         "rationale": "x"},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is not None
+    assert [s.text for s in record.authoritative_inputs] == [C3, C1]
+    assert record.unresolved_citations == 1
+
+
+def test_a_verifier_whose_every_citation_is_invented_still_produces_nothing():
+    record = parse_verification_response(
+        {"cited_spans": ["Ben must present last", "Anna presents after Ben"],
+         "condition_tested": "invented", "objection_holds": True},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is None
+
+
+def test_dropped_spans_cannot_become_shared_anchors():
+    """Two verifiers agreeing only through fabricated spans corroborate nothing."""
+    a = parse_verification_response(
+        {"cited_spans": [C3, "invented alpha"], "condition_tested": "x",
+         "objection_holds": True, "rationale": "r"},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    b = parse_verification_response(
+        {"cited_spans": [C1, "invented alpha"], "condition_tested": "x",
+         "objection_holds": True, "rationale": "r"},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat1")
+    assert a.unresolved_citations == b.unresolved_citations == 1
+    target, verdict, _ = corroborated_verdict([a, b])
+    assert target is None
+    assert verdict is VerificationVerdict.NO_ANCHOR_AGREEMENT

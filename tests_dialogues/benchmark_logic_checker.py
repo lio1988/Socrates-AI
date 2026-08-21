@@ -63,6 +63,13 @@ _MULTIPLICITY = (
 )
 
 
+#: Language that marks a named order as rejected rather than asserted.
+_REFUTATION = (
+    "is incorrect", "was incorrect", "is wrong", "violates", "fails",
+    "is rejected", "rejected because", "does not satisfy", "cannot be",
+    "is invalid", "eliminated", "ruled out", "breaks the", "but ben is last",
+)
+
 #: Only separators may sit between the names of an asserted order. Anything
 #: else means the names are prose about the constraints, not a stated sequence.
 _SEPARATOR = re.compile(r"^[\s,;>\-—–>()\.]*(?:then|and|followed by|before)?[\s,;>\-—–>()\.]*$",
@@ -91,6 +98,13 @@ def _named_orders(text: str) -> List[Tuple[str, ...]]:
         # A parenthetical initial such as "Anna (A)" is still a separator.
         gaps = [re.sub(r"\([A-D]\)", "", g) for g in gaps]
         if not all(_SEPARATOR.match(g) for g in gaps):
+            continue
+        # An order named in order to be refuted is not an order asserted.
+        # "...the claim that the order is A C D B is incorrect because it
+        # violates 'Ben is not last'" names it precisely to reject it.
+        tail = text[window[3][1]:window[3][1] + 90].lower()
+        head = text[max(0, window[0][0] - 60):window[0][0]].lower()
+        if any(m in tail or m in head for m in _REFUTATION):
             continue
         candidate = tuple(names)
         if candidate not in found:
