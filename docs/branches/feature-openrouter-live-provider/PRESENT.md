@@ -203,3 +203,39 @@ the rate is 7/8. Distribution remains entirely `reasonable_hypothesis`: models
 still avoid committing to `established_fact` or admitting
 `unsubstantiated_claim`, which is a calibration observation for later stages and
 not a contract defect.
+
+## H3-H10 HYBRID MIGRATION
+
+Governing core at `backend/dialogues/hybrid_epistemic.py`: one state machine for
+verification, revision, contradiction validation, eligibility, claim-level
+ratification and frozen release, on the single existing ledger.
+
+Authority map at `backend/dialogues/hybrid_authority.py`, enforced by import
+graph: the core cannot import advisory/quality/legacy subsystems, and none of
+them can reach the core.
+
+### Validation
+
+- H3-H9 adversarial matrix: `28 passed` (8 required cases against the frozen fixtures);
+- H8 authority enforcement: `11 passed`;
+- marker contract `56`, H2 separation `26`, H1 ledger `11`, preservation gate `15`;
+- full `tests_dialogues`: `1723 passed`; repository-wide: `2030 passed`;
+- compileall and `git diff --check`: clean.
+
+### H10 live benchmark (one run)
+
+85 calls, 0 failures, 0 timeouts, $0.05817, three heterogeneous exact models.
+
+The council answered the frozen logic puzzle INCORRECTLY, reproducing the
+recorded `claimed_multiple_valid_orders` failure. The two layers then disagreed
+exactly as intended:
+
+- legacy: quality mean 7.586 -> `well_supported`;
+- governing core: `release_unresolved`, empty basis, 2 unresolved objections.
+
+### Known limits
+
+- the canonical `run_registry_session` does not yet route its release through
+  the core; doing so changes canonical output and is gated by parity;
+- no live verification runs during a session, so projected objections stay RAISED;
+- `backend/evidence/` remains empty and H3B stays blocked.
