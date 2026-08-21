@@ -129,7 +129,11 @@ your move's CENTRAL claim, using EXACTLY one of these values:
 Your `confidence` MUST respect the ceiling of the marker you chose — a
 "reasonable_hypothesis" delivered at confidence 0.9 is an epistemic
 inconsistency, and the protocol records it. Choose the marker first, honestly;
-let the confidence follow."""
+let the confidence follow.
+This field is REQUIRED IN ADDITION to whatever fields your task-specific
+output structure names. Where such a structure says "exactly these fields",
+`epistemic_marker` is the one permitted addition — omitting it is a protocol
+violation, not a tidier answer."""
 
 
 # ── exemplars: the FORM of an excellent move, per role (imitate form, not topic) ─
@@ -368,7 +372,9 @@ these exact names, do not rename, nest, translate, or add other top-level fields
   "final_verdict"       — the calibrated bottom line
 Each field is a substantive paragraph. Example:
 {"content": {"core_answer": "…", "crucial_stress_test": "…", "blind_spots": "…",
-"nuance": "…", "final_verdict": "…"}, "confidence": 0.8}"""
+"nuance": "…", "final_verdict": "…"}, "confidence": 0.8}
+In addition to the fields above, include the required `epistemic_marker`
+field described earlier. It is the ONE permitted extra top-level field."""
 
 TREE_REVISION_DIRECTIVE = """\
 **Revision mandate**
@@ -420,7 +426,9 @@ related questions. Your `content` MUST be a JSON object with EXACTLY these field
   "pitfalls"               — list of 1-3 reasoning traps this dialogue exposed
 Distill — do not summarize. A lesson is what changes future behavior.
 Example: {"content": {"insight": "…", "transferable_principle": "…",
-"pitfalls": ["…"]}, "confidence": 0.8}"""
+"pitfalls": ["…"]}, "confidence": 0.8}
+In addition to the fields above, include the required `epistemic_marker`
+field described earlier. It is the ONE permitted extra top-level field."""
 
 PROCESS_REVIEW_DIRECTIVE = """\
 **Process review — REQUIRED structure (exact field names)**
@@ -432,7 +440,9 @@ differently. Your `content` MUST be a JSON object with EXACTLY these fields:
   "advice_for_next_dialogue" — one concrete, actionable process instruction
 Be specific about THIS dialogue's process; generic advice is a failure.
 Example: {"content": {"what_worked": "…", "what_failed": "…",
-"advice_for_next_dialogue": "…"}, "confidence": 0.75}"""
+"advice_for_next_dialogue": "…"}, "confidence": 0.75}
+In addition to the fields above, include the required `epistemic_marker`
+field described earlier. It is the ONE permitted extra top-level field."""
 
 LESSON_RELEVANCE_DIRECTIVE = """\
 **Lesson relevance — REQUIRED structure (exact field names)**
@@ -454,7 +464,9 @@ object with EXACTLY these fields:
   "transferable_principle" — the general principle it implies
   "pitfalls"               — list of 1-3 traps the cluster collectively exposed
 Example: {"content": {"consolidated_insight": "…", "transferable_principle": "…",
-"pitfalls": ["…"]}, "confidence": 0.8}"""
+"pitfalls": ["…"]}, "confidence": 0.8}
+In addition to the fields above, include the required `epistemic_marker`
+field described earlier. It is the ONE permitted extra top-level field."""
 
 BAYESIAN_UPDATE_DIRECTIVE = """\
 **Bayesian revision protocol (this is a belief-update task, not a rewrite task)**
@@ -490,6 +502,18 @@ DEFAULT_RESPONSE_CONTRACT = (
     'number, or list. Prose belongs inside a named field of that object, not in '
     'place of it. Respond with EXACTLY one JSON object of the form '
     '{"content": <object>, "confidence": <number 0..1>} and nothing else.'
+)
+
+# Deliberating agents close on a contract that also names the marker. The
+# directive alone sits mid-prompt and is followed inconsistently; the output
+# contract is the last thing read and is followed reliably.
+DELIBERATIVE_RESPONSE_CONTRACT = (
+    '`content` MUST be a JSON object with named fields — NEVER a bare string, '
+    'number, or list. Prose belongs inside a named field of that object, not in '
+    'place of it. `content` MUST also carry the `epistemic_marker` field for '
+    'your central claim; a move that omits it is incomplete. Respond with '
+    'EXACTLY one JSON object of the form {"content": {…, "epistemic_marker": '
+    '"…"}, "confidence": <number 0..1>} and nothing else.'
 )
 
 
@@ -562,5 +586,10 @@ def build_reasoning_system_prompt(
     if task_kind == TaskKind.REFLECTION_REVISION:
         parts.append(BAYESIAN_UPDATE_DIRECTIVE)
 
-    parts.append("**Output**\n" + response_contract)
+    contract = response_contract
+    # Only when the caller accepted the default: an explicit contract wins.
+    if (contract == DEFAULT_RESPONSE_CONTRACT
+            and task_kind is not None and task_kind not in _EVALUATIVE_KINDS):
+        contract = DELIBERATIVE_RESPONSE_CONTRACT
+    parts.append("**Output**\n" + contract)
     return "\n\n".join(parts)

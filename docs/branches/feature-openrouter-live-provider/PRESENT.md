@@ -134,3 +134,31 @@ Live marker coverage is 7%–21%: between 79% and 93% of moves assert with no
 epistemic marker at all, and every marker observed was `reasonable_hypothesis`.
 `support_index` therefore cannot discriminate yet — its input is largely absent.
 Raising marker emission is the prerequisite before H3 or any governing stage.
+
+## MARKER EMISSION FIX (H2 prerequisite)
+
+Two causes were found and fixed for the 7%-21% marker coverage H2 measured:
+
+1. five deliberative task kinds received both "include an `epistemic_marker`
+   field" and "EXACTLY these fields / do not add other top-level fields";
+   models resolved the contradiction by dropping the marker. Each enumerated
+   directive now carves the marker out explicitly;
+2. the marker directive sat mid-prompt while the output contract — the last
+   instruction read — never named it. Deliberative kinds now close on
+   `DELIBERATIVE_RESPONSE_CONTRACT`, which does.
+
+Evaluative kinds (`move_score`, `section_score`, ratification) never receive the
+marker directive and were deliberately left on the plain contract.
+
+### Measured effect (same two-arm live experiment, one run per stage)
+
+| metric | baseline | after (1) | after (1)+(2) |
+|---|---|---|---|
+| coverage_ratio FALSE/TRUE | 0.214 / 0.071 | 0.214 / 0.286 | 0.500 / 0.500 |
+| markers observed | 3 / 1 | 3 / 4 | 7 / 7 |
+| distinct markers used | 1 | 3 | 2 |
+| overconfidence violations | 0 / 0 | 0 / 1 | 1 / 2 |
+
+Coverage is not solved: half of all moves still assert unmarked, and the
+distribution remains dominated by `reasonable_hypothesis`. The band check now
+fires, so marker/confidence consistency is exercised for the first time.
