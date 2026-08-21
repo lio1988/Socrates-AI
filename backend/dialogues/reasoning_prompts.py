@@ -359,8 +359,8 @@ Example: {"content": {"question": "…"}, "confidence": 0.6}"""
 
 SYNTHESIS_CONTENT_DIRECTIVE = """\
 **Synthesis output — REQUIRED structure (exact field names)**
-Your `content` MUST be a JSON object with EXACTLY these five string fields — use
-these exact names, do not rename, nest, translate, or add other top-level fields:
+Your `content` MUST be a JSON object with EXACTLY these six fields — use these
+exact names, do not rename, nest, translate, or add any other top-level field:
   "core_answer"         — the council's most defensible direct answer
   "crucial_stress_test" — the strongest honest counterargument to it. Ground it in
                           the strongest objection ACTUALLY RAISED in the dialogue
@@ -370,11 +370,12 @@ these exact names, do not rename, nest, translate, or add other top-level fields
                           and the Socratic opening question where they apply)
   "nuance"              — how the answer shifts with context
   "final_verdict"       — the calibrated bottom line
-Each field is a substantive paragraph. Example:
+  "epistemic_marker"    — the honest status of your central claim: exactly one
+                          of the marker values listed earlier
+The first five are substantive paragraphs. Example:
 {"content": {"core_answer": "…", "crucial_stress_test": "…", "blind_spots": "…",
-"nuance": "…", "final_verdict": "…"}, "confidence": 0.8}
-In addition to the fields above, include the required `epistemic_marker`
-field described earlier. It is the ONE permitted extra top-level field."""
+"nuance": "…", "final_verdict": "…",
+"epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.8}"""
 
 TREE_REVISION_DIRECTIVE = """\
 **Revision mandate**
@@ -424,11 +425,12 @@ related questions. Your `content` MUST be a JSON object with EXACTLY these field
   "insight"                — the single most valuable thing this dialogue established
   "transferable_principle" — a general principle future councils should apply
   "pitfalls"               — list of 1-3 reasoning traps this dialogue exposed
+  "epistemic_marker"       — the honest status of your central claim: exactly
+                             one of the marker values listed earlier
 Distill — do not summarize. A lesson is what changes future behavior.
 Example: {"content": {"insight": "…", "transferable_principle": "…",
-"pitfalls": ["…"]}, "confidence": 0.8}
-In addition to the fields above, include the required `epistemic_marker`
-field described earlier. It is the ONE permitted extra top-level field."""
+"pitfalls": ["…"], "epistemic_marker": "reasonable_hypothesis"},
+"confidence": 0.8}"""
 
 PROCESS_REVIEW_DIRECTIVE = """\
 **Process review — REQUIRED structure (exact field names)**
@@ -438,23 +440,25 @@ differently. Your `content` MUST be a JSON object with EXACTLY these fields:
   "what_worked"              — the process move that most improved the answer
   "what_failed"              — the process failure that most hurt it
   "advice_for_next_dialogue" — one concrete, actionable process instruction
+  "epistemic_marker"         — the honest status of your central claim: exactly
+                               one of the marker values listed earlier
 Be specific about THIS dialogue's process; generic advice is a failure.
 Example: {"content": {"what_worked": "…", "what_failed": "…",
-"advice_for_next_dialogue": "…"}, "confidence": 0.75}
-In addition to the fields above, include the required `epistemic_marker`
-field described earlier. It is the ONE permitted extra top-level field."""
+"advice_for_next_dialogue": "…",
+"epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.75}"""
 
 LESSON_RELEVANCE_DIRECTIVE = """\
 **Lesson relevance — REQUIRED structure (exact field names)**
 You are given candidate lessons from PAST dialogues (`candidate_lessons`, a
 numbered list) and a NEW question. Select ONLY the lessons whose insight
 genuinely TRANSFERS to the new question — surface keyword overlap is not
-transfer. Your `content` MUST be a JSON object with EXACTLY this field:
+transfer. Your `content` MUST be a JSON object with EXACTLY these fields:
   "relevant_indices" — list of 0-based indices into candidate_lessons (max 3;
                        empty list if nothing genuinely transfers)
-Example: {"content": {"relevant_indices": [0, 2]}, "confidence": 0.8}
-In addition to the fields above, include the required `epistemic_marker`
-field described earlier. It is the ONE permitted extra top-level field."""
+  "epistemic_marker" — the honest status of your selection: exactly one of the
+                       marker values listed earlier
+Example: {"content": {"relevant_indices": [0, 2],
+"epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.8}"""
 
 LESSON_CONSOLIDATION_DIRECTIVE = """\
 **Memory consolidation — REQUIRED structure (exact field names)**
@@ -465,10 +469,11 @@ object with EXACTLY these fields:
   "consolidated_insight"   — the deeper insight the cluster converges on
   "transferable_principle" — the general principle it implies
   "pitfalls"               — list of 1-3 traps the cluster collectively exposed
+  "epistemic_marker"       — the honest status of your central claim: exactly
+                             one of the marker values listed earlier
 Example: {"content": {"consolidated_insight": "…", "transferable_principle": "…",
-"pitfalls": ["…"]}, "confidence": 0.8}
-In addition to the fields above, include the required `epistemic_marker`
-field described earlier. It is the ONE permitted extra top-level field."""
+"pitfalls": ["…"], "epistemic_marker": "reasonable_hypothesis"},
+"confidence": 0.8}"""
 
 BAYESIAN_UPDATE_DIRECTIVE = """\
 **Bayesian revision protocol (this is a belief-update task, not a rewrite task)**

@@ -34,7 +34,10 @@ _EXCLUSIVITY = (
     "EXACTLY these", "EXACTLY this",
     "do not add other top-level fields", "or add others",
 )
-_CARVE_OUT = "ONE permitted extra top-level field"
+# The marker must have a declared place in the payload. Naming it among the
+# required fields is the form that actually works; an "extra field" carve-out
+# appended after the example measured 0/8 compliance on synthesis_draft.
+_MARKER_HAS_A_PLACE = '"epistemic_marker"'
 
 
 def _prompt(kind, contract=None):
@@ -66,9 +69,9 @@ def test_no_task_kind_both_requires_and_forbids_the_marker(kind):
         return                                   # nothing to contradict
     if not any(tok in prompt for tok in _EXCLUSIVITY):
         return                                   # no exclusive field list at all
-    assert _CARVE_OUT in prompt, (
+    assert _MARKER_HAS_A_PLACE in prompt, (
         f"{kind.value}: requires an epistemic_marker while an exclusive field "
-        f"list forbids extra fields, and nothing carves the marker out")
+        f"list forbids extra fields, and the marker is named nowhere in it")
 
 
 def test_evaluative_kinds_never_carry_a_marker():

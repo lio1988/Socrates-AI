@@ -179,3 +179,27 @@ comparison and is never an input to the Hybrid status.
 Observed on one mock session: quality mean 7.744 crosses the canonical 7.5
 threshold so the legacy path reports `well_supported`, while H2 reports
 `unresolved` with an empty basis and two standing objections.
+
+## MARKER EMISSION — synthesis gap closed
+
+The carve-out form did not work. `synthesis_draft` measured 0/8 live: the
+directive opened "EXACTLY these five string fields", showed an example with
+five, and only then appended "also include the marker as the one permitted extra
+field". Models stopped at five.
+
+The marker is now a NAMED REQUIRED FIELD in all five enumerating directives —
+listed, counted and present in the example — so there is no extra field to
+resist. Applied uniformly to synthesis_draft, tree_revision,
+lesson_distillation, process_review, lesson_relevance and lesson_consolidation.
+
+Targeted live probe, three models x three attempts on `synthesis_draft`:
+
+| | before | after |
+|---|---|---|
+| coverage | 0/8 = 0.000 | 7/9 = 0.778 |
+
+One of the two misses was a provider timeout, not a marker failure; excluding it
+the rate is 7/8. Distribution remains entirely `reasonable_hypothesis`: models
+still avoid committing to `established_fact` or admitting
+`unsubstantiated_claim`, which is a calibration observation for later stages and
+not a contract defect.
