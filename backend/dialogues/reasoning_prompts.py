@@ -330,6 +330,14 @@ you answer, reason over the WHOLE dialogue, not just the latest move:
    stands, not restart it or ignore what others already established."""
 
 
+OPENING_CONTENT_DIRECTIVE = """\
+**Socratic opening — REQUIRED structure (exact field name)**
+Your `content` MUST be a JSON object with a "question" field holding the
+single opening question you are posing. Do NOT return the question as a bare
+string: a bare string is rejected, and the council then falls back to the raw
+prompt, so your opening is lost.
+Example: {"content": {"question": "…"}, "confidence": 0.6}"""
+
 SYNTHESIS_CONTENT_DIRECTIVE = """\
 **Synthesis output — REQUIRED structure (exact field names)**
 Your `content` MUST be a JSON object with EXACTLY these five string fields — use
@@ -463,7 +471,9 @@ _EVALUATIVE_KINDS = {
 }
 
 DEFAULT_RESPONSE_CONTRACT = (
-    'Respond with EXACTLY one JSON object of the form '
+    '`content` MUST be a JSON object with named fields — NEVER a bare string, '
+    'number, or list. Prose belongs inside a named field of that object, not in '
+    'place of it. Respond with EXACTLY one JSON object of the form '
     '{"content": <object>, "confidence": <number 0..1>} and nothing else.'
 )
 
@@ -515,6 +525,8 @@ def build_reasoning_system_prompt(
     if task_kind in _EVALUATIVE_KINDS:
         parts.append(EVALUATION_DIRECTIVE)
 
+    if task_kind == TaskKind.SOCRATIC_QUESTION:
+        parts.append(OPENING_CONTENT_DIRECTIVE)
     if task_kind in (TaskKind.SYNTHESIS_DRAFT, TaskKind.TREE_REVISION):
         parts.append(SYNTHESIS_CONTENT_DIRECTIVE)
     if task_kind == TaskKind.TREE_REVISION:
