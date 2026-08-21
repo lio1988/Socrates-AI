@@ -63,21 +63,38 @@ _MULTIPLICITY = (
 )
 
 
-def _named_orders(text: str) -> List[Tuple[str, ...]]:
-    """Every full ordering of the four participants asserted in the text.
+#: Only separators may sit between the names of an asserted order. Anything
+#: else means the names are prose about the constraints, not a stated sequence.
+_SEPARATOR = re.compile(r"^[\s,;>\-—–>()\.]*(?:then|and|followed by|before)?[\s,;>\-—–>()\.]*$",
+                        re.IGNORECASE)
 
-    Sequences are read in the order the names appear within a window, so
-    "Clara, David, Anna, Ben" is read as that order and not as a mention list.
+
+def _named_orders(text: str) -> List[Tuple[str, ...]]:
+    """Every full ordering of the four participants ASSERTED in the text.
+
+    A four-name window only counts when nothing but separators lies between the
+    names. Without that, restating the constraints produces phantom orders: in
+    "Clara must present immediately before David, and Ben cannot be last, the
+    order is Anna, Ben, Clara, David" a naive window reads Clara-David-Ben-Anna,
+    which nobody asserted. That false positive scored a correct live answer as
+    wrong, which is why the rule is stricter than "the names appear nearby".
     """
     found: List[Tuple[str, ...]] = []
-    tokens = [(m.start(), m.group(0)) for m in
+    tokens = [(m.start(), m.end(), m.group(0)) for m in
               re.finditer("|".join(PARTICIPANTS), text)]
     for i in range(len(tokens) - 3):
-        window = [name for _, name in tokens[i:i + 4]]
-        if sorted(window) == sorted(PARTICIPANTS):
-            candidate = tuple(window)
-            if candidate not in found:
-                found.append(candidate)
+        window = tokens[i:i + 4]
+        names = [name for _, _, name in window]
+        if sorted(names) != sorted(PARTICIPANTS):
+            continue
+        gaps = [text[window[j][1]:window[j + 1][0]] for j in range(3)]
+        # A parenthetical initial such as "Anna (A)" is still a separator.
+        gaps = [re.sub(r"\([A-D]\)", "", g) for g in gaps]
+        if not all(_SEPARATOR.match(g) for g in gaps):
+            continue
+        candidate = tuple(names)
+        if candidate not in found:
+            found.append(candidate)
     return found
 
 

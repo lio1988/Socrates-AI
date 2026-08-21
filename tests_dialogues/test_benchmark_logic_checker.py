@@ -75,6 +75,38 @@ def test_the_recorded_h10_answer_scores_as_a_failure():
     assert verdict is not BenchmarkVerdict.CORRECT_UNIQUE
 
 
+#: Verbatim core_answer from the Level-3 live run. The council was CORRECT here.
+LEVEL3_ANSWER = (
+    "Given the constraints that Anna (A) must present before Ben (B), Clara (C) "
+    "must present immediately before David (D), and Ben cannot be last, the "
+    "unique presentation order is Anna, Ben, Clara, David (A, B, C, D). This "
+    "order satisfies all constraints: A precedes B, C immediately precedes D, "
+    "and B is not last."
+)
+
+
+def test_restating_the_constraints_does_not_invent_a_phantom_order():
+    """The checker's second failure, pinned.
+
+    Scanning any four-name window read "Clara ... David ... Ben ... Anna" out of
+    the constraint restatement and scored a correct live answer as wrong. Only
+    separators may sit between the names of an asserted order.
+    """
+    from tests_dialogues.benchmark_logic_checker import _named_orders
+    assert _named_orders(LEVEL3_ANSWER) == [("Anna", "Ben", "Clara", "David")]
+
+
+def test_the_level3_live_answer_scores_as_correct():
+    verdict, _ = evaluate_answer(LEVEL3_ANSWER)
+    assert verdict is BenchmarkVerdict.CORRECT_UNIQUE
+
+
+def test_the_tightened_checker_still_fails_the_h10_answer():
+    """Tightening must not have made it lenient again."""
+    verdict, _ = evaluate_answer(H10_ANSWER)
+    assert verdict is BenchmarkVerdict.INCORRECT_MULTIPLE
+
+
 def test_the_checker_is_not_imported_by_any_runtime_module():
     """Puzzle-specific logic must never reach CED or the hybrid core."""
     backend = pathlib.Path(__file__).resolve().parents[1] / "backend"
