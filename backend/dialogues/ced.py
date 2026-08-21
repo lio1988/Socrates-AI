@@ -1956,13 +1956,18 @@ class CEDOrchestrator:
         """
         flags = self._parse_flags(raw.get("penalty_flags", []))
         status = self._parse_status(raw.get("provider_status", "ok"))
-        bd = raw.get("score_breakdown")
         dims = list(ScoreBreakdown.model_fields.keys())
-        try:
-            breakdown = ScoreBreakdown(**{k: float(bd[k]) for k in dims})
-        except (TypeError, ValueError, KeyError):
-            return None, ProviderStatus.SCHEMA_ERROR, flags  # no fabricated score
-        return breakdown, status, flags
+        # Two shapes carry the same seven dimensions: SCORE_CONTENT_DIRECTIVE tells
+        # real providers to return them FLAT in `content`, while FakeProvider and
+        # stored traces nest them under "score_breakdown". Accept either — nested
+        # first, so an explicit breakdown always wins over stray top-level keys.
+        for source in (raw.get("score_breakdown"), raw):
+            try:
+                breakdown = ScoreBreakdown(**{k: float(source[k]) for k in dims})
+            except (TypeError, ValueError, KeyError):
+                continue
+            return breakdown, status, flags
+        return None, ProviderStatus.SCHEMA_ERROR, flags  # no fabricated score
 
     # ── Shadow Scoring (move-level, 0–10, peer-attributed, CED-owned, hidden) ──
 
