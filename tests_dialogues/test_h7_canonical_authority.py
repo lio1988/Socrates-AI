@@ -20,7 +20,8 @@ from backend.dialogues.agent import SocraticAgent
 from backend.dialogues.ced import CEDOrchestrator
 from backend.dialogues.hybrid_epistemic import (
     ClaimRecord, EvidenceRecord, EvidenceSourceType, EvidenceStance,
-    HybridEpistemicState, ObjectionRecord, ObjectionState, ReleaseDecision,
+    HybridEpistemicState, ObjectionRecord, ObjectionScope, ObjectionState,
+    ReleaseDecision,
     SupportState, VerificationClass, freeze_release, verify_task_internal,
 )
 from backend.dialogues.models import EpistemicStatus, ShadowScoringMode
@@ -130,8 +131,11 @@ def test_a_validated_objection_blocks_the_release():
     core = HybridEpistemicState("b", task)
     core.add_claim(ClaimRecord(claim_id="c", text="an order putting Ben last",
                                verification_class=VerificationClass.TASK_INTERNAL))
+    # A counterexample targets the conclusion. Scope must be declared: an
+    # objection defaults to JUSTIFICATION, which sustains without refuting.
     core.add_objection(ObjectionRecord(objection_id="o", target_claim_id="c",
-                                       text="Ben is last"))
+                                       text="Ben is last",
+                                       scope=ObjectionScope.CONCLUSION))
     core.transition_objection("o", ObjectionState.PENDING_VERIFICATION)
     check = core.add_verification(verify_task_internal(
         claim_id="c", objection_id="o", task_text=task,

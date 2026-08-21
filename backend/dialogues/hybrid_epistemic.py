@@ -141,6 +141,8 @@ class VerificationRecord(BaseModel):
     #: Citations this verifier supplied that are not in the task. They are
     #: dropped, never repaired, and counted so unreliability stays visible.
     unresolved_citations: int = 0
+    #: What the verifier says this objection targets, when it says so.
+    objection_scope: Optional[ObjectionScope] = None
 
 
 # ── evidence ─────────────────────────────────────────────────────────────────
@@ -215,8 +217,25 @@ class ObjectionState(str, Enum):
     INCONCLUSIVE = "inconclusive"
 
 
-#: Only a validated objection may falsify. This single line is the fix for the
-#: frozen failure where a false counterexample destroyed a correct answer.
+class ObjectionScope(str, Enum):
+    """What a sustained objection actually damages.
+
+    An objection that lands against the reasoning does not thereby refute the
+    conclusion: an incomplete proof of a true statement leaves it true and
+    unproven. Defaulting to JUSTIFICATION keeps the destructive reading
+    deliberate rather than incidental.
+    """
+
+    #: Asserts the claim itself is false.
+    CONCLUSION = "conclusion"
+    #: Asserts the claim was not properly established.
+    JUSTIFICATION = "justification"
+
+
+#: Only a validated objection may falsify, and only one aimed at the conclusion.
+#: This is the fix for the frozen failure where a false counterexample destroyed
+#: a correct answer, and for the near-miss where a sustained objection to the
+#: reasoning would have done the same.
 DESTRUCTIVE_OBJECTION_STATES: Tuple[ObjectionState, ...] = (ObjectionState.VALIDATED,)
 
 _OBJECTION_TRANSITIONS: Dict[ObjectionState, Tuple[ObjectionState, ...]] = {
@@ -245,10 +264,20 @@ class ObjectionRecord(BaseModel):
     raised_by: Optional[str] = None
     state: ObjectionState = ObjectionState.RAISED
     verification_id: Optional[str] = None
+    #: Defaults to the non-destructive reading; only a verifier moves it.
+    scope: ObjectionScope = ObjectionScope.JUSTIFICATION
 
     @property
     def is_destructive(self) -> bool:
-        return self.state in DESTRUCTIVE_OBJECTION_STATES
+        """Sustained AND aimed at the conclusion. Both, or it destroys nothing."""
+        return (self.state in DESTRUCTIVE_OBJECTION_STATES
+                and self.scope is ObjectionScope.CONCLUSION)
+
+    @property
+    def undermines_support(self) -> bool:
+        """A sustained objection to the reasoning: unresolved, not refuted."""
+        return (self.state in DESTRUCTIVE_OBJECTION_STATES
+                and self.scope is ObjectionScope.JUSTIFICATION)
 
 
 # ── revision ─────────────────────────────────────────────────────────────────
@@ -446,6 +475,7 @@ def verify_task_internal(
     rationale: str,
     verifier_provider_id: Optional[str] = None,
     unresolved_citations: int = 0,
+    objection_scope: Optional["ObjectionScope"] = None,
 ) -> VerificationRecord:
     """Build a task-internal verification record.
 
@@ -475,6 +505,7 @@ def verify_task_internal(
         provenance="task_internal",
         verifier_provider_id=verifier_provider_id,
         unresolved_citations=unresolved_citations,
+        objection_scope=objection_scope,
     )
     validate_verification_record(record, task_text=task_text)
     return record
@@ -664,6 +695,10 @@ class HybridEpistemicState:
                 continue
             if objection.is_destructive:
                 falsifying.append(objection.objection_id)
+            elif objection.undermines_support:
+                # Sustained against the reasoning. The conclusion is not
+                # refuted; it is no longer established.
+                unresolved.append(objection.objection_id)
             elif objection.state in (ObjectionState.RAISED,
                                      ObjectionState.PENDING_VERIFICATION,
                                      ObjectionState.INCONCLUSIVE):
@@ -1096,6 +1131,10 @@ def parse_verification_response(
 
     if not spans:
         return None                # nothing the verifier cited is in the task
+
+    declared = str(content.get("objection_targets") or "").strip().lower()
+    scope = (ObjectionScope.CONCLUSION if declared == "conclusion"
+             else ObjectionScope.JUSTIFICATION)
     try:
         return verify_task_internal(
             claim_id=claim_id,
@@ -1107,6 +1146,7 @@ def parse_verification_response(
             rationale=str(content.get("rationale") or ""),
             verifier_provider_id=verifier_provider_id,
             unresolved_citations=unresolved,
+            objection_scope=scope,
         )
     except MalformedVerification:
         # A fabricated or misplaced citation. Refused, and it contributes
@@ -1167,11 +1207,21 @@ def corroborated_verdict(
                 "verifiers agreed on the verdict but cited different material")
 
     result = results.pop()
-    if result is VerificationResult.VERIFIED:
+    if result is not VerificationResult.VERIFIED:
+        return (ObjectionState.REJECTED, VerificationVerdict.CORROBORATED_INVALID,
+                f"{len(independent)} verifiers agree the objection fails")
+
+    # Destruction needs unanimity on both counts. Verifiers that agree an
+    # objection holds but differ on what it hits have not agreed to destroy
+    # anything, so the non-destructive reading stands.
+    scopes = {r.objection_scope or ObjectionScope.JUSTIFICATION
+              for r in independent}
+    if scopes == {ObjectionScope.CONCLUSION}:
         return (ObjectionState.VALIDATED, VerificationVerdict.CORROBORATED_VALID,
-                f"{len(independent)} verifiers agree the objection holds")
-    return (ObjectionState.REJECTED, VerificationVerdict.CORROBORATED_INVALID,
-            f"{len(independent)} verifiers agree the objection fails")
+                f"{len(independent)} verifiers agree the objection refutes the claim")
+    return (ObjectionState.VALIDATED, VerificationVerdict.CORROBORATED_VALID,
+            f"{len(independent)} verifiers agree the objection holds against the "
+            "reasoning; the conclusion is not refuted")
 
 
 def apply_verification(
@@ -1202,6 +1252,18 @@ def apply_verification(
 
     deciding = next(r for r in stored if r.result in (VerificationResult.VERIFIED,
                                                       VerificationResult.FALSIFIED))
+    if target is ObjectionState.VALIDATED:
+        independent = {}
+        for record in stored:
+            if record.result is VerificationResult.VERIFIED:
+                independent.setdefault(
+                    record.verifier_provider_id or record.verification_id, record)
+        scopes = {r.objection_scope or ObjectionScope.JUSTIFICATION
+                  for r in independent.values()}
+        agreed = (ObjectionScope.CONCLUSION if scopes == {ObjectionScope.CONCLUSION}
+                  else ObjectionScope.JUSTIFICATION)
+        state.objections[objection_id] = state.objections[objection_id].model_copy(
+            update={"scope": agreed})
     state.transition_objection(objection_id, target,
                                verification_id=deciding.verification_id)
     state.transitions.append({"kind": "verification_verdict", "id": objection_id,

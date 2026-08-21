@@ -28,6 +28,7 @@ from backend.dialogues.hybrid_epistemic import (
     HybridEpistemicState,
     MalformedVerification,
     ObjectionRecord,
+    ObjectionScope,
     ObjectionState,
     ObjectionTransitionError,
     RatificationDisposition,
@@ -118,7 +119,8 @@ def test_case1_valid_counterexample_still_falsifies():
     _claim(state, "c_cdab", "The unique order is Clara, David, Anna, Ben.")
     state.add_objection(ObjectionRecord(
         objection_id="o_true", target_claim_id="c_cdab",
-        text="C-D-A-B puts Ben last, which constraint 3 forbids."))
+        text="C-D-A-B puts Ben last, which constraint 3 forbids.",
+        scope=ObjectionScope.CONCLUSION))
     state.transition_objection("o_true", ObjectionState.PENDING_VERIFICATION)
     check = state.add_verification(verify_task_internal(
         claim_id="c_cdab", objection_id="o_true", task_text=task,
@@ -166,7 +168,8 @@ def test_case1_scores_consensus_and_ratification_cannot_override_a_constraint_fa
     state = _state(task)
     _claim(state, "c_bad", "The order is Clara, David, Anna, Ben.")
     state.add_objection(ObjectionRecord(objection_id="o", target_claim_id="c_bad",
-                                        text="Ben is last."))
+                                        text="Ben is last.",
+                                        scope=ObjectionScope.CONCLUSION))
     state.transition_objection("o", ObjectionState.PENDING_VERIFICATION)
     check = state.add_verification(verify_task_internal(
         claim_id="c_bad", objection_id="o", task_text=task,

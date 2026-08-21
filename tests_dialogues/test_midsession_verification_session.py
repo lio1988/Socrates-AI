@@ -38,11 +38,13 @@ class VerifyingMock(ScriptedMockProvider):
     different material while agreeing on the verdict.
     """
 
-    def __init__(self, provider_id, *, holds=False, span=C3, malformed=False):
+    def __init__(self, provider_id, *, holds=False, span=C3, malformed=False,
+                 targets="conclusion"):
         super().__init__(provider_id)
         self._holds = holds
         self._span = span
         self._malformed = malformed
+        self._targets = targets
 
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
         if task.task_kind is not TaskKind.OBJECTION_VERIFICATION:
@@ -57,6 +59,7 @@ class VerifyingMock(ScriptedMockProvider):
                                         "offset": TASK.index(self._span)}],
                        "condition_tested": "does the objection hold?",
                        "objection_holds": self._holds,
+                       "objection_targets": self._targets,
                        "rationale": "checked against the quoted constraint"}
         return json.dumps({"content": content, "confidence": 0.8})
 

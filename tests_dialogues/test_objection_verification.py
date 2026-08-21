@@ -18,6 +18,7 @@ from backend.dialogues.hybrid_epistemic import (
     ClaimRecord,
     HybridEpistemicState,
     ObjectionRecord,
+    ObjectionScope,
     ObjectionState,
     SupportState,
     VerificationClass,
@@ -44,13 +45,19 @@ def _state():
     return state
 
 
-def _record(verifier, *, holds, span=C3, condition="does the order put Ben last?"):
+def _record(verifier, *, holds, span=C3, condition="does the order put Ben last?",
+            scope=ObjectionScope.CONCLUSION):
+    """The objection under test is a counterexample, so it targets the conclusion.
+
+    Scope must be declared: an objection defaults to JUSTIFICATION, which
+    sustains without refuting.
+    """
     return verify_task_internal(
         claim_id="c", objection_id="o", task_text=TASK,
         cited_spans=[(span, TASK.index(span))],
         condition_tested=condition, holds=holds,
         rationale="checked against the cited constraint",
-        verifier_provider_id=verifier)
+        verifier_provider_id=verifier, objection_scope=scope)
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────
@@ -437,3 +444,75 @@ def test_an_objection_declared_not_task_checkable_stays_unresolved():
     assert state.objections["o"].state is ObjectionState.INCONCLUSIVE
     assert state.objections["o"].is_destructive is False
     assert state.assess_claim("c").support_state is SupportState.UNRESOLVED
+
+
+# ── conclusion vs justification ──────────────────────────────────────────────
+
+def test_a_sustained_objection_to_the_reasoning_does_not_refute_the_claim():
+    """Live run 3's near-miss.
+
+    Five of six verifiers agreed the objections held. They challenged whether
+    uniqueness had been established rigorously, not whether the order was wrong.
+    An incomplete proof of a true statement leaves it true and unproven.
+    """
+    state = _state()
+    verdict, reason = apply_verification(state, "o", [
+        _record("seat0", holds=True, scope=ObjectionScope.JUSTIFICATION),
+        _record("seat1", holds=True, scope=ObjectionScope.JUSTIFICATION),
+    ])
+    assert verdict is VerificationVerdict.CORROBORATED_VALID
+    assert "not refuted" in reason
+    objection = state.objections["o"]
+    assert objection.state is ObjectionState.VALIDATED
+    assert objection.is_destructive is False
+    assert objection.undermines_support is True
+    assessment = state.assess_claim("c")
+    assert assessment.support_state is SupportState.UNRESOLVED
+    assert assessment.support_state is not SupportState.FALSIFIED
+
+
+def test_a_sustained_objection_to_the_conclusion_does_refute_it():
+    state = _state()
+    verdict, reason = apply_verification(state, "o", [
+        _record("seat0", holds=True, scope=ObjectionScope.CONCLUSION),
+        _record("seat1", holds=True, scope=ObjectionScope.CONCLUSION),
+    ])
+    assert verdict is VerificationVerdict.CORROBORATED_VALID
+    assert "refutes the claim" in reason
+    assert state.objections["o"].is_destructive is True
+    assert state.assess_claim("c").support_state is SupportState.FALSIFIED
+
+
+def test_disagreement_about_what_an_objection_hits_takes_the_safe_reading():
+    """Destruction needs unanimity on both counts, not just on "it holds"."""
+    state = _state()
+    apply_verification(state, "o", [
+        _record("seat0", holds=True, scope=ObjectionScope.CONCLUSION),
+        _record("seat1", holds=True, scope=ObjectionScope.JUSTIFICATION),
+    ])
+    objection = state.objections["o"]
+    assert objection.state is ObjectionState.VALIDATED
+    assert objection.scope is ObjectionScope.JUSTIFICATION
+    assert objection.is_destructive is False
+    assert state.assess_claim("c").support_state is not SupportState.FALSIFIED
+
+
+def test_an_objection_defaults_to_the_non_destructive_scope():
+    """Nothing refutes by omission."""
+    plain = ObjectionRecord(objection_id="x", target_claim_id="c", text="t")
+    assert plain.scope is ObjectionScope.JUSTIFICATION
+    assert plain.is_destructive is False
+
+
+def test_the_parser_reads_the_declared_target():
+    for declared, expected in (("conclusion", ObjectionScope.CONCLUSION),
+                               ("justification", ObjectionScope.JUSTIFICATION),
+                               ("", ObjectionScope.JUSTIFICATION),
+                               (None, ObjectionScope.JUSTIFICATION)):
+        record = parse_verification_response(
+            {"cited_spans": [C3], "condition_tested": "c3",
+             "objection_holds": True, "objection_targets": declared,
+             "rationale": "r"},
+            task_text=TASK, claim_id="c", objection_id="o",
+            verifier_provider_id="seat0")
+        assert record.objection_scope is expected

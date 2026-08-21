@@ -426,12 +426,17 @@ Your `content` MUST be a JSON object with EXACTLY these fields:
   "condition_tested" — the exact condition you evaluated
   "objection_holds"  — true if the objection holds, false if it fails,
                        null if the task cannot settle it
+  "objection_targets" — "conclusion" if the objection says the answer is WRONG,
+                       "justification" if it says the answer was not properly
+                       established. An incomplete proof of a true statement
+                       leaves it true and unproven, so this is not a detail:
+                       only "conclusion" can refute a claim
   "rationale"        — why, referring to the text you quoted
 Example: {"content": {"objection_concerns_the_task": true,
 "cited_spans": ["Ben does not present last"],
 "condition_tested": "does the proposed order place Ben last?",
-"objection_holds": false, "rationale": "The proposed order has Ben second."},
-"confidence": 0.8}
+"objection_holds": false, "objection_targets": "conclusion",
+"rationale": "The proposed order has Ben second."}, "confidence": 0.8}
 Not-about-the-task example: {"content": {"objection_concerns_the_task": false,
 "cited_spans": [], "condition_tested": "whether the objection concerns the task",
 "objection_holds": null, "rationale": "It criticises how the answer was derived,
