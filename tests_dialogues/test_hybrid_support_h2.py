@@ -1,8 +1,9 @@
 """H2 quality/epistemic-support separation invariants.
 
-H2 may measure support and append it to the existing ledger, but it must not
-touch canonical state, output, scoring, assembly or ratification, and it must
-never fabricate a measure it does not have.
+The locked rule: nothing a model says about itself, and nothing about how well
+it said it, may create epistemic support. Markers, confidence, quality scores,
+agreement and ratification are all visible in H2 and all authoritative over
+nothing. Support is categorical and names the records it rests on.
 
 All tests are offline: no provider, no network, no key.
 """
@@ -19,11 +20,16 @@ from backend.dialogues.ced import CEDOrchestrator
 from backend.dialogues.hybrid_shadow import (
     HybridEpistemicLedger,
     HybridRecordKind,
+    HybridShadowObserver,
 )
 from backend.dialogues.hybrid_support import (
+    AUTHORITATIVE_SUPPORT_INPUTS,
     HYBRID_SUPPORT_SCHEMA_VERSION,
-    MARKER_SELF_DECLARATION_WEIGHTS,
+    SUPPORT_INPUT_CLASSIFICATION,
+    EpistemicSupportAssessment,
     HybridSupportObserver,
+    HybridSupportStatus,
+    SupportInputClass,
     assess_session_support,
 )
 from backend.dialogues.models import (
@@ -45,9 +51,12 @@ from backend.dialogues.providers import FakeProvider
 
 Q = "Is consensus among AI models a reliable signal of truth?"
 
+# Every status the support plane can currently reach. None of them is support.
+_NOT_SUPPORT = {HybridSupportStatus.UNSUPPORTED, HybridSupportStatus.UNRESOLVED}
 
-def _move(move_id, *, marker=None, confidence=0.7, phase=DialogPhase.INITIAL_RESPONSE,
-          content=None):
+
+def _move(move_id, *, marker=None, confidence=0.7,
+          phase=DialogPhase.INITIAL_RESPONSE, content=None):
     return AgentMove(
         move_id=move_id, task_id=f"task_{move_id}", agent_id="agent_0",
         role=AgentRole.SYNTHESIZER, phase=phase,
@@ -61,109 +70,21 @@ def _state(moves, question=Q, session_id="s_h2"):
     return SessionState(session_id=session_id, question=question, moves=list(moves))
 
 
-# ── the measure itself ───────────────────────────────────────────────────────
-
-def test_support_index_weights_markers_by_epistemic_strength():
-    strong = _state([_move("m1", marker=EpistemicMarker.ESTABLISHED_FACT)])
-    weak = _state([_move("m2", marker=EpistemicMarker.UNSUBSTANTIATED_CLAIM)])
-    assert assess_session_support(strong).self_declared_support_index == 1.0
-    assert assess_session_support(weak).self_declared_support_index == 0.0
-
-
-def test_support_index_separates_sessions_quality_scoring_cannot():
-    """The acceptance criterion for H2.
-
-    Two sessions, identical move count and identical (absent) quality scores.
-    One asserts everything as established fact, the other as unsubstantiated.
-    The seven quality dimensions cannot tell these apart; support must.
-    """
-    grounded = _state([_move(f"g{i}", marker=EpistemicMarker.ESTABLISHED_FACT)
-                       for i in range(4)], session_id="grounded")
-    ungrounded = _state([_move(f"u{i}", marker=EpistemicMarker.UNSUBSTANTIATED_CLAIM)
-                         for i in range(4)], session_id="ungrounded")
-
-    a = assess_session_support(grounded)
-    b = assess_session_support(ungrounded)
-    assert a.quality_mean is None and b.quality_mean is None   # nothing to tell apart
-    assert a.self_declared_support_index is not None
-    assert b.self_declared_support_index is not None
-    assert (a.self_declared_support_index
-            - b.self_declared_support_index) == pytest.approx(1.0)
+def _scored(state, value):
+    """Give every move in `state` a peer quality score of `value` on all dimensions."""
+    state.micro_scores = [
+        MicroScore(
+            session_id=state.session_id, output_id=m.move_id, phase=m.phase,
+            author_agent_id="agent_0", voter_agent_id="agent_1",
+            score_breakdown=ScoreBreakdown(
+                **{d: value for d in ScoreBreakdown.model_fields}),
+        )
+        for m in state.moves
+    ]
+    return state
 
 
-def test_unmarked_assertions_are_counted_not_scored():
-    state = _state([
-        _move("m1", marker=EpistemicMarker.LOGICAL_INFERENCE),
-        _move("m2"),
-        _move("m3"),
-    ])
-    a = assess_session_support(state)
-    assert a.moves_total == 3 and a.moves_marked == 1
-    assert a.unmarked_assertion_ratio == pytest.approx(2 / 3)
-    assert a.coverage_ratio == pytest.approx(1 / 3)
-    # An unmarked move must not be silently treated as zero support: the index
-    # is the mean over MARKED moves only.
-    assert a.self_declared_support_index == pytest.approx(
-        MARKER_SELF_DECLARATION_WEIGHTS[EpistemicMarker.LOGICAL_INFERENCE])
-
-
-def test_no_marked_move_leaves_support_index_missing_not_zero():
-    a = assess_session_support(_state([_move("m1"), _move("m2")]))
-    assert a.self_declared_support_index is None   # missing, never faked as 0.0
-    assert a.coverage_ratio == 0.0
-    assert a.unmarked_assertion_ratio == 1.0
-
-
-def test_overconfidence_against_the_marker_band_is_recorded():
-    # unsubstantiated_claim allows at most 0.4 confidence.
-    state = _state([
-        _move("m1", marker=EpistemicMarker.UNSUBSTANTIATED_CLAIM, confidence=0.9),
-        _move("m2", marker=EpistemicMarker.UNSUBSTANTIATED_CLAIM, confidence=0.4),
-    ])
-    a = assess_session_support(state)
-    assert a.overconfidence_violations == 1
-    assert [m.overconfident for m in a.moves] == [True, False]
-
-
-# ── premise scrutiny ─────────────────────────────────────────────────────────
-
-def test_premise_scrutiny_requires_both_engagement_and_challenge():
-    challenged = _state([_move(
-        "m1", phase=DialogPhase.ELENCHUS,
-        content={"objection": "The premise that consensus among models signals "
-                              "truth is unsupported; agreement may be correlated error."},
-    )])
-    assert assess_session_support(challenged).premise_scrutinised is True
-
-    # Engages the terms but never challenges them.
-    agreeing = _state([_move(
-        "m2", phase=DialogPhase.ELENCHUS,
-        content={"note": "Consensus among models is a reliable signal of truth."},
-    )])
-    assert assess_session_support(agreeing).premise_scrutinised is False
-
-
-def test_premise_scrutiny_is_only_credited_in_pressure_phases():
-    """An opening question restating the prompt is not scrutiny of it."""
-    opening = _state([_move(
-        "m1", phase=DialogPhase.OPENING,
-        content={"question": "Is the premise that consensus signals truth "
-                             "unsupported by the evidence?"},
-    )])
-    assert assess_session_support(opening).premise_scrutinised is False
-
-
-def test_assessment_is_deterministic():
-    state = _state([
-        _move("m1", marker=EpistemicMarker.ESTABLISHED_FACT),
-        _move("m2", marker=EpistemicMarker.OPEN_UNCERTAINTY, confidence=0.5),
-    ])
-    assert assess_session_support(state) == assess_session_support(state)
-
-
-# ── ledger integration and authority boundary ────────────────────────────────
-
-def _run_session(hybrid_support=None):
+def _run_session():
     provider = FakeProvider()
     agents = [SocraticAgent(f"agent_{i}", provider) for i in range(4)]
     registry = CouncilProviderRegistry()
@@ -175,23 +96,219 @@ def _run_session(hybrid_support=None):
     return ced, ced.get_session("h2_sess"), final
 
 
+# ── 1-4. no marker, at any strength or volume, creates support ───────────────
+
+@pytest.mark.parametrize("marker", list(EpistemicMarker), ids=lambda m: m.value)
+def test_a_marker_alone_never_creates_support(marker):
+    """1-3 and the rest of the vocabulary: self-description is not evidence."""
+    a = assess_session_support(_state([_move("m1", marker=marker, confidence=0.4)]))
+    assert a.hybrid_h2_epistemic_status in _NOT_SUPPORT
+    assert a.basis_record_ids == []
+    # The marker is still recorded — visible, and powerless.
+    assert a.marker_counts == {marker.value: 1}
+
+
+def test_many_markers_never_create_support():
+    """4. Volume of self-description is still self-description."""
+    boastful = _state([_move(f"m{i}", marker=EpistemicMarker.ESTABLISHED_FACT,
+                             confidence=1.0) for i in range(25)])
+    a = assess_session_support(boastful)
+    assert a.hybrid_h2_epistemic_status in _NOT_SUPPORT
+    assert a.basis_record_ids == []
+    assert a.marker_counts == {"established_fact": 25}
+
+
+# ── 5-6. quality and ratification cannot substitute for records ──────────────
+
+def test_top_quality_plus_established_fact_still_yields_no_support():
+    """5. A perfect score on a self-declared fact establishes nothing."""
+    state = _scored(_state([_move("m1", marker=EpistemicMarker.ESTABLISHED_FACT)],
+                           session_id="s_perfect"), 10.0)
+    a = assess_session_support(state)
+    assert a.quality_mean == pytest.approx(10.0)      # quality at the ceiling
+    assert a.hybrid_h2_epistemic_status in _NOT_SUPPORT
+    assert a.basis_record_ids == []
+
+
+def test_ratified_plus_established_fact_still_yields_no_support():
+    """6. Ratification is agreement among readers, not corroboration."""
+    _ced, state, final = _run_session()
+    assert final.ratified is True
+    a = assess_session_support(state, final)
+    assert a.hybrid_h2_epistemic_status in _NOT_SUPPORT
+    assert a.basis_record_ids == []
+
+
+def test_quality_score_cannot_move_the_support_status():
+    low = assess_session_support(
+        _scored(_state([_move("m1")], session_id="s_low"), 1.0))
+    high = assess_session_support(
+        _scored(_state([_move("m1")], session_id="s_high"), 10.0))
+    assert low.quality_mean != high.quality_mean
+    assert low.hybrid_h2_epistemic_status == high.hybrid_h2_epistemic_status
+    assert low.basis_record_ids == high.basis_record_ids == []
+
+
+def test_confidence_cannot_move_the_support_status():
+    timid = assess_session_support(_state(
+        [_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS, confidence=0.1)],
+        session_id="s_timid"))
+    brash = assess_session_support(_state(
+        [_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS, confidence=0.75)],
+        session_id="s_brash"))
+    assert timid.hybrid_h2_epistemic_status == brash.hybrid_h2_epistemic_status
+    assert timid.basis_record_ids == brash.basis_record_ids == []
+
+
+def test_consensus_cannot_move_the_support_status():
+    """Ten agreeing moves are more numerous, not better supported."""
+    one = assess_session_support(_state(
+        [_move("m0", marker=EpistemicMarker.REASONABLE_HYPOTHESIS)],
+        session_id="s_one"))
+    many = assess_session_support(_state(
+        [_move(f"m{i}", marker=EpistemicMarker.REASONABLE_HYPOTHESIS,
+               content={"text": "the very same claim"}) for i in range(10)],
+        session_id="s_many"))
+    assert one.hybrid_h2_epistemic_status == many.hybrid_h2_epistemic_status
+    assert one.basis_record_ids == many.basis_record_ids == []
+
+
+# ── no numeric epistemic ranker anywhere ─────────────────────────────────────
+
+def test_no_numeric_epistemic_ranker_exists():
+    """The support plane exposes no score, index or rank of any kind."""
+    banned = ("support_index", "epistemic_score", "truth_score", "support_score",
+              "epistemic_rank", "support_rank", "supportedness")
+    fields = set(EpistemicSupportAssessment.model_fields)
+    assert not (fields & set(banned))
+    status = EpistemicSupportAssessment.model_fields["hybrid_h2_epistemic_status"]
+    assert status.annotation is HybridSupportStatus
+
+
+def test_nothing_is_classified_as_an_authoritative_support_input():
+    """Until H3+ can verify, no input may establish support. Pinned explicitly."""
+    assert AUTHORITATIVE_SUPPORT_INPUTS == ()
+    for name in ("epistemic_marker", "move_confidence"):
+        assert SUPPORT_INPUT_CLASSIFICATION[name] is SupportInputClass.ADVISORY_METADATA
+    for name in ("peer_quality_score", "ratification_verdict", "council_agreement",
+                 "legacy_epistemic_status"):
+        assert SUPPORT_INPUT_CLASSIFICATION[name] is SupportInputClass.QUALITY_SIGNAL
+
+
+# ── 11. the status is categorical and names its basis ────────────────────────
+
+def test_status_is_categorical_and_states_its_basis():
+    """11. Every status exposes what it rests on and what is still open."""
+    challenged = _state([
+        _move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS),
+        _move("obj1", phase=DialogPhase.ELENCHUS,
+              content={"objection": "the premise is unsupported"}),
+    ])
+    a = assess_session_support(challenged)
+    assert a.hybrid_h2_epistemic_status is HybridSupportStatus.UNRESOLVED
+    assert a.basis_record_ids == []
+    assert a.unresolved_record_ids == ["obj1"]
+    assert a.advisory_metadata_count > 0
+
+    quiet = assess_session_support(_state([_move("m1")], session_id="s_quiet"))
+    assert quiet.hybrid_h2_epistemic_status is HybridSupportStatus.UNSUPPORTED
+    assert quiet.unresolved_record_ids == []
+
+
+# ── 10. legacy canonical status stays available, and stays out of the status ─
+
+def test_legacy_canonical_status_is_carried_through_unchanged():
+    """10. The old threshold result stays visible for comparison."""
+    _ced, state, final = _run_session()
+    a = assess_session_support(state, final)
+    assert a.legacy_epistemic_status == final.epistemic_status.value
+    assert a.legacy_epistemic_status in {s.value for s in EpistemicStatus}
+
+
+def test_legacy_well_supported_does_not_make_the_hybrid_status_supported():
+    """The threshold that promotes on quality alone must not leak through."""
+    _ced, state, final = _run_session()
+    final.epistemic_status = EpistemicStatus.WELL_SUPPORTED
+    a = assess_session_support(state, final)
+    assert a.legacy_epistemic_status == "well_supported"
+    assert a.hybrid_h2_epistemic_status in _NOT_SUPPORT
+
+
+def test_hybrid_status_is_absent_when_no_final_response_is_supplied():
+    a = assess_session_support(_state([_move("m1")]))
+    assert a.legacy_epistemic_status is None
+    assert a.hybrid_h2_epistemic_status in _NOT_SUPPORT
+
+
+# ── 7. markers survive as replayable metadata ────────────────────────────────
+
+def test_marker_is_stored_and_replayed_as_metadata():
+    """7. Powerless does not mean discarded — the marker must round-trip."""
+    _ced, state, final = _run_session()
+    state.moves[0].epistemic_markers = [EpistemicMarker.OPEN_UNCERTAINTY]
+    ledger = HybridEpistemicLedger()
+    records = HybridSupportObserver(ledger).capture_support(state, final)
+    stored = {r.payload["move_id"]: r.payload.get("marker") for r in records
+              if r.kind is HybridRecordKind.MOVE_SUPPORT_ASSESSED}
+    assert stored[state.moves[0].move_id] == "open_uncertainty"
+
+
+# ── advisory metadata remains visible ────────────────────────────────────────
+
+def test_advisory_metadata_stays_visible_and_powerless():
+    state = _state([
+        _move("m1", marker=EpistemicMarker.UNSUBSTANTIATED_CLAIM, confidence=0.9),
+        _move("m2"),
+    ])
+    a = assess_session_support(state)
+    assert a.moves_total == 2 and a.moves_marked == 1
+    assert a.coverage_ratio == pytest.approx(0.5)
+    assert a.unmarked_assertion_ratio == pytest.approx(0.5)
+    assert a.overconfidence_violations == 1        # 0.9 over the 0.4 ceiling
+    assert a.hybrid_h2_epistemic_status in _NOT_SUPPORT
+
+
+def test_assessment_is_deterministic():
+    state = _state([
+        _move("m1", marker=EpistemicMarker.ESTABLISHED_FACT),
+        _move("m2", marker=EpistemicMarker.OPEN_UNCERTAINTY, confidence=0.5),
+    ])
+    assert assess_session_support(state) == assess_session_support(state)
+
+
+def test_premise_scrutiny_requires_both_engagement_and_challenge():
+    challenged = _state([_move(
+        "m1", phase=DialogPhase.ELENCHUS,
+        content={"objection": "The premise that consensus among models signals "
+                              "truth is unsupported; agreement may be correlated error."},
+    )])
+    assert assess_session_support(challenged).premise_scrutinised is True
+
+    agreeing = _state([_move(
+        "m2", phase=DialogPhase.ELENCHUS,
+        content={"note": "Consensus among models is a reliable signal of truth."},
+    )])
+    assert assess_session_support(agreeing).premise_scrutinised is False
+
+
+# ── ledger integration and the canonical boundary ────────────────────────────
+
 def test_capture_appends_to_the_single_existing_ledger():
     _ced, state, final = _run_session()
     ledger = HybridEpistemicLedger()
     records = HybridSupportObserver(ledger).capture_support(state, final)
-    kinds = {r.kind for r in records}
-    assert HybridRecordKind.SESSION_SUPPORT_ASSESSED in kinds
+    assert HybridRecordKind.SESSION_SUPPORT_ASSESSED in {r.kind for r in records}
     assert all(r.authority == "shadow_non_authoritative" for r in records)
     assert records[0].payload["schema_version"] == HYBRID_SUPPORT_SCHEMA_VERSION
 
 
 def test_capture_is_idempotent_and_does_not_mutate_canonical_state():
+    """13. FinalResponse and SessionState stay byte-identical in shadow mode."""
     _ced, state, final = _run_session()
     before_state = state.model_dump(mode="json")
     before_final = final.model_dump(mode="json")
 
-    ledger = HybridEpistemicLedger()
-    observer = HybridSupportObserver(ledger)
+    observer = HybridSupportObserver(HybridEpistemicLedger())
     first = observer.capture_support(state, final)
     second = observer.capture_support(state, final)
 
@@ -200,106 +317,39 @@ def test_capture_is_idempotent_and_does_not_mutate_canonical_state():
     assert final.model_dump(mode="json") == before_final
 
 
-def test_quality_and_support_are_reported_side_by_side_never_merged():
+_H2_KINDS = {HybridRecordKind.SESSION_SUPPORT_ASSESSED,
+             HybridRecordKind.MOVE_SUPPORT_ASSESSED}
+
+
+def test_h1_replay_stays_deterministic_alongside_h2():
+    """12. Adding H2 records must not disturb H1 identity, ordering or replay."""
     _ced, state, final = _run_session()
-    a = assess_session_support(state)
+    sid = state.session_id
+
+    alone = HybridEpistemicLedger()
+    HybridShadowObserver(alone).capture_session(state, final)
+    h1_alone = [r.record_id for r in alone.records(sid)]
+
+    shared = HybridEpistemicLedger()
+    HybridShadowObserver(shared).capture_session(state, final)
+    before = [r.record_id for r in shared.records(sid)]
+    HybridSupportObserver(shared).capture_support(state, final)
+
+    h1_after = [r.record_id for r in shared.records(sid) if r.kind not in _H2_KINDS]
+    assert h1_alone == before                  # H2 absent changes nothing
+    assert h1_after == before                  # H2 present changes nothing
+    assert shared.replay(sid) == shared.records(sid)   # replay stays exact
+
+
+def test_the_two_planes_are_reported_side_by_side_never_merged():
+    _ced, state, final = _run_session()
     payload = HybridSupportObserver(HybridEpistemicLedger()).capture_support(
         state, final)[0].payload
-    # Both present, as distinct fields. H2 exposes no combined figure.
-    assert "quality_mean" in payload and "self_declared_support_index" in payload
-    assert payload["quality_mean"] == a.quality_mean
-    assert not any("combined" in k or "overall_epistemic" in k for k in payload)
-
-
-def test_h2_is_off_by_default_on_the_orchestrator():
-    """Nothing in CED reaches H2 unless a caller injects it explicitly."""
-    _ced, state, final = _run_session()
-    assert final.ratified in (True, False)          # canonical run completed
-    assert not hasattr(_ced, "hybrid_support")      # no implicit wiring added
-
-
-# ── H2 boundary: nothing may manufacture epistemic support ───────────────────
-#
-# A marker is the model's own label for its own claim. Quality is how well a move
-# reads. Confidence is how sure it says it is. Agreement is how many said it.
-# None of those is evidence, so none of them may promote epistemic status. These
-# four tests pin each arrow to ABSENT.
-
-def _scored(moves, values, session_id="s_q"):
-    """A session whose peer quality scores are all `values` on every dimension."""
-    state = _state(moves, session_id=session_id)
-    state.micro_scores = [
-        MicroScore(
-            session_id=session_id, output_id=m.move_id, phase=m.phase,
-            author_agent_id="agent_0", voter_agent_id="agent_1",
-            score_breakdown=ScoreBreakdown(**{d: values for d in
-                                              ScoreBreakdown.model_fields}),
-        )
-        for m in moves
-    ]
-    return state
-
-
-def test_quality_score_cannot_create_support():
-    moves = [_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS)]
-    low = assess_session_support(_scored(moves, 1.0, "s_low"))
-    high = assess_session_support(_scored(moves, 10.0, "s_high"))
-    # Quality moved from the floor to the ceiling.
-    assert low.quality_mean != high.quality_mean
-    # Support did not move at all.
-    assert low.self_declared_support_index == high.self_declared_support_index
-    assert low.coverage_ratio == high.coverage_ratio
-
-
-def test_confidence_cannot_create_support():
-    timid = _state([_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS,
-                          confidence=0.1)], session_id="s_timid")
-    brash = _state([_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS,
-                          confidence=0.75)], session_id="s_brash")
-    a, b = assess_session_support(timid), assess_session_support(brash)
-    assert a.self_declared_support_index == b.self_declared_support_index
-    # Confidence only ever registers as a consistency observation.
-    assert a.overconfidence_violations == b.overconfidence_violations == 0
-
-
-def test_consensus_cannot_create_support():
-    """Ten agreeing moves are not more supported than one — only more numerous."""
-    one = _state([_move("m0", marker=EpistemicMarker.REASONABLE_HYPOTHESIS)],
-                 session_id="s_one")
-    many = _state([_move(f"m{i}", marker=EpistemicMarker.REASONABLE_HYPOTHESIS,
-                         content={"text": "the very same claim"})
-                   for i in range(10)], session_id="s_many")
-    a, b = assess_session_support(one), assess_session_support(many)
-    assert a.self_declared_support_index == b.self_declared_support_index
-    assert a.coverage_ratio == b.coverage_ratio == 1.0
-
-
-def test_marker_cannot_promote_canonical_epistemic_status():
-    """Self-labelling everything `established_fact` promotes nothing anywhere."""
-    boastful = _state([_move(f"m{i}", marker=EpistemicMarker.ESTABLISHED_FACT,
-                             confidence=1.0) for i in range(5)], session_id="s_boast")
-    a = assess_session_support(boastful)
-    assert a.self_declared_support_index == 1.0     # it said so...
-
-    # ...and nothing in the assessment carries canonical epistemic authority.
-    dumped = a.model_dump(mode="json")
-    statuses = {s.value for s in EpistemicStatus}
-    assert not (statuses & set(dumped))                       # no such field
-    assert not (statuses & _flatten_values(dumped))           # no such value
-    assert dumped["authority"] == "shadow_non_authoritative"
-
-
-def _flatten_values(value):
-    out = set()
-    if isinstance(value, dict):
-        for v in value.values():
-            out |= _flatten_values(v)
-    elif isinstance(value, (list, tuple)):
-        for v in value:
-            out |= _flatten_values(v)
-    elif isinstance(value, str):
-        out.add(value)
-    return out
+    assert "quality_mean" in payload                       # quality plane
+    assert "hybrid_h2_epistemic_status" in payload         # support plane
+    assert "legacy_epistemic_status" in payload            # legacy comparison
+    assert not any(k.startswith("combined") or "overall_epistemic" in k
+                   for k in payload)
 
 
 def test_no_canonical_module_imports_hybrid_support():

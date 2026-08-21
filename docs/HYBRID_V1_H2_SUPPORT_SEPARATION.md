@@ -35,75 +35,71 @@ does not make it measure grounding.
 
 ## What H2 adds
 
-`backend/dialogues/hybrid_support.py` computes an `EpistemicSupportAssessment`
-from canonical artifacts only:
+Two planes, strictly separated.
+
+**Quality plane** — how well the council argued. Peer scores, the leaderboard,
+and `legacy_epistemic_status`: the canonical `_epistemic_hint` result, carried
+through unchanged. All visible; all authoritative over nothing.
+
+**Epistemic-support plane** — whether a conclusion is supported. Categorical,
+never numeric, and every status names its basis:
 
 | field | meaning |
 |---|---|
-| `support_index` | mean support weight over MARKED moves; `None` when nothing was marked |
-| `coverage_ratio` | share of moves carrying any epistemic marker |
-| `unmarked_assertion_ratio` | share asserting with no marker at all |
-| `overconfidence_violations` | confidence above the ceiling the move's own marker allows |
-| `premise_scrutinised` | did any pressure-phase move both engage and challenge the question's assertions |
-| `quality_mean` | carried alongside for contrast, never merged |
+| `hybrid_h2_epistemic_status` | `UNSUPPORTED` or `UNRESOLVED` — the only honest states available |
+| `basis_record_ids` | authoritative records the status rests on; empty until H3+ |
+| `unresolved_record_ids` | challenges raised and verified by nothing |
+| `advisory_metadata_count` | markers and confidence readings seen |
+| `quality_signal_count` | peer scores seen |
 
-Support weights order the markers by the strength of the epistemic claim they
-make: `established_fact` 1.0, `logical_inference` 0.8, `reasonable_hypothesis`
-0.5, `open_uncertainty` 0.25, `unsubstantiated_claim` 0.0. These are not quality
-weights — an `open_uncertainty` move can be excellent work and still supply
-little support for a conclusion.
+## Input classification
 
-## Authority boundary
+`SUPPORT_INPUT_CLASSIFICATION` names every input and the only way it may be used.
 
-* additive and off by default — no orchestrator wiring, injected by a caller;
-* non-authoritative — feeds nothing in scoring, assembly, ratification, release,
-  `SessionState` or `FinalResponse`;
-* no second authority — records append to the single existing H1 ledger under two
-  additive kinds, `session_support.assessed` and `move_support.assessed`;
-* deterministic — a pure function of canonical artifacts, no provider or network
-  call, replayable and offline-testable;
-* honest — `support_index` is `None`, never `0.0`, when nothing was marked.
-  Missing data is not zero support, and CED never fabricates a missing measure.
+| input | class |
+|---|---|
+| `epistemic_marker`, `move_confidence` | ADVISORY METADATA |
+| `peer_quality_score`, `section_quality_score`, `epistemic_leaderboard` | QUALITY SIGNAL |
+| `ratification_verdict`, `council_agreement` | QUALITY SIGNAL |
+| `legacy_epistemic_status` | QUALITY SIGNAL — a score threshold wearing an epistemic name |
+| `elenchus_objection`, `ratification_objection` | UNRESOLVED |
+| *(nothing)* | AUTHORITATIVE SUPPORT |
 
-## What H2 cannot do
+`AUTHORITATIVE_SUPPORT_INPUTS` is empty and a test pins it that way. Verification
+and evidence promotion are H3+.
 
-A deterministic measure cannot know whether a claim is TRUE. H2 measures whether
-the council **supported** its claims and whether it ever **examined** the
-question's assertions. Truth adjudication is not claimed and is not in scope.
+## Why there is no number
 
-## First live result: the blocker H2 exposed
+An earlier revision computed `support_index` by averaging epistemic markers. That
+was wrong. A marker is the model's OWN label for its OWN claim, so a council that
+stamped `established_fact` on everything would have scored a perfect "support"
+figure — self-description promoted to evidence. It was removed and NOT replaced
+with another heuristic. Not markers, not confidence, not quality, not agreement
+or corroboration counts or ratifier popularity.
 
-Running H2 over both arms:
+## The two planes disagree, which is the point
 
-| metric | FALSE | TRUE |
-|---|---|---|
-| `support_index` | 0.500 | 0.500 |
-| `coverage_ratio` | 0.214 | 0.071 |
-| `unmarked_assertion_ratio` | **0.786** | **0.929** |
-| marker counts | `{reasonable_hypothesis: 3}` | `{reasonable_hypothesis: 1}` |
+A live mock session produced:
 
-`support_index` did not separate the arms — because there was almost nothing to
-compute it from. Between 79% and 93% of moves asserted with **no epistemic marker
-at all**, and every marker that did appear was the same middling
-`reasonable_hypothesis`.
+```json
+{"hybrid_h2_epistemic_status": "unresolved",
+ "basis_record_ids": [],
+ "unresolved_record_ids": ["move_8afb0563d5bf", "move_fe49c0e477cd"],
+ "quality_mean": 7.744339,
+ "legacy_epistemic_status": "well_supported"}
+```
 
-This is the finding, not a failure of the measure. `EPISTEMIC_MARKER_DIRECTIVE`,
-the `EpistemicMarker` vocabulary and `MARKER_CONFIDENCE_BANDS` all exist, and in
-live runs the vocabulary is close to unused. No support measure can discriminate
-while its input is absent. Raising marker emission is the prerequisite for a
-support index that means anything, and it is the natural next step before any
-stage is allowed to govern.
-
-`premise_scrutinised` returned `True` in both arms. The heuristic is deliberately
-conservative but has not been validated against a labelled set, so it should be
-read as an indicator and not as evidence that scrutiny was adequate.
+Mean quality 7.744 crosses the canonical 7.5 threshold, so the legacy path calls
+it `well_supported`. H2 calls it `unresolved`: nothing authoritative supports it
+and two objections stand unanswered. Both are reported; neither is merged.
 
 ## Gate
 
-* 12 focused H2 tests, offline, no provider or network call;
-* H0/H0.5/H1 preservation matrix: 26 passed, unchanged;
-* full `tests_dialogues`: 1614 passed;
-* `compileall`: clean;
+* 26 focused H2 tests, offline, no provider or network call;
+* 56 marker-contract tests; the audit reports 0 conflicts over all 17 task kinds;
+* H0/H0.5 preservation gate 15 passed and H1 ledger/replay 11 passed, unchanged;
+* full `tests_dialogues`: 1684 passed; repository-wide: 1991 passed;
+* `compileall` clean; `git diff --check` clean;
 * canonical `SessionState` and `FinalResponse` byte-identical after capture,
   asserted directly in `test_capture_is_idempotent_and_does_not_mutate_canonical_state`.
 

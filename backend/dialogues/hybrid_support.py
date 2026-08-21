@@ -1,42 +1,62 @@
 """Socrates Epistemic Hybrid v1 — H2 quality/epistemic-support separation.
 
 H1 classified the existing seven-dimension peer score as a QUALITY score
-(``move_quality_score.observed``). H2 supplies the measure that name implies is
-missing: an epistemic SUPPORT assessment that is computed separately, carries no
-authority, and is never mixed into the quality score.
+(``move_quality_score.observed``). H2 separates the two planes that were being
+read as one, and does nothing else.
 
-Why the separation is needed, measured rather than assumed: two live councils
+Why the separation is needed, measured rather than assumed. Two live councils
 were run on the same downstream question, differing only in whether the premise
 handed to them was true. The premise-false arm scored ``factual_grounding`` 7.07
-and the premise-true arm 6.78 — the poorly grounded answer scored HIGHER, and
-every dimension separated the arms by less than 0.3 on a 0..10 scale. The
-quality dimensions track fluency and structure, not epistemic support.
+and 6.93 across runs; the premise-true arm scored 6.78 and 6.41. The poorly
+grounded answer scored HIGHER, and no dimension separated the arms by more than
+0.52 on a 0..10 scale. Worse, the canonical ``_epistemic_hint`` promotes any
+session whose mean quality score reaches 7.5 to ``WELL_SUPPORTED``, and the
+premise-false arm measured 7.609. A discredited premise, fluently argued, was
+over that line.
 
-Design constraints inherited from the H0.5 preservation contract:
+## The two planes
 
-* additive and feature-gated — the assessment is opt-in and off by default;
-* non-authoritative — nothing here feeds scoring, assembly, ratification,
-  release, ``SessionState`` or ``FinalResponse``;
-* no second authority — H2 appends to the single existing H1 ledger rather than
-  opening a parallel store;
-* deterministic — the assessment is a pure function of canonical artifacts and
-  makes no provider or network call, so it is replayable and offline-testable;
-* honest — a deterministic measure cannot know whether a claim is TRUE. It
-  measures whether the council SUPPORTED its claims and whether it ever examined
-  the question's own assertions. Truth adjudication is not claimed here.
+**Quality plane.** How well the council argued: peer scores, the leaderboard,
+the legacy threshold status. Fully visible here, and authoritative over nothing.
 
-Marker boundary. An epistemic marker is the model's OWN label for its own
-claim. It is self-classification metadata, never evidence, verification or
-truth. Nothing derived from it promotes epistemic status: a council that
-stamped ``established_fact`` on every move would move this profile and change
-no support conclusion anywhere, because H2 concludes nothing. Permitted uses
-are audit, diagnostics, calibration and prioritising what later verification
-should look at first.
+**Epistemic-support plane.** Whether a conclusion is actually supported.
+Categorical, and derived ONLY from authoritative support records.
+
+## Why there is no number
+
+An earlier revision of this module computed a ``support_index`` by averaging
+epistemic markers. That was wrong, and the wrongness is worth stating plainly: a
+marker is the MODEL'S OWN LABEL for its OWN claim, so a council that stamped
+``established_fact`` on every move would have scored a perfect "support" figure.
+Self-description had been promoted to evidence.
+
+No numeric epistemic ranker replaces it. Not from markers, not from confidence,
+not from quality, not from agreement, corroboration counts or ratifier
+popularity. A single number invites exactly the collapse the measurements above
+document. Support is categorical, and every status names the records it rests on.
+
+## What that yields today
+
+No authoritative support record exists anywhere in the system yet: verification,
+evidence promotion and objection validation are H3+ and are not implemented. So
+``basis_record_ids`` is empty and the status is honestly ``UNSUPPORTED`` or
+``UNRESOLVED``. That is the correct answer, not a gap to paper over.
+
+## Authority boundary
+
+* additive and off by default — injected by a caller, no orchestrator wiring;
+* non-authoritative — feeds nothing in scoring, assembly, ratification, release,
+  ``SessionState`` or ``FinalResponse``;
+* no second authority — records append to the single existing H1 ledger;
+* deterministic — a pure function of canonical artifacts, no provider call;
+* the legacy canonical status is carried through unchanged for comparison and is
+  never an input to the Hybrid status.
 """
 
 from __future__ import annotations
 
 import re
+from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,34 +69,64 @@ from .hybrid_shadow import (
 )
 from .models import (
     DialogPhase,
-    EpistemicMarker,
     FinalResponse,
     SessionState,
 )
 from .reasoning_prompts import MARKER_CONFIDENCE_BANDS
 
-HYBRID_SUPPORT_SCHEMA_VERSION = "socrates.hybrid-support.h2/v1"
+HYBRID_SUPPORT_SCHEMA_VERSION = "socrates.hybrid-support.h2/v2"
 
-# How strong an epistemic claim each honesty marker DECLARES. These rank what a
-# move said about itself; they are neither quality weights nor evidence. A move
-# labelled "established_fact" is not thereby established — it is a move that
-# claimed to be, and the difference is the whole point of the marker boundary.
-MARKER_SELF_DECLARATION_WEIGHTS: Dict[EpistemicMarker, float] = {
-    EpistemicMarker.ESTABLISHED_FACT: 1.0,
-    EpistemicMarker.LOGICAL_INFERENCE: 0.8,
-    EpistemicMarker.REASONABLE_HYPOTHESIS: 0.5,
-    EpistemicMarker.OPEN_UNCERTAINTY: 0.25,
-    EpistemicMarker.UNSUBSTANTIATED_CLAIM: 0.0,
+
+class SupportInputClass(str, Enum):
+    """How each canonical input may be used by the epistemic-support plane."""
+
+    AUTHORITATIVE_SUPPORT = "authoritative_support"
+    AUTHORITATIVE_CONTRADICTION = "authoritative_contradiction"
+    UNRESOLVED = "unresolved"
+    ADVISORY_METADATA = "advisory_metadata"
+    QUALITY_SIGNAL = "quality_signal"
+
+
+class HybridSupportStatus(str, Enum):
+    """Categorical support state. Never numeric, never ranked.
+
+    Only the two honest states are defined. A SUPPORTED value would require
+    authoritative support records, which verification (H3+) has not yet made it
+    possible to produce. Defining it now would invite something to fill it.
+    """
+
+    UNSUPPORTED = "unsupported"
+    UNRESOLVED = "unresolved"
+
+
+#: Every input the support plane could see, and the only way it may be used.
+#: Nothing is classified AUTHORITATIVE_SUPPORT: no such record exists before H3.
+SUPPORT_INPUT_CLASSIFICATION: Dict[str, SupportInputClass] = {
+    # Model self-description. Never evidence.
+    "epistemic_marker": SupportInputClass.ADVISORY_METADATA,
+    "move_confidence": SupportInputClass.ADVISORY_METADATA,
+    # How well it was argued, not whether it is so.
+    "peer_quality_score": SupportInputClass.QUALITY_SIGNAL,
+    "section_quality_score": SupportInputClass.QUALITY_SIGNAL,
+    "epistemic_leaderboard": SupportInputClass.QUALITY_SIGNAL,
+    # Popularity among ratifiers is agreement, not corroboration.
+    "ratification_verdict": SupportInputClass.QUALITY_SIGNAL,
+    "council_agreement": SupportInputClass.QUALITY_SIGNAL,
+    # A score threshold wearing an epistemic name.
+    "legacy_epistemic_status": SupportInputClass.QUALITY_SIGNAL,
+    # Raised, and never verified by anything.
+    "elenchus_objection": SupportInputClass.UNRESOLVED,
+    "ratification_objection": SupportInputClass.UNRESOLVED,
 }
 
-# Phases whose job is to apply pressure. Premise scrutiny is only credited here:
-# an opening question restating the prompt is not scrutiny of it.
+#: Inputs that may establish support. Empty until H3+ implements verification.
+AUTHORITATIVE_SUPPORT_INPUTS: Tuple[str, ...] = tuple(
+    name for name, kind in SUPPORT_INPUT_CLASSIFICATION.items()
+    if kind is SupportInputClass.AUTHORITATIVE_SUPPORT
+)
+
 _SCRUTINY_PHASES = (DialogPhase.ELENCHUS, DialogPhase.REFLECTION)
 
-# A move scrutinises the premise when it reuses the question's distinctive terms
-# AND carries an explicit challenge token. Deterministic and deliberately
-# conservative: it under-reports rather than inventing scrutiny that never
-# happened.
 _CHALLENGE_TOKENS = (
     "assumption", "premise", "presuppos", "unfounded", "unsupported",
     "not supported", "contest", "disput", "criticis", "criticiz", "critique",
@@ -95,18 +145,15 @@ _WORD_RE = re.compile(r"[A-Za-z][A-Za-z\-']{4,}")
 
 
 def _question_terms(question: str) -> Tuple[str, ...]:
-    """Distinctive content words of the question, lowercased and deduplicated."""
     seen: Dict[str, None] = {}
     for raw in _WORD_RE.findall(question or ""):
         word = raw.lower()
-        if word in _STOPWORDS:
-            continue
-        seen.setdefault(word, None)
+        if word not in _STOPWORDS:
+            seen.setdefault(word, None)
     return tuple(seen)
 
 
 def _move_text(content: Any) -> str:
-    """Flatten a move's content object into searchable text."""
     if isinstance(content, str):
         return content
     if isinstance(content, Mapping):
@@ -116,8 +163,17 @@ def _move_text(content: Any) -> str:
     return str(content)
 
 
-class MoveSupport(BaseModel):
-    """Per-move support facts. Records what the move CLAIMED, not whether it is true."""
+def _scrutinises_premise(content: Any, question_terms: Sequence[str]) -> bool:
+    if not question_terms:
+        return False
+    text = _move_text(content).lower()
+    if not any(token in text for token in _CHALLENGE_TOKENS):
+        return False
+    return sum(1 for term in question_terms if term in text) >= 2
+
+
+class MoveMarkerObservation(BaseModel):
+    """One move's self-description. Advisory metadata, authoritative over nothing."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -127,13 +183,12 @@ class MoveSupport(BaseModel):
     marker: Optional[str] = None
     confidence: float
     marked: bool
-    support_weight: Optional[float] = None
     confidence_ceiling: Optional[float] = None
     overconfident: bool = False
 
 
 class EpistemicSupportAssessment(BaseModel):
-    """H2 support view of one finalized session. Non-authoritative by construction."""
+    """H2 view of one finalized session, in two strictly separated planes."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -141,48 +196,51 @@ class EpistemicSupportAssessment(BaseModel):
     authority: str = SHADOW_AUTHORITY
     session_id: str
 
+    # ── epistemic-support plane (categorical, record-based) ──────────────────
+    hybrid_h2_epistemic_status: HybridSupportStatus = HybridSupportStatus.UNSUPPORTED
+    #: Authoritative records this status rests on. Empty until H3+ produces any.
+    basis_record_ids: List[str] = Field(default_factory=list)
+    #: Challenges raised in the dialogue that nothing has verified either way.
+    unresolved_record_ids: List[str] = Field(default_factory=list)
+    advisory_metadata_count: int = 0
+    quality_signal_count: int = 0
+
+    # ── quality plane (visible, authoritative over nothing) ──────────────────
+    quality_mean: Optional[float] = None
+    #: The canonical status, carried through unchanged for comparison. It is a
+    #: quality-score threshold (mean >= 7.5 -> well_supported) and is NEVER an
+    #: input to hybrid_h2_epistemic_status.
+    legacy_epistemic_status: Optional[str] = None
+
+    # ── advisory metadata (visible, authoritative over nothing) ──────────────
     moves_total: int = 0
     moves_marked: int = 0
-    #: Share of moves that asserted with no honesty marker at all. A bare
-    #: assertion supplies no support, however well written it is.
     unmarked_assertion_ratio: float = 0.0
-    marker_counts: Dict[str, int] = Field(default_factory=dict)
-
-    #: Mean SELF-DECLARED claim strength over MARKED moves, or None when nothing
-    #: was marked. This is what the council said about itself — never evidence,
-    #: and it promotes nothing. Deliberately not defaulted to 0.0: "no marked
-    #: claims" is missing data, not zero, and CED never fabricates a measure.
-    self_declared_support_index: Optional[float] = None
-    #: Share of moves carrying a marker. A high self-declaration index over a
-    #: tiny coverage_ratio says almost nothing and must be read together with it.
     coverage_ratio: float = 0.0
-
-    #: Moves whose confidence exceeds the ceiling their own marker allows.
+    marker_counts: Dict[str, int] = Field(default_factory=dict)
     overconfidence_violations: int = 0
-
-    #: Did any pressure-phase move actually examine the question's assertions?
     premise_scrutinised: bool = False
     premise_scrutiny_moves: List[str] = Field(default_factory=list)
-
-    #: The quality mean carried alongside for contrast ONLY. H2 never combines
-    #: the two into one number; keeping them adjacent is the whole point.
-    quality_mean: Optional[float] = None
-
-    moves: List[MoveSupport] = Field(default_factory=list)
+    moves: List[MoveMarkerObservation] = Field(default_factory=list)
 
 
-def assess_session_support(state: SessionState) -> EpistemicSupportAssessment:
-    """Compute the H2 support assessment from canonical artifacts only.
+def assess_session_support(
+    state: SessionState, final: Optional[FinalResponse] = None,
+) -> EpistemicSupportAssessment:
+    """Compute the H2 assessment from canonical artifacts only.
 
-    Pure: no provider call, no network, no mutation of ``state``. Given the same
-    session it returns the same assessment, so it is replayable offline.
+    Pure: no provider call, no network, no mutation of ``state`` or ``final``.
+
+    ``final`` is read only to carry the legacy canonical status through for
+    comparison. The threshold that produces it is not reimplemented here — one
+    authority for that rule, and it stays in CED.
     """
     question_terms = _question_terms(state.question)
-    rows: List[MoveSupport] = []
+    rows: List[MoveMarkerObservation] = []
     marker_counts: Dict[str, int] = {}
-    weights: List[float] = []
     overconfident = 0
     scrutiny_moves: List[str] = []
+    unresolved: List[str] = []
 
     for move in state.moves:
         marker = move.epistemic_markers[0] if move.epistemic_markers else None
@@ -191,69 +249,76 @@ def assess_session_support(state: SessionState) -> EpistemicSupportAssessment:
         is_over = bool(ceiling is not None and move.confidence > ceiling + 1e-9)
         if is_over:
             overconfident += 1
-
-        weight: Optional[float] = None
-        if marker is not None:
+        if marker_value is not None:
             marker_counts[marker_value] = marker_counts.get(marker_value, 0) + 1
-            weight = MARKER_SELF_DECLARATION_WEIGHTS.get(marker)
-            if weight is not None:
-                weights.append(weight)
 
-        rows.append(MoveSupport(
+        rows.append(MoveMarkerObservation(
             move_id=move.move_id,
             agent_id=move.agent_id,
             phase=move.phase.value,
             marker=marker_value,
             confidence=float(move.confidence),
             marked=marker is not None,
-            support_weight=weight,
             confidence_ceiling=ceiling,
             overconfident=is_over,
         ))
 
-        if move.phase in _SCRUTINY_PHASES and _scrutinises_premise(move.content, question_terms):
+        # An objection raised in the dialogue is a challenge nothing has yet
+        # resolved. It cannot support a conclusion, and it cannot refute one
+        # either — validation is H3. It is recorded as open.
+        if move.phase is DialogPhase.ELENCHUS:
+            unresolved.append(move.move_id)
+        if move.phase in _SCRUTINY_PHASES and _scrutinises_premise(
+                move.content, question_terms):
             scrutiny_moves.append(move.move_id)
 
     total = len(rows)
     marked = sum(1 for r in rows if r.marked)
-    quality_scores = [
-        ms.score_breakdown.weighted_overall() for ms in state.micro_scores
-    ]
+    quality_scores = [ms.score_breakdown.weighted_overall()
+                      for ms in state.micro_scores]
+
+    # Advisory metadata: one marker observation and one confidence reading per
+    # move. Quality signals: every peer score. Neither may reach the status.
+    advisory = marked + total
+    quality_signals = len(quality_scores)
+
+    # The status names what it rests on. With no authoritative support record in
+    # existence, the only honest answers are "open challenges stand" or "nothing
+    # establishes this".
+    status = (HybridSupportStatus.UNRESOLVED if unresolved
+              else HybridSupportStatus.UNSUPPORTED)
+
+    legacy = None
+    if final is not None and getattr(final, "epistemic_status", None) is not None:
+        legacy = final.epistemic_status.value
 
     return EpistemicSupportAssessment(
         session_id=state.session_id,
+        hybrid_h2_epistemic_status=status,
+        basis_record_ids=[],          # nothing authoritative exists before H3+
+        unresolved_record_ids=unresolved,
+        advisory_metadata_count=advisory,
+        quality_signal_count=quality_signals,
+        quality_mean=(round(sum(quality_scores) / len(quality_scores), 6)
+                      if quality_scores else None),
+        legacy_epistemic_status=legacy,
         moves_total=total,
         moves_marked=marked,
         unmarked_assertion_ratio=round((total - marked) / total, 6) if total else 0.0,
-        marker_counts=marker_counts,
-        self_declared_support_index=(round(sum(weights) / len(weights), 6)
-                                     if weights else None),
         coverage_ratio=round(marked / total, 6) if total else 0.0,
+        marker_counts=marker_counts,
         overconfidence_violations=overconfident,
         premise_scrutinised=bool(scrutiny_moves),
         premise_scrutiny_moves=scrutiny_moves,
-        quality_mean=(round(sum(quality_scores) / len(quality_scores), 6)
-                      if quality_scores else None),
         moves=rows,
     )
 
 
-def _scrutinises_premise(content: Any, question_terms: Sequence[str]) -> bool:
-    """True when a move both engages the question's terms and challenges them."""
-    if not question_terms:
-        return False
-    text = _move_text(content).lower()
-    if not any(token in text for token in _CHALLENGE_TOKENS):
-        return False
-    overlap = sum(1 for term in question_terms if term in text)
-    return overlap >= 2
-
-
 class HybridSupportObserver:
-    """Appends H2 support records to the single existing H1 ledger.
+    """Appends H2 records to the single existing H1 ledger.
 
-    Reuses the H1 ledger deliberately: the preservation contract forbids a second
-    authority, and a parallel store would be exactly that.
+    Reuses that ledger deliberately: the preservation contract forbids a second
+    authority, and a parallel store would be one.
     """
 
     def __init__(self, ledger: HybridEpistemicLedger) -> None:
@@ -262,29 +327,36 @@ class HybridSupportObserver:
     def capture_support(
         self, state: SessionState, final: FinalResponse,
     ) -> List[HybridShadowRecord]:
-        """Observe support for a finalized session. Never mutates either model."""
-        assessment = assess_session_support(state)
+        """Observe a finalized session. Never mutates either model."""
+        a = assess_session_support(state, final)
         records = [self.ledger.append(
             session_id=state.session_id,
             kind=HybridRecordKind.SESSION_SUPPORT_ASSESSED,
             subject_ref=f"support:{state.session_id}",
             payload={
-                "schema_version": assessment.schema_version,
-                "moves_total": assessment.moves_total,
-                "moves_marked": assessment.moves_marked,
-                "unmarked_assertion_ratio": assessment.unmarked_assertion_ratio,
-                "marker_counts": assessment.marker_counts,
-                "self_declared_support_index": assessment.self_declared_support_index,
-                "coverage_ratio": assessment.coverage_ratio,
-                "overconfidence_violations": assessment.overconfidence_violations,
-                "premise_scrutinised": assessment.premise_scrutinised,
-                "premise_scrutiny_moves": list(assessment.premise_scrutiny_moves),
-                # Carried side by side, never merged.
-                "quality_mean": assessment.quality_mean,
+                "schema_version": a.schema_version,
+                # support plane
+                "hybrid_h2_epistemic_status": a.hybrid_h2_epistemic_status.value,
+                "basis_record_ids": list(a.basis_record_ids),
+                "unresolved_record_ids": list(a.unresolved_record_ids),
+                "advisory_metadata_count": a.advisory_metadata_count,
+                "quality_signal_count": a.quality_signal_count,
+                # quality plane, side by side and never merged
+                "quality_mean": a.quality_mean,
+                "legacy_epistemic_status": a.legacy_epistemic_status,
+                # advisory metadata
+                "moves_total": a.moves_total,
+                "moves_marked": a.moves_marked,
+                "coverage_ratio": a.coverage_ratio,
+                "unmarked_assertion_ratio": a.unmarked_assertion_ratio,
+                "marker_counts": a.marker_counts,
+                "overconfidence_violations": a.overconfidence_violations,
+                "premise_scrutinised": a.premise_scrutinised,
+                "premise_scrutiny_moves": list(a.premise_scrutiny_moves),
                 "ratified": bool(final.ratified),
             },
         )]
-        for row in assessment.moves:
+        for row in a.moves:
             records.append(self.ledger.append(
                 session_id=state.session_id,
                 kind=HybridRecordKind.MOVE_SUPPORT_ASSESSED,

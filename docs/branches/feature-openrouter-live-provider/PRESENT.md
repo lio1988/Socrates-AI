@@ -162,3 +162,20 @@ marker directive and were deliberately left on the plain contract.
 Coverage is not solved: half of all moves still assert unmarked, and the
 distribution remains dominated by `reasonable_hypothesis`. The band check now
 fires, so marker/confidence consistency is exercised for the first time.
+
+## H2 CORRECTION — numeric epistemic ranker removed
+
+`support_index` averaged epistemic markers, so a council that stamped
+`established_fact` on every move would have scored a perfect support figure:
+self-description promoted to evidence. It was removed and not replaced by
+another heuristic.
+
+H2 now exposes two strictly separated planes. Support is categorical
+(`UNSUPPORTED` / `UNRESOLVED`), names `basis_record_ids` and
+`unresolved_record_ids`, and `AUTHORITATIVE_SUPPORT_INPUTS` is empty because
+verification is H3+. `legacy_epistemic_status` is carried through unchanged for
+comparison and is never an input to the Hybrid status.
+
+Observed on one mock session: quality mean 7.744 crosses the canonical 7.5
+threshold so the legacy path reports `well_supported`, while H2 reports
+`unresolved` with an empty basis and two standing objections.
