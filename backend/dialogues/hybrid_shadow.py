@@ -49,6 +49,12 @@ class HybridRecordKind(str, Enum):
     # authority, which a parallel store would be.
     SESSION_SUPPORT_ASSESSED = "session_support.assessed"
     MOVE_SUPPORT_ASSESSED = "move_support.assessed"
+    # H3..H7 governing core. Same ledger on purpose: the preservation
+    # contract forbids a second authority.
+    CLAIM_ASSESSED = "claim.assessed"
+    OBJECTION_LIFECYCLE = "objection.lifecycle"
+    VERIFICATION_RECORDED = "verification.recorded"
+    RELEASE_FROZEN = "release.frozen"
 
 
 class HybridShadowRecord(BaseModel):
