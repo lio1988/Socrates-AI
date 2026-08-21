@@ -97,3 +97,19 @@ approval. No further paid run is authorized by H1 completion.
 H1 gates passed: 11 focused H1 tests, 1602 dialogue tests, 1909 repository-wide
 tests, compileall, diff check, deterministic replay, and one live session with
 168 replay-verified records and zero capture failures.
+
+## H2 SUPPORT SEPARATION — COMPLETED (measurement only)
+
+1. Add a deterministic epistemic-support assessment computed from canonical
+   artifacts, with no provider call and no fabricated value.
+2. Append it to the single existing H1 ledger under additive record kinds; do
+   not open a parallel store or a second authority.
+3. Keep canonical state and output byte-identical and the assessment off by
+   default.
+4. Record the measured justification and the boundary in
+   `docs/HYBRID_V1_H2_SUPPORT_SEPARATION.md`.
+
+## Remaining/deferred
+
+Marker emission must rise before a support index can discriminate. H3 and every
+later governing Hybrid stage remain deferred and require separate approval.

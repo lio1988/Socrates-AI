@@ -44,6 +44,11 @@ class HybridRecordKind(str, Enum):
     ASSEMBLY_OBSERVED = "assembly.observed"
     RATIFICATION_OBSERVED = "ratification.observed"
     FINAL_RESPONSE_OBSERVED = "final_response.observed"
+    # H2 quality/epistemic-support separation. Appended to this same
+    # ledger on purpose: the preservation contract forbids a second
+    # authority, which a parallel store would be.
+    SESSION_SUPPORT_ASSESSED = "session_support.assessed"
+    MOVE_SUPPORT_ASSESSED = "move_support.assessed"
 
 
 class HybridShadowRecord(BaseModel):

@@ -107,3 +107,30 @@ approval.
 ## Status
 
 Review/test branch; not merged to `main`.
+
+## H2 QUALITY/SUPPORT SEPARATION
+
+- `backend/dialogues/hybrid_support.py` computes a deterministic
+  `EpistemicSupportAssessment` from canonical artifacts, off by default and
+  non-authoritative;
+- two additive record kinds append to the single existing H1 ledger:
+  `session_support.assessed`, `move_support.assessed`;
+- `docs/HYBRID_V1_H2_SUPPORT_SEPARATION.md` records the design, the measured
+  justification and the boundary.
+
+### H2 validation
+
+- 12 focused H2 tests: passed;
+- H0/H0.5/H1 preservation matrix: `26 passed`, unchanged;
+- full `tests_dialogues`: `1614 passed`;
+- `compileall`: clean;
+- two live premise-true/premise-false councils confirmed the quality/support
+  conflation in both runs (`factual_grounding` higher on the FALSE arm: 7.07 and
+  6.93, against 6.78 and 6.41 on the TRUE arm).
+
+### H2 finding — prerequisite for any governing stage
+
+Live marker coverage is 7%–21%: between 79% and 93% of moves assert with no
+epistemic marker at all, and every marker observed was `reasonable_hypothesis`.
+`support_index` therefore cannot discriminate yet — its input is largely absent.
+Raising marker emission is the prerequisite before H3 or any governing stage.
