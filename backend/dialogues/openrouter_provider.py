@@ -18,6 +18,7 @@ import aiohttp
 
 from .models import AgentState, AgentTask, ProviderResponse, ProviderStatus
 from .provider_registry import BaseProviderAdapter, parse_and_validate_move
+from .reasoning_prompts import build_reasoning_system_prompt
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -83,7 +84,11 @@ class OpenRouterProviderAdapter(BaseProviderAdapter):
 
         body = {
             "model": self.model_id,
-            "messages": [{"role": "user", "content": _task_prompt(task, agent_state)}],
+            "messages": [
+                {"role": "system", "content": build_reasoning_system_prompt(
+                    task.role, task.phase, task.task_kind, model=self.model_id)},
+                {"role": "user", "content": _task_prompt(task, agent_state)},
+            ],
             "temperature": 0,
             "response_format": {"type": "json_object"},
         }
