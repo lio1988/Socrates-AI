@@ -18,13 +18,17 @@ from backend.dialogues.provider_registry import (
 Q = "Is knowledge merely justified true belief?"
 
 
-def _ced(adapters, mode=ShadowScoringMode.ALL_PHASES):
+def _ced(adapters, mode=ShadowScoringMode.ALL_PHASES, *, n_agents=4,
+         phase_retry=False):
     provider = FakeProvider()
-    agents = [SocraticAgent(f"agent_{i}", provider) for i in range(4)]
+    agents = [SocraticAgent(f"agent_{i}", provider) for i in range(n_agents)]
     reg = CouncilProviderRegistry()
     for a in adapters:
         reg.register(a)
-    return CEDOrchestrator(agents, provider, registry=reg, shadow_scoring_mode=mode)
+    return CEDOrchestrator(
+        agents, provider, registry=reg, shadow_scoring_mode=mode,
+        phase_retry=phase_retry,
+    )
 
 
 def _run(ced, sid="p8c"):
@@ -66,7 +70,7 @@ def test_no_real_provider_required():
 
 def test_quorum_success_with_partial_failures():
     ced = _ced([ScriptedMockProvider("mock_a"), ScriptedMockProvider("mock_b"),
-                TimeoutScriptedProvider()])
+                TimeoutScriptedProvider()], n_agents=3, phase_retry=True)
     final, state = _run(ced, "p8c-partial")
     assert final.ratified is True
     # at least one phase recorded a failed provider, but the session still proceeded

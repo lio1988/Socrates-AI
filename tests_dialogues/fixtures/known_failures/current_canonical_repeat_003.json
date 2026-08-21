@@ -1,0 +1,92 @@
+{
+  "schema_version": "socrates_known_failure_fixture_v1",
+  "fixture_id": "current_canonical_repeat_003",
+  "fixture_purpose": "Offline preservation of the observed consensus, scoring, and ratification failure mechanism. This is evidence only and does not implement a remedy.",
+  "source": {
+    "kind": "captured_live_forensic_summary",
+    "raw_provider_transcript_complete": false,
+    "notes": "The accepted forensic record preserves the architectural transition chain and final protocol outcomes. Exact provider prose and exact score values were not retained and are intentionally not reconstructed."
+  },
+  "architecture": {
+    "family": "current_canonical_backend_dialogues",
+    "session_id": "progressive_benchmark_L3_restored_repeat_003",
+    "models": [
+      "openai/gpt-4.1-mini",
+      "openai/gpt-4o-mini",
+      "meta-llama/llama-3.3-70b-instruct"
+    ],
+    "council_ratification_present": true
+  },
+  "benchmark": {
+    "question_verbatim": "Four researchers \u2014 Anna, Ben, Clara, and David \u2014 each present exactly once,\nin positions 1 through 4.\n\nThe following statements are all true:\n\n1. Anna presents before Ben.\n2. Clara presents immediately before David.\n3. Ben does not present last.\n\nDetermine the unique presentation order.\n\nDo not guess. Enumerate or logically eliminate the possible orders, verify\nthat the final order satisfies every constraint, and state whether the\ninformation is sufficient to determine a unique solution. If it is not\nsufficient, explicitly say so and list all valid orders.",
+    "question_lines": [
+      "Four researchers \u2014 Anna, Ben, Clara, and David \u2014 each present exactly once, in positions 1 through 4.",
+      "The following statements are all true:",
+      "1. Anna presents before Ben.",
+      "2. Clara presents immediately before David.",
+      "3. Ben does not present last.",
+      "Determine the unique presentation order.",
+      "Do not guess. Enumerate or logically eliminate the possible orders, verify that the final order satisfies every constraint, and state whether the information is sufficient to determine a unique solution. If it is not sufficient, explicitly say so and list all valid orders."
+    ],
+    "participants": ["Anna", "Ben", "Clara", "David"],
+    "ground_truth": {
+      "unique": true,
+      "valid_orders": [["Anna", "Ben", "Clara", "David"]]
+    }
+  },
+  "observed": {
+    "initial_correct_candidate": {
+      "present": true,
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "semantic_answer": ["Anna", "Ben", "Clara", "David"],
+      "verbatim_text": null,
+      "verbatim_availability": "unavailable"
+    },
+    "false_counterexamples_introduced": true,
+    "elenchus_rejected_false_counterexamples": false,
+    "initially_correct_agent_abandoned_correct_position": true,
+    "reflection_reinforced_false_consensus": true,
+    "incorrect_reasoning_received_high_scores": true,
+    "score_values": null,
+    "score_values_availability": "unavailable",
+    "ratification": {
+      "verdicts": ["accept", "accept", "accept"],
+      "status": "ratified",
+      "verbatim_rationales": null,
+      "verbatim_rationales_availability": "unavailable"
+    },
+    "epistemic_status": "well_supported",
+    "final_answer": {
+      "objective_correctness": "false",
+      "semantic_failure": "claimed_multiple_valid_orders",
+      "verbatim_text": null,
+      "verbatim_availability": "unavailable"
+    }
+  },
+  "failure_mechanism": [
+    "correct_initial_candidate_exists",
+    "false_counterexamples_enter_dialectic",
+    "elenchus_does_not_reject_false_counterexamples",
+    "correct_candidate_is_abandoned",
+    "reflection_reinforces_false_consensus",
+    "incorrect_reasoning_receives_high_quality_scores",
+    "three_ratifiers_accept",
+    "ced_releases_ratified_answer",
+    "score_derived_status_is_well_supported",
+    "released_answer_is_objectively_wrong"
+  ],
+  "unavailable_material": [
+    "exact initial response text",
+    "exact false-counterexample texts",
+    "exact Elenchus objection text",
+    "exact Reflection text",
+    "exact move and section score values",
+    "exact ratification rationales",
+    "verbatim final synthesis"
+  ],
+  "offline_replay": {
+    "provider_calls": 0,
+    "network_required": false,
+    "reproduces": "architectural transition chain from correct minority candidate to false ratified and well_supported outcome"
+  }
+}

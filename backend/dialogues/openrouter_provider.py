@@ -68,7 +68,11 @@ class OpenRouterProviderAdapter(BaseProviderAdapter):
         if not model_id:
             raise ValueError("model_id is required")
         self.provider_id = provider_id
-        self.model_id = model_id
+        # ``model`` is the canonical provider-adapter metadata contract used by
+        # CED roster/transcript construction. Keep ``model_id`` as the existing
+        # OpenRouter-facing compatibility alias and exact-pinning value.
+        self.model = model_id
+        self.model_id = self.model
         self.timeout_seconds = float(timeout_seconds)
         self.app_url = app_url
         self.app_title = app_title

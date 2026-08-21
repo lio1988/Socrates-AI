@@ -36,6 +36,18 @@ A strict OpenRouter provider can make one real opt-in call through the canonical
 - diff check clean;
 - no secret committed.
 
+### CANONICAL EXECUTION RESTORATION results
+
+- critical H0 preservation matrix: `288 passed`;
+- H0.5 contract and known-failure fixture integrity: `5 passed`;
+- full `tests_dialogues`: `1591 passed`;
+- repository-wide pytest: `1898 passed` (23 unrelated pre-existing warnings);
+- `python -m compileall -q backend tests_dialogues`: passed;
+- `git diff --check`: passed;
+- representative three-model mocked OpenRouter session: ratified, all three exact
+  models participated, every logical agent used exactly one physical seat, and
+  exact-model receipts all verified.
+
 ## Stop conditions
 
 Stop if integration requires changing CED authority, provider scoring semantics, or deterministic protocol identities.
@@ -44,6 +56,26 @@ Stop if integration requires changing CED authority, provider scoring semantics,
 
 Implementation and focused test scaffolding added.
 
+### CANONICAL EXECUTION RESTORATION
+
+1. Freeze ranked physical adapter seats per session and bind logical agent IDs
+   deterministically to those seats.
+2. Route all registry phase, scoring, and deliberation-tree work through the
+   stable binding; retain the existing explicit retry offset as the only
+   failover exception.
+3. Make OpenRouter implement the shared exact `model` metadata contract and
+   resolve proven namespaced vendors without guessing unknown namespaces.
+4. Use parsed `AgentMove.confidence` in downstream move-score, section-score,
+   and ratification records.
+5. Add focused regressions for stable routing, independent role rotation,
+   deterministic/heterogeneous participation, exact metadata, and confidence
+   values `0.13` and `0.91`.
+6. Freeze the two observed failure mechanisms as offline evidence fixtures,
+   without reconstructing clipped or unavailable provider output.
+7. Freeze the H0.5 feature-preservation and non-duplicate-authority contract as
+   documentation only. Do not start H1.
+
 ## Remaining/deferred
 
-Local/full validation and optional real OpenRouter smoke with a user-supplied environment key.
+Optional real OpenRouter smoke with a user-supplied environment key. It was not
+run during this offline restoration audit.

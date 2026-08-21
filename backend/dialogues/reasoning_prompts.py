@@ -295,10 +295,25 @@ _COMPANY_PREFIXES = (
     ("mock", "Mock (offline)"),
 )
 
+_NAMESPACED_COMPANIES = {
+    "anthropic": "Anthropic",
+    "deepseek": "DeepSeek",
+    "google": "Google",
+    "meta-llama": "Meta",
+    "mistralai": "Mistral AI",
+    "nvidia": "NVIDIA",
+    "openai": "OpenAI",
+    "qwen": "Alibaba",
+    "x-ai": "xAI",
+}
+
 
 def model_company(model: Optional[str]) -> str:
     """Best-effort vendor name from a model id (unknown models stay 'Unknown')."""
     low = (model or "").lower()
+    namespace, separator, _ = low.partition("/")
+    if separator and namespace in _NAMESPACED_COMPANIES:
+        return _NAMESPACED_COMPANIES[namespace]
     for prefix, company in _COMPANY_PREFIXES:
         if low.startswith(prefix):
             return company

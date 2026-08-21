@@ -542,6 +542,7 @@ Do not place provider keys in source files, HTML, frontend code, or commits.
 | `backend/training/` | Governed corpus harvesting and operator-run local training support. |
 | `tests_dialogues/` | Canonical engine, learning, consultation, kernel, and governance regression suite. |
 | `docs/openclaw_memory_lessons/` | Detailed Memory, consultation, kernel, and evidence-boundary documentation. |
+| `docs/HYBRID_V1_H0_5_PRESERVATION_CONTRACT.md` | Normative pre-implementation preservation and non-duplicate-authority contract for Epistemic Hybrid v1. |
 | `backend/dialogues/README.md` | Detailed technical reference and historical phase record. |
 | `socrates_ai.py`, `backend/orchestrator/` | Legacy reasoning family; not canonical. |
 

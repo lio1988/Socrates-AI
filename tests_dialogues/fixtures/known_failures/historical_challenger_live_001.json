@@ -1,0 +1,125 @@
+{
+  "schema_version": "socrates_known_failure_fixture_v1",
+  "fixture_id": "historical_challenger_live_001",
+  "fixture_purpose": "Offline preservation of the observed graph-ranking and contradictory-rendering failure mechanism. This is evidence only and does not implement a remedy.",
+  "source": {
+    "kind": "captured_live_forensic_summary",
+    "raw_provider_transcript_complete": false,
+    "notes": "The original replay exceeded the terminal transport limit. Phase chronology, provider totals, graph totals, selected claim records, final synthesis, and replay audit survived. Clipped material is explicitly listed and is not reconstructed."
+  },
+  "architecture": {
+    "family": "historical_claim_graph_ced",
+    "commit": "32973892dd087a1264cb45e64c01a5db79e670e0",
+    "session_id": "historical_challenger_L3_live_001",
+    "models": [
+      "openai/gpt-4.1-mini",
+      "openai/gpt-4o-mini",
+      "meta-llama/llama-3.3-70b-instruct"
+    ],
+    "council_ratification_present": false
+  },
+  "benchmark": {
+    "question_verbatim": "Four researchers \u2014 Anna, Ben, Clara, and David \u2014 each present exactly once,\nin positions 1 through 4.\n\nThe following statements are all true:\n\n1. Anna presents before Ben.\n2. Clara presents immediately before David.\n3. Ben does not present last.\n\nDetermine the unique presentation order.\n\nDo not guess. Enumerate or logically eliminate the possible orders, verify\nthat the final order satisfies every constraint, and state whether the\ninformation is sufficient to determine a unique solution. If it is not\nsufficient, explicitly say so and list all valid orders.",
+    "question_lines": [
+      "Four researchers \u2014 Anna, Ben, Clara, and David \u2014 each present exactly once, in positions 1 through 4.",
+      "The following statements are all true:",
+      "1. Anna presents before Ben.",
+      "2. Clara presents immediately before David.",
+      "3. Ben does not present last.",
+      "Determine the unique presentation order.",
+      "Do not guess. Enumerate or logically eliminate the possible orders, verify that the final order satisfies every constraint, and state whether the information is sufficient to determine a unique solution. If it is not sufficient, explicitly say so and list all valid orders."
+    ],
+    "participants": ["Anna", "Ben", "Clara", "David"],
+    "ground_truth": {
+      "unique": true,
+      "valid_orders": [["Anna", "Ben", "Clara", "David"]]
+    }
+  },
+  "observed": {
+    "rounds_completed": 8,
+    "provider_calls": {
+      "expected": 36,
+      "successful": 36,
+      "failed": 0,
+      "timeouts": 0,
+      "retries": 0,
+      "malformed": 0,
+      "model_mismatches": 0,
+      "fallbacks": 0,
+      "exact_model_verified": 36
+    },
+    "graph": {
+      "claims": 16,
+      "evidence_records": 10,
+      "contradictions": 117,
+      "lineage_events": 35,
+      "replay_trace_events": 46,
+      "cbe_confidence": 0.0
+    },
+    "correct_initial_claim": {
+      "claim_id": "claim_2cfee2f5582e",
+      "model": "openai/gpt-4.1-mini",
+      "semantic_answer": ["Anna", "Ben", "Clara", "David"],
+      "state": "hypothesis",
+      "confidence": 0.26,
+      "evidence_count": 0,
+      "contradiction_count": 5,
+      "cbe_rank": 11,
+      "cbe_score": 0.0
+    },
+    "revision_with_stale_evidence": {
+      "claim_id": "claim_40e1268626ff",
+      "original_semantic_claim": "information_not_sufficient",
+      "revised_semantic_answer": ["Anna", "Ben", "Clara", "David"],
+      "stale_support_semantics": "information_not_sufficient",
+      "state": "disputed",
+      "confidence": 0.15,
+      "evidence_count": 1,
+      "contradiction_count": 7,
+      "cbe_rank": 6
+    },
+    "cbe_selection": [
+      {
+        "rank": 1,
+        "claim_id": "claim_56eecced8f2e",
+        "semantic_answer": ["Anna", "Clara", "David", "Ben"],
+        "objective_correctness": "false"
+      },
+      {
+        "rank": 2,
+        "claim_id": "claim_47b79b5c9a9a",
+        "semantic_answer": ["Anna", "Ben", "Clara", "David"],
+        "objective_correctness": "true"
+      }
+    ],
+    "selected_claims_materially_compatible": false,
+    "renderer_combined_selected_claims": true,
+    "final_answer": {
+      "leading_semantic_answer": ["Anna", "Clara", "David", "Ben"],
+      "reasoning_semantic_answer": ["Anna", "Ben", "Clara", "David"],
+      "internally_contradictory": true,
+      "objective_correctness": "false"
+    }
+  },
+  "failure_mechanism": [
+    "correct_claims_remain_in_graph",
+    "contradiction_edges_are_excessively_noisy",
+    "revised_claim_retains_semantically_stale_evidence",
+    "numeric_cbe_ranks_false_claim_first",
+    "cbe_ranks_correct_but_incompatible_reasoning_second",
+    "renderer_combines_incompatible_selected_claims",
+    "released_answer_leads_with_objectively_false_order"
+  ],
+  "unavailable_material": [
+    "exact round-one GPT-4o initial response",
+    "exact round-one Llama initial response",
+    "several middle-round Elenchus objection texts",
+    "complete record for every one of the sixteen claims",
+    "complete original 125k-token replay transport"
+  ],
+  "offline_replay": {
+    "provider_calls": 0,
+    "network_required": false,
+    "reproduces": "architectural transition from preserved correct graph claims to false CBE winner and contradictory rendered answer"
+  }
+}

@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from backend.dialogues.agent import CORE_AGENT_PROMPT
 from backend.dialogues.live_providers import (
     FLAG_ENV,
     OPENROUTER_KEY_ENV,
@@ -11,8 +12,14 @@ from backend.dialogues.live_providers import (
     build_council_registry,
 )
 from backend.dialogues.models import AgentRole, AgentState, AgentTask, DialogPhase, ProviderStatus, TaskKind
+from backend.dialogues import openrouter_provider as openrouter_module
 from backend.dialogues.openrouter_provider import DEFAULT_OPENROUTER_MODEL, OpenRouterProviderAdapter
 from backend.dialogues.provider_registry import ScriptedMockProvider
+from backend.dialogues.reasoning_prompts import (
+    PHASE_REASONING,
+    REASONING_PROTOCOL,
+    ROLE_REASONING,
+)
 
 
 def _task():
@@ -112,6 +119,74 @@ def test_invalid_content_fails_closed(monkeypatch):
     assert response.parsed_move is None
 
 
+def test_transport_delivers_canonical_prompt_kernel_and_devil_mandate(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def text(self):
+            return json.dumps({
+                "id": "resp_prompt_delivery",
+                "model": "vendor/model",
+                "choices": [{"message": {"content": json.dumps({
+                    "content": {"objection": "The consensus assumes its conclusion."},
+                    "confidence": 0.81,
+                })}}],
+            })
+
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, *, headers, json):
+            captured.update(url=url, headers=headers, body=json)
+            return FakeResponse()
+
+    monkeypatch.setattr(openrouter_module.aiohttp, "ClientSession", FakeSession)
+    mandate = "Construct the strongest case against the emerging consensus."
+    task = AgentTask(
+        task_id="task_prompt_delivery",
+        session_id="session_prompt_delivery",
+        agent_id="agent_prompt_delivery",
+        role=AgentRole.ELENCHUS_CRITIC,
+        phase=DialogPhase.ELENCHUS,
+        task_kind=TaskKind.ELENCHUS_OBJECTION,
+        question="q",
+        context={"devils_advocate_mandate": mandate},
+        output_schema={},
+    )
+    state = AgentState(
+        agent_id=task.agent_id,
+        primary_role=AgentRole.SYNTHESIZER,
+        assigned_role=AgentRole.ELENCHUS_CRITIC,
+    )
+
+    response = asyncio.run(_adapter().generate_agent_move(task, state))
+
+    assert response.status == ProviderStatus.OK
+    system_message = captured["body"]["messages"][0]["content"]
+    user_message = captured["body"]["messages"][1]["content"]
+    assert CORE_AGENT_PROMPT[:40] in system_message
+    assert REASONING_PROTOCOL.splitlines()[0] in system_message
+    assert ROLE_REASONING[AgentRole.ELENCHUS_CRITIC] in system_message
+    assert PHASE_REASONING[DialogPhase.ELENCHUS] in system_message
+    assert '"devils_advocate_mandate"' in user_message
+    assert mandate in user_message
+
+
 def test_model_and_provider_id_are_required():
     with pytest.raises(ValueError):
         OpenRouterProviderAdapter(provider_id="", model_id="vendor/model", api_key="k")
@@ -136,6 +211,8 @@ def test_openrouter_family_registers_seats_without_calling():
     assert isinstance(adapters[2], OpenRouterProviderAdapter)
     assert adapters[0].model_id == "vendor/model-a"
     assert adapters[2].model_id == "vendor/model-b"
+    assert adapters[0].model == "vendor/model-a"
+    assert adapters[2].model == "vendor/model-b"
     # Registration must never touch the network.
     assert adapters[0].last_receipt is None
     assert adapters[2].last_receipt is None
@@ -149,6 +226,7 @@ def test_openrouter_family_defaults_model_when_unset():
     }
     registry, _ = build_council_registry(env=env)
     assert registry.all_adapters()[0].model_id == DEFAULT_OPENROUTER_MODEL
+    assert registry.all_adapters()[0].model == DEFAULT_OPENROUTER_MODEL
 
 
 def test_openrouter_family_without_live_flag_falls_back_to_mock():

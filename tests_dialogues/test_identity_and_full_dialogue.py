@@ -21,6 +21,11 @@ from backend.dialogues.reasoning_prompts import (
 )
 from backend.dialogues.live_providers import LiveAnthropicAdapter, build_council
 from backend.dialogues.models import AgentState, AgentTask
+from backend.dialogues.ced import CEDOrchestrator
+from backend.dialogues.openrouter_provider import OpenRouterProviderAdapter
+from backend.dialogues.provider_registry import CouncilProviderRegistry
+from backend.dialogues.agent import SocraticAgent
+from backend.dialogues.providers import FakeProvider
 
 FAKE_KEY = "sk-ant-FAKE-not-a-real-key-000000"
 
@@ -34,8 +39,36 @@ def test_model_company_mapping():
     assert model_company("gemini-2.5-pro") == "Google"
     assert model_company("grok-4") == "xAI"
     assert model_company("mock") == "Mock (offline)"
+    assert model_company("openai/gpt-4.1-mini") == "OpenAI"
+    assert model_company("openai/gpt-4o-mini") == "OpenAI"
+    assert model_company("meta-llama/llama-3.3-70b-instruct") == "Meta"
+    assert model_company("unknown-vendor/mystery-model") == "Unknown"
     assert model_company("mystery-model") == "Unknown"
     assert model_company(None) == "Unknown"
+
+
+def test_openrouter_roster_preserves_exact_model_metadata():
+    provider = FakeProvider()
+    registry = CouncilProviderRegistry()
+    registry.register(OpenRouterProviderAdapter(
+        provider_id="openrouter_0", model_id="openai/gpt-4.1-mini",
+        api_key="sk-or-fake-not-a-real-key",
+    ))
+    registry.register(OpenRouterProviderAdapter(
+        provider_id="openrouter_1", model_id="meta-llama/llama-3.3-70b-instruct",
+        api_key="sk-or-fake-not-a-real-key",
+    ))
+    ced = CEDOrchestrator(
+        [SocraticAgent("agent_0", provider), SocraticAgent("agent_1", provider)],
+        provider,
+        registry=registry,
+    )
+    ced.create_session("q", session_id="openrouter-metadata")
+
+    assert ced._council_roster() == [
+        {"seat": "openrouter_0", "model": "openai/gpt-4.1-mini", "company": "OpenAI"},
+        {"seat": "openrouter_1", "model": "meta-llama/llama-3.3-70b-instruct", "company": "Meta"},
+    ]
 
 
 def test_prompt_carries_self_identity():

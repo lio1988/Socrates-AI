@@ -20,6 +20,7 @@ from backend.dialogues.ced import CEDOrchestrator
 from backend.dialogues.provider_registry import (
     CouncilProviderRegistry, BaseProviderAdapter,
     AlwaysOKProvider, TimeoutProvider, MissingKeyProvider,
+    RateLimitedProvider, ScriptedMockProvider,
 )
 
 
@@ -244,8 +245,13 @@ def test_provider_cannot_change_role_assignment():
 
 
 def test_phase_round_proceeds_when_one_provider_fails_but_quorum_remains():
-    # 3 assigned agents over [OK, Timeout] round-robin → 2 OK ≥ quorum(2).
-    ced, _ = _ced(AlwaysOKProvider(), TimeoutProvider())
+    # One logical agent per stable physical seat: 2 OK ≥ quorum(2).
+    ced, _ = _ced(
+        ScriptedMockProvider("mock_ok_a"),
+        ScriptedMockProvider("mock_ok_b"),
+        TimeoutProvider(),
+        n_agents=3,
+    )
     result, _ = _phase_round(ced, DialogPhase.INITIAL_RESPONSE)
     assert result.proceed is True
     assert len(result.ok_provider_ids) == 2
@@ -254,8 +260,13 @@ def test_phase_round_proceeds_when_one_provider_fails_but_quorum_remains():
 
 
 def test_phase_round_below_quorum_no_fabricated_moves():
-    # 3 assigned agents over [OK, Timeout, Timeout] → only 1 OK < quorum(2).
-    ced, _ = _ced(AlwaysOKProvider(), TimeoutProvider(), TimeoutProvider())
+    # One logical agent per stable physical seat: only 1 OK < quorum(2).
+    ced, _ = _ced(
+        ScriptedMockProvider("mock_ok_a"),
+        TimeoutProvider(),
+        RateLimitedProvider(),
+        n_agents=3,
+    )
     result, _ = _phase_round(ced, DialogPhase.INITIAL_RESPONSE)
     assert result.proceed is False
     assert result.warning is not None

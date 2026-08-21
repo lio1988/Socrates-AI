@@ -315,6 +315,14 @@ class CEDOrchestrator:
         # Debug-only: store sanitized task context in the task_log (off by default).
         self.debug_task_log: bool = False
         self._sessions: Dict[str, SessionState] = {}
+        # Canonical execution identity: one logical agent remains bound to one
+        # physical provider/model seat for the lifetime of a registry session.
+        # Phase roles rotate over these stable identities; only the existing
+        # explicit phase-retry path may select the next seat.
+        self._session_adapter_bindings: Dict[
+            str, Dict[str, "LLMProviderAdapter"]
+        ] = {}
+        self._session_adapter_orders: Dict[str, List["LLMProviderAdapter"]] = {}
 
     def _phases_for_mode(self) -> List[DialogPhase]:
         """Phases to shadow-score given the configured mode ([] when OFF)."""
@@ -351,6 +359,8 @@ class CEDOrchestrator:
             for aid, role in primary_roles.items()
         }
         self._sessions[state.session_id] = state
+        if self.registry is not None:
+            self._bind_session_adapters(state)
         return state
 
     def get_session(self, session_id: str) -> SessionState:
@@ -525,8 +535,8 @@ class CEDOrchestrator:
         Contract:
           1. Roles come from the deterministic role plan (assign_roles_for_phase)
              — providers cannot choose or change role assignment.
-          2. One AgentTask is built per assigned (agent, role); each is sent to a
-             provider (deterministic round-robin over available adapters).
+          2. One AgentTask is built per assigned (agent, role); each is sent to
+             that logical agent's deterministic session-bound provider seat.
           3. ProviderResponses are collected; quorum/fallback decides `proceed`
              (effective quorum = min(configured quorum, #assigned agents)).
           4. Failures/timeouts are recorded as ProviderResponse metadata only —
@@ -550,10 +560,9 @@ class CEDOrchestrator:
         # Deterministic role plan for the phase — independent of any provider.
         assignment = self.assign_roles_for_phase(session_state, phase, round_index)
         items = sorted(assignment.items())   # deterministic order
-        adapters = self.registry.available_adapters()
 
-        async def _one(index: int, agent_id: str, role: AgentRole) -> "ProviderResponse":
-            adapter = adapters[index % len(adapters)]   # round-robin provider mapping
+        async def _one(agent_id: str, role: AgentRole) -> "ProviderResponse":
+            adapter = self._adapter_for_agent(session_state, agent_id)
             task = self._build_round_task(session_state, agent_id, role, phase)
             agent_state = session_state.agent_states.get(
                 agent_id,
@@ -564,7 +573,7 @@ class CEDOrchestrator:
             )
 
         responses = list(await asyncio.gather(
-            *(_one(i, aid, role) for i, (aid, role) in enumerate(items))
+            *(_one(aid, role) for aid, role in items)
         ))
 
         # Effective quorum cannot exceed the number of assigned agents this phase.
@@ -834,6 +843,47 @@ class CEDOrchestrator:
         topic = classify_topic(state.question).value
         return sorted(adapters, key=lambda a: self._seat_ranking_key(a.provider_id, topic))
 
+    def _bind_session_adapters(self, state: SessionState) -> None:
+        """Bind each logical agent to one ranked provider seat for this session.
+
+        The ranked adapter order preserves the existing analytics-informed seat
+        preference. The binding is then frozen, so phase-local active-agent lists
+        cannot restart physical routing from adapter slot zero.
+        """
+        adapters = self._ranked_adapters(state)
+        self._session_adapter_orders[state.session_id] = adapters
+        self._session_adapter_bindings[state.session_id] = (
+            {
+                agent_id: adapters[index % len(adapters)]
+                for index, agent_id in enumerate(self._ordered_agent_ids())
+            }
+            if adapters else {}
+        )
+
+    def _adapter_for_agent(
+        self, state: SessionState, agent_id: str, failover_offset: int = 0,
+    ) -> "LLMProviderAdapter":
+        """Resolve a session-stable provider seat for one logical agent.
+
+        ``failover_offset`` is used only by the existing bounded phase-retry
+        mechanism. An offset of one selects the next physical seat in the frozen
+        session order; ordinary phase execution always uses zero.
+        """
+        if state.session_id not in self._session_adapter_bindings:
+            self._bind_session_adapters(state)
+        order = self._session_adapter_orders.get(state.session_id, [])
+        binding = self._session_adapter_bindings.get(state.session_id, {})
+        adapter = binding.get(agent_id)
+        if not order or adapter is None:
+            raise RuntimeError(
+                f"No provider adapter is bound to agent {agent_id!r} "
+                f"for session {state.session_id!r}."
+            )
+        base_index = next(
+            index for index, candidate in enumerate(order) if candidate is adapter
+        )
+        return order[(base_index + failover_offset) % len(order)]
+
     async def _run_registry_phase(
         self, state: SessionState, phase: DialogPhase,
         timeout_seconds: Optional[float],
@@ -869,7 +919,7 @@ class CEDOrchestrator:
             task = _build_task(agent_id, role, slot, attempt)
             agent_state = state.agent_states.get(
                 agent_id, AgentState(agent_id=agent_id, primary_role=role, assigned_role=role))
-            adapter = adapters[(slot + offset) % len(adapters)]   # round-robin mapping
+            adapter = self._adapter_for_agent(state, agent_id, failover_offset=offset)
             resp = await self.registry.run_adapter(adapter, task, agent_state, timeout_seconds)
             return task, resp
 
@@ -1366,7 +1416,7 @@ class CEDOrchestrator:
             provider_id=response.provider_id,
             verdict=verdict,
             rationale=str(c.get("rationale", "")),
-            confidence=self._clamp01(c.get("confidence", 0.7)),
+            confidence=response.parsed_move.confidence,
             caveat=(str(c["caveat"]) if c.get("caveat") else None),
             blocking_objection=(str(c["blocking_objection"]) if c.get("blocking_objection") else None),
             target_section=section,
@@ -2120,7 +2170,7 @@ class CEDOrchestrator:
             rubric_name=rubric_name, author_agent_id=move.agent_id,
             voter_agent_id=voter_id, provider_id=voter_id,
             score_breakdown=breakdown,
-            confidence=self._clamp01(content.get("confidence", 0.7)),
+            confidence=resp.parsed_move.confidence,
             justification=str(content.get("justification", "")),
             penalty_flags=flags, provider_status=resp.status,
         )
@@ -2569,7 +2619,7 @@ class CEDOrchestrator:
                 session_id=state.session_id, section_name=section, draft_id=draft.draft_id,
                 author_agent_id=draft.author_agent_id, voter_agent_id=voter.provider_id,
                 provider_id=voter.provider_id, score_breakdown=breakdown,
-                confidence=self._clamp01(content_dict.get("confidence", 0.7)),
+                confidence=resp.parsed_move.confidence,
                 justification=str(content_dict.get("justification", "")),
                 penalty_flags=flags, provider_status=status))
             self._record_task_log(state, task, resp.parsed_move.move_id,
@@ -2663,7 +2713,7 @@ class CEDOrchestrator:
                 agent_id, AgentState(agent_id=agent_id,
                                      primary_role=AgentRole.SYNTHESIZER,
                                      assigned_role=AgentRole.SYNTHESIZER))
-            adapter = adapters[i % len(adapters)]
+            adapter = self._adapter_for_agent(state, agent_id)
             resp = await self.registry.run_adapter(
                 adapter, task, agent_state, timeout_seconds)
 
