@@ -45,6 +45,7 @@ module never sums evidence to a numeric threshold. See
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -995,6 +996,32 @@ class VerificationVerdict(str, Enum):
 REQUIRED_CORROBORATION = 2
 
 
+def locate_span(task_text: str, quoted: str) -> Optional[Tuple[int, str]]:
+    """Find a quotation in the task; return (offset, the task's own text) or None.
+
+    The text returned is the task's, not the model's. When whitespace differs,
+    storing the model's variant with the task's offset would leave a record that
+    fails its own validation — and the task's wording is the thing the anchor is
+    supposed to preserve.
+
+    Exact match first. Failing that, one tolerance: whitespace inside the
+    quotation may differ from the task's, because a model re-typing a line
+    across a wrap is quoting faithfully in every sense that matters. Nothing
+    else is normalised — no case folding, no punctuation stripping, no fuzzy
+    matching. A quotation that is not in the task must stay unfindable.
+    """
+    if not quoted:
+        return None
+    direct = task_text.find(quoted)
+    if direct >= 0:
+        return direct, quoted
+
+    pattern = re.escape(quoted.strip())
+    pattern = re.sub(r"(?:\\\s)+", r"\\s+", pattern)
+    match = re.search(pattern, task_text)
+    return (match.start(), match.group(0)) if match else None
+
+
 def parse_verification_response(
     content: Any,
     *,
@@ -1021,13 +1048,17 @@ def parse_verification_response(
 
     spans: List[Tuple[str, int]] = []
     for item in raw_spans:
-        if not isinstance(item, Mapping):
+        text = item.get("text") if isinstance(item, Mapping) else item
+        if not isinstance(text, str) or not text.strip():
             return None
-        text = item.get("text")
-        offset = item.get("offset")
-        if not isinstance(text, str) or not isinstance(offset, int):
+        located = locate_span(task_text, text)
+        if located is None:
+            # The quotation is not in the task. Refused: this is the check that
+            # a model cannot satisfy by guessing, and the whole anchor rests on
+            # it. Any offset the model supplied is ignored either way.
             return None
-        spans.append((text, offset))
+        offset, exact = located
+        spans.append((exact, offset))
 
     try:
         return verify_task_internal(

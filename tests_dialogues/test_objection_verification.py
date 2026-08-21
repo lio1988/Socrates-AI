@@ -166,20 +166,49 @@ def test_a_fabricated_citation_produces_no_record_at_all():
         verifier_provider_id="seat0") is None
 
 
-def test_a_correct_citation_at_a_wrong_offset_produces_no_record():
-    bad = {"cited_spans": [{"text": C3, "offset": TASK.index(C3) + 3}],
-           "condition_tested": "c3", "objection_holds": True}
-    assert parse_verification_response(
-        bad, task_text=TASK, claim_id="c", objection_id="o",
-        verifier_provider_id="seat0") is None
+def test_a_correct_citation_with_a_wrong_offset_is_resolved_by_search():
+    """The Level-3 live failure, no longer fatal.
+
+    A verifier quoted the task correctly and reported offset 134 for text at 89.
+    Asking a model for a character offset asks it to do the one thing it is
+    worst at, and discarding a sound check over it helps nobody. The model
+    quotes; the protocol locates. Any supplied offset is ignored.
+    """
+    supplied = {"cited_spans": [{"text": C3, "offset": TASK.index(C3) + 47}],
+                "condition_tested": "c3", "objection_holds": True}
+    record = parse_verification_response(
+        supplied, task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is not None
+    assert record.authoritative_inputs[0].offset == TASK.index(C3)
+
+
+def test_a_span_needs_no_offset_at_all():
+    for span in ({"text": C3}, C3):
+        record = parse_verification_response(
+            {"cited_spans": [span], "condition_tested": "c3",
+             "objection_holds": False},
+            task_text=TASK, claim_id="c", objection_id="o",
+            verifier_provider_id="seat0")
+        assert record is not None
+        assert record.authoritative_inputs[0].offset == TASK.index(C3)
+
+
+def test_whitespace_differences_do_not_break_a_faithful_quotation():
+    """A model re-typing a line across a wrap is still quoting faithfully."""
+    record = parse_verification_response(
+        {"cited_spans": ["Ben  does   not  present last"],
+         "condition_tested": "c3", "objection_holds": False},
+        task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is not None
+    assert record.authoritative_inputs[0].offset == TASK.index(C3)
 
 
 @pytest.mark.parametrize("content", [
     None, "a string", 42, {},
     {"cited_spans": [], "condition_tested": "x", "objection_holds": True},
     {"cited_spans": [{"text": C3, "offset": 0}], "condition_tested": "",
-     "objection_holds": True},
-    {"cited_spans": [{"text": C3}], "condition_tested": "x",
      "objection_holds": True},
     {"cited_spans": [{"text": C3, "offset": 0}], "condition_tested": "x",
      "objection_holds": "maybe"},
@@ -216,3 +245,68 @@ def test_one_misreading_verifier_cannot_destroy_a_correct_claim():
     assert verdict is VerificationVerdict.CONFLICTING
     assert state.objections["o"].state is ObjectionState.INCONCLUSIVE
     assert state.assess_claim("c").support_state is not SupportState.FALSIFIED
+
+
+# ── the Level-3 live outputs, replayed ───────────────────────────────────────
+
+#: The Level-3 task, verbatim.
+LEVEL3_TASK = """Four people — Anna, Ben, Clara, and David — must present one at a time.
+
+Constraints:
+
+* Anna presents before Ben.
+* Clara presents immediately before David.
+* Ben is not last.
+
+Question:
+Determine the unique presentation order and explain why it is unique."""
+
+#: What the six live verifiers actually produced: (seat, quoted, offset, holds).
+LEVEL3_VERIFIER_OUTPUTS = [
+    ("seat1", "the claim that the unique presentation order", 0, True),
+    ("seat0", "The claim that the unique presentation order", 0, True),
+    ("seat2", "Anna presents before Ben.", 134, False),
+    ("seat2", "The reasoning provided does not systematical", 56, True),
+    ("seat1", "The assumption that there is a unique presen", 0, True),
+    ("seat0", "The assumption that there is a unique presen", 0, True),
+]
+
+
+def _replay_level3():
+    records = []
+    for seat, text, offset, holds in LEVEL3_VERIFIER_OUTPUTS:
+        record = parse_verification_response(
+            {"cited_spans": [{"text": text, "offset": offset}],
+             "condition_tested": "live", "objection_holds": holds,
+             "rationale": "live"},
+            task_text=LEVEL3_TASK, claim_id="c", objection_id="o",
+            verifier_provider_id=seat)
+        records.append((seat, holds, record))
+    return records
+
+
+def test_the_sound_live_check_is_rescued_by_offset_resolution():
+    """One verifier quoted the task correctly at the wrong offset. It now counts."""
+    rescued = [(s, r) for s, _h, r in _replay_level3() if r is not None]
+    assert len(rescued) == 1
+    seat, record = rescued[0]
+    assert seat == "seat2"
+    assert record.authoritative_inputs[0].text == "Anna presents before Ben."
+    assert record.authoritative_inputs[0].offset == LEVEL3_TASK.index(
+        "Anna presents before Ben.")
+
+
+def test_the_five_unsound_live_checks_are_still_refused():
+    """They quoted the objection or their own prose. None becomes a record."""
+    refused = [(s, h) for s, h, r in _replay_level3() if r is None]
+    assert len(refused) == 5
+    # And every one of them claimed the objection HELD, which would have
+    # destroyed a correct answer under any majority rule.
+    assert all(holds for _seat, holds in refused)
+
+
+def test_the_replayed_live_run_still_destroys_nothing():
+    records = [r for _s, _h, r in _replay_level3() if r is not None]
+    target, verdict, _reason = corroborated_verdict(records)
+    assert target is None
+    assert verdict is VerificationVerdict.UNCORROBORATED

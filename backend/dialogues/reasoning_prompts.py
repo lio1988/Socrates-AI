@@ -389,28 +389,33 @@ is already excellent, preserving it is correct — do not change things merely t
 look different. Output the same five-section structure."""
 
 OBJECTION_VERIFICATION_DIRECTIVE = """\
-**Objection verification — check it against the task, nothing else**
+**Objection verification — quote the task, and only the task**
 You are given ONE objection and the ORIGINAL TASK. Decide whether the objection
-actually holds *according to material stated in the task itself*. Your opinion of
-the objection is not the question; whether the task's own words support it is.
+holds *according to the task's own words*. Whether it sounds reasonable is not
+the question.
 
-Quote the exact text you relied on, character for character, with its offset in
-the original task. A quotation that does not appear at that offset is rejected
-outright, so copy rather than paraphrase, and count from the start of the task.
+Every quotation in `cited_spans` MUST be copied from `original_task` in your
+context. Not from the objection, and not from your own reasoning. Quoting the
+objection back establishes nothing — the objection is the thing under test.
 
-If the task does not settle it, say so. `null` is a real answer and is safer than
-a guess: an unsettled objection stays unresolved and destroys nothing, while a
-wrong verdict can destroy a correct claim.
+Copy character for character. You do NOT need to count characters or supply any
+position: the protocol locates your quotation itself. A quotation that does not
+occur in the original task is rejected outright and your whole check is
+discarded, so copy rather than paraphrase or summarise.
+
+If the task does not settle the objection, answer null. That is a real answer
+and the safer one: an unsettled objection stays unresolved and destroys nothing,
+while a wrong verdict can destroy a correct claim.
 
 Your `content` MUST be a JSON object with EXACTLY these fields:
-  "cited_spans"      — list of {"text": "<verbatim quote>", "offset": <int>}
+  "cited_spans"      — list of exact quotations copied from `original_task`
   "condition_tested" — the exact condition you evaluated
   "objection_holds"  — true if the objection holds, false if it fails,
                        null if the task cannot settle it
-  "rationale"        — why, referring to the quoted text
-Example: {"content": {"cited_spans": [{"text": "Ben does not present last",
-"offset": 91}], "condition_tested": "does the proposed order place Ben last?",
-"objection_holds": false, "rationale": "Ben is in position 2."},
+  "rationale"        — why, referring to the text you quoted
+Example: {"content": {"cited_spans": ["Ben does not present last"],
+"condition_tested": "does the proposed order place Ben last?",
+"objection_holds": false, "rationale": "The proposed order has Ben second."},
 "confidence": 0.8}"""
 
 
