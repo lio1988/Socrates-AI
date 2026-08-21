@@ -339,3 +339,74 @@ Before any Hybrid change is accepted, reviewers must verify:
 Failure of any item means:
 
 `PRESERVATION GATE FAILED — DESIGN AMENDMENTS REQUIRED`
+
+---
+
+## 13. Amendment — H7 authority migration
+
+H7 is the intentional authority migration point, approved after the replacement
+path was implemented, tested and enforced. This amendment supersedes §8's
+byte-identical `FinalResponse` requirement for the fields H7 deliberately takes
+over, and for nothing else.
+
+### Old authority
+
+`CEDOrchestrator._epistemic_hint`: mean peer score `>= 7.5 -> well_supported`,
+`>= 5.5 -> contested`, otherwise `speculative`. A quality threshold with an
+epistemic name. It labelled an objectively wrong live answer `well_supported` at
+a measured 7.586.
+
+### New authority
+
+`hybrid_epistemic.freeze_release()`. Categorical, computed from records, naming
+its basis, frozen with a digest that replay reproduces. It is the only function
+in the system that yields a release decision, pinned by
+`test_hybrid_invariants.py::test_there_is_exactly_one_release_authority`.
+
+`run_registry_session` calls it after ratification, through
+`CEDOrchestrator._apply_governing_release`.
+
+### Fields changed
+
+| field | change |
+|---|---|
+| `FinalResponse.governing_epistemic_status` | **new** — the governing state |
+| `FinalResponse.release_decision` | **new** — the frozen release verdict |
+| `audit_summary["governing_release"]` | **new** — decision, claim states, basis, unresolved, digest |
+| `audit_summary["legacy_epistemic_status_authority"]` | **new** — `legacy_non_governing` |
+
+`FinalResponse.epistemic_status` keeps its type, its name and its computed
+value. Only its authority changed, and the audit says so beside it.
+
+### Fields and behaviour preserved
+
+Execution parity remains **required** and unchanged: deterministic role
+rotation, stable model identity per seat, provider routing and exact-model
+pinning, prompts, moves, peer and section scoring, no-self-scoring, blind
+five-section assembly, ratification inputs and verdicts, quorum and fail-closed
+provider handling, receipts, replay, and observer failure isolation.
+
+Every one of those is asserted after the migration in
+`test_h7_canonical_authority.py`, which is the point of that file: the authority
+boundary moved and nothing upstream of it did.
+
+Projection is failure-isolated. If it raises, the canonical response still
+stands and the audit records the governing verdict as unavailable rather than
+inventing one.
+
+### Rollback path
+
+Remove the single `self._apply_governing_release(state, final)` call in
+`run_registry_session`. `governing_epistemic_status` and `release_decision`
+return to `None`, `audit_summary["governing_release"]` disappears, and the
+legacy field governs again exactly as before. Nothing else unwinds: the core,
+the ledger records and every test remain, and no canonical computation was
+replaced — only a verdict was added and an old one demoted.
+
+### What did not change
+
+No other preservation guarantee is weakened. H1's shadow-mode requirement that
+an observer must not perturb output still holds and is still tested; H2's
+quality/support separation is unchanged; the no-fabrication invariant is
+strengthened rather than relaxed, because `RELEASE_SUPPORTED` now requires a
+non-empty basis and has no default.

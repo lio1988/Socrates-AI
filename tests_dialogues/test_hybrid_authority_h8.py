@@ -86,9 +86,14 @@ def test_the_governing_core_does_not_import_advisory_or_quality_subsystems():
 
 def test_no_advisory_or_legacy_subsystem_imports_the_governing_core():
     """Advisory components may be read from; they may not write authority."""
+    # A module is exempt when ANY of its entries is authoritative: ced.py owns
+    # execution and also hosts quality and advisory roles, and after H7 it is
+    # the caller that routes the release through the core.
+    governing_modules = {s.module for s in AUTHORITY_MAP
+                         if s.authority is AuthorityClass.AUTHORITATIVE}
     offenders = []
     for subsystem in AUTHORITY_MAP:
-        if subsystem.authority in (AuthorityClass.AUTHORITATIVE,):
+        if subsystem.module in governing_modules:
             continue
         path = _module_path(subsystem.module)
         if not path.exists():

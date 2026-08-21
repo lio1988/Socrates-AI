@@ -63,6 +63,16 @@ from .models import (
 from .providers import LLMProvider
 from .agent import SocraticAgent
 from .provider_registry import CouncilProviderRegistry
+from .hybrid_epistemic import (
+    ClaimRecord,
+    HybridEpistemicState,
+    ObjectionRecord,
+    ReleaseDecision,
+    SupportState,
+    VerificationClass,
+    freeze_release,
+    stable_id as _hybrid_id,
+)
 from .role_assignment import assign_primary_roles, stable_hash
 
 
@@ -1099,12 +1109,117 @@ class CEDOrchestrator:
 
         final = self._build_council_final(state, ratification)
         final.audit_summary["ratification_repair"] = repair_audit
+        # H7: the governing release authority. Canonical phases, scoring,
+        # assembly and ratification are unchanged above; only the final
+        # epistemic verdict moves here, from a quality threshold to a
+        # decision computed from records.
+        self._apply_governing_release(state, final)
 
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
         await self._self_improvement_ingest(state, final)
         self._capture_hybrid_shadow(state, final)
         return final
+
+    def project_governing_state(self, state: SessionState,
+                                final: FinalResponse) -> HybridEpistemicState:
+        """Project a finalized canonical session into the governing core.
+
+        Assembled sections become claims; elenchus moves and schema-valid
+        critical ratification objections become objections in the RAISED state.
+        RAISED is deliberate: no verification runs during a canonical session
+        yet, so an objection is recorded and unresolved rather than destructive.
+        """
+        core = HybridEpistemicState(state.session_id, state.question)
+        for section in (final.synthesis.sections if final.synthesis else []):
+            if section.unresolved:
+                continue
+            core.add_claim(ClaimRecord(
+                claim_id=_hybrid_id("claim", state.session_id,
+                                    section.section_name.value),
+                text=section.content,
+                section=section.section_name.value,
+                verification_class=VerificationClass.NOT_CURRENTLY_VERIFIABLE,
+            ))
+        targets = list(core.claims)
+        if not targets:
+            return core
+        for move in state.moves:
+            if move.phase is not DialogPhase.ELENCHUS:
+                continue
+            core.add_objection(ObjectionRecord(
+                objection_id=_hybrid_id("obj", move.move_id),
+                target_claim_id=targets[0],
+                text=str(move.content)[:400],
+                raised_by=move.agent_id,
+            ))
+        for vote in final.ratification_votes:
+            if not vote.is_schema_valid_critical_block():
+                continue
+            core.add_objection(ObjectionRecord(
+                objection_id=_hybrid_id("obj_rat", vote.agent_id, vote.rationale),
+                target_claim_id=targets[0],
+                text=vote.rationale or "critical blocking objection",
+                raised_by=vote.agent_id,
+            ))
+        return core
+
+    def _apply_governing_release(self, state: SessionState,
+                                 final: FinalResponse) -> None:
+        """Decide the release from records and record it on the response.
+
+        Failure-isolated: if projection raises, the canonical response still
+        stands and the audit reports the governing verdict as unavailable rather
+        than inventing one.
+        """
+        legacy = final.epistemic_status.value
+        try:
+            core = self.project_governing_state(state, final)
+            quality = [ms.score_breakdown.weighted_overall()
+                       for ms in state.micro_scores]
+            release = freeze_release(
+                core,
+                assembled_claim_ids=list(core.claims),
+                quality_mean=(round(sum(quality) / len(quality), 6)
+                              if quality else None),
+                legacy_epistemic_status=legacy,
+            )
+        except Exception as exc:                  # never fabricate a verdict
+            final.audit_summary["governing_release"] = {
+                "available": False,
+                "reason": type(exc).__name__,
+                "legacy_epistemic_status": legacy,
+                "legacy_epistemic_status_authority": "legacy_non_governing",
+            }
+            return
+
+        states = set(release.claim_states.values())
+        if release.release_decision is ReleaseDecision.RELEASE_SUPPORTED:
+            governing = SupportState.SUPPORTED.value
+        elif SupportState.FALSIFIED.value in states:
+            governing = SupportState.FALSIFIED.value
+        elif SupportState.EXTERNAL_EVIDENCE_REQUIRED.value in states:
+            governing = SupportState.EXTERNAL_EVIDENCE_REQUIRED.value
+        elif SupportState.UNRESOLVED.value in states:
+            governing = SupportState.UNRESOLVED.value
+        else:
+            governing = SupportState.UNSUPPORTED.value
+
+        final.governing_epistemic_status = governing
+        final.release_decision = release.release_decision.value
+        final.audit_summary["governing_release"] = {
+            "available": True,
+            "release_decision": release.release_decision.value,
+            "governing_epistemic_status": governing,
+            "claim_states": release.claim_states,
+            "basis_record_ids": release.basis_record_ids,
+            "unresolved_record_ids": release.unresolved_record_ids,
+            "blocked_reason": release.blocked_reason,
+            "frozen_digest": release.frozen_digest,
+            "quality_mean": release.quality_mean,
+            "legacy_epistemic_status": legacy,
+            "legacy_epistemic_status_authority": "legacy_non_governing",
+        }
 
     def _epistemic_consistency(self, state: SessionState) -> Dict[str, Any]:
         """Phase 18: mechanical marker↔confidence consistency check. An agent that

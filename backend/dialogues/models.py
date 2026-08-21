@@ -657,7 +657,23 @@ class FinalResponse(BaseModel):
     blocking_objections: List[str] = Field(default_factory=list)
     unresolved_sections: List[SectionName] = Field(default_factory=list)
     ratification_votes:  List[RatificationVote] = Field(default_factory=list)
+    # LEGACY, retained for compatibility and audit. Produced by a mean-quality
+    # threshold (>= 7.5 -> well_supported) and NON-GOVERNING after H7. Read
+    # governing_epistemic_status instead.
+    # LEGACY, retained for compatibility and audit. Produced by a mean-quality
+    # threshold (>= 7.5 -> well_supported) and NON-GOVERNING after H7. Read
+    # governing_epistemic_status instead.
     epistemic_status:    EpistemicStatus = EpistemicStatus.UNCERTAIN
+    # H7 authority migration: the governing epistemic state, decided from
+    # records by the hybrid core. None on paths that do not run the core.
+    governing_epistemic_status: Optional[str] = None
+    #: The frozen release decision. The single release authority.
+    release_decision:    Optional[str] = None
+    # H7 authority migration: the governing epistemic state, decided from
+    # records by the hybrid core. None on paths that do not run the core.
+    governing_epistemic_status: Optional[str] = None
+    #: The frozen release decision. The single release authority.
+    release_decision:    Optional[str] = None
     council_summary:     Dict[str, Any] = Field(default_factory=dict)
     created_at:          datetime = Field(default_factory=_utcnow)
 
