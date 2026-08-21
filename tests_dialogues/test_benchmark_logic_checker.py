@@ -135,3 +135,46 @@ def test_participants_match_the_frozen_fixture():
          / "current_canonical_repeat_003.json").read_text(encoding="utf-8"))
     assert sorted(fixture["benchmark"]["participants"]) == sorted(PARTICIPANTS)
     assert fixture["benchmark"]["ground_truth"]["valid_orders"] == [list(valid_orders()[0])]
+
+
+#: Verbatim core_answer from the SECOND Level-3 live run. Also correct, and it
+#: names a wrong order explicitly in order to refute it.
+LEVEL3_RUN2_ANSWER = (
+    "The unique presentation order given the constraints is Anna, Ben, Clara, "
+    "David (A B C D). This order satisfies all constraints: Anna presents "
+    "before Ben, Clara presents immediately before David, and Ben is not last. "
+    "Among the permutations with Clara immediately before David (A B C D, "
+    "A C D B, C D A B, C D B A), only A B C D satisfies all constraints. The "
+    "synthesizer's claim that the order is Anna, Clara, David, Ben (A C D B) "
+    "is incorrect because it violates the 'Ben is not last' constraint."
+)
+
+
+def test_an_order_named_in_order_to_refute_it_is_not_asserted():
+    """The checker's third failure, pinned.
+
+    The council reasoned well: it enumerated the candidates and rejected
+    A-C-D-B by name, citing the constraint it breaks. The checker read the
+    rejected order as a second asserted answer and scored a correct reply wrong.
+    """
+    from tests_dialogues.benchmark_logic_checker import _named_orders
+    assert _named_orders(LEVEL3_RUN2_ANSWER) == [("Anna", "Ben", "Clara", "David")]
+
+
+def test_the_second_level3_live_answer_scores_as_correct():
+    verdict, _ = evaluate_answer(LEVEL3_RUN2_ANSWER)
+    assert verdict is BenchmarkVerdict.CORRECT_UNIQUE
+
+
+def test_constraint_language_is_not_read_as_refutation():
+    """"Ben cannot be last" states a constraint; it rejects no named order."""
+    verdict, _ = evaluate_answer(
+        "Since Ben cannot be last, the order is Anna, Ben, Clara, David.")
+    assert verdict is BenchmarkVerdict.CORRECT_UNIQUE
+
+
+def test_a_genuinely_refuted_only_answer_has_no_conclusion():
+    verdict, _ = evaluate_answer(
+        "The order Anna, Clara, David, Ben is incorrect because it violates "
+        "the last constraint.")
+    assert verdict is BenchmarkVerdict.MISSING_CONCLUSION

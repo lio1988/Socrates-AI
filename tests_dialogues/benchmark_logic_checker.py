@@ -64,10 +64,14 @@ _MULTIPLICITY = (
 
 
 #: Language that marks a named order as rejected rather than asserted.
+#:
+#: Only phrases that judge a named order belong here. "cannot be" was tried and
+#: removed: it appears in the constraints themselves ("Ben cannot be last"), so
+#: it disqualified the correct order in an answer that merely restated them.
 _REFUTATION = (
-    "is incorrect", "was incorrect", "is wrong", "violates", "fails",
-    "is rejected", "rejected because", "does not satisfy", "cannot be",
-    "is invalid", "eliminated", "ruled out", "breaks the", "but ben is last",
+    "is incorrect", "was incorrect", "is wrong", "is not correct",
+    "violates", "is rejected", "does not satisfy", "is invalid",
+    "is eliminated", "ruled out", "must be rejected",
 )
 
 #: Only separators may sit between the names of an asserted order. Anything
@@ -102,9 +106,12 @@ def _named_orders(text: str) -> List[Tuple[str, ...]]:
         # An order named in order to be refuted is not an order asserted.
         # "...the claim that the order is A C D B is incorrect because it
         # violates 'Ben is not last'" names it precisely to reject it.
+        # Refutation follows the order it rejects: "the order is X is incorrect
+        # because it violates...". Looking backwards was tried and removed - the
+        # text before an order is usually the constraints, which read as
+        # negations without rejecting anything.
         tail = text[window[3][1]:window[3][1] + 90].lower()
-        head = text[max(0, window[0][0] - 60):window[0][0]].lower()
-        if any(m in tail or m in head for m in _REFUTATION):
+        if any(marker in tail for marker in _REFUTATION):
             continue
         candidate = tuple(names)
         if candidate not in found:
