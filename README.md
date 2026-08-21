@@ -62,6 +62,8 @@ CED must never:
 - silently drop a failed provider;
 - let an agent score its own output;
 - treat model popularity or leaderboard rank as truth;
+- treat a quality score as epistemic support;
+- treat a model's own `epistemic_marker` as evidence for its own claim;
 - grant one permanent model final authority;
 - override a valid critical blocking objection;
 - mutate Memory, Identity, Soul, prompts, or governance state without the
@@ -70,6 +72,33 @@ CED must never:
 If a peer score is invalid, missing, timed out, or unavailable, it remains
 **missing**. The audit reports the resulting `partial`, `timeout`, `failed`,
 `disabled`, or `quorum_failed` status honestly.
+
+### Quality is not support
+
+How well a council argued and whether its conclusion is supported are different
+measurements, and the system had been reading them as one. The canonical
+`_epistemic_hint` still promotes any session whose mean peer score reaches 7.5 to
+`WELL_SUPPORTED`.
+
+That was measured, not assumed. Two live councils were run on the same question,
+differing only in whether the premise handed to them was true. The arm given a
+false premise scored `factual_grounding` **higher** than the arm given a true one
+(7.07 and 6.93 against 6.78 and 6.41), and no dimension separated the arms by
+more than 0.52 on a 0..10 scale. In a later live run the false-premise arm
+measured 7.598 overall — over the line, and its answer opened by calling a
+discredited study "credible evidence".
+
+An epistemic marker is the model's own label for its own claim. It is
+self-description, never evidence: a council that stamped `established_fact` on
+every move would have changed nothing about what it had established. Markers,
+confidence, quality scores, agreement and ratification popularity are all
+recorded and all authoritative over nothing.
+
+The Hybrid H2 layer separates the two planes and reports both side by side
+without merging them. Its support state is categorical and names the records it
+rests on; with no verification stage implemented, no authoritative support record
+exists and the honest answer is `UNSUPPORTED` or `UNRESOLVED`. See
+`docs/HYBRID_V1_H2_SUPPORT_SEPARATION.md`.
 
 ---
 
@@ -256,21 +285,33 @@ unresolved or the answer is withheld.
 Live execution is opt-in and environment-gated. The default path remains offline
 and deterministic.
 
-### Provider integrity direction
+### OpenRouter
 
-Any future OpenRouter integration must:
+A strict OpenRouter adapter is implemented and wired in as a council provider
+family alongside `anthropic`, `nvidia` and `mock`. It:
 
-- pin the exact requested model ID;
-- forbid automatic model selection and silent substitution;
-- forbid silent model fallback;
-- fail closed when the exact model is unavailable;
-- verify and record the model actually returned;
-- store immutable provider receipts;
-- optionally pin or allowlist the upstream provider route for strict
-  reproducibility runs.
+- pins the exact requested model ID;
+- verifies the model actually returned and fails closed on any mismatch, so
+  silent substitution and silent fallback are both impossible;
+- configures no fallback model;
+- takes its key from the caller or environment only, and writes no secret to
+  source, receipts or logs;
+- records an immutable receipt per call carrying the requested model, the
+  returned model, the response id and the exact-model verdict;
+- sends the canonical reasoning system prompt, like every other live adapter.
 
-A strict OpenRouter adapter is **planned**, not implemented on the current
-`main` branch.
+Configure it with environment variables only:
+
+    CED_ENABLE_LIVE_PROVIDERS=1
+    CED_PROVIDER_FAMILIES=openrouter,openrouter,openrouter
+    CED_OPENROUTER_MODELS=<exact model ids, comma-separated>
+    OPENROUTER_API_KEY=<key>
+
+Only `backend/app.py` calls `load_dotenv()`. The demos and the council builder
+read the real environment and never see a `.env` file.
+
+Live execution remains opt-in. Route pinning or allowlisting the upstream
+provider for strict reproducibility runs is still open.
 
 ---
 
