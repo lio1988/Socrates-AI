@@ -10,6 +10,7 @@ All tests are offline: no provider, no network, no key.
 from __future__ import annotations
 
 import asyncio
+import pathlib
 
 import pytest
 
@@ -21,7 +22,7 @@ from backend.dialogues.hybrid_shadow import (
 )
 from backend.dialogues.hybrid_support import (
     HYBRID_SUPPORT_SCHEMA_VERSION,
-    MARKER_SUPPORT_WEIGHTS,
+    MARKER_SELF_DECLARATION_WEIGHTS,
     HybridSupportObserver,
     assess_session_support,
 )
@@ -30,6 +31,9 @@ from backend.dialogues.models import (
     AgentRole,
     DialogPhase,
     EpistemicMarker,
+    EpistemicStatus,
+    MicroScore,
+    ScoreBreakdown,
     SessionState,
     ShadowScoringMode,
 )
@@ -62,8 +66,8 @@ def _state(moves, question=Q, session_id="s_h2"):
 def test_support_index_weights_markers_by_epistemic_strength():
     strong = _state([_move("m1", marker=EpistemicMarker.ESTABLISHED_FACT)])
     weak = _state([_move("m2", marker=EpistemicMarker.UNSUBSTANTIATED_CLAIM)])
-    assert assess_session_support(strong).support_index == 1.0
-    assert assess_session_support(weak).support_index == 0.0
+    assert assess_session_support(strong).self_declared_support_index == 1.0
+    assert assess_session_support(weak).self_declared_support_index == 0.0
 
 
 def test_support_index_separates_sessions_quality_scoring_cannot():
@@ -81,8 +85,10 @@ def test_support_index_separates_sessions_quality_scoring_cannot():
     a = assess_session_support(grounded)
     b = assess_session_support(ungrounded)
     assert a.quality_mean is None and b.quality_mean is None   # nothing to tell apart
-    assert a.support_index is not None and b.support_index is not None
-    assert a.support_index - b.support_index == pytest.approx(1.0)
+    assert a.self_declared_support_index is not None
+    assert b.self_declared_support_index is not None
+    assert (a.self_declared_support_index
+            - b.self_declared_support_index) == pytest.approx(1.0)
 
 
 def test_unmarked_assertions_are_counted_not_scored():
@@ -97,13 +103,13 @@ def test_unmarked_assertions_are_counted_not_scored():
     assert a.coverage_ratio == pytest.approx(1 / 3)
     # An unmarked move must not be silently treated as zero support: the index
     # is the mean over MARKED moves only.
-    assert a.support_index == pytest.approx(
-        MARKER_SUPPORT_WEIGHTS[EpistemicMarker.LOGICAL_INFERENCE])
+    assert a.self_declared_support_index == pytest.approx(
+        MARKER_SELF_DECLARATION_WEIGHTS[EpistemicMarker.LOGICAL_INFERENCE])
 
 
 def test_no_marked_move_leaves_support_index_missing_not_zero():
     a = assess_session_support(_state([_move("m1"), _move("m2")]))
-    assert a.support_index is None      # missing data, never fabricated as 0.0
+    assert a.self_declared_support_index is None   # missing, never faked as 0.0
     assert a.coverage_ratio == 0.0
     assert a.unmarked_assertion_ratio == 1.0
 
@@ -200,7 +206,7 @@ def test_quality_and_support_are_reported_side_by_side_never_merged():
     payload = HybridSupportObserver(HybridEpistemicLedger()).capture_support(
         state, final)[0].payload
     # Both present, as distinct fields. H2 exposes no combined figure.
-    assert "quality_mean" in payload and "support_index" in payload
+    assert "quality_mean" in payload and "self_declared_support_index" in payload
     assert payload["quality_mean"] == a.quality_mean
     assert not any("combined" in k or "overall_epistemic" in k for k in payload)
 
@@ -210,3 +216,99 @@ def test_h2_is_off_by_default_on_the_orchestrator():
     _ced, state, final = _run_session()
     assert final.ratified in (True, False)          # canonical run completed
     assert not hasattr(_ced, "hybrid_support")      # no implicit wiring added
+
+
+# ── H2 boundary: nothing may manufacture epistemic support ───────────────────
+#
+# A marker is the model's own label for its own claim. Quality is how well a move
+# reads. Confidence is how sure it says it is. Agreement is how many said it.
+# None of those is evidence, so none of them may promote epistemic status. These
+# four tests pin each arrow to ABSENT.
+
+def _scored(moves, values, session_id="s_q"):
+    """A session whose peer quality scores are all `values` on every dimension."""
+    state = _state(moves, session_id=session_id)
+    state.micro_scores = [
+        MicroScore(
+            session_id=session_id, output_id=m.move_id, phase=m.phase,
+            author_agent_id="agent_0", voter_agent_id="agent_1",
+            score_breakdown=ScoreBreakdown(**{d: values for d in
+                                              ScoreBreakdown.model_fields}),
+        )
+        for m in moves
+    ]
+    return state
+
+
+def test_quality_score_cannot_create_support():
+    moves = [_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS)]
+    low = assess_session_support(_scored(moves, 1.0, "s_low"))
+    high = assess_session_support(_scored(moves, 10.0, "s_high"))
+    # Quality moved from the floor to the ceiling.
+    assert low.quality_mean != high.quality_mean
+    # Support did not move at all.
+    assert low.self_declared_support_index == high.self_declared_support_index
+    assert low.coverage_ratio == high.coverage_ratio
+
+
+def test_confidence_cannot_create_support():
+    timid = _state([_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS,
+                          confidence=0.1)], session_id="s_timid")
+    brash = _state([_move("m1", marker=EpistemicMarker.REASONABLE_HYPOTHESIS,
+                          confidence=0.75)], session_id="s_brash")
+    a, b = assess_session_support(timid), assess_session_support(brash)
+    assert a.self_declared_support_index == b.self_declared_support_index
+    # Confidence only ever registers as a consistency observation.
+    assert a.overconfidence_violations == b.overconfidence_violations == 0
+
+
+def test_consensus_cannot_create_support():
+    """Ten agreeing moves are not more supported than one — only more numerous."""
+    one = _state([_move("m0", marker=EpistemicMarker.REASONABLE_HYPOTHESIS)],
+                 session_id="s_one")
+    many = _state([_move(f"m{i}", marker=EpistemicMarker.REASONABLE_HYPOTHESIS,
+                         content={"text": "the very same claim"})
+                   for i in range(10)], session_id="s_many")
+    a, b = assess_session_support(one), assess_session_support(many)
+    assert a.self_declared_support_index == b.self_declared_support_index
+    assert a.coverage_ratio == b.coverage_ratio == 1.0
+
+
+def test_marker_cannot_promote_canonical_epistemic_status():
+    """Self-labelling everything `established_fact` promotes nothing anywhere."""
+    boastful = _state([_move(f"m{i}", marker=EpistemicMarker.ESTABLISHED_FACT,
+                             confidence=1.0) for i in range(5)], session_id="s_boast")
+    a = assess_session_support(boastful)
+    assert a.self_declared_support_index == 1.0     # it said so...
+
+    # ...and nothing in the assessment carries canonical epistemic authority.
+    dumped = a.model_dump(mode="json")
+    statuses = {s.value for s in EpistemicStatus}
+    assert not (statuses & set(dumped))                       # no such field
+    assert not (statuses & _flatten_values(dumped))           # no such value
+    assert dumped["authority"] == "shadow_non_authoritative"
+
+
+def _flatten_values(value):
+    out = set()
+    if isinstance(value, dict):
+        for v in value.values():
+            out |= _flatten_values(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            out |= _flatten_values(v)
+    elif isinstance(value, str):
+        out.add(value)
+    return out
+
+
+def test_no_canonical_module_imports_hybrid_support():
+    """The canonical path must not be able to read H2 even by accident."""
+    root = pathlib.Path(__file__).resolve().parents[1] / "backend"
+    offenders = [
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.py")
+        if path.name != "hybrid_support.py"
+        and "hybrid_support" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"canonical code reads H2: {offenders}"

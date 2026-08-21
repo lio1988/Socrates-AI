@@ -24,6 +24,14 @@ Design constraints inherited from the H0.5 preservation contract:
 * honest — a deterministic measure cannot know whether a claim is TRUE. It
   measures whether the council SUPPORTED its claims and whether it ever examined
   the question's own assertions. Truth adjudication is not claimed here.
+
+Marker boundary. An epistemic marker is the model's OWN label for its own
+claim. It is self-classification metadata, never evidence, verification or
+truth. Nothing derived from it promotes epistemic status: a council that
+stamped ``established_fact`` on every move would move this profile and change
+no support conclusion anywhere, because H2 concludes nothing. Permitted uses
+are audit, diagnostics, calibration and prioritising what later verification
+should look at first.
 """
 
 from __future__ import annotations
@@ -49,11 +57,11 @@ from .reasoning_prompts import MARKER_CONFIDENCE_BANDS
 
 HYBRID_SUPPORT_SCHEMA_VERSION = "socrates.hybrid-support.h2/v1"
 
-# How much epistemic support each honesty marker asserts. These are NOT quality
-# weights: an "open_uncertainty" move can be excellent work and still supply
-# little support for a conclusion. Ordered strictly by the strength of the
-# epistemic claim the marker makes.
-MARKER_SUPPORT_WEIGHTS: Dict[EpistemicMarker, float] = {
+# How strong an epistemic claim each honesty marker DECLARES. These rank what a
+# move said about itself; they are neither quality weights nor evidence. A move
+# labelled "established_fact" is not thereby established — it is a move that
+# claimed to be, and the difference is the whole point of the marker boundary.
+MARKER_SELF_DECLARATION_WEIGHTS: Dict[EpistemicMarker, float] = {
     EpistemicMarker.ESTABLISHED_FACT: 1.0,
     EpistemicMarker.LOGICAL_INFERENCE: 0.8,
     EpistemicMarker.REASONABLE_HYPOTHESIS: 0.5,
@@ -140,12 +148,13 @@ class EpistemicSupportAssessment(BaseModel):
     unmarked_assertion_ratio: float = 0.0
     marker_counts: Dict[str, int] = Field(default_factory=dict)
 
-    #: Mean support weight over MARKED moves, or None when nothing was marked.
-    #: Deliberately not defaulted to 0.0 — "no marked claims" is missing data,
-    #: not zero support, and CED never fabricates a missing measure.
-    support_index: Optional[float] = None
-    #: Share of moves carrying a marker. A high support_index over a tiny
-    #: coverage_ratio is weak evidence and must be read together with it.
+    #: Mean SELF-DECLARED claim strength over MARKED moves, or None when nothing
+    #: was marked. This is what the council said about itself — never evidence,
+    #: and it promotes nothing. Deliberately not defaulted to 0.0: "no marked
+    #: claims" is missing data, not zero, and CED never fabricates a measure.
+    self_declared_support_index: Optional[float] = None
+    #: Share of moves carrying a marker. A high self-declaration index over a
+    #: tiny coverage_ratio says almost nothing and must be read together with it.
     coverage_ratio: float = 0.0
 
     #: Moves whose confidence exceeds the ceiling their own marker allows.
@@ -186,7 +195,7 @@ def assess_session_support(state: SessionState) -> EpistemicSupportAssessment:
         weight: Optional[float] = None
         if marker is not None:
             marker_counts[marker_value] = marker_counts.get(marker_value, 0) + 1
-            weight = MARKER_SUPPORT_WEIGHTS.get(marker)
+            weight = MARKER_SELF_DECLARATION_WEIGHTS.get(marker)
             if weight is not None:
                 weights.append(weight)
 
@@ -217,7 +226,8 @@ def assess_session_support(state: SessionState) -> EpistemicSupportAssessment:
         moves_marked=marked,
         unmarked_assertion_ratio=round((total - marked) / total, 6) if total else 0.0,
         marker_counts=marker_counts,
-        support_index=round(sum(weights) / len(weights), 6) if weights else None,
+        self_declared_support_index=(round(sum(weights) / len(weights), 6)
+                                     if weights else None),
         coverage_ratio=round(marked / total, 6) if total else 0.0,
         overconfidence_violations=overconfident,
         premise_scrutinised=bool(scrutiny_moves),
@@ -264,7 +274,7 @@ class HybridSupportObserver:
                 "moves_marked": assessment.moves_marked,
                 "unmarked_assertion_ratio": assessment.unmarked_assertion_ratio,
                 "marker_counts": assessment.marker_counts,
-                "support_index": assessment.support_index,
+                "self_declared_support_index": assessment.self_declared_support_index,
                 "coverage_ratio": assessment.coverage_ratio,
                 "overconfidence_violations": assessment.overconfidence_violations,
                 "premise_scrutinised": assessment.premise_scrutinised,

@@ -452,7 +452,9 @@ genuinely TRANSFERS to the new question — surface keyword overlap is not
 transfer. Your `content` MUST be a JSON object with EXACTLY this field:
   "relevant_indices" — list of 0-based indices into candidate_lessons (max 3;
                        empty list if nothing genuinely transfers)
-Example: {"content": {"relevant_indices": [0, 2]}, "confidence": 0.8}"""
+Example: {"content": {"relevant_indices": [0, 2]}, "confidence": 0.8}
+In addition to the fields above, include the required `epistemic_marker`
+field described earlier. It is the ONE permitted extra top-level field."""
 
 LESSON_CONSOLIDATION_DIRECTIVE = """\
 **Memory consolidation — REQUIRED structure (exact field names)**
@@ -497,6 +499,25 @@ _EVALUATIVE_KINDS = {
     TaskKind.RATIFICATION_FINAL,
 }
 
+
+def is_deliberative_kind(task_kind: Optional[TaskKind]) -> bool:
+    """A task that argues, as opposed to one that judges an anonymous output."""
+    return task_kind is not None and task_kind not in _EVALUATIVE_KINDS
+
+
+def marker_is_contracted(task_kind: Optional[TaskKind]) -> bool:
+    """THE canonical epistemic-marker contract.
+
+    Both the reasoning directive and the output contract derive from this one
+    predicate; neither re-tests the condition. Keeping a second independent copy
+    is what let a directive and its own contract drift into contradiction.
+
+    Judging tasks are excluded on purpose: they emit scores and verdicts about
+    someone else's claim, so a marker for "their own central claim" is
+    meaningless there.
+    """
+    return is_deliberative_kind(task_kind)
+
 DEFAULT_RESPONSE_CONTRACT = (
     '`content` MUST be a JSON object with named fields — NEVER a bare string, '
     'number, or list. Prose belongs inside a named field of that object, not in '
@@ -538,10 +559,10 @@ def build_reasoning_system_prompt(
     # dialectic delta) and taught the contract of every system artifact their
     # context may carry. Judging tasks (scores/ratification) deliberately get
     # NEITHER — they see only the anonymous output under evaluation.
-    if task_kind is not None and task_kind not in _EVALUATIVE_KINDS:
+    if is_deliberative_kind(task_kind):
         parts.append(TELOS_DIRECTIVE)
     parts.append(REASONING_PROTOCOL)
-    if task_kind is not None and task_kind not in _EVALUATIVE_KINDS:
+    if is_deliberative_kind(task_kind):
         parts.append(DIALOGUE_REVIEW_DIRECTIVE)
         parts.append(CONTEXT_PROTOCOL)
 
@@ -551,10 +572,11 @@ def build_reasoning_system_prompt(
     # Deliberating agents get their role's exemplar (the FORM of excellence) and
     # the epistemic-marker vocabulary; judging tasks emit scores/verdicts, so
     # neither applies there.
-    if task_kind is not None and task_kind not in _EVALUATIVE_KINDS:
+    if is_deliberative_kind(task_kind):
         exemplar = ROLE_EXEMPLARS.get(role) if role else None
         if exemplar:
             parts.append(exemplar)
+    if marker_is_contracted(task_kind):
         parts.append(EPISTEMIC_MARKER_DIRECTIVE)
 
     phase_line = PHASE_REASONING.get(phase) if phase else None
@@ -587,9 +609,9 @@ def build_reasoning_system_prompt(
         parts.append(BAYESIAN_UPDATE_DIRECTIVE)
 
     contract = response_contract
-    # Only when the caller accepted the default: an explicit contract wins.
-    if (contract == DEFAULT_RESPONSE_CONTRACT
-            and task_kind is not None and task_kind not in _EVALUATIVE_KINDS):
+    # Same authority as the directive above — never a second copy of the rule.
+    # An explicit caller-supplied contract still wins over both.
+    if contract == DEFAULT_RESPONSE_CONTRACT and marker_is_contracted(task_kind):
         contract = DELIBERATIVE_RESPONSE_CONTRACT
     parts.append("**Output**\n" + contract)
     return "\n\n".join(parts)
