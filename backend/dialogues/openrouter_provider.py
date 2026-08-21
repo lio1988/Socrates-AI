@@ -21,6 +21,8 @@ from .provider_registry import BaseProviderAdapter, parse_and_validate_move
 from .reasoning_prompts import build_reasoning_system_prompt
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+# Exact OpenRouter model id used when no per-seat model is configured.
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-4.1-mini"
 
 
 def _task_prompt(task: AgentTask, agent_state: AgentState) -> str:

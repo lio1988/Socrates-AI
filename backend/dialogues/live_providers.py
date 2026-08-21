@@ -56,6 +56,10 @@ from .nvidia_nim_provider import (
     DEFAULT_NVIDIA_MODEL,
     LiveNvidiaNIMAdapter,
 )
+from .openrouter_provider import (
+    DEFAULT_OPENROUTER_MODEL,
+    OpenRouterProviderAdapter,
+)
 
 # ── configuration (environment variables ONLY) ───────────────────────────────
 
@@ -72,6 +76,8 @@ PROVIDER_FAMILIES_ENV = "CED_PROVIDER_FAMILIES"   # e.g. anthropic,nvidia,nvidia
 NVIDIA_KEY_ENV = "NVIDIA_API_KEY"
 NVIDIA_MODELS_ENV = "CED_NVIDIA_MODELS"           # optional comma-separated NVIDIA per-seat models
 NVIDIA_BASE_URL_ENV = "CED_NVIDIA_BASE_URL"       # optional NIM-compatible base URL
+OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
+OPENROUTER_MODELS_ENV = "CED_OPENROUTER_MODELS"   # optional comma-separated OpenRouter per-seat models
 
 DEFAULT_LIVE_MODEL = DEFAULT_OFFLINE_MODEL  # "claude-opus-4-8"
 DEFAULT_MAX_TOKENS = 8192   # generous: rich (esp. Greek) reasoning JSON must not truncate
@@ -114,6 +120,11 @@ def resolve_nvidia_key(env) -> Optional[str]:
     return None if is_placeholder_key(key) else key
 
 
+def resolve_openrouter_key(env) -> Optional[str]:
+    key = env.get(OPENROUTER_KEY_ENV, "")
+    return None if is_placeholder_key(key) else key
+
+
 def _parse_csv(raw: str) -> List[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
@@ -139,6 +150,13 @@ def resolve_nvidia_models(env, count: int) -> List[str]:
     if raw:
         return _parse_csv(raw)
     return [DEFAULT_NVIDIA_MODEL] * count
+
+
+def resolve_openrouter_models(env, count: int) -> List[str]:
+    raw = env.get(OPENROUTER_MODELS_ENV, "").strip()
+    if raw:
+        return _parse_csv(raw)
+    return [DEFAULT_OPENROUTER_MODEL] * count
 
 
 def resolve_nvidia_base_url(env) -> str:
@@ -304,8 +322,12 @@ def _build_mixed_registry(env, families: List[str], *, timeout: float, retries: 
     anthropic_models = resolve_models(env, families.count("anthropic") + families.count("claude"))
     nvidia_models = resolve_nvidia_models(env, families.count("nvidia") + families.count("nim"))
     nvidia_base_url = resolve_nvidia_base_url(env)
+    openrouter_key = resolve_openrouter_key(env)
+    openrouter_models = resolve_openrouter_models(
+        env, families.count("openrouter") + families.count("or"))
     a_i = 0
     n_i = 0
+    o_i = 0
 
     for seat_i, family in enumerate(families):
         if family in ("mock", "fake", "scripted"):
@@ -329,8 +351,19 @@ def _build_mixed_registry(env, families: List[str], *, timeout: float, retries: 
                 max_tokens=max_tokens, timeout=timeout, retries=retries,
             ))
             continue
+        if family in ("openrouter", "or"):
+            model = openrouter_models[o_i % max(1, len(openrouter_models))]
+            o_i += 1
+            registry.register(OpenRouterProviderAdapter(
+                provider_id=f"openrouter_seat{seat_i}_{_safe_id_fragment(model)}",
+                model_id=model,
+                api_key=openrouter_key or "your_key_here",
+                timeout_seconds=timeout,
+            ))
+            continue
         raise ValueError(
-            f"Unknown provider family {family!r}; supported: anthropic, nvidia, mock"
+            f"Unknown provider family {family!r}; "
+            "supported: anthropic, nvidia, openrouter, mock"
         )
     return registry
 
