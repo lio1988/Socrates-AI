@@ -1642,6 +1642,13 @@ class CEDOrchestrator:
         audit = {
             "execution_mode": "registry",
             "final_synthesis_mode": self.final_synthesis_mode.value,
+            # The epistemic_status on the FinalResponse is produced by
+            # _epistemic_hint, which is a mean-quality threshold. It is retained
+            # for compatibility and comparison and governs nothing: epistemic
+            # support is decided by the hybrid core, never by a score. Stated
+            # here so a reader of the audit cannot mistake the label for a
+            # verdict about evidence.
+            "legacy_epistemic_status_authority": "legacy_non_governing",
             "num_agents": len(self.agents),
             "total_moves": len(state.moves),
             "score_coverage": {

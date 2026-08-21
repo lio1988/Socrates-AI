@@ -353,12 +353,30 @@ def test_the_two_planes_are_reported_side_by_side_never_merged():
 
 
 def test_no_canonical_module_imports_hybrid_support():
-    """The canonical path must not be able to read H2 even by accident."""
+    """The canonical path must not be able to read H2 even by accident.
+
+    Checked by import graph rather than by substring: the authority map names
+    this module as a classification entry, which is a mention and not a
+    dependency.
+    """
+    import ast
+
     root = pathlib.Path(__file__).resolve().parents[1] / "backend"
-    offenders = [
-        path.relative_to(root).as_posix()
-        for path in root.rglob("*.py")
-        if path.name != "hybrid_support.py"
-        and "hybrid_support" in path.read_text(encoding="utf-8")
-    ]
-    assert offenders == [], f"canonical code reads H2: {offenders}"
+    offenders = []
+    for path in root.rglob("*.py"):
+        if path.name == "hybrid_support.py":
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:                      # pragma: no cover - defensive
+            continue
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""] + [a.name for a in node.names]
+            if any(n.endswith("hybrid_support") for n in names):
+                offenders.append(path.relative_to(root).as_posix())
+                break
+    assert offenders == [], f"canonical code imports H2: {offenders}"
