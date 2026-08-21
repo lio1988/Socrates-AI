@@ -43,7 +43,12 @@ async def _run() -> int:
         context={"smoke": True},
         output_schema={},
     )
-    response = await adapter.generate_agent_move(task, AgentState(agent_id=task.agent_id))
+    state = AgentState(
+        agent_id=task.agent_id,
+        primary_role=AgentRole.SYNTHESIZER,
+        assigned_role=AgentRole.SYNTHESIZER,
+    )
+    response = await adapter.generate_agent_move(task, state)
 
     print(f"provider_id={response.provider_id}")
     print(f"status={response.status.value}")

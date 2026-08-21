@@ -21,6 +21,14 @@ def _task():
     )
 
 
+def _state():
+    return AgentState(
+        agent_id="agent_openrouter_test",
+        primary_role=AgentRole.SYNTHESIZER,
+        assigned_role=AgentRole.SYNTHESIZER,
+    )
+
+
 def _adapter(model="vendor/model"):
     return OpenRouterProviderAdapter(
         provider_id="openrouter_test",
@@ -32,7 +40,7 @@ def _adapter(model="vendor/model"):
 def test_missing_key_fails_closed(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     adapter = OpenRouterProviderAdapter(provider_id="or", model_id="vendor/model", api_key=None)
-    response = asyncio.run(adapter.generate_agent_move(_task(), AgentState(agent_id="agent_openrouter_test")))
+    response = asyncio.run(adapter.generate_agent_move(_task(), _state()))
     assert response.status == ProviderStatus.MISSING_KEY
 
 
@@ -48,7 +56,7 @@ def test_exact_model_and_valid_move(monkeypatch):
         }
 
     monkeypatch.setattr(adapter, "_request", fake_request)
-    response = asyncio.run(adapter.generate_agent_move(_task(), AgentState(agent_id="agent_openrouter_test")))
+    response = asyncio.run(adapter.generate_agent_move(_task(), _state()))
     assert response.status == ProviderStatus.OK
     assert response.parsed_move is not None
     assert adapter.last_receipt["requested_model"] == "vendor/model"
@@ -67,7 +75,7 @@ def test_model_substitution_is_rejected(monkeypatch):
         }
 
     monkeypatch.setattr(adapter, "_request", fake_request)
-    response = asyncio.run(adapter.generate_agent_move(_task(), AgentState(agent_id="agent_openrouter_test")))
+    response = asyncio.run(adapter.generate_agent_move(_task(), _state()))
     assert response.status == ProviderStatus.ERROR
     assert response.parsed_move is None
     assert adapter.last_receipt["verified_exact_model"] is False
@@ -80,7 +88,7 @@ def test_rate_limit_maps_to_provider_status(monkeypatch):
         raise RuntimeError("rate_limited")
 
     monkeypatch.setattr(adapter, "_request", fake_request)
-    response = asyncio.run(adapter.generate_agent_move(_task(), AgentState(agent_id="agent_openrouter_test")))
+    response = asyncio.run(adapter.generate_agent_move(_task(), _state()))
     assert response.status == ProviderStatus.RATE_LIMITED
 
 
@@ -91,7 +99,7 @@ def test_invalid_content_fails_closed(monkeypatch):
         return {"id": "resp_3", "model": "vendor/model", "choices": []}
 
     monkeypatch.setattr(adapter, "_request", fake_request)
-    response = asyncio.run(adapter.generate_agent_move(_task(), AgentState(agent_id="agent_openrouter_test")))
+    response = asyncio.run(adapter.generate_agent_move(_task(), _state()))
     assert response.status == ProviderStatus.INVALID_JSON
     assert response.parsed_move is None
 
