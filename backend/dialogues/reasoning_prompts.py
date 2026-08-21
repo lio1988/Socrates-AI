@@ -388,6 +388,32 @@ missed, deepen the nuance, and recalibrate the verdict. If a part of the draft
 is already excellent, preserving it is correct — do not change things merely to
 look different. Output the same five-section structure."""
 
+OBJECTION_VERIFICATION_DIRECTIVE = """\
+**Objection verification — check it against the task, nothing else**
+You are given ONE objection and the ORIGINAL TASK. Decide whether the objection
+actually holds *according to material stated in the task itself*. Your opinion of
+the objection is not the question; whether the task's own words support it is.
+
+Quote the exact text you relied on, character for character, with its offset in
+the original task. A quotation that does not appear at that offset is rejected
+outright, so copy rather than paraphrase, and count from the start of the task.
+
+If the task does not settle it, say so. `null` is a real answer and is safer than
+a guess: an unsettled objection stays unresolved and destroys nothing, while a
+wrong verdict can destroy a correct claim.
+
+Your `content` MUST be a JSON object with EXACTLY these fields:
+  "cited_spans"      — list of {"text": "<verbatim quote>", "offset": <int>}
+  "condition_tested" — the exact condition you evaluated
+  "objection_holds"  — true if the objection holds, false if it fails,
+                       null if the task cannot settle it
+  "rationale"        — why, referring to the quoted text
+Example: {"content": {"cited_spans": [{"text": "Ben does not present last",
+"offset": 91}], "condition_tested": "does the proposed order place Ben last?",
+"objection_holds": false, "rationale": "Ben is in position 2."},
+"confidence": 0.8}"""
+
+
 SCORE_CONTENT_DIRECTIVE = """\
 **Scoring output — REQUIRED structure (exact field names)**
 Your `content` MUST be a JSON object with EXACTLY these seven numeric fields, each
@@ -502,6 +528,9 @@ _EVALUATIVE_KINDS = {
     TaskKind.COUNCIL_RATIFICATION,
     TaskKind.RATIFICATION_INITIAL, TaskKind.RATIFICATION_REVISION,
     TaskKind.RATIFICATION_FINAL,
+    # A verification emits a verdict about someone else's objection, so it is a
+    # judging task: no marker, no telos, no dialogue review.
+    TaskKind.OBJECTION_VERIFICATION,
 }
 
 
@@ -599,6 +628,8 @@ def build_reasoning_system_prompt(
         parts.append(TREE_REVISION_DIRECTIVE)
     if task_kind in _SCORE_KINDS:
         parts.append(SCORE_CONTENT_DIRECTIVE)
+    if task_kind == TaskKind.OBJECTION_VERIFICATION:
+        parts.append(OBJECTION_VERIFICATION_DIRECTIVE)
     if task_kind == TaskKind.COUNCIL_RATIFICATION:
         parts.append(RATIFICATION_CONTENT_DIRECTIVE)
         parts.append(RATIFICATION_COHERENCE_NOTE)

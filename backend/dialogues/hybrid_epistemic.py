@@ -969,3 +969,169 @@ class HybridEpistemicObserver:
             payload=release.model_dump(mode="json"),
         ))
         return records
+
+
+# ── mid-session objection verification ───────────────────────────────────────
+#
+# This is the only path in the system where a model's reading can destroy a
+# correct claim: a VALIDATED objection falsifies, and deterministic code can
+# prove a citation exists but not that it was read correctly. The gate below is
+# therefore stricter than the release gate needed to be.
+
+class VerificationVerdict(str, Enum):
+    """Why an objection ended where it did. Recorded, never inferred later."""
+
+    CORROBORATED_VALID = "corroborated_valid"
+    CORROBORATED_INVALID = "corroborated_invalid"
+    UNCORROBORATED = "uncorroborated"
+    CONFLICTING = "conflicting"
+    NO_ANCHOR_AGREEMENT = "no_anchor_agreement"
+    NO_RECORDS = "no_records"
+
+
+#: Independent records that must agree before an objection may change state.
+#: One well-cited but misread check would otherwise be enough to destroy a
+#: correct claim, which is the frozen failure wearing a better name.
+REQUIRED_CORROBORATION = 2
+
+
+def parse_verification_response(
+    content: Any,
+    *,
+    task_text: str,
+    claim_id: str,
+    objection_id: str,
+    verifier_provider_id: str,
+) -> Optional[VerificationRecord]:
+    """Build a record from a verifier's structured output, or return None.
+
+    Returns None rather than raising: a malformed verification is a verifier
+    that produced nothing usable, not a session failure. Nothing is inferred to
+    fill a gap — an unparseable response contributes no record at all.
+    """
+    if not isinstance(content, Mapping):
+        return None
+    raw_spans = content.get("cited_spans")
+    condition = str(content.get("condition_tested") or "").strip()
+    holds = content.get("objection_holds")
+    if not isinstance(raw_spans, (list, tuple)) or not raw_spans or not condition:
+        return None
+    if holds not in (True, False, None):
+        return None
+
+    spans: List[Tuple[str, int]] = []
+    for item in raw_spans:
+        if not isinstance(item, Mapping):
+            return None
+        text = item.get("text")
+        offset = item.get("offset")
+        if not isinstance(text, str) or not isinstance(offset, int):
+            return None
+        spans.append((text, offset))
+
+    try:
+        return verify_task_internal(
+            claim_id=claim_id,
+            objection_id=objection_id,
+            task_text=task_text,
+            cited_spans=spans,
+            condition_tested=condition,
+            holds=holds,
+            rationale=str(content.get("rationale") or ""),
+            verifier_provider_id=verifier_provider_id,
+        )
+    except MalformedVerification:
+        # A fabricated or misplaced citation. Refused, and it contributes
+        # nothing rather than being downgraded into a weaker signal.
+        return None
+
+
+def _anchor_keys(record: VerificationRecord) -> set:
+    return {(span.text, span.offset) for span in record.authoritative_inputs}
+
+
+def corroborated_verdict(
+    records: Sequence[VerificationRecord],
+) -> Tuple[Optional[ObjectionState], VerificationVerdict, str]:
+    """Decide an objection's fate from independent verification records.
+
+    Requirements, all of them:
+
+    * at least ``REQUIRED_CORROBORATION`` records from *different* verifiers;
+    * unanimous agreement on the result — any disagreement is INCONCLUSIVE,
+      never a majority;
+    * agreement on at least one identical cited span, so the verifiers read the
+      same piece of the task rather than reaching the same verdict by different
+      and possibly wrong routes.
+
+    Returns (target state or None, verdict, reason). None means leave the
+    objection where it is: unresolved is the safe default, and it is the only
+    default.
+    """
+    usable = [r for r in records if r.result in (VerificationResult.VERIFIED,
+                                                 VerificationResult.FALSIFIED)]
+    if not usable:
+        return None, VerificationVerdict.NO_RECORDS, "no usable verification record"
+
+    by_verifier: Dict[str, VerificationRecord] = {}
+    for record in usable:
+        key = record.verifier_provider_id or record.verification_id
+        by_verifier.setdefault(key, record)
+    independent = list(by_verifier.values())
+
+    if len(independent) < REQUIRED_CORROBORATION:
+        return (None, VerificationVerdict.UNCORROBORATED,
+                f"{len(independent)} independent record(s); "
+                f"{REQUIRED_CORROBORATION} required")
+
+    results = {r.result for r in independent}
+    if len(results) > 1:
+        return (None, VerificationVerdict.CONFLICTING,
+                "verifiers disagree on the result")
+
+    shared = set.intersection(*(_anchor_keys(r) for r in independent))
+    if not shared:
+        return (None, VerificationVerdict.NO_ANCHOR_AGREEMENT,
+                "verifiers agreed on the verdict but cited different material")
+
+    result = results.pop()
+    if result is VerificationResult.VERIFIED:
+        return (ObjectionState.VALIDATED, VerificationVerdict.CORROBORATED_VALID,
+                f"{len(independent)} verifiers agree the objection holds")
+    return (ObjectionState.REJECTED, VerificationVerdict.CORROBORATED_INVALID,
+            f"{len(independent)} verifiers agree the objection fails")
+
+
+def apply_verification(
+    state: HybridEpistemicState,
+    objection_id: str,
+    records: Sequence[VerificationRecord],
+) -> Tuple[VerificationVerdict, str]:
+    """Store records and move the objection only if corroboration allows it."""
+    stored: List[VerificationRecord] = []
+    for record in records:
+        try:
+            stored.append(state.add_verification(record))
+        except MalformedVerification:
+            continue
+
+    target, verdict, reason = corroborated_verdict(stored)
+    current = state.objections[objection_id]
+    if current.state is ObjectionState.RAISED:
+        state.transition_objection(objection_id, ObjectionState.PENDING_VERIFICATION)
+
+    if target is None:
+        if state.objections[objection_id].state is ObjectionState.PENDING_VERIFICATION:
+            state.transition_objection(objection_id, ObjectionState.INCONCLUSIVE)
+        state.transitions.append({"kind": "verification_verdict",
+                                  "id": objection_id, "verdict": verdict.value,
+                                  "reason": reason})
+        return verdict, reason
+
+    deciding = next(r for r in stored if r.result in (VerificationResult.VERIFIED,
+                                                      VerificationResult.FALSIFIED))
+    state.transition_objection(objection_id, target,
+                               verification_id=deciding.verification_id)
+    state.transitions.append({"kind": "verification_verdict", "id": objection_id,
+                              "verdict": verdict.value, "reason": reason})
+    return verdict, reason

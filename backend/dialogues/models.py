@@ -181,6 +181,7 @@ class TaskKind(str, Enum):
     LESSON_RELEVANCE        = "lesson_relevance"        # Phase 14 AI lesson retrieval
     LESSON_CONSOLIDATION    = "lesson_consolidation"    # Phase 15 memory consolidation ("sleep")
     TREE_REVISION           = "tree_revision"           # Deliberation-tree draft revision (search)
+    OBJECTION_VERIFICATION  = "objection_verification"  # H3 mid-session check of one objection
 
 
 class AgentTask(BaseModel):

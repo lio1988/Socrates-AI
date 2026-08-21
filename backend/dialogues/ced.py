@@ -65,6 +65,8 @@ from .agent import SocraticAgent
 from .provider_registry import CouncilProviderRegistry
 from .hybrid_epistemic import (
     ClaimRecord,
+    apply_verification,
+    parse_verification_response,
     HybridEpistemicState,
     ObjectionRecord,
     ReleaseDecision,
@@ -1113,7 +1115,7 @@ class CEDOrchestrator:
         # assembly and ratification are unchanged above; only the final
         # epistemic verdict moves here, from a quality threshold to a
         # decision computed from records.
-        self._apply_governing_release(state, final)
+        await self._apply_governing_release(state, final)
 
         # Augment the (already CED-owned) audit with Phase 8C provider/registry info.
         final.audit_summary.update(self._registry_session_audit(state, phase_results))
@@ -1164,8 +1166,65 @@ class CEDOrchestrator:
             ))
         return core
 
-    def _apply_governing_release(self, state: SessionState,
-                                 final: FinalResponse) -> None:
+    async def run_objection_verification(
+        self, state: SessionState, core, timeout_seconds: Optional[float] = None,
+    ) -> Dict[str, str]:
+        """Ask peer seats to check each raised objection against the task.
+
+        Every objection is checked by every seat that did not raise it — no
+        self-verification, mirroring the no-self-scoring rule. A verdict moves
+        an objection only when independent verifiers corroborate each other on
+        the same cited span; anything less leaves it unresolved, because this is
+        the one path where a model's reading can destroy a correct claim.
+        """
+        verdicts: Dict[str, str] = {}
+        if self.registry is None or not core.objections:
+            return verdicts
+        adapters = self._healthy_adapters()
+        if len(adapters) < 2:                     # corroboration is impossible
+            return verdicts
+
+        for objection_id, objection in sorted(core.objections.items()):
+            peers = [a for a in adapters if a.provider_id != objection.raised_by]
+            if len(peers) < 2:
+                continue
+            task = AgentTask(
+                task_id=f"verify_{objection_id}",
+                session_id=state.session_id,
+                agent_id=objection.target_claim_id,
+                role=AgentRole.FINAL_EVALUATOR,
+                phase=DialogPhase.ELENCHUS,
+                question=state.question,
+                context={"objection_under_test": objection.text,
+                         "original_task": core.task_text},
+                output_schema={"_role": "__objection_verification__",
+                               "_objection": objection_id},
+                task_kind=TaskKind.OBJECTION_VERIFICATION,
+            )
+            agent_state = AgentState(agent_id=objection.target_claim_id,
+                                     primary_role=AgentRole.FINAL_EVALUATOR,
+                                     assigned_role=AgentRole.FINAL_EVALUATOR)
+            responses = await asyncio.gather(*(
+                self.registry.run_adapter(a, task, agent_state, timeout_seconds)
+                for a in peers))
+            records = []
+            for adapter, response in zip(peers, responses):
+                if not response.ok or response.parsed_move is None:
+                    continue
+                record = parse_verification_response(
+                    response.parsed_move.content,
+                    task_text=core.task_text,
+                    claim_id=objection.target_claim_id,
+                    objection_id=objection_id,
+                    verifier_provider_id=adapter.provider_id)
+                if record is not None:
+                    records.append(record)
+            verdict, _reason = apply_verification(core, objection_id, records)
+            verdicts[objection_id] = verdict.value
+        return verdicts
+
+    async def _apply_governing_release(self, state: SessionState,
+                                       final: FinalResponse) -> None:
         """Decide the release from records and record it on the response.
 
         Failure-isolated: if projection raises, the canonical response still
@@ -1175,6 +1234,10 @@ class CEDOrchestrator:
         legacy = final.epistemic_status.value
         try:
             core = self.project_governing_state(state, final)
+            # H3 mid-session verification: peers check each raised objection
+            # against the task before anything is frozen. Only corroborated
+            # verdicts move an objection; the rest stay unresolved.
+            verdicts = await self.run_objection_verification(state, core)
             quality = [ms.score_breakdown.weighted_overall()
                        for ms in state.micro_scores]
             release = freeze_release(
@@ -1210,6 +1273,7 @@ class CEDOrchestrator:
         final.audit_summary["governing_release"] = {
             "available": True,
             "release_decision": release.release_decision.value,
+            "objection_verdicts": verdicts,
             "governing_epistemic_status": governing,
             "claim_states": release.claim_states,
             "basis_record_ids": release.basis_record_ids,

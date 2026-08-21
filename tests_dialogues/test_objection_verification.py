@@ -1,0 +1,218 @@
+"""Mid-session objection verification, and the gate that guards it.
+
+This is the only path where a model's reading can destroy a correct claim: a
+VALIDATED objection falsifies, and deterministic code proves a citation exists
+but not that it was read correctly. So the gate is stricter than the release
+gate needed to be — independent corroboration, unanimity, and agreement on the
+same cited span.
+
+All offline: no provider, no network, no key.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from backend.dialogues.hybrid_epistemic import (
+    REQUIRED_CORROBORATION,
+    ClaimRecord,
+    HybridEpistemicState,
+    ObjectionRecord,
+    ObjectionState,
+    SupportState,
+    VerificationClass,
+    VerificationVerdict,
+    apply_verification,
+    corroborated_verdict,
+    parse_verification_response,
+    verify_task_internal,
+)
+
+TASK = ("Four researchers present once each. Anna presents before Ben. "
+        "Clara presents immediately before David. Ben does not present last.")
+C3 = "Ben does not present last"
+C1 = "Anna presents before Ben"
+
+
+def _state():
+    state = HybridEpistemicState("verif", TASK)
+    state.add_claim(ClaimRecord(claim_id="c", text="The order is A-B-C-D.",
+                                verification_class=VerificationClass.TASK_INTERNAL))
+    state.add_objection(ObjectionRecord(objection_id="o", target_claim_id="c",
+                                        text="C-D-A-B works too"))
+    return state
+
+
+def _record(verifier, *, holds, span=C3, condition="does the order put Ben last?"):
+    return verify_task_internal(
+        claim_id="c", objection_id="o", task_text=TASK,
+        cited_spans=[(span, TASK.index(span))],
+        condition_tested=condition, holds=holds,
+        rationale="checked against the cited constraint",
+        verifier_provider_id=verifier)
+
+
+# ── the gate ─────────────────────────────────────────────────────────────────
+
+def test_a_single_record_never_validates_an_objection():
+    """One well-cited but possibly misread check must not destroy a claim."""
+    target, verdict, reason = corroborated_verdict([_record("seat0", holds=True)])
+    assert target is None
+    assert verdict is VerificationVerdict.UNCORROBORATED
+    assert str(REQUIRED_CORROBORATION) in reason
+
+
+def test_two_independent_agreeing_verifiers_validate():
+    target, verdict, _ = corroborated_verdict([_record("seat0", holds=True),
+                                               _record("seat1", holds=True)])
+    assert target is ObjectionState.VALIDATED
+    assert verdict is VerificationVerdict.CORROBORATED_VALID
+
+
+def test_two_independent_agreeing_verifiers_reject():
+    target, verdict, _ = corroborated_verdict([_record("seat0", holds=False),
+                                               _record("seat1", holds=False)])
+    assert target is ObjectionState.REJECTED
+    assert verdict is VerificationVerdict.CORROBORATED_INVALID
+
+
+def test_the_same_verifier_twice_is_not_corroboration():
+    target, verdict, _ = corroborated_verdict([_record("seat0", holds=True),
+                                               _record("seat0", holds=True)])
+    assert target is None
+    assert verdict is VerificationVerdict.UNCORROBORATED
+
+
+def test_disagreement_is_inconclusive_and_never_a_majority():
+    records = [_record("seat0", holds=True), _record("seat1", holds=True),
+               _record("seat2", holds=False)]
+    target, verdict, _ = corroborated_verdict(records)
+    assert target is None                       # 2-1 does not carry
+    assert verdict is VerificationVerdict.CONFLICTING
+
+
+def test_agreeing_on_a_verdict_while_citing_different_material_is_inconclusive():
+    """Same answer by different routes is not corroboration."""
+    target, verdict, reason = corroborated_verdict([
+        _record("seat0", holds=True, span=C3),
+        _record("seat1", holds=True, span=C1),
+    ])
+    assert target is None
+    assert verdict is VerificationVerdict.NO_ANCHOR_AGREEMENT
+    assert "different material" in reason
+
+
+def test_no_records_leaves_the_objection_alone():
+    target, verdict, _ = corroborated_verdict([])
+    assert target is None
+    assert verdict is VerificationVerdict.NO_RECORDS
+
+
+# ── applying a verdict to the state ──────────────────────────────────────────
+
+def test_corroborated_rejection_leaves_the_claim_standing():
+    """The frozen failure, inverted: a false counterexample is refused."""
+    state = _state()
+    verdict, _ = apply_verification(state, "o", [_record("seat0", holds=False),
+                                                 _record("seat1", holds=False)])
+    assert verdict is VerificationVerdict.CORROBORATED_INVALID
+    assert state.objections["o"].state is ObjectionState.REJECTED
+    assessment = state.assess_claim("c")
+    assert assessment.support_state is not SupportState.FALSIFIED
+    assert assessment.eligible_for_assembly is True
+
+
+def test_corroborated_validation_falsifies_the_claim():
+    state = _state()
+    verdict, _ = apply_verification(state, "o", [_record("seat0", holds=True),
+                                                 _record("seat1", holds=True)])
+    assert verdict is VerificationVerdict.CORROBORATED_VALID
+    assert state.objections["o"].state is ObjectionState.VALIDATED
+    assert state.assess_claim("c").support_state is SupportState.FALSIFIED
+
+
+def test_an_uncorroborated_check_leaves_the_objection_inconclusive():
+    state = _state()
+    verdict, _ = apply_verification(state, "o", [_record("seat0", holds=True)])
+    assert verdict is VerificationVerdict.UNCORROBORATED
+    assert state.objections["o"].state is ObjectionState.INCONCLUSIVE
+    assert state.objections["o"].is_destructive is False
+    assert state.assess_claim("c").support_state is SupportState.UNRESOLVED
+
+
+# ── parsing a verifier's output ──────────────────────────────────────────────
+
+def _content(span=C3, holds=True, condition="is Ben last?"):
+    return {"cited_spans": [{"text": span, "offset": TASK.index(span)}],
+            "condition_tested": condition, "objection_holds": holds,
+            "rationale": "position 4"}
+
+
+def test_a_well_formed_response_becomes_a_record():
+    record = parse_verification_response(
+        _content(), task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is not None
+    assert record.verifier_provider_id == "seat0"
+    assert record.authoritative_inputs[0].text == C3
+
+
+def test_a_fabricated_citation_produces_no_record_at_all():
+    """Refused outright rather than downgraded into a weaker signal."""
+    bad = {"cited_spans": [{"text": "Ben must present last", "offset": 0}],
+           "condition_tested": "invented", "objection_holds": True}
+    assert parse_verification_response(
+        bad, task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0") is None
+
+
+def test_a_correct_citation_at_a_wrong_offset_produces_no_record():
+    bad = {"cited_spans": [{"text": C3, "offset": TASK.index(C3) + 3}],
+           "condition_tested": "c3", "objection_holds": True}
+    assert parse_verification_response(
+        bad, task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0") is None
+
+
+@pytest.mark.parametrize("content", [
+    None, "a string", 42, {},
+    {"cited_spans": [], "condition_tested": "x", "objection_holds": True},
+    {"cited_spans": [{"text": C3, "offset": 0}], "condition_tested": "",
+     "objection_holds": True},
+    {"cited_spans": [{"text": C3}], "condition_tested": "x",
+     "objection_holds": True},
+    {"cited_spans": [{"text": C3, "offset": 0}], "condition_tested": "x",
+     "objection_holds": "maybe"},
+])
+def test_malformed_responses_contribute_nothing(content):
+    assert parse_verification_response(
+        content, task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0") is None
+
+
+def test_an_undecidable_check_parses_as_inconclusive_and_cannot_corroborate():
+    record = parse_verification_response(
+        _content(holds=None), task_text=TASK, claim_id="c", objection_id="o",
+        verifier_provider_id="seat0")
+    assert record is not None
+    target, verdict, _ = corroborated_verdict([record, record])
+    assert target is None
+    assert verdict is VerificationVerdict.NO_RECORDS
+
+
+# ── the risk this gate exists to bound ───────────────────────────────────────
+
+def test_one_misreading_verifier_cannot_destroy_a_correct_claim():
+    """The named risk: a real citation, a wrong reading, a correct claim.
+
+    Alone it cannot validate. It needs an independent verifier to agree on the
+    same span, and if a second verifier reads the span correctly the result is
+    CONFLICTING rather than a majority verdict.
+    """
+    state = _state()
+    misreader = _record("seat0", holds=True)          # says the objection holds
+    correct = _record("seat1", holds=False)           # says it does not
+    verdict, _ = apply_verification(state, "o", [misreader, correct])
+    assert verdict is VerificationVerdict.CONFLICTING
+    assert state.objections["o"].state is ObjectionState.INCONCLUSIVE
+    assert state.assess_claim("c").support_state is not SupportState.FALSIFIED
