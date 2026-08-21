@@ -142,18 +142,77 @@ against a supplied constraint can *refute*; no number of passing checks
 *establishes* a claim. `VALID`/`INVALID` are about the counterexample, never a
 promotion of the claim to supported.
 
-## 7. Why this is not majority voting
+## 7. Voting, and what makes its criteria good
 
-Voting counts who agreed. A verification record names **what was checked**.
+This system is a council. Voting is its mechanism and is meant to stay. The
+failure was never that the council voted — it was **what** it voted on and
+**with what in hand**.
 
-* the anchor is the original task, not another model's opinion;
-* the cited spans must exist verbatim in that task, and code proves it;
-* one record with a correct citation stands against any number without;
-* records are never summed, averaged, or ranked;
-* the verifier's identity is recorded for attribution, and carries no weight.
+### What a vote may decide
 
-Ten models asserting a counterexample is valid, with no record citing a supplied
-constraint, produce nothing. One record quoting constraint 3 settles it.
+* **acceptance** — "the council releases this as its output" is a governance act
+  and belongs to the council;
+* **quality comparisons** — which of two drafts argues better;
+* **procedure** — whether to continue, which draft advances, which section wins.
+
+### What a vote may never decide
+
+* whether a factual claim is true;
+* whether a conclusion is epistemically supported.
+
+Agreement is not corroboration. Ten models trained on overlapping data agreeing
+is one observation with a large error bar, not ten observations.
+
+### Well-worded criteria were not enough
+
+`EVALUATION_DIRECTIVE` already tells judges to reward grounding and calibration
+over confidence, length and style, and explicitly forbids herding: *"an output is
+not better because others seem to agree."* Provider identity is hidden. On paper
+the criteria are sound.
+
+And `current_canonical_repeat_003` still records
+`incorrect_reasoning_receives_high_quality_scores`, `three_ratifiers_accept`, and
+a released answer that is objectively wrong at `epistemic_status: well_supported`.
+
+So the defect is structural, not lexical. `RATIFICATION_CONTENT_DIRECTIVE` asks
+for a `verdict` and a `rationale` — a conclusion and some prose about it. **No
+field carries what the ratifier actually checked.** For the logic benchmark the
+right ballot question is not "does this meet the bar" but "does this order
+satisfy constraints 1, 2 and 3", which is decidable — and the ballot never asks
+it.
+
+### Good criteria, concretely
+
+1. **The ballot carries the check, not only the verdict.** For a
+   `TASK_DERIVABLE` claim, a verdict must include `checks_performed`: each
+   supplied constraint quoted verbatim with its offset, and whether the candidate
+   satisfies it.
+2. **A verdict must agree with its own checks.** A ballot reporting a violated
+   constraint and then voting `accept` is internally inconsistent, and that is
+   mechanically detectable without judging the reasoning.
+3. **Weight is asymmetric.** One anchored refutation outranks any number of
+   unanchored acceptances. Ballots are not summed toward truth; an unanchored
+   verdict on a decidable question is recorded as an opinion and is not grounds
+   for abandoning a candidate.
+4. **Independence is measured, not assumed.** The frozen mechanism includes
+   `reflection_reinforces_false_consensus`: ratifiers were voting on a position
+   they had helped converge on. Correlated ballots must be recorded as correlated
+   rather than counted as separate confirmations.
+5. **Scope discipline.** Where a claim is `SOURCE_VERIFIABLE`, the ballot may
+   still decide acceptance, and it may not touch epistemic support. Unanimity
+   without an anchor leaves the support state exactly where H2 put it.
+
+### Why this differs from majority voting
+
+Not because votes are forbidden, but because a vote on a decidable question must
+show its work. The anchor is the original task; cited spans must occur verbatim
+in it and code proves that; and a correct citation does not become stronger by
+being repeated. Verification records are never summed, averaged or ranked, and
+the verifier's identity is recorded for attribution rather than weight.
+
+Ten models asserting a counterexample is valid, none citing a supplied
+constraint, produce nothing. One record quoting constraint 3 settles it. That is
+not the abolition of voting — it is what makes a council vote worth counting.
 
 ## 8. Provider disagreement yields INCONCLUSIVE
 
