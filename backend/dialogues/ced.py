@@ -1153,16 +1153,19 @@ class CEDOrchestrator:
                 objection_id=_hybrid_id("obj", move.move_id),
                 target_claim_id=targets[0],
                 text=str(move.content)[:400],
-                raised_by=move.agent_id,
+                # The seat, not the logical agent: verification filters peers by
+                # provider_id, and an agent_id never matches one, which silently
+                # let a seat corroborate its own objection.
+                raised_by=move.provider_id or move.agent_id,
             ))
         for vote in final.ratification_votes:
-            if not vote.is_schema_valid_critical_block():
+            if not vote.is_critical_block():
                 continue
             core.add_objection(ObjectionRecord(
-                objection_id=_hybrid_id("obj_rat", vote.agent_id, vote.rationale),
+                objection_id=_hybrid_id("obj_rat", vote.voter_agent_id, vote.reason),
                 target_claim_id=targets[0],
-                text=vote.rationale or "critical blocking objection",
-                raised_by=vote.agent_id,
+                text=vote.reason or "critical blocking objection",
+                raised_by=vote.voter_agent_id,
             ))
         return core
 
