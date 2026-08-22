@@ -2019,6 +2019,12 @@ class CEDOrchestrator:
             "phase_retries": self._phase_retries.get(state.session_id, []),
             "phase_dispatch": self._phase_dispatch.get(state.session_id, []),
             "socratic_opening": self._socratic_audit(state),
+            # Maieutic observability. Nothing reads these back; they exist so a
+            # run can be judged from data rather than from a reading of prose.
+            "socratic_turns": self._socratic_audit_rows.get(state.session_id, []),
+            "socratic_cycles": self._cycle_log.get(state.session_id, []),
+            "commitment_ledger": [c.to_dict()
+                                  for c in self.commitment_ledger(state)],
             "seat_routing": {
                 "topic": classify_topic(state.question).value,
                 "order": [a.provider_id for a in self._ranked_adapters(state)],

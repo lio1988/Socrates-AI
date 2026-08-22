@@ -184,6 +184,24 @@ def main(argv=None) -> int:
                   f"discriminate={so.get('branches_discriminate')}")
         print("-" * _W)
 
+    turns = (final.audit_summary or {}).get("socratic_turns") or []
+    if turns:
+        print("  MAIEUTIC TURNS:")
+        for t in turns:
+            print(f"    [{t['phase']:9} cycle {t['cycle']}] op={str(t.get('operator')):20} "
+                  f"state={str(t.get('inquiry_state'))}")
+            print(f"      q: {str(t.get('question') or '')[:96]}")
+            print(f"      injection={t['injection_check']:26} grounded={t.get('is_grounded')} "
+                  f"resolved={len(t.get('grounded_in_resolved') or [])} "
+                  f"unresolved={len(t.get('grounded_in_unresolved') or [])}")
+        led = (final.audit_summary or {}).get("commitment_ledger") or []
+        from collections import Counter
+        counts = Counter(c["status"] for c in led)
+        print(f"    commitments      : {len(led)} records {dict(counts)}")
+        for c in (final.audit_summary or {}).get("socratic_cycles") or []:
+            print(f"    cycle {c['after_cycle']} -> continue={c['continue']}  {c['reason']}")
+        print("-" * _W)
+
     gr = (final.audit_summary or {}).get("governing_release") or {}
     print("  EPISTEMIC LAYERS (quality is not support):")
     print(f"    legacy status      : {final.epistemic_status.value}"
