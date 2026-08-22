@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .hybrid_epistemic import stable_id
+from .model_identity import independent_model_sources
 from .task_checker import all_candidate_orders, model_task
 
 # ── the twelve operations ────────────────────────────────────────────────────
@@ -81,12 +82,13 @@ class CommitmentRecord:
     """
 
     __slots__ = ("commitment_id", "source_move_id", "cycle", "claim", "status",
-                 "target_commitment_id", "provider_id", "authority")
+                 "target_commitment_id", "provider_id", "model_id", "authority")
 
     def __init__(self, *, commitment_id: str, source_move_id: str, cycle: int,
                  claim: str, status: CommitmentStatus,
                  target_commitment_id: Optional[str] = None,
                  provider_id: Optional[str] = None,
+                 model_id: Optional[str] = None,
                  authority: str = "public_move") -> None:
         self.commitment_id = commitment_id
         self.source_move_id = source_move_id
@@ -96,6 +98,7 @@ class CommitmentRecord:
         #: The commitment this one revises, withdraws, suspends or retains.
         self.target_commitment_id = target_commitment_id
         self.provider_id = provider_id
+        self.model_id = model_id
         #: "public_move" for a commitment an agent declared itself.
         #: "non_authoritative_annotation" for anything inferred from prose — it
         #: is readable, it is auditable, and it resolves nothing.
@@ -114,6 +117,7 @@ class CommitmentRecord:
                 "status": self.status.value,
                 "target_commitment_id": self.target_commitment_id,
                 "provider_id": self.provider_id,
+                "model_id": self.model_id,
                 "authority": self.authority}
 
 
@@ -123,6 +127,7 @@ def _commitment_id(source_move_id: str, index: int, claim: str) -> str:
 
 def commitments_from_move(
     move_id: str, cycle: int, content: Any, provider_id: Optional[str] = None,
+    model_id: Optional[str] = None,
 ) -> List[CommitmentRecord]:
     """Read the commitments an initial response declared. Declared, not inferred.
 
@@ -144,7 +149,8 @@ def commitments_from_move(
         out.append(CommitmentRecord(
             commitment_id=_commitment_id(move_id, index, claim),
             source_move_id=move_id, cycle=cycle, claim=claim,
-            status=CommitmentStatus.ASSERTED, provider_id=provider_id))
+            status=CommitmentStatus.ASSERTED, provider_id=provider_id,
+            model_id=model_id))
     return out
 
 
@@ -159,7 +165,7 @@ _REFLECTION_EVENTS: Tuple[Tuple[str, CommitmentStatus], ...] = (
 
 def commitment_events_from_reflection(
     move_id: str, cycle: int, content: Any, known: Set[str],
-    provider_id: Optional[str] = None,
+    provider_id: Optional[str] = None, model_id: Optional[str] = None,
 ) -> List[CommitmentRecord]:
     """Turn a reflection's declared changes into new, append-only events.
 
@@ -185,7 +191,8 @@ def commitment_events_from_reflection(
                 commitment_id=_commitment_id(move_id, index, f"{status.value}:{target}"),
                 source_move_id=move_id, cycle=cycle,
                 claim=str(claim).strip(), status=status,
-                target_commitment_id=target, provider_id=provider_id))
+                target_commitment_id=target, provider_id=provider_id,
+                model_id=model_id))
             index += 1
 
     for item in content.get("new_commitments") or []:
@@ -195,7 +202,8 @@ def commitment_events_from_reflection(
         events.append(CommitmentRecord(
             commitment_id=_commitment_id(move_id, index, claim.strip()),
             source_move_id=move_id, cycle=cycle, claim=claim.strip(),
-            status=CommitmentStatus.ASSERTED, provider_id=provider_id))
+            status=CommitmentStatus.ASSERTED, provider_id=provider_id,
+            model_id=model_id))
         index += 1
     return events
 
@@ -218,12 +226,8 @@ def live_commitments(ledger: Sequence[CommitmentRecord]) -> List[CommitmentRecor
 
 
 def independent_sources(records: Iterable[CommitmentRecord]) -> Set[str]:
-    """Distinct providers behind a set of records.
-
-    One model repeating itself across cycles is one source. Rounds multiply
-    utterances, never independence.
-    """
-    return {r.provider_id for r in records if r.provider_id}
+    """Distinct known exact-model sources behind commitment records."""
+    return independent_model_sources(records, attribute="model_id")
 
 
 # ── grounding: typed references to public artifacts ──────────────────────────

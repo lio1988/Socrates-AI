@@ -58,6 +58,10 @@ from .hybrid_shadow import (
     HybridShadowRecord,
     _digest,
 )
+from .model_identity import (
+    dedupe_by_model_identity,
+    independent_model_sources,
+)
 
 HYBRID_EPISTEMIC_SCHEMA_VERSION = "socrates.hybrid-epistemic.h3h7/v1"
 
@@ -182,6 +186,9 @@ class VerificationRecord(BaseModel):
     limitations: str = ""
     provenance: str = ""
     verifier_provider_id: Optional[str] = None
+    #: Exact actual model identity. Provider/seat id is routing provenance and
+    #: is never sufficient to establish epistemic independence.
+    verifier_model_id: Optional[str] = None
     #: Citations this verifier supplied that are not in the task. They are
     #: dropped, never repaired, and counted so unreliability stays visible.
     unresolved_citations: int = 0
@@ -352,6 +359,9 @@ class ObjectionRecord(BaseModel):
     target_claim_id: str
     text: str
     raised_by: Optional[str] = None
+    #: Exact actual model that raised the objection. Unknown means model-level
+    #: self-independence cannot be established, so corroboration fails closed.
+    raised_by_model_id: Optional[str] = None
     state: ObjectionState = ObjectionState.RAISED
     verification_id: Optional[str] = None
     #: Defaults to the non-destructive reading; only a verifier moves it.
@@ -574,6 +584,7 @@ def verify_task_internal(
     rationale: str,
     source_id: str = "task",
     verifier_provider_id: Optional[str] = None,
+    verifier_model_id: Optional[str] = None,
     unresolved_citations: int = 0,
     objection_scope: Optional["ObjectionScope"] = None,
 ) -> VerificationRecord:
@@ -607,6 +618,7 @@ def verify_task_internal(
                      "it does not judge the reasoning that reads it."),
         provenance="task_internal",
         verifier_provider_id=verifier_provider_id,
+        verifier_model_id=verifier_model_id,
         unresolved_citations=unresolved_citations,
         objection_scope=objection_scope,
     )
@@ -1185,6 +1197,7 @@ def parse_verification_response(
     claim_id: str,
     objection_id: str,
     verifier_provider_id: str,
+    verifier_model_id: Optional[str] = None,
 ) -> Optional[VerificationRecord]:
     """Build a record from a verifier's structured output, or return None.
 
@@ -1218,6 +1231,7 @@ def parse_verification_response(
                          "nothing about whether the objection is a good one."),
             provenance="classification",
             verifier_provider_id=verifier_provider_id,
+            verifier_model_id=verifier_model_id,
         )
 
     if not isinstance(raw_spans, (list, tuple)) or not raw_spans or not condition:
@@ -1259,6 +1273,7 @@ def parse_verification_response(
             holds=holds,
             rationale=str(content.get("rationale") or ""),
             verifier_provider_id=verifier_provider_id,
+            verifier_model_id=verifier_model_id,
             unresolved_citations=unresolved,
             objection_scope=scope,
         )
@@ -1290,13 +1305,12 @@ def _share_an_anchor(records: Sequence[VerificationRecord]) -> bool:
 def independent_objection_sources(
     objections: Sequence["ObjectionRecord"],
 ) -> Set[str]:
-    """Distinct voices behind a set of objections.
+    """Distinct exact-model sources behind objections.
 
-    An adaptive dialogue lets one seat raise the same doubt in every cycle. That
-    is more observations of one source, not more sources, and nothing that
-    counts independence may be fooled into treating repetition as agreement.
+    Seats, rounds and utterance counts are not epistemic independence. Unknown
+    model identity contributes no source: the governing path fails closed.
     """
-    return {o.raised_by for o in objections if o.raised_by}
+    return independent_model_sources(objections, attribute="raised_by_model_id")
 
 
 def corroborated_verdict(
@@ -1326,11 +1340,11 @@ def corroborated_verdict(
                     "the objection makes no claim the task can settle")
         return None, VerificationVerdict.NO_RECORDS, "no usable verification record"
 
-    by_verifier: Dict[str, VerificationRecord] = {}
-    for record in usable:
-        key = record.verifier_provider_id or record.verification_id
-        by_verifier.setdefault(key, record)
-    independent = list(by_verifier.values())
+    # One exact model is one epistemic source, however many seats, rounds
+    # or utterances it occupies. Unknown model identity contributes zero.
+    independent = dedupe_by_model_identity(
+        usable, attribute="verifier_model_id"
+    )
 
     if len(independent) < REQUIRED_CORROBORATION:
         return (None, VerificationVerdict.UNCORROBORATED,
@@ -1377,8 +1391,35 @@ def apply_verification(
         except MalformedVerification:
             continue
 
-    target, verdict, reason = corroborated_verdict(stored)
     current = state.objections[objection_id]
+
+    # Self-verification is defined at model level. If the raiser's exact model
+    # is unresolved, a model verification cannot prove that it is independent
+    # of the raiser and therefore contributes nothing (fail closed). Legacy
+    # hand-built objections with no raiser provenance retain the pure
+    # corroboration function's model-level behaviour.
+    raiser_model = current.raised_by_model_id
+    identity_unresolved = current.raised_by is not None and raiser_model is None
+    if raiser_model is not None:
+        eligible = [
+            record for record in stored
+            if record.verifier_model_id is not None
+            and record.verifier_model_id != raiser_model
+        ]
+    elif current.raised_by is not None:
+        eligible: List[VerificationRecord] = []
+    else:
+        eligible = stored
+
+    if identity_unresolved:
+        target = None
+        verdict = VerificationVerdict.UNCORROBORATED
+        reason = (
+            f"0 independent record(s); {REQUIRED_CORROBORATION} required; "
+            "raiser model identity unresolved"
+        )
+    else:
+        target, verdict, reason = corroborated_verdict(eligible)
     if current.state is ObjectionState.RAISED:
         state.transition_objection(objection_id, ObjectionState.PENDING_VERIFICATION)
 
@@ -1390,16 +1431,15 @@ def apply_verification(
                                   "reason": reason})
         return verdict, reason
 
-    deciding = next(r for r in stored if r.result in (VerificationResult.VERIFIED,
-                                                      VerificationResult.FALSIFIED))
+    deciding = next(r for r in eligible if r.result in (VerificationResult.VERIFIED,
+                                                        VerificationResult.FALSIFIED))
     if target is ObjectionState.VALIDATED:
-        independent = {}
-        for record in stored:
-            if record.result is VerificationResult.VERIFIED:
-                independent.setdefault(
-                    record.verifier_provider_id or record.verification_id, record)
+        independent = dedupe_by_model_identity(
+            (r for r in eligible if r.result is VerificationResult.VERIFIED),
+            attribute="verifier_model_id",
+        )
         scopes = {r.objection_scope or ObjectionScope.JUSTIFICATION
-                  for r in independent.values()}
+                  for r in independent}
         agreed = (ObjectionScope.CONCLUSION if scopes == {ObjectionScope.CONCLUSION}
                   else ObjectionScope.JUSTIFICATION)
         state.objections[objection_id] = state.objections[objection_id].model_copy(

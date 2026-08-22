@@ -132,7 +132,7 @@ def _record(seat, *, holds, text=C3, scope=ObjectionScope.JUSTIFICATION):
         cited_spans=[(text, TASK.index(text))],
         condition_tested="was uniqueness established?", holds=holds,
         rationale="checked the cited passage", verifier_provider_id=seat,
-        objection_scope=scope)
+        verifier_model_id=f"model/{seat}", objection_scope=scope)
 
 
 def test_9_equivalent_anchors_with_a_justification_objection_do_not_falsify():

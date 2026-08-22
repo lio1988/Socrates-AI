@@ -77,6 +77,13 @@ def test_exact_model_and_valid_move(monkeypatch):
     assert adapter.last_receipt["requested_model"] == "vendor/model"
     assert adapter.last_receipt["returned_model"] == "vendor/model"
     assert adapter.last_receipt["verified_exact_model"] is True
+    assert adapter.authoritative_model_id() == "vendor/model"
+
+
+def test_authoritative_model_identity_uses_the_strict_pin_before_first_call():
+    adapter = _adapter("vendor/model")
+    assert adapter.last_receipt is None
+    assert adapter.authoritative_model_id() == "vendor/model"
 
 
 def test_model_substitution_is_rejected(monkeypatch):
@@ -94,6 +101,7 @@ def test_model_substitution_is_rejected(monkeypatch):
     assert response.status == ProviderStatus.ERROR
     assert response.parsed_move is None
     assert adapter.last_receipt["verified_exact_model"] is False
+    assert adapter.authoritative_model_id() is None
 
 
 def test_rate_limit_maps_to_provider_status(monkeypatch):

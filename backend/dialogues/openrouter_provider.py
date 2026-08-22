@@ -78,6 +78,22 @@ class OpenRouterProviderAdapter(BaseProviderAdapter):
         self.app_title = app_title
         self.last_receipt: Optional[Dict[str, Any]] = None
 
+    def authoritative_model_id(self) -> Optional[str]:
+        """Exact model identity under OpenRouter's strict pinning contract.
+
+        Before a response exists, the configured model is usable because this
+        adapter rejects any returned-model substitution. Once a receipt exists,
+        the receipt must explicitly verify the returned model; a mismatch then
+        fails closed instead of falling back to the requested string.
+        """
+        receipt = self.last_receipt
+        if receipt is None:
+            return self.model_id
+        if receipt.get("verified_exact_model") is not True:
+            return None
+        returned = str(receipt.get("returned_model") or "").strip()
+        return returned if returned == self.model_id else None
+
     async def _request(self, task: AgentTask, agent_state: AgentState) -> Dict[str, Any]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",

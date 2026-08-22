@@ -46,7 +46,7 @@ def _state():
 
 
 def _record(verifier, *, holds, span=C3, condition="does the order put Ben last?",
-            scope=ObjectionScope.CONCLUSION):
+            scope=ObjectionScope.CONCLUSION, model=None):
     """The objection under test is a counterexample, so it targets the conclusion.
 
     Scope must be declared: an objection defaults to JUSTIFICATION, which
@@ -57,7 +57,9 @@ def _record(verifier, *, holds, span=C3, condition="does the order put Ben last?
         cited_spans=[(span, TASK.index(span))],
         condition_tested=condition, holds=holds,
         rationale="checked against the cited constraint",
-        verifier_provider_id=verifier, objection_scope=scope)
+        verifier_provider_id=verifier,
+        verifier_model_id=(model if model is not None else f"model/{verifier}"),
+        objection_scope=scope)
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────
@@ -89,6 +91,31 @@ def test_the_same_verifier_twice_is_not_corroboration():
                                                _record("seat0", holds=True)])
     assert target is None
     assert verdict is VerificationVerdict.UNCORROBORATED
+
+
+def test_two_different_seats_running_the_same_exact_model_are_one_source():
+    records = [
+        _record("seat0", holds=True, model="openai/gpt-4.1-mini"),
+        _record("seat3", holds=True, model="openai/gpt-4.1-mini"),
+    ]
+    target, verdict, reason = corroborated_verdict(records)
+    assert target is None
+    assert verdict is VerificationVerdict.UNCORROBORATED
+    assert "1 independent record" in reason
+
+
+def test_unknown_model_identity_contributes_zero_independence():
+    unknown = verify_task_internal(
+        claim_id="c", objection_id="o", task_text=TASK,
+        cited_spans=[(C3, TASK.index(C3))],
+        condition_tested="unknown model", holds=True, rationale="x",
+        verifier_provider_id="seat_unknown", verifier_model_id=None,
+        objection_scope=ObjectionScope.CONCLUSION,
+    )
+    target, verdict, reason = corroborated_verdict([unknown])
+    assert target is None
+    assert verdict is VerificationVerdict.UNCORROBORATED
+    assert "0 independent record" in reason
 
 
 def test_disagreement_is_inconclusive_and_never_a_majority():
@@ -146,6 +173,55 @@ def test_an_uncorroborated_check_leaves_the_objection_inconclusive():
     assert state.objections["o"].state is ObjectionState.INCONCLUSIVE
     assert state.objections["o"].is_destructive is False
     assert state.assess_claim("c").support_state is SupportState.UNRESOLVED
+
+
+def test_same_model_cannot_verify_its_own_objection_from_another_seat():
+    state = _state()
+    original = state.objections["o"]
+    state.objections["o"] = original.model_copy(update={
+        "raised_by": "seat_raiser",
+        "raised_by_model_id": "openai/gpt-4.1-mini",
+    })
+    records = [
+        _record("seat_other_route", holds=True, model="openai/gpt-4.1-mini"),
+        _record("seat_independent", holds=True, model="openai/gpt-4o-mini"),
+    ]
+    verdict, reason = apply_verification(state, "o", records)
+    assert verdict is VerificationVerdict.UNCORROBORATED
+    assert "1 independent record" in reason
+    assert state.objections["o"].state is ObjectionState.INCONCLUSIVE
+
+
+def test_unknown_raiser_model_fails_closed_for_model_verification():
+    state = _state()
+    original = state.objections["o"]
+    state.objections["o"] = original.model_copy(update={
+        "raised_by": "seat_raiser",
+        "raised_by_model_id": None,
+    })
+    records = [
+        _record("seat0", holds=True),
+        _record("seat1", holds=True),
+    ]
+    verdict, reason = apply_verification(state, "o", records)
+    assert verdict is VerificationVerdict.UNCORROBORATED
+    assert "0 independent record" in reason
+
+
+def test_known_raiser_model_blocks_self_verification_even_without_seat_provenance():
+    state = _state()
+    original = state.objections["o"]
+    state.objections["o"] = original.model_copy(update={
+        "raised_by": None,
+        "raised_by_model_id": "openai/gpt-4.1-mini",
+    })
+    records = [
+        _record("seat_same_model", holds=True, model="openai/gpt-4.1-mini"),
+        _record("seat_independent", holds=True, model="openai/gpt-4o-mini"),
+    ]
+    verdict, reason = apply_verification(state, "o", records)
+    assert verdict is VerificationVerdict.UNCORROBORATED
+    assert "1 independent record" in reason
 
 
 # ── parsing a verifier's output ──────────────────────────────────────────────
@@ -355,12 +431,12 @@ def test_dropped_spans_cannot_become_shared_anchors():
         {"cited_spans": [C3, "invented alpha"], "condition_tested": "x",
          "objection_holds": True, "rationale": "r"},
         task_text=TASK, claim_id="c", objection_id="o",
-        verifier_provider_id="seat0")
+        verifier_provider_id="seat0", verifier_model_id="model/seat0")
     b = parse_verification_response(
         {"cited_spans": [C1, "invented alpha"], "condition_tested": "x",
          "objection_holds": True, "rationale": "r"},
         task_text=TASK, claim_id="c", objection_id="o",
-        verifier_provider_id="seat1")
+        verifier_provider_id="seat1", verifier_model_id="model/seat1")
     assert a.unresolved_citations == b.unresolved_citations == 1
     target, verdict, _ = corroborated_verdict([a, b])
     assert target is None

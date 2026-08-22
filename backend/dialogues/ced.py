@@ -65,6 +65,7 @@ from .agent import SocraticAgent
 from .provider_registry import CouncilProviderRegistry
 from .hybrid_epistemic import (
     UNMAPPED_TARGET,
+    REQUIRED_CORROBORATION,
     ClaimRecord,
     ObjectionTargetProvenance,
     apply_verification,
@@ -990,11 +991,13 @@ class CEDOrchestrator:
             if move.task_kind is TaskKind.INITIAL_RESPONSE:
                 ledger.extend(commitments_from_move(
                     move.move_id, state.round_number, move.content,
-                    provider_id=move.provider_id))
+                    provider_id=move.provider_id,
+                    model_id=self._authoritative_model_id(move.provider_id)))
             elif move.task_kind is TaskKind.REFLECTION_REVISION:
                 ledger.extend(commitment_events_from_reflection(
                     move.move_id, state.round_number, move.content, known,
-                    provider_id=move.provider_id))
+                    provider_id=move.provider_id,
+                    model_id=self._authoritative_model_id(move.provider_id)))
 
     def _socratic_followups_made(self, state: SessionState) -> int:
         return sum(1 for m in self._socratic_moves(state)
@@ -1157,6 +1160,12 @@ class CEDOrchestrator:
         if len(healthy) >= self.registry.minimum_providers:
             return healthy
         return adapters
+
+    def _authoritative_model_id(self, provider_id: Optional[str]) -> Optional[str]:
+        """Exact epistemic model identity for a provider seat, fail closed."""
+        if self.registry is None or not provider_id:
+            return None
+        return self.registry.authoritative_model_id(provider_id)
 
     def _quarantine_exclusions(self) -> List[str]:
         """Seat ids actually excluded right now (for the audit)."""
@@ -1614,10 +1623,12 @@ class CEDOrchestrator:
                 # provider_id, and an agent_id never matches one, which silently
                 # let a seat corroborate its own objection.
                 raised_by=move.provider_id or move.agent_id,
+                raised_by_model_id=self._authoritative_model_id(move.provider_id),
             ))
 
         def _project_ratification(objection_id: str, named: Optional[str],
-                                   text: str, raised_by: Optional[str]) -> None:
+                                   text: str, raised_by: Optional[str],
+                                   raised_by_model_id: Optional[str]) -> None:
             target = section_claims.get(named) if named else None
             core.add_objection(ObjectionRecord(
                 objection_id=objection_id,
@@ -1627,6 +1638,7 @@ class CEDOrchestrator:
                     else ObjectionTargetProvenance.UNMAPPED),
                 text=text or "critical blocking objection",
                 raised_by=raised_by,
+                raised_by_model_id=raised_by_model_id,
             ))
 
         # The council path. `final.ratification_votes` belongs to the legacy
@@ -1644,9 +1656,10 @@ class CEDOrchestrator:
                            str(entry.get("rationale") or "")),
                 entry.get("target_section"),
                 str(entry.get("rationale") or ""),
-                # The seat, so peer exclusion can keep a ratifier from verifying
-                # its own objection.
-                entry.get("provider_id") or entry.get("agent_id"))
+                # The seat is routing provenance; the model id below governs
+                # epistemic independence and cross-seat self-verification.
+                entry.get("provider_id") or entry.get("agent_id"),
+                self._authoritative_model_id(entry.get("provider_id")))
 
         # The legacy single-evaluator path, unchanged and still honoured.
         for vote in final.ratification_votes:
@@ -1655,7 +1668,7 @@ class CEDOrchestrator:
             _project_ratification(
                 _hybrid_id("obj_rat", vote.voter_agent_id, vote.reason),
                 vote.target_section.value if vote.target_section else None,
-                vote.reason, vote.voter_agent_id)
+                vote.reason, vote.voter_agent_id, None)
         return core
 
     async def run_objection_verification(
@@ -1681,8 +1694,21 @@ class CEDOrchestrator:
                 # It can move no claim whatever the verdict, so paying models to
                 # decide it would buy nothing. It stays RAISED and visible.
                 continue
-            peers = [a for a in adapters if a.provider_id != objection.raised_by]
-            if len(peers) < 2:
+            # Independence is model-level, never seat-level. A second seat
+            # running the same exact model is the same epistemic source. If the
+            # raiser's model cannot be resolved, independence from it cannot be
+            # proved and verification fails closed.
+            raiser_model = objection.raised_by_model_id
+            if raiser_model is None:
+                continue
+            peers_by_model = {}
+            for adapter in adapters:
+                model_id = self._authoritative_model_id(adapter.provider_id)
+                if model_id is None or model_id == raiser_model:
+                    continue
+                peers_by_model.setdefault(model_id, adapter)
+            peers = list(peers_by_model.values())
+            if len(peers) < REQUIRED_CORROBORATION:
                 continue
             task = AgentTask(
                 task_id=f"verify_{objection_id}",
@@ -1712,7 +1738,8 @@ class CEDOrchestrator:
                     task_text=core.task_text,
                     claim_id=objection.target_claim_id,
                     objection_id=objection_id,
-                    verifier_provider_id=adapter.provider_id)
+                    verifier_provider_id=adapter.provider_id,
+                    verifier_model_id=self._authoritative_model_id(adapter.provider_id))
                 if record is not None:
                     records.append(record)
             verdict, _reason = apply_verification(core, objection_id, records)
@@ -1824,6 +1851,7 @@ class CEDOrchestrator:
                     "targeting_provenance": o.target_provenance.value,
                     "state": o.state.value,
                     "raised_by": o.raised_by,
+                    "raised_by_model_id": o.raised_by_model_id,
                 }
                 for o in sorted(core.objections.values(),
                                 key=lambda x: x.objection_id)

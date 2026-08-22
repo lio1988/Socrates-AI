@@ -37,6 +37,7 @@ from .models import (
     TaskKind,
 )
 from .providers import FakeProvider
+from .model_identity import authoritative_model_identity
 
 
 # ── Council configuration (Phase 8A defaults) ─────────────────────────────────
@@ -299,13 +300,21 @@ class ScriptedMockProvider(BaseProviderAdapter):
 
     def __init__(self, provider_id: Optional[str] = None,
                  api_key: Optional[str] = "sk-fake-scripted",
-                 enabled: bool = True, delay_seconds: float = 0.0) -> None:
+                 enabled: bool = True, delay_seconds: float = 0.0,
+                 model_id: Optional[str] = None) -> None:
         super().__init__(api_key, enabled)
         if provider_id:
             self.provider_id = provider_id
             self.provider_name = f"Mock Scripted ({provider_id})"
+        # Synthetic but explicit exact-model identity for offline tests. Two
+        # seats may deliberately share one model_id to exercise the governing
+        # independence firewall.
+        self.model_id = str(model_id or f"mock/{self.provider_id}").strip()
         self._fake = FakeProvider()
         self.delay_seconds = delay_seconds
+
+    def authoritative_model_id(self) -> Optional[str]:
+        return self.model_id or None
 
     def _ratification_verdict(self, task: AgentTask) -> Dict[str, Any]:
         """Default council verdict: ACCEPT (subclasses override for caveat/block)."""
@@ -461,6 +470,20 @@ class CouncilProviderRegistry:
 
     def all_adapters(self) -> List[LLMProviderAdapter]:
         return list(self._adapters)
+
+    def authoritative_model_id(self, provider_id: Optional[str]) -> Optional[str]:
+        """Exact epistemic model identity for one provider seat, or None.
+
+        This is intentionally fail-closed. The registry does not parse the seat
+        name and does not trust a generic requested-model attribute; the adapter
+        must implement the authoritative identity contract.
+        """
+        if not provider_id:
+            return None
+        adapter = next(
+            (a for a in self._adapters if a.provider_id == provider_id), None
+        )
+        return authoritative_model_identity(adapter) if adapter is not None else None
 
     def available_adapters(self) -> List[LLMProviderAdapter]:
         out = []

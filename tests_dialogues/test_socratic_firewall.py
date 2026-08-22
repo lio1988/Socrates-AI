@@ -262,18 +262,51 @@ def test_inferred_commitments_carry_no_authority():
 
 def test_one_provider_repeating_itself_across_rounds_is_one_source():
     """Rounds multiply utterances. They never multiply independence."""
-    round0 = commitments_from_move("move_a", 0, {"commitments": ["X."]},
-                                   provider_id="seat0")
-    round1 = commitments_from_move("move_b", 1, {"commitments": ["X."]},
-                                   provider_id="seat0")
+    round0 = commitments_from_move(
+        "move_a", 0, {"commitments": ["X."]},
+        provider_id="seat0", model_id="openai/gpt-4.1-mini")
+    round1 = commitments_from_move(
+        "move_b", 1, {"commitments": ["X."]},
+        provider_id="seat0", model_id="openai/gpt-4.1-mini")
     assert len(round0 + round1) == 2
-    assert independent_sources(round0 + round1) == {"seat0"}
+    assert independent_sources(round0 + round1) == {"openai/gpt-4.1-mini"}
 
 
-def test_two_providers_are_two_sources():
-    a = commitments_from_move("move_a", 0, {"commitments": ["X."]}, provider_id="seat0")
-    b = commitments_from_move("move_b", 1, {"commitments": ["X."]}, provider_id="seat1")
-    assert independent_sources(a + b) == {"seat0", "seat1"}
+def test_two_seats_on_the_same_model_are_one_source():
+    a = commitments_from_move(
+        "move_a", 0, {"commitments": ["X."]},
+        provider_id="seat0", model_id="openai/gpt-4.1-mini")
+    b = commitments_from_move(
+        "move_b", 1, {"commitments": ["X."]},
+        provider_id="seat3", model_id="openai/gpt-4.1-mini")
+    assert independent_sources(a + b) == {"openai/gpt-4.1-mini"}
+
+
+def test_two_exact_models_are_two_sources():
+    a = commitments_from_move(
+        "move_a", 0, {"commitments": ["X."]},
+        provider_id="seat0", model_id="openai/gpt-4.1-mini")
+    b = commitments_from_move(
+        "move_b", 1, {"commitments": ["X."]},
+        provider_id="seat1", model_id="openai/gpt-4o-mini")
+    assert independent_sources(a + b) == {
+        "openai/gpt-4.1-mini", "openai/gpt-4o-mini"}
+
+
+def test_four_distinct_exact_models_are_four_sources():
+    models = [
+        "openai/gpt-4.1-mini",
+        "openai/gpt-4o-mini",
+        "meta-llama/llama-3.3-70b-instruct",
+        "mistralai/mistral-small-3.1-24b-instruct",
+    ]
+    records = []
+    for index, model_id in enumerate(models):
+        records.extend(commitments_from_move(
+            f"move_{index}", 0, {"commitments": [f"C{index}."]},
+            provider_id=f"seat{index}", model_id=model_id))
+    assert independent_sources(records) == set(models)
+    assert len(independent_sources(records)) == 4
 
 
 class RepeatObjector(ScriptedMockProvider):
@@ -395,13 +428,13 @@ def test_the_same_seat_objecting_in_two_rounds_is_still_one_source():
     same_voice_twice = [
         ObjectionRecord(objection_id="obj_r0", target_claim_id="c",
                         text="the derivation was never shown exhaustive",
-                        raised_by="seat0"),
+                        raised_by="seat0", raised_by_model_id="openai/gpt-4.1-mini"),
         ObjectionRecord(objection_id="obj_r1", target_claim_id="c",
                         text="the derivation was never shown exhaustive",
-                        raised_by="seat0"),
+                        raised_by="seat0", raised_by_model_id="openai/gpt-4.1-mini"),
     ]
     assert len(same_voice_twice) == 2                              # utterances
-    assert independent_objection_sources(same_voice_twice) == {"seat0"}
+    assert independent_objection_sources(same_voice_twice) == {"openai/gpt-4.1-mini"}
     assert len(independent_objection_sources(same_voice_twice)) < REQUIRED_CORROBORATION
 
 
@@ -412,7 +445,8 @@ def test_repetition_cannot_reach_the_corroboration_threshold_alone():
     )
 
     many = [ObjectionRecord(objection_id=f"obj_{i}", target_claim_id="c",
-                            text="same doubt", raised_by="seat0")
+                            text="same doubt", raised_by="seat0",
+                            raised_by_model_id="openai/gpt-4.1-mini")
             for i in range(10)]
     assert len(independent_objection_sources(many)) == 1
     assert len(independent_objection_sources(many)) < REQUIRED_CORROBORATION
@@ -442,12 +476,13 @@ def test_a_repeated_objection_never_verifies_itself_across_rounds():
 
     async def spy(adapter, task, agent_state, timeout=None):
         if task.task_id.startswith("verify_"):
-            asked.setdefault(task.task_id, set()).add(adapter.provider_id)
+            asked.setdefault(task.task_id, set()).add(
+                ced.registry.authoritative_model_id(adapter.provider_id))
         return await original(adapter, task, agent_state, timeout)
 
     ced.registry.run_adapter = spy
     asyncio.run(ced.run_objection_verification(session, core))
     for objection_id, objection in core.objections.items():
-        seats = asked.get(f"verify_{objection_id}")
-        if seats is not None:
-            assert objection.raised_by not in seats
+        models = asked.get(f"verify_{objection_id}")
+        if models is not None and objection.raised_by_model_id is not None:
+            assert objection.raised_by_model_id not in models
