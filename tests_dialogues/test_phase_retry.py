@@ -119,8 +119,14 @@ def test_audit_shape_is_complete():
     ced = _council(phase_retry=True, providers=providers)
     final = asyncio.run(ced.run_registry_session(Q, session_id="shape"))
     pr = final.audit_summary["phase_retries"][0]
-    assert set(pr) == {"phase", "failed_slots", "first_failed_providers",
-                       "retry_ok_providers", "rescued"}
+    assert set(pr) == {"phase", "failed_slots", "retried_slots",
+                       "degraded_duplicate_slots", "degraded_reason",
+                       "first_failed_providers", "retry_ok_providers", "rescued"}
+    # A reroute onto a seat already serving a sibling is now recorded rather
+    # than invisible: the four-seat council took that path silently for two
+    # live runs and halved its own peer pool.
+    assert isinstance(pr["retried_slots"], list)
+    assert isinstance(pr["degraded_duplicate_slots"], list)
 
 
 def test_healthy_session_never_triggers_retry():

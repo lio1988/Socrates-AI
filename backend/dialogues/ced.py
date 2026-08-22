@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .models import (
     AgentMove,
@@ -287,6 +287,8 @@ class CEDOrchestrator:
         # behavior); build_council enables it for the capable/live path.
         self.phase_retry = phase_retry
         self._phase_retries: Dict[str, List[Dict[str, Any]]] = {}
+        #: Who actually served each slot, per phase. Observability only.
+        self._phase_dispatch: Dict[str, List[Dict[str, Any]]] = {}
         # Phase 22: optional Teacher-Loop corpus — harvests SFT + peer-score
         # preference data from each finished session (duck-typed: .ingest_session).
         self.training_corpus = training_corpus
@@ -935,6 +937,23 @@ class CEDOrchestrator:
         )
         return order[(base_index + failover_offset) % len(order)]
 
+    def _distinct_retry_offset(
+        self, state: SessionState, agent_id: str, taken: Set[str],
+    ) -> Optional[int]:
+        """First failover offset landing on a seat no sibling slot is using.
+
+        Returns None when every seat in the frozen order is already serving this
+        phase. Rerouting onto a busy seat would leave two slots authored by one
+        provider, which reads as a full council and is not one.
+        """
+        order = self._session_adapter_orders.get(state.session_id, [])
+        for offset in range(1, len(order)):
+            candidate = self._adapter_for_agent(state, agent_id,
+                                                failover_offset=offset)
+            if candidate.provider_id not in taken:
+                return offset
+        return None
+
     async def _run_registry_phase(
         self, state: SessionState, phase: DialogPhase,
         timeout_seconds: Optional[float],
@@ -974,11 +993,29 @@ class CEDOrchestrator:
             resp = await self.registry.run_adapter(adapter, task, agent_state, timeout_seconds)
             return task, resp
 
+        dispatch: List[Dict[str, Any]] = []
+
         def _absorb(pairs) -> List[ProviderResponse]:
             """Validate responses into moves + task-log entries (no fabrication)."""
             out: List[ProviderResponse] = []
             for task, resp in pairs:
                 out.append(resp)
+                # Who actually served which slot. Recorded from the dispatch
+                # itself rather than reconstructed from moves afterwards, so a
+                # rerouted retry is visible as a reroute.
+                served = next((a for a in self.registry.all_adapters()
+                               if a.provider_id == resp.provider_id), None)
+                dispatch.append({
+                    "slot_index": task.slot_index,
+                    "logical_agent_id": task.agent_id,
+                    "assigned_role": task.role.value,
+                    "provider_id": resp.provider_id,
+                    "model_id": getattr(served, "model",
+                                        getattr(served, "model_id", None)),
+                    "attempt_index": task.attempt_index,
+                    "retry": task.attempt_index > 0,
+                    "ok": resp.ok,
+                })
                 if resp.ok:
                     move = resp.parsed_move
                     # Deterministic identity — independent of which provider/when.
@@ -1015,21 +1052,52 @@ class CEDOrchestrator:
                 and ok_count < effective_quorum):
             failed = [(t.slot_index, items[t.slot_index][0], items[t.slot_index][1])
                       for t, r in pairs if not r.ok]
+            # Seats already serving this phase: the successful siblings, plus
+            # each reroute as it is planned, so two failed slots cannot both be
+            # sent to the same free seat.
+            taken = {r.provider_id for _, r in pairs if r.ok}
+            plan: List[Tuple[int, str, AgentRole, int]] = []
+            degraded: List[int] = []
+            for slot, aid, role in failed:
+                offset = self._distinct_retry_offset(state, aid, taken)
+                if offset is None:
+                    # Nowhere distinct to go — a two-seat council whose sibling
+                    # already holds the only alternative. The reroute proceeds
+                    # so the phase can still be rescued, and the duplication is
+                    # recorded rather than left to be discovered in a trace.
+                    # Independence is already unreachable at this council size;
+                    # what must not happen is losing it silently at a size where
+                    # it was available, which is the case above.
+                    offset, was_degraded = 1, True
+                else:
+                    was_degraded = False
+                if was_degraded:
+                    degraded.append(slot)
+                taken.add(self._adapter_for_agent(
+                    state, aid, failover_offset=offset).provider_id)
+                plan.append((slot, aid, role, offset))
             retry_pairs = list(await asyncio.gather(
-                *(_one(slot, aid, role, attempt=1, offset=1)
-                  for slot, aid, role in failed)))
+                *(_one(slot, aid, role, attempt=1, offset=offset)
+                  for slot, aid, role, offset in plan)))
             retry_responses = _absorb(retry_pairs)
             merged = [r for _, r in pairs if r.ok] + retry_responses
             rescued = sum(1 for r in merged if r.ok) >= effective_quorum
             self._phase_retries.setdefault(state.session_id, []).append({
                 "phase": phase.value,
                 "failed_slots": [slot for slot, _, _ in failed],
+                "retried_slots": [slot for slot, _, _, _ in plan],
+                "degraded_duplicate_slots": degraded,
+                "degraded_reason": ("no distinct healthy seat; the sibling's "
+                                    "provider was reused" if degraded else None),
                 "first_failed_providers": [r.provider_id for _, r in pairs if not r.ok],
                 "retry_ok_providers": [r.provider_id for r in retry_responses if r.ok],
                 "rescued": rescued,
             })
             responses = merged
 
+        self._phase_dispatch.setdefault(state.session_id, []).append({
+            "phase": phase.value, "slots": dispatch,
+        })
         result = self.registry.finalize_round(responses, quorum=effective_quorum)
         state.registry_rounds.append(result)
         return result
@@ -1364,6 +1432,23 @@ class CEDOrchestrator:
         final.release_decision = release.release_decision.value
         final.audit_summary["governing_release"] = {
             "available": True,
+            # Observability only. Nothing below reads these back; they exist so
+            # that "which claim did this objection hold up, and on what
+            # authority" is answerable from the audit instead of inferred.
+            "objections": [
+                {
+                    "objection_id": o.objection_id,
+                    "target_claim_id": o.target_claim_id,
+                    "target_section": (core.claims[o.target_claim_id].section
+                                       if o.target_claim_id in core.claims else None),
+                    "scope": o.scope.value,
+                    "targeting_provenance": o.target_provenance.value,
+                    "state": o.state.value,
+                    "raised_by": o.raised_by,
+                }
+                for o in sorted(core.objections.values(),
+                                key=lambda x: x.objection_id)
+            ],
             "deterministic_checks": checks,
             "release_decision": release.release_decision.value,
             "objection_verdicts": verdicts,
@@ -1553,6 +1638,7 @@ class CEDOrchestrator:
             "assembly_flags": self._assembly_flags(state),
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
+            "phase_dispatch": self._phase_dispatch.get(state.session_id, []),
             "seat_routing": {
                 "topic": classify_topic(state.question).value,
                 "order": [a.provider_id for a in self._ranked_adapters(state)],
