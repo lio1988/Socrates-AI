@@ -377,3 +377,77 @@ def test_no_permanent_model_becomes_socrates():
         seen |= {m.provider_id for m in state.moves
                  if m.role is AgentRole.SOCRATES and m.phase is DialogPhase.OPENING}
     assert len(seen) > 1, seen
+
+
+# ══ 2. cross-round independence, end to end ══════════════════════════════════
+
+def test_the_same_seat_objecting_in_two_rounds_is_still_one_source():
+    """Rounds create temporal observations, not provider independence.
+
+    Built directly rather than fished out of a session: role rotation spreads
+    the critic slots across seats between cycles, so a natural repeat is a
+    matter of luck. The invariant must hold whether or not luck supplies it.
+    """
+    from backend.dialogues.hybrid_epistemic import (
+        REQUIRED_CORROBORATION, ObjectionRecord, independent_objection_sources,
+    )
+
+    same_voice_twice = [
+        ObjectionRecord(objection_id="obj_r0", target_claim_id="c",
+                        text="the derivation was never shown exhaustive",
+                        raised_by="seat0"),
+        ObjectionRecord(objection_id="obj_r1", target_claim_id="c",
+                        text="the derivation was never shown exhaustive",
+                        raised_by="seat0"),
+    ]
+    assert len(same_voice_twice) == 2                              # utterances
+    assert independent_objection_sources(same_voice_twice) == {"seat0"}
+    assert len(independent_objection_sources(same_voice_twice)) < REQUIRED_CORROBORATION
+
+
+def test_repetition_cannot_reach_the_corroboration_threshold_alone():
+    """Even unbounded repetition by one seat stays one source."""
+    from backend.dialogues.hybrid_epistemic import (
+        REQUIRED_CORROBORATION, ObjectionRecord, independent_objection_sources,
+    )
+
+    many = [ObjectionRecord(objection_id=f"obj_{i}", target_claim_id="c",
+                            text="same doubt", raised_by="seat0")
+            for i in range(10)]
+    assert len(independent_objection_sources(many)) == 1
+    assert len(independent_objection_sources(many)) < REQUIRED_CORROBORATION
+
+
+def test_role_rotation_already_spreads_objections_across_seats():
+    """A welcome consequence of rotating per cycle, recorded so it is noticed."""
+    from backend.dialogues.hybrid_epistemic import independent_objection_sources
+
+    ced = _council(RepeatObjector)
+    final = asyncio.run(ced.run_registry_session(TASK, session_id="spread"))
+    core = ced.project_governing_state(ced.get_session("spread"), final)
+    raised = [o for o in core.objections.values() if o.raised_by]
+    assert len(raised) > 1
+    assert len(independent_objection_sources(raised)) > 1
+
+
+def test_a_repeated_objection_never_verifies_itself_across_rounds():
+    """The raiser is excluded from verifying, in every cycle it speaks."""
+    ced = _council(RepeatObjector)
+    final = asyncio.run(ced.run_registry_session(TASK, session_id="cross_self"))
+    session = ced.get_session("cross_self")
+    core = ced.project_governing_state(session, final)
+
+    asked = {}
+    original = ced.registry.run_adapter
+
+    async def spy(adapter, task, agent_state, timeout=None):
+        if task.task_id.startswith("verify_"):
+            asked.setdefault(task.task_id, set()).add(adapter.provider_id)
+        return await original(adapter, task, agent_state, timeout)
+
+    ced.registry.run_adapter = spy
+    asyncio.run(ced.run_objection_verification(session, core))
+    for objection_id, objection in core.objections.items():
+        seats = asked.get(f"verify_{objection_id}")
+        if seats is not None:
+            assert objection.raised_by not in seats

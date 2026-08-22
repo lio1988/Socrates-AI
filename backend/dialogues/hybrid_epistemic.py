@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -1285,6 +1285,18 @@ def _share_an_anchor(records: Sequence[VerificationRecord]) -> bool:
                for record in rest):
             return True
     return False
+
+
+def independent_objection_sources(
+    objections: Sequence["ObjectionRecord"],
+) -> Set[str]:
+    """Distinct voices behind a set of objections.
+
+    An adaptive dialogue lets one seat raise the same doubt in every cycle. That
+    is more observations of one source, not more sources, and nothing that
+    counts independence may be fooled into treating repetition as agreement.
+    """
+    return {o.raised_by for o in objections if o.raised_by}
 
 
 def corroborated_verdict(

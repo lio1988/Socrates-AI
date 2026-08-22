@@ -315,3 +315,129 @@ def test_every_socratic_micro_score_uses_the_question_rubric():
     scored = [ms for ms in state.micro_scores if ms.output_id in socratic_ids]
     assert scored, "Socratic moves are still scored"
     assert {ms.rubric_name for ms in scored} == {"question_quality"}
+
+
+# ══ 1. task-kind scoring, inside one and the same elenchus round ═════════════
+
+def test_three_roles_in_one_round_are_judged_by_three_different_standards():
+    """A question must not inherit critique scoring for standing in ELENCHUS.
+
+    Critic and Empiricist share the phase rubric by design — both are objecting.
+    Socrates is doing something else entirely, and the rubric follows the kind
+    of task, not the room it happens to be in.
+    """
+    ced = _council()
+    _run(ced, "rubrics")
+    state = ced.get_session("rubrics")
+    first_round = [m for m in state.moves if m.phase is DialogPhase.ELENCHUS][:3]
+    by_role = {m.role: rubric_for_move(m, DialogPhase.ELENCHUS)[0]
+               for m in first_round}
+
+    assert by_role[AgentRole.ELENCHUS_CRITIC] == "objection_quality"
+    assert by_role[AgentRole.EMPIRICIST] == "objection_quality"
+    assert by_role[AgentRole.SOCRATES] == "question_quality"
+    assert len(by_role) == 3, "all three roles ran in the same round"
+
+
+def test_the_question_rubric_is_about_questions():
+    focus = rubric_for(DialogPhase.OPENING)[1]
+    assert "contains no answer of its own" in focus
+    assert "falsifiability" not in focus
+
+
+def test_question_scoring_stays_non_governing():
+    """It is quality. Quality is not epistemic support, here as everywhere."""
+    ced = _council()
+    final = _run(ced, "nongov")
+    state = ced.get_session("nongov")
+    socratic = {m.move_id for m in state.moves if m.role is AgentRole.SOCRATES}
+    assert [ms for ms in state.micro_scores if ms.output_id in socratic]
+    core = ced.project_governing_state(state, final)
+    assert core.evidence == {}
+    assert final.audit_summary["governing_release"]["basis_record_ids"] == []
+
+
+# ══ 3. replay and round determinism ══════════════════════════════════════════
+
+def _shape(session_id):
+    ced = _council()
+    _run(ced, session_id)
+    state = ced.get_session(session_id)
+    return {
+        "cycles": len(ced._cycle_log[session_id]),
+        "followups": ced._socratic_followups_made(state),
+        "round_number": state.round_number,
+        "roles": sorted((e["phase"], e["agent_id"], e["role"])
+                        for e in state.role_history),
+        # move_id, not task_id: AgentTask.task_id is a fresh uuid by design, and
+        # `_deterministic_move_id` exists precisely because identity had to be
+        # derived from the task's SHAPE rather than from the object.
+        "moves": [(m.move_id, m.phase.value, m.role.value) for m in state.moves],
+    }
+
+
+def test_the_same_session_replays_identically():
+    assert _shape("replay") == _shape("replay")
+
+
+def test_task_ids_are_not_the_deterministic_identity():
+    """Recorded so nobody later mistakes a uuid for a replay guarantee.
+
+    `AgentTask.task_id` is generated fresh per task. Everything that needed
+    stability derives it — `_deterministic_move_id` from the task's shape, and
+    `_deterministic_score_task_id` for scoring.
+    """
+    def run():
+        ced = _council()
+        _run(ced, "taskids")
+        moves = ced.get_session("taskids").moves
+        return ({m.move_id for m in moves}, {m.task_id for m in moves})
+
+    moves_a, tasks_a = run()
+    moves_b, tasks_b = run()
+    assert moves_a and moves_a == moves_b, "move identity replays"
+    assert tasks_a != tasks_b, "task ids are fresh per run, by design"
+
+
+def test_move_and_task_ids_are_unique_across_repeated_phases():
+    """`round_number` is part of move identity, so a repeated phase collides
+    with nothing — the property the cycle depends on."""
+    ced = _council()
+    _run(ced, "unique")
+    moves = ced.get_session("unique").moves
+    assert len({m.move_id for m in moves}) == len(moves)
+    assert len({m.task_id for m in moves}) == len(moves)
+
+
+def test_the_round_number_advances_once_per_cycle():
+    ced = _council(max_followups=2)
+    _run(ced, "rounds")
+    state = ced.get_session("rounds")
+    assert ced._socratic_followups_made(state) == 2
+    assert state.round_number == 1, "two cycles: rounds 0 and 1"
+    assert state.round_number == ced._socratic_followups_made(state) - 1
+
+
+def test_reconstruction_and_synthesis_run_exactly_once_after_the_last_cycle():
+    ced = _council(max_followups=2)
+    _run(ced, "after")
+    state = ced.get_session("after")
+    phases = [m.phase for m in state.moves]
+    assert phases.count(DialogPhase.RECONSTRUCTION) == 1
+    # Synthesis is an all-agents phase: one round, one move per agent.
+    synthesis = [m for m in state.moves if m.phase is DialogPhase.SYNTHESIS]
+    assert len({m.agent_id for m in synthesis}) == len(synthesis)
+    # Both come after every dialectical move.
+    last_cycle = max(i for i, m in enumerate(state.moves)
+                     if m.phase in SOCRATIC_CYCLE_PHASES)
+    assert min(i for i, m in enumerate(state.moves)
+               if m.phase is DialogPhase.RECONSTRUCTION) > last_cycle
+
+
+def test_fewer_permitted_cycles_yield_a_shorter_but_still_valid_session():
+    one = _council(max_followups=1)
+    final = _run(one, "short")
+    state = one.get_session("short")
+    assert state.round_number == 0
+    assert one._socratic_followups_made(state) == 1
+    assert final.synthesis is not None

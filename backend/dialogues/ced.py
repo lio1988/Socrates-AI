@@ -177,7 +177,9 @@ SCORED_PHASES: List[DialogPhase] = [
 PHASE_RUBRICS: Dict[DialogPhase, Tuple[str, str]] = {
     DialogPhase.OPENING: (
         "question_quality",
-        "assumption exposure, clarity forcing, productive uncertainty, usefulness to later reasoning"),
+        "grounded in what the council itself produced, answerable, forces one "
+        "intellectual operation, contains no answer of its own, can produce real "
+        "revision, advances the original inquiry"),
     DialogPhase.INITIAL_RESPONSE: (
         "initial_answer_quality",
         "relevance, clarity, epistemic honesty, useful starting claims"),
