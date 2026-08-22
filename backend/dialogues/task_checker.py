@@ -251,7 +251,13 @@ def _normalise(sentence: str) -> str:
 
 def _patterns(names: Sequence[str]) -> Tuple[Tuple[str, Callable[[Any], _Rule]], ...]:
     n = "|".join(re.escape(x) for x in names)
-    verb = r"(?:presents?|speaks?|goes|appears?|is scheduled)"
+    # The copula belongs here. "Anna is before Ben" states exactly the relation
+    # "Anna presents before Ben" states, with the same single reading, and
+    # rejecting it was a missing synonym rather than a scope boundary. Every
+    # pattern below is anchored end to end, so "is immediately before" cannot
+    # also match the plain "before" form.
+    verb = (r"(?:is|are|was|were|presents?|speaks?|goes|comes|appears?|"
+            r"is scheduled|is placed|is positioned)")
     ordinal = "|".join(_ORDINALS)
     return (
         (rf"^({n})\s+{verb}\s+immediately\s+before\s+({n})$",

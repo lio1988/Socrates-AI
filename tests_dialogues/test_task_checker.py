@@ -529,3 +529,74 @@ def test_the_orchestrator_creates_nothing_from_a_claim_that_only_echoes():
     assert summary["claims"]["c"]["result"] == CheckerStatus.NOT_APPLICABLE.value
     assert summary["claims"]["c"]["reason"] == NotApplicableReason.NO_CANDIDATE.value
     assert core.assess_claim("c").basis_record_ids == []
+
+
+# ══ the copula forms ═════════════════════════════════════════════════════════
+
+FIVE = ("Five analysts—Anna, Ben, Clara, David, and Elena—must be assigned to "
+        "five consecutive presentation positions, one analyst per position. The "
+        "following rules apply: David is first. Elena is last. Anna is "
+        "immediately before Ben. Clara is after Ben. Determine the unique "
+        "ordering of all five analysts.")
+
+
+@pytest.mark.parametrize("constraint,expected", [
+    ("Anna is before Ben", "Anna before Ben"),
+    ("Anna is after Ben", "Ben before Anna"),
+    ("Anna is immediately before Ben", "Anna immediately before Ben"),
+    ("Anna is immediately after Ben", "Ben immediately before Anna"),
+    ("Anna presents before Ben", "Anna before Ben"),
+    ("Anna comes before Ben", "Anna before Ben"),
+])
+def test_the_copula_states_the_same_relation_as_a_domain_verb(constraint, expected):
+    """"Anna is before Ben" was refused as unparseable. It is a synonym."""
+    task = f"Three people — Anna, Ben, and Clara — present. {constraint}. Clara is last."
+    model, reason = model_task(task)
+    assert model is not None, reason
+    assert expected in model.constraint_names
+
+
+def test_immediately_before_does_not_also_match_the_plain_form():
+    """Anchoring end to end is what keeps one sentence to one reading."""
+    task = ("Three people — Anna, Ben, and Clara — present. "
+            "Anna is immediately before Ben. Clara is last.")
+    model, reason = model_task(task)
+    assert model is not None, reason
+    assert model.constraint_names == ("Anna immediately before Ben", "Clara last")
+
+
+def test_a_negated_relation_is_still_refused():
+    """The grammar has no "not before". Fail closed rather than drop it."""
+    task = ("Three people — Anna, Ben, and Clara — present. "
+            "Anna is not before Ben. Clara is last.")
+    model, reason = model_task(task)
+    assert model is None
+    assert reason is NotApplicableReason.UNPARSEABLE_CONSTRAINT
+
+
+def test_the_five_analyst_task_resolves_to_one_order():
+    model, reason = model_task(FIVE)
+    assert model is not None, reason
+    assert model.entities == ("Anna", "Ben", "Clara", "David", "Elena")
+    assert model.constraint_names == (
+        "David first", "Elena last", "Anna immediately before Ben",
+        "Ben before Clara")
+    assert model.solutions == (("David", "Anna", "Ben", "Clara", "Elena"),)
+
+
+def test_the_five_analyst_task_grades_a_candidate_three_ways():
+    truth = evaluate_candidate(
+        FIVE, "The unique order is David, Anna, Ben, Clara, Elena.")
+    assert truth.result is CheckerStatus.VALID
+    assert truth.candidate_is_unique is True
+    assert receipt_support(truth, "c") is not None
+
+    wrong = evaluate_candidate(
+        FIVE, "The unique order is David, Clara, Anna, Ben, Elena.")
+    assert wrong.result is CheckerStatus.INVALID
+    assert wrong.violated_constraints == ("Ben before Clara",)
+
+    template = evaluate_candidate(
+        FIVE, "The unique order is NAME, NAME, NAME, NAME, NAME.")
+    assert template.result is CheckerStatus.NOT_APPLICABLE
+    assert template.reason == NotApplicableReason.NO_CANDIDATE.value
