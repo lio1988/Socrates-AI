@@ -75,6 +75,11 @@ from .hybrid_epistemic import (
     freeze_release,
     stable_id as _hybrid_id,
 )
+from .task_checker import (
+    check_ordering_task,
+    deterministic_refutation,
+    deterministic_support,
+)
 from .role_assignment import assign_primary_roles, stable_hash
 
 
@@ -1226,6 +1231,32 @@ class CEDOrchestrator:
             verdicts[objection_id] = verdict.value
         return verdicts
 
+    def apply_deterministic_checks(self, core) -> Dict[str, str]:
+        """Run the task checker over every projected claim. Costs nothing.
+
+        No model calls and no network: the checker parses the task itself and
+        enumerates. It is the only path by which a claim can become SUPPORTED,
+        and it refuses any task its grammar does not fully cover, which is most
+        of them.
+        """
+        outcomes: Dict[str, str] = {}
+        check = check_ordering_task(core.task_text)
+        if check is None:
+            return outcomes
+        for claim_id, claim in sorted(core.claims.items()):
+            evidence = deterministic_support(check, claim_id, claim.text,
+                                             core.task_text)
+            if evidence is not None:
+                core.add_evidence(evidence)
+                outcomes[claim_id] = "supported_by_computation"
+                continue
+            refutation = deterministic_refutation(check, claim_id, claim.text,
+                                                  core.task_text)
+            if refutation is not None:
+                core.add_verification(refutation)
+                outcomes[claim_id] = "refuted_by_computation"
+        return outcomes
+
     async def _apply_governing_release(self, state: SessionState,
                                        final: FinalResponse) -> None:
         """Decide the release from records and record it on the response.
@@ -1241,6 +1272,9 @@ class CEDOrchestrator:
             # against the task before anything is frozen. Only corroborated
             # verdicts move an objection; the rest stay unresolved.
             verdicts = await self.run_objection_verification(state, core)
+            # The only channel that can produce support, and the cheapest: it
+            # runs no models at all.
+            checks = self.apply_deterministic_checks(core)
             quality = [ms.score_breakdown.weighted_overall()
                        for ms in state.micro_scores]
             release = freeze_release(
@@ -1275,6 +1309,7 @@ class CEDOrchestrator:
         final.release_decision = release.release_decision.value
         final.audit_summary["governing_release"] = {
             "available": True,
+            "deterministic_checks": checks,
             "release_decision": release.release_decision.value,
             "objection_verdicts": verdicts,
             "governing_epistemic_status": governing,

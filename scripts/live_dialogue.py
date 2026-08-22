@@ -176,6 +176,7 @@ def main(argv=None) -> int:
         print(f"    governing status   : {final.governing_epistemic_status}")
         print(f"    release decision   : {final.release_decision}")
         print(f"    basis records      : {gr.get('basis_record_ids') or '[] (nothing supports it)'}")
+        print(f"    computed checks    : {gr.get('deterministic_checks') or '{} (nothing computed)'}")
         print(f"    objection verdicts : {gr.get('objection_verdicts') or {}}")
         print(f"    unresolved records : {len(gr.get('unresolved_record_ids') or [])}")
         if gr.get("blocked_reason"):

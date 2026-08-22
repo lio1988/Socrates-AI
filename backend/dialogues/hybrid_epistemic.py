@@ -191,6 +191,27 @@ class VerificationRecord(BaseModel):
 
 # ── evidence ─────────────────────────────────────────────────────────────────
 
+
+    @property
+    def creates_support(self) -> bool:
+        """May this record contribute to a claim's basis?
+
+        A verification carried out by a model seat is a model assertion wearing
+        a citation: deterministic code proved the quotation is real, and proved
+        nothing whatever about the reading of it. ``MODEL_ASSERTION`` is refused
+        on the evidence side for exactly that reason, and a verification record
+        must not be a way around it.
+
+        So support requires a check with no model in the loop —
+        ``verifier_provider_id`` unset, meaning the protocol or a deterministic
+        checker produced it. Refutation is deliberately not restricted the same
+        way: a refutation exhibits a finite pointer at the task, which a reading
+        can do, while establishment asserts that nothing defeats the claim,
+        which it cannot.
+        """
+        return (self.result is VerificationResult.VERIFIED
+                and self.verifier_provider_id is None)
+
 class EvidenceStance(str, Enum):
     """Mirrors ``backend.epistemic.claim.EvidenceStance`` deliberately."""
 
@@ -776,7 +797,7 @@ class HybridEpistemicState:
         for record in self.verifications.values():
             if record.claim_id != claim_id or record.objection_id is not None:
                 continue
-            if record.result is VerificationResult.VERIFIED:
+            if record.creates_support:
                 basis.append(record.verification_id)
             elif record.result is VerificationResult.FALSIFIED:
                 falsifying.append(record.verification_id)

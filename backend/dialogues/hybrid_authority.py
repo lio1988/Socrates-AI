@@ -64,6 +64,13 @@ AUTHORITY_MAP: Tuple[SubsystemAuthority, ...] = (
         "eligibility, claim-level ratification, frozen release",
         "The only component that may decide epistemic support."),
     SubsystemAuthority(
+        "deterministic task checker", "backend.dialogues.task_checker",
+        AuthorityClass.AUTHORITATIVE,
+        "grammar-restricted parsing and exhaustive enumeration of ordering tasks",
+        "The only producer of admissible support. Authoritative precisely "
+        "because no model is in its loop: it reads the task, not a council. "
+        "Refuses any task its grammar does not fully cover."),
+    SubsystemAuthority(
         "hybrid ledger", "backend.dialogues.hybrid_shadow",
         AuthorityClass.AUTHORITATIVE,
         "the one append-only record store",

@@ -257,12 +257,82 @@ was clipped and is marked unavailable. Tests must use the preserved constraints
 with constructed counterexamples; they cannot replay the original wording, and
 must not pretend to.
 
-## Boundary
+## 11. The one route to support, and the one that was refused
 
-H3A is verification only. It does not promote anything to supported: a `VALID`
-counterexample record refutes, and nothing here creates support. H3B, H4 revision
-and revalidation, H5 contradiction validation, and every governing stage remain
-unimplemented and require separate approval.
+### What was tried and reverted
+
+`f8144cd` let peer seats check a claim against the task and, when two of them
+agreed while citing the same passage, recorded that as support. It was reverted
+the same day. The demonstration that killed it puts identical epistemic content
+through two doors:
+
+```
+declared as MODEL_ASSERTION evidence  ->  unsupported, basis []
+wrapped as a TASK_INTERNAL check      ->  supported,   basis [ver_2113...]
+```
+
+`assess_claim` filters evidence through `ADMISSIBLE_EVIDENCE_SOURCES` and did not
+filter verification records at all. That was harmless while verifications could
+only be objection-scoped and could never enter a basis. Opening them to the basis
+routed a model's reading around the one check that exists to refuse it, wearing a
+citation. Telling verifiers in the prompt that agreement is not establishment is
+a request, not a mechanism.
+
+`quality 7.5 -> truth` and `two seats plus one quote -> truth` are the same
+mistake at different resolutions.
+
+### Why refutation is not symmetric with support
+
+A refutation exhibits a **finite pointer**: the task says X, the claim says
+not-X, and a reader checks it in one step. An establishment asserts a
+**universal**: nothing in the task defeats the claim and the cited material
+suffices. A corroborated reading can show the former and cannot show the latter.
+
+The consequences are asymmetric too. A false refutation fails into silence about
+a right answer — visible and conservative. A false support fails into confident
+error.
+
+### The structural fix
+
+`VerificationRecord.creates_support` requires `verifier_provider_id` to be unset:
+a check with no model in the loop. `assess_claim` consults it instead of testing
+the result alone, so the rule is stated on the record rather than resting on
+which record types happen not to exist yet.
+
+### The one route: `backend/dialogues/task_checker.py`
+
+No model at any point. It parses the task under a grammar small enough to write
+down — an explicit `A, B, C, and D` roster, and relative or absolute position
+constraints — enumerates all orders, and emits a `DETERMINISTIC_COMPUTATION`
+evidence record attributed to the module, never to a seat.
+
+The completeness guard matters more than the grammar. Any sentence mentioning one
+or two entities that the grammar cannot parse **aborts the whole check**: a
+dropped constraint would report a uniqueness that does not hold, which is the one
+bug here that manufactures false support. Likewise a stated count disagreeing
+with the roster, a repeated name, or a roster beyond the enumeration budget.
+
+A claim that merely quotes the task asserts nothing. The mock council opens each
+section by echoing the prompt, and the roster there happens to be listed in the
+answer's order; reading that as a proposed order would hand out support for
+repetition. Windows whose wording is lifted verbatim from the task are skipped.
+
+Scope is single-slot ordering and is not intended to grow into a general solver.
+Every other question stays `unresolved`, which is what it was before this file
+existed.
+
+## Boundary (revised)
+
+H3A was originally verification-only: nothing here created support. That held
+while every governing stage was unimplemented. After H7 routed the canonical
+release through `freeze_release`, a one-way boundary made the governing verdict a
+constant, which distinguishes nothing.
+
+Support is now reachable, and only through deterministic computation over the
+task. Quality scores, confidence values, consensus, corroboration counts,
+ratification, epistemic markers, model self-classification and one model's
+reading of the task all remain incapable of creating support — the last of those
+by an explicit check rather than by absence.
 
 `backend/evidence/` stays empty. Building a substrate before H3B needs one would
 be speculative infrastructure.
