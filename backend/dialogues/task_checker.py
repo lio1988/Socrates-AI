@@ -39,7 +39,7 @@ import itertools
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from .hybrid_epistemic import (
     AnchorSpan,
@@ -454,6 +454,24 @@ def _read_run(text: str, roster: Sequence[str]) -> Optional[Order]:
     return tuple(got)
 
 
+def all_candidate_orders(text: str, roster: Sequence[str]) -> Set[Order]:
+    """Every complete ordering a text explicitly presents as one.
+
+    Exposed for the Socratic injection firewall, which must ask "did this text
+    contain ordering O" rather than "which single ordering does it propose".
+    An occurrence of the roster is not an ordering: only a frame makes one.
+    """
+    size = len(roster)
+    matches = list(re.finditer(
+        r"(" + "|".join(re.escape(x) for x in roster) + r")", text))
+    found: Set[Order] = set()
+    for frame in _FRAME.finditer(text):
+        run = _read_run(text[frame.end():], roster)
+        if run is not None:
+            found.add(run)
+    return found
+
+
 def candidate_order(text: str, roster: Sequence[str]
                     ) -> Tuple[Optional[Order], Optional[NotApplicableReason]]:
     """The ordering a text explicitly presents as one, or a reason there is none.
@@ -464,11 +482,7 @@ def candidate_order(text: str, roster: Sequence[str]
     any text that happens to list the entities in the answer's order, which is
     exactly what a task's own roster sentence does.
     """
-    found = set()
-    for frame in _FRAME.finditer(text):
-        run = _read_run(text[frame.end():], roster)
-        if run is not None:
-            found.add(run)
+    found = all_candidate_orders(text, roster)
     if not found:
         return None, NotApplicableReason.NO_CANDIDATE
     if len(found) > 1:

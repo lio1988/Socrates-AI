@@ -86,9 +86,25 @@ from .task_checker import (
     receipt_support,
 )
 from .reasoning_prompts import (
+    SOCRATIC_AIM_CONSTRAINT,
+    SOCRATIC_AIM_OPEN,
     SOCRATIC_FOLLOWUP_MANDATE,
-    SOCRATIC_MANDATE_CONSTRAINT,
-    SOCRATIC_MANDATE_OPEN,
+    SOCRATIC_OPENING_MANDATE,
+)
+from .socratic import (
+    AporiaRecord,
+    CommitmentRecord,
+    InjectionCheck,
+    InquiryState,
+    aporia_from_content,
+    check_answer_injection,
+    commitment_events_from_reflection,
+    commitments_from_move,
+    live_commitments,
+    parse_grounding,
+    read_inquiry_state,
+    read_operator,
+    resolve_grounding,
 )
 from .role_assignment import assign_primary_roles, stable_hash
 
@@ -185,6 +201,19 @@ def rubric_for(phase: DialogPhase) -> Tuple[str, str]:
     return PHASE_RUBRICS.get(phase, ("general_quality", "overall contribution quality"))
 
 
+def rubric_for_move(move: "AgentMove", phase: DialogPhase) -> Tuple[str, str]:
+    """The rubric a move is judged by — its own kind first, then its phase.
+
+    Socrates executes inside ELENCHUS, and judging a question by the objection
+    rubric would score it on "strongest criticism, contradictions,
+    falsifiability" — none of which a question is trying to do. A question is
+    judged as a question wherever it is asked.
+    """
+    if getattr(move, "task_kind", None) is TaskKind.SOCRATIC_QUESTION:
+        return PHASE_RUBRICS[DialogPhase.OPENING]
+    return rubric_for(phase)
+
+
 # Deterministic task_kind per deliberation phase (Phase 8C registry session).
 #: A role that keeps its own kind of task wherever it acts. Socrates asks a
 #: question in any phase; giving him the phase's kind would hand him the
@@ -204,6 +233,12 @@ PHASE_TASK_KIND: Dict[DialogPhase, TaskKind] = {
 
 # Deliberation phases driven through the provider registry in Phase 8C (the
 # RATIFICATION verdict still runs through the council's own evaluator).
+#: The group that repeats while CED permits another Socratic follow-up. The
+#: examination must see the UPDATED commitments, so the critics run again too.
+SOCRATIC_CYCLE_PHASES: Tuple[DialogPhase, ...] = (
+    DialogPhase.ELENCHUS, DialogPhase.REFLECTION,
+)
+
 REGISTRY_SESSION_PHASES: List[DialogPhase] = [
     DialogPhase.OPENING,
     DialogPhase.INITIAL_RESPONSE,
@@ -239,6 +274,7 @@ class CEDOrchestrator:
         calibration=None,
         ratification_repair: str = "block",
         phase_retry: bool = False,
+        max_socratic_followups: int = 2,
         training_corpus=None,
         score_weighting: str = "uniform",
         cohesion_margin: float = 0.0,
@@ -302,9 +338,18 @@ class CEDOrchestrator:
         # phase, once, rerouted to the next seat. Off by default (strict legacy
         # behavior); build_council enables it for the capable/live path.
         self.phase_retry = phase_retry
+        #: Q1 opening + at most this many follow-up questions. CED enforces it;
+        #: Socrates may ask to continue and is not obeyed past the bound.
+        self.max_socratic_followups = max_socratic_followups
         self._phase_retries: Dict[str, List[Dict[str, Any]]] = {}
         #: Who actually served each slot, per phase. Observability only.
         self._phase_dispatch: Dict[str, List[Dict[str, Any]]] = {}
+        #: Append-only commitment history per session. New understanding extends
+        #: it; nothing here is ever rewritten.
+        self._commitments: Dict[str, List[CommitmentRecord]] = {}
+        self._aporia: Dict[str, List[AporiaRecord]] = {}
+        self._socratic_audit_rows: Dict[str, List[Dict[str, Any]]] = {}
+        self._cycle_log: Dict[str, List[Dict[str, Any]]] = {}
         # Phase 22: optional Teacher-Loop corpus — harvests SFT + peer-score
         # preference data from each finished session (duck-typed: .ingest_session).
         self.training_corpus = training_corpus
@@ -767,9 +812,10 @@ class CEDOrchestrator:
             # checker uses. The council is told the SHAPE to ask for, never a
             # solution or a solution count — the mandate carries neither.
             regime = self._socratic_regime(state)
-            return {"socratic_question_mandate": (
-                SOCRATIC_MANDATE_CONSTRAINT if regime == "finite_constraint"
-                else SOCRATIC_MANDATE_OPEN)}
+            aim = (SOCRATIC_AIM_CONSTRAINT if regime == "finite_constraint"
+                   else SOCRATIC_AIM_OPEN)
+            return {"socratic_question_mandate":
+                    SOCRATIC_OPENING_MANDATE + "\n\n" + aim}
         if phase == DialogPhase.INITIAL_RESPONSE:
             return {"original_question": state.question,
                     "socratic_opening_question": self._socratic_opening(state)}
@@ -777,9 +823,15 @@ class CEDOrchestrator:
             if self._role_in_phase(state, phase, agent_id) is AgentRole.SOCRATES:
                 # He is asking, not attacking. The escalation mandates below are
                 # written for a critic and would turn the question into one.
+                # Everything here already happened publicly; nothing from the
+                # checker, the scores or the release reaches this task.
                 return {
                     "socratic_followup_mandate": SOCRATIC_FOLLOWUP_MANDATE,
                     "socratic_opening_question": self._socratic_opening(state),
+                    "public_commitments": self.public_commitments(state),
+                    "elenchus_critiques": self._public_critiques(state),
+                    "public_disagreements": self._public_disagreements(state),
+                    "aporia_records": [a.to_dict() for a in self.aporia_records(state)],
                     "initial_responses": [
                         {"role": m.role.value, "content": m.content}
                         for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)],
@@ -832,10 +884,14 @@ class CEDOrchestrator:
         if phase == DialogPhase.REFLECTION:
             mine = next((m for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
                          if m.agent_id == agent_id), None)
+            latest = self._latest_socratic_question(state)
             return {
                 "my_initial_response": mine.content if mine else {},
-                "critiques_from_council": [
-                    m.content for m in state.moves_for_phase(DialogPhase.ELENCHUS)],
+                # A critique attacks; a question asks. Bundling them taught the
+                # reflector to treat the question as one more objection.
+                "critiques_from_council": self._public_critiques(state),
+                "socratic_question_to_answer": latest,
+                "current_public_commitments": self.public_commitments(state),
             }
         if phase == DialogPhase.RECONSTRUCTION:
             return {
@@ -858,6 +914,150 @@ class CEDOrchestrator:
                        agent_id: str) -> Optional[AgentRole]:
         """Which role this agent holds this phase. Pure and cheap to recompute."""
         return self._registry_phase_assignment(state, phase).get(agent_id)
+
+    def _screen_socratic_move(self, state: SessionState, task: AgentTask,
+                              resp: "ProviderResponse") -> Optional[str]:
+        """Refuse a Socratic question that hands over an answer. None = accepted.
+
+        Mechanical where a mechanical check exists and silent where it does not:
+        an open-domain question reports NOT_APPLICABLE rather than a fabricated
+        clean bill of health, and no model is asked to certify that no leak
+        occurred.
+        """
+        content = resp.parsed_move.content
+        question = str(content.get("question") or "") if isinstance(content, dict) else ""
+        prior = [str(m.content) for m in state.moves]
+        check, why = check_answer_injection(question, state.question, prior)
+
+        row: Dict[str, Any] = {
+            "phase": task.phase.value,
+            "cycle": state.round_number,
+            "provider_id": resp.provider_id,
+            "question": question[:400],
+            "operator": (read_operator(content).value
+                         if read_operator(content) else None),
+            "inquiry_state": (read_inquiry_state(content).value
+                              if read_inquiry_state(content) else None),
+            "injection_check": check.value,
+            "injection_detail": why,
+            "self_declared_new_proposition": (
+                bool(content.get("introduces_new_proposition"))
+                if isinstance(content, dict) else None),
+        }
+        if task.phase is not DialogPhase.OPENING:
+            refs = parse_grounding(content.get("grounded_in")
+                                   if isinstance(content, dict) else None)
+            resolved, unresolved = resolve_grounding(refs, self._public_ids(state))
+            row["grounded_in_resolved"] = [{"ref_type": t, "ref_id": i}
+                                           for t, i in resolved]
+            row["grounded_in_unresolved"] = [{"ref_type": t, "ref_id": i}
+                                             for t, i in unresolved]
+            row["is_grounded"] = bool(resolved)
+        self._socratic_audit_rows.setdefault(state.session_id, []).append(row)
+
+        if check is InjectionCheck.ANSWER_INJECTION_DETECTED:
+            return why
+        aporia = aporia_from_content(
+            content, state.round_number,
+            {c.commitment_id for c in self.commitment_ledger(state)})
+        if aporia is not None:
+            self._aporia.setdefault(state.session_id, []).append(aporia)
+        return None
+
+    def _public_ids(self, state: SessionState) -> Dict[str, set]:
+        """Ids that already existed publicly when this task was built."""
+        return {
+            "commitment": {c.commitment_id for c in self.commitment_ledger(state)},
+            "critique": {c["critique_id"] for c in self._public_critiques(state)},
+            "aporia": {a.aporia_id for a in self.aporia_records(state)},
+            "socratic_question": {m.move_id for m in self._socratic_moves(state)},
+        }
+
+    def _harvest_commitments(self, state: SessionState, phase: DialogPhase) -> None:
+        """Read declared commitments into the append-only ledger.
+
+        Declared, never inferred: a model's reading of what another model meant
+        is not a fact about what it committed to.
+        """
+        ledger = self._commitments.setdefault(state.session_id, [])
+        seen = {c.source_move_id for c in ledger}
+        known = {c.commitment_id for c in ledger}
+        for move in state.moves_for_phase(phase):
+            if move.move_id in seen:
+                continue
+            if move.task_kind is TaskKind.INITIAL_RESPONSE:
+                ledger.extend(commitments_from_move(
+                    move.move_id, state.round_number, move.content,
+                    provider_id=move.provider_id))
+            elif move.task_kind is TaskKind.REFLECTION_REVISION:
+                ledger.extend(commitment_events_from_reflection(
+                    move.move_id, state.round_number, move.content, known,
+                    provider_id=move.provider_id))
+
+    def _socratic_followups_made(self, state: SessionState) -> int:
+        return sum(1 for m in self._socratic_moves(state)
+                   if m.phase is not DialogPhase.OPENING)
+
+    def another_socratic_cycle(self, state: SessionState) -> Tuple[bool, str]:
+        """CED decides, mechanically. Socrates recommends and is not obeyed.
+
+        Aporia is deliberately not a stop condition: a collapsed position is
+        usually where the next question belongs, not where the inquiry ends.
+        """
+        used = self._socratic_followups_made(state)
+        if used >= self.max_socratic_followups:
+            return False, f"max_socratic_followups={self.max_socratic_followups} reached"
+        asked = [m for m in self._socratic_moves(state)
+                 if m.phase is not DialogPhase.OPENING]
+        if not asked:
+            return False, "no valid Socratic question was produced this cycle"
+        state_hint = read_inquiry_state(asked[-1].content)
+        if state_hint is not InquiryState.CONTINUE_INQUIRY:
+            return False, f"inquiry_state={state_hint.value if state_hint else 'absent'}"
+        return True, "continue_inquiry within bound"
+
+    def _socratic_moves(self, state: SessionState) -> List["AgentMove"]:
+        return [m for m in state.moves if m.role is AgentRole.SOCRATES]
+
+    def _latest_socratic_question(self, state: SessionState) -> str:
+        asked = self._socratic_moves(state)
+        if not asked:
+            return ""
+        content = asked[-1].content if isinstance(asked[-1].content, dict) else {}
+        return str(content.get("question") or "")
+
+    def _public_critiques(self, state: SessionState) -> List[Dict[str, Any]]:
+        """Objections actually raised. Socratic questions are not among them."""
+        return [{"critique_id": m.move_id, "role": m.role.value, "content": m.content}
+                for m in state.moves_for_phase(DialogPhase.ELENCHUS)
+                if m.role is not AgentRole.SOCRATES]
+
+    def commitment_ledger(self, state: SessionState) -> List[CommitmentRecord]:
+        """The append-only history of what this council put its name to."""
+        return list(self._commitments.get(state.session_id, []))
+
+    def public_commitments(self, state: SessionState) -> List[Dict[str, Any]]:
+        """The positions still standing, derived without editing the history."""
+        return [c.to_dict() for c in live_commitments(self.commitment_ledger(state))]
+
+    def _public_disagreements(self, state: SessionState) -> List[Dict[str, Any]]:
+        """Where two providers hold live commitments and are not the same voice.
+
+        Deliberately shallow: this reports who is standing where, and makes no
+        claim about which of them is right or even that they truly conflict.
+        Deciding that is the council's work, prompted by a question.
+        """
+        by_provider: Dict[str, List[str]] = {}
+        for record in live_commitments(self.commitment_ledger(state)):
+            if record.provider_id:
+                by_provider.setdefault(record.provider_id, []).append(record.claim)
+        if len(by_provider) < 2:
+            return []
+        return [{"provider": self._provider_label(pid), "claims": claims}
+                for pid, claims in sorted(by_provider.items())]
+
+    def aporia_records(self, state: SessionState) -> List[AporiaRecord]:
+        return list(self._aporia.get(state.session_id, []))
 
     def socratic_questions(self, state: SessionState) -> List[Dict[str, Any]]:
         """Every question Socrates has put, in order. Awareness across the whole
@@ -938,7 +1138,7 @@ class CEDOrchestrator:
         if phase == DialogPhase.REFLECTION:
             responders = [m.agent_id for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)]
             return {aid: AgentRole.REFLECTOR for aid in responders}
-        return self.assign_roles_for_phase(state, phase)
+        return self.assign_roles_for_phase(state, phase, state.round_number)
 
     def _healthy_adapters(self) -> List["LLMProviderAdapter"]:
         """Phase 16 self-healing: quarantined seats (chronic, evidence-gated
@@ -1103,6 +1303,16 @@ class CEDOrchestrator:
             out: List[ProviderResponse] = []
             for task, resp in pairs:
                 out.append(resp)
+                if (resp.ok and resp.parsed_move is not None
+                        and task.task_kind is TaskKind.SOCRATIC_QUESTION):
+                    verdict = self._screen_socratic_move(state, task, resp)
+                    if verdict is not None:
+                        # Answer injection. The question is refused before it can
+                        # anchor anyone; the phase continues without it.
+                        self._record_task_log(state, task, None,
+                                              provider_id=resp.provider_id,
+                                              provider_status=resp.status)
+                        continue
                 # Who actually served which slot. Recorded from the dispatch
                 # itself rather than reconstructed from moves afterwards, so a
                 # rerouted retry is visible as a reroute.
@@ -1140,9 +1350,22 @@ class CEDOrchestrator:
                                           provider_status=resp.status)
             return out
 
+        # Two waves, one await between them. Socrates asks last so the critiques
+        # are already public when his task is built — a question asked at the
+        # same moment as the objections cannot be grounded in them. Everything
+        # else about dispatch, binding, quorum and retry is untouched.
+        slots = [(i, aid, role) for i, (aid, role) in enumerate(items)]
+        wave_a = [x for x in slots if x[2] is not AgentRole.SOCRATES]
+        wave_b = [x for x in slots if x[2] is AgentRole.SOCRATES]
+
         pairs = list(await asyncio.gather(
-            *(_one(i, aid, role) for i, (aid, role) in enumerate(items))))
+            *(_one(i, aid, role) for i, aid, role in wave_a)))
         responses = _absorb(pairs)
+        if wave_b:
+            later = list(await asyncio.gather(
+                *(_one(i, aid, role) for i, aid, role in wave_b)))
+            responses = responses + _absorb(later)
+            pairs = pairs + later
         effective_quorum = min(self.registry.quorum_for_assembly, len(items)) if items else 0
 
         # Phase 20 — phase rescue (opt-in): a transient failure in one phase must
@@ -1201,6 +1424,7 @@ class CEDOrchestrator:
         self._phase_dispatch.setdefault(state.session_id, []).append({
             "phase": phase.value, "slots": dispatch,
         })
+        self._harvest_commitments(state, phase)
         result = self.registry.finalize_round(responses, quorum=effective_quorum)
         state.registry_rounds.append(result)
         return result
@@ -1242,12 +1466,34 @@ class CEDOrchestrator:
             self._session_lessons[sid] = await self._resolve_session_lessons(state)
 
         phase_results: List[Tuple[DialogPhase, CouncilRoundResult]] = []
+        cycle_log: List[Dict[str, Any]] = []
         for phase in REGISTRY_SESSION_PHASES:
             result = await self._run_registry_phase(state, phase, timeout_seconds)
             phase_results.append((phase, result))
             if not result.proceed:
                 return self._registry_fallback_final(state, result.warning, blocked_phase=phase,
                                                      phase_results=phase_results)
+            if phase is not DialogPhase.REFLECTION:
+                continue
+            # One dialectical cycle has closed: the council committed, was
+            # examined, was asked, and answered. CED — not Socrates — decides
+            # whether the next question would still do work.
+            while True:
+                allowed, why = self.another_socratic_cycle(state)
+                cycle_log.append({"after_cycle": state.round_number,
+                                  "continue": allowed, "reason": why})
+                if not allowed:
+                    break
+                state.round_number += 1
+                for cycle_phase in SOCRATIC_CYCLE_PHASES:
+                    result = await self._run_registry_phase(
+                        state, cycle_phase, timeout_seconds)
+                    phase_results.append((cycle_phase, result))
+                    if not result.proceed:
+                        return self._registry_fallback_final(
+                            state, result.warning, blocked_phase=cycle_phase,
+                            phase_results=phase_results)
+        self._cycle_log[sid] = cycle_log
 
         # Downstream council machinery (reads CED-owned state.moves).
         self.build_section_drafts(sid)
@@ -2663,7 +2909,7 @@ class CEDOrchestrator:
         self, state: SessionState, move: AgentMove, voter_id: str,
         phase: DialogPhase, slot_index: int,
     ) -> AgentTask:
-        rubric_name, rubric_focus = rubric_for(phase)
+        rubric_name, rubric_focus = rubric_for_move(move, phase)
         return AgentTask(
             task_id=self._deterministic_score_task_id(
                 state, move.move_id, voter_id, TaskKind.MOVE_SCORE, slot_index),
@@ -2692,7 +2938,7 @@ class CEDOrchestrator:
         breakdown, status, flags = self._parse_breakdown(content)
         if breakdown is None:
             return None   # invalid peer score — CED does NOT fabricate one
-        rubric_name = rubric_for(phase)[0]
+        rubric_name = rubric_for_move(move, phase)[0]
         return MicroScore(
             session_id=state.session_id, output_id=move.move_id, phase=phase,
             rubric_name=rubric_name, author_agent_id=move.agent_id,
