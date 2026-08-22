@@ -66,7 +66,9 @@ def test_transient_failure_is_rescued():
     prs = final.audit_summary["phase_retries"]
     assert len(prs) > 0
     assert all(pr["rescued"] for pr in prs)     # every failed phase got rescued
-    assert any(pr["retry_ok_providers"] == ["m_ok"] for pr in prs)
+    # The healthy seat carried the rescue. Not an exact list: the elenchus fills
+    # three slots now, so more than one may be rerouted onto it.
+    assert any("m_ok" in pr["retry_ok_providers"] for pr in prs)
 
 
 def test_rescue_reroutes_to_a_different_seat():

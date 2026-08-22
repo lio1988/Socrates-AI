@@ -273,3 +273,109 @@ def test_the_council_is_never_told_the_probe_result():
                           default=str)
         assert "rival_checker_result" not in blob
         assert "rival_is_a_near_miss" not in blob
+
+
+# ══ the loop: he asks again, having read the answer ══════════════════════════
+
+FOLLOWUP = "You asserted uniqueness — which stated rule eliminates the rival?"
+
+
+class LoopingSocrates(ScriptedMockProvider):
+    """Answers the opening as Socrates, and the follow-up as Socrates."""
+
+    async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
+        if task.task_kind is not TaskKind.SOCRATIC_QUESTION:
+            return await super()._produce_raw_text(task, agent_state)
+        if task.phase is DialogPhase.ELENCHUS:
+            return json.dumps({"content": {
+                "question": FOLLOWUP,
+                "answers_engaged": "they claimed a unique order without ruling out rivals",
+                "opening_answered": True,
+                "epistemic_marker": "hypothesis"}, "confidence": 0.6})
+        return json.dumps({"content": {
+            "question": "Could the order be X — and if not, which rule rules it out?",
+            "rival_candidate": NEAR_MISS,
+            "discriminating_rule": "Ben is not immediately before Anna",
+            "epistemic_marker": "hypothesis"}, "confidence": 0.6})
+
+
+def _loop_run(session_id, question=PUZZLE):
+    provider = FakeProvider()
+    registry = CouncilProviderRegistry()
+    for i in range(4):
+        registry.register(LoopingSocrates(f"seat{i}"))
+    ced = CEDOrchestrator([SocraticAgent(f"a{i}", provider) for i in range(4)],
+                          provider, registry=registry,
+                          shadow_scoring_mode=ShadowScoringMode.ALL_PHASES)
+    return ced, asyncio.run(ced.run_registry_session(question, session_id=session_id))
+
+
+def test_socrates_asks_a_second_time_after_the_answers_arrive():
+    """The elenchus is a loop; we had implemented its first move and stopped."""
+    ced, _final = _loop_run("loop_two")
+    asked = ced.socratic_questions(ced.get_session("loop_two"))
+    assert [q["phase"] for q in asked] == ["opening", "elenchus"]
+    assert asked[1]["question"] == FOLLOWUP
+
+
+def test_the_follow_up_is_a_question_task_not_an_objection_task():
+    """Given the phase's kind he would receive the objection contract, and the
+    questioner would become an objector."""
+    ced, _final = _loop_run("loop_kind")
+    state = ced.get_session("loop_kind")
+    socratic = [m for m in state.moves_for_phase(DialogPhase.ELENCHUS)
+                if m.role is AgentRole.SOCRATES]
+    assert len(socratic) == 1
+    assert socratic[0].task_kind is TaskKind.SOCRATIC_QUESTION
+
+
+def test_the_follow_up_sees_the_opening_and_the_answers():
+    ced, _final = _loop_run("loop_ctx")
+    state = ced.get_session("loop_ctx")
+    socrates = next(a for a, r in ced._registry_phase_assignment(
+        state, DialogPhase.ELENCHUS).items() if r is AgentRole.SOCRATES)
+    ctx = ced._registry_phase_context(state, DialogPhase.ELENCHUS, socrates)
+    assert "socratic_followup_mandate" in ctx
+    assert ctx["socratic_opening_question"]
+    assert ctx["initial_responses"], "he must see what he provoked"
+    # The critic's escalation mandates are written for an attacker.
+    assert "devils_advocate_mandate" not in ctx
+    assert "low_diversity_alert" not in ctx
+
+
+def test_asking_is_not_objecting():
+    """A question in the elenchus phase must not project as an objection."""
+    ced, final = _loop_run("loop_obj")
+    state = ced.get_session("loop_obj")
+    elenchus_moves = state.moves_for_phase(DialogPhase.ELENCHUS)
+    objections = final.audit_summary["governing_release"]["objections"]
+    assert len(elenchus_moves) > len(objections)
+    assert all(FOLLOWUP not in o["text"] if "text" in o else True for o in objections)
+
+
+def test_every_later_phase_sees_both_questions():
+    ced, _final = _loop_run("loop_flow")
+    state = ced.get_session("loop_flow")
+    for phase in (DialogPhase.REFLECTION, DialogPhase.RECONSTRUCTION,
+                  DialogPhase.SYNTHESIS):
+        asked = ced._registry_phase_context(state, phase, "a0").get(
+            "socratic_questions_so_far") or []
+        assert len(asked) == 2, phase
+
+
+def test_the_opening_context_does_not_carry_questions_that_do_not_exist_yet():
+    ced, _final = _loop_run("loop_open")
+    state = ced.get_session("loop_open")
+    ctx = ced._registry_phase_context(state, DialogPhase.OPENING, "a0")
+    assert "socratic_questions_so_far" not in ctx
+
+
+def test_the_critics_still_get_their_own_contract():
+    """Socrates rejoining must not take the elenchus away from the elenchus."""
+    ced, _final = _loop_run("loop_critics")
+    state = ced.get_session("loop_critics")
+    roles = {r for r in ced._registry_phase_assignment(
+        state, DialogPhase.ELENCHUS).values()}
+    assert AgentRole.ELENCHUS_CRITIC in roles
+    assert AgentRole.EMPIRICIST in roles
+    assert AgentRole.SOCRATES in roles

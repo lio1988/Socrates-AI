@@ -358,3 +358,68 @@ def test_9_a_verified_check_still_cannot_support_from_a_seat():
             condition_tested="established?", holds=True, rationale="yes",
             verifier_provider_id=seat))
     assert state.assess_claim("core_answer").basis_record_ids == []
+
+
+# ══ the council's own ratification finally reaches the governing layer ═══════
+
+class _CriticalRatifier(ScriptedMockProvider):
+    """Every seat raises a critical block naming the section it objects to."""
+
+    def _ratification_verdict(self, task):
+        return {"verdict": "blocking_objection", "confidence": 0.95,
+                "severity": "critical", "target_section": "final_verdict",
+                "required_fix": "the second order violates a stated rule",
+                "rationale": "final_verdict asserts an order that breaks a constraint"}
+
+
+def _blocked_session(session_id, seats=4):
+    provider = FakeProvider()
+    registry = CouncilProviderRegistry()
+    for i in range(seats):
+        registry.register(_CriticalRatifier(f"seat{i}"))
+    ced = CEDOrchestrator([SocraticAgent(f"a{i}", provider) for i in range(4)],
+                          provider, registry=registry,
+                          shadow_scoring_mode=ShadowScoringMode.ALL_PHASES)
+    return ced, asyncio.run(ced.run_registry_session(TASK, session_id=session_id))
+
+
+def test_a_council_critical_block_reaches_the_governing_layer():
+    """It never did. `final.ratification_votes` belongs to the legacy session and
+    is empty on every registry run, so the best-targeted objections in the whole
+    system — the only ones carrying a declared target_section — were the only
+    ones being thrown away. A council returning repair_required was invisible to
+    the layer deciding the release."""
+    _ced, final = _blocked_session("rat_reaches")
+    assert final.ratified is False
+    assert final.audit_summary["council_ratification"]["status"] == "repair_required"
+
+    from_ratification = [
+        o for o in final.audit_summary["governing_release"]["objections"]
+        if o["targeting_provenance"]
+        == ObjectionTargetProvenance.RATIFICATION_TARGET_SECTION.value]
+    assert from_ratification, "the council's verdict must not be discarded"
+    assert all(o["target_section"] == "final_verdict" for o in from_ratification)
+
+
+def test_a_ratifier_is_identified_by_its_seat_so_it_cannot_verify_itself():
+    _ced, final = _blocked_session("rat_identity")
+    seats = {f"seat{i}" for i in range(4)}
+    from_ratification = [
+        o for o in final.audit_summary["governing_release"]["objections"]
+        if o["targeting_provenance"]
+        == ObjectionTargetProvenance.RATIFICATION_TARGET_SECTION.value]
+    assert all(o["raised_by"] in seats for o in from_ratification)
+
+
+def test_a_council_that_accepts_projects_no_ratification_objection():
+    provider = FakeProvider()
+    registry = CouncilProviderRegistry()
+    for i in range(4):
+        registry.register(ScriptedMockProvider(f"seat{i}"))
+    ced = CEDOrchestrator([SocraticAgent(f"a{i}", provider) for i in range(4)],
+                          provider, registry=registry,
+                          shadow_scoring_mode=ShadowScoringMode.ALL_PHASES)
+    final = asyncio.run(ced.run_registry_session(TASK, session_id="rat_accept"))
+    assert not [o for o in final.audit_summary["governing_release"]["objections"]
+                if o["targeting_provenance"]
+                == ObjectionTargetProvenance.RATIFICATION_TARGET_SECTION.value]

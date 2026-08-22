@@ -72,11 +72,16 @@ decoration — each carries an obligation:
     `confidence_disagreement_mandate` / `low_diversity_alert` — an escalation
     mandate for THIS round. It overrides your default emphasis; honor it, but
     never fabricate to satisfy it.
+  - `socratic_followup_mandate` — you are asking your SECOND question, with the
+    council's answers already in front of you. Aim it at what they actually
+    said.
   - `socratic_question_mandate` — which KIND of opening question this task
     admits, chosen mechanically from the task's own structure. It tells you the
     shape to ask for; it carries no answer and no hint of one.
   - `socratic_opening_question` — what the dialogue is aimed at. Every move
     should be traceable to it or explicitly widen it.
+  - `socratic_questions_so_far` — every question Socrates has put, in order.
+    A later question narrows an earlier one; read them together.
   - `critiques_raised` / `critiques_from_council` / `critiques` — objections
     actually made. Engage the strongest one directly; do not substitute a
     weaker one."""
@@ -528,6 +533,34 @@ Your `content` MUST be a JSON object with these fields:
   "if_answered_another_way" — what they should conclude under a different answer
   "epistemic_marker"        — the honest status of your question: exactly one of
                               the marker values listed earlier"""
+
+
+SOCRATIC_FOLLOWUP_MANDATE = """\
+**Second question — now you have their answer.**
+
+Your opening question is in `socratic_opening_question`. What the council did
+with it is in `initial_responses`. This is where the method does its work: the
+first question opens, the second one closes.
+
+Read what they actually claimed, not what you hoped they would claim. Then ask
+the one question their own answer has made available — the consequence they
+committed to without noticing, the case their reasoning does not cover, the step
+they asserted where they owed a derivation.
+
+Do not restate your opening question in other words. If they answered it, ask
+what their answer costs them. If they talked past it, ask it again pointed at the
+specific thing they said instead.
+
+Do not answer it. Do not object. Do not evaluate them. One question.
+
+Your `content` MUST be a JSON object with these fields:
+  "question"          — the single follow-up question
+  "answers_engaged"   — what they actually claimed, in your own words, so that
+                        whether you read them or talked past them is visible
+  "opening_answered"  — true if your first question got a real answer, false if
+                        it was ignored or deflected
+  "epistemic_marker"  — the honest status of your question: exactly one of the
+                        marker values listed earlier"""
 
 
 SCORE_CONTENT_DIRECTIVE = """\

@@ -86,6 +86,7 @@ from .task_checker import (
     receipt_support,
 )
 from .reasoning_prompts import (
+    SOCRATIC_FOLLOWUP_MANDATE,
     SOCRATIC_MANDATE_CONSTRAINT,
     SOCRATIC_MANDATE_OPEN,
 )
@@ -116,8 +117,12 @@ _PHASE_ROLE_SLOTS: Dict[DialogPhase, List[AgentRole]] = {
     DialogPhase.INITIAL_RESPONSE: [AgentRole.ELENCHUS_CRITIC,
                                    AgentRole.EMPIRICIST,
                                    AgentRole.SYNTHESIZER],
+    # Socrates returns here rather than in a phase of his own: the elenchus is
+    # where the answers he provoked are already in context, and a new
+    # DialogPhase would ripple through sixty-seven files for no gain.
     DialogPhase.ELENCHUS:         [AgentRole.ELENCHUS_CRITIC,
-                                   AgentRole.EMPIRICIST],
+                                   AgentRole.EMPIRICIST,
+                                   AgentRole.SOCRATES],
     DialogPhase.RECONSTRUCTION:   [AgentRole.MAIEUTIC_RECONSTRUCTOR],
     DialogPhase.RATIFICATION:     [AgentRole.FINAL_EVALUATOR],
 }
@@ -181,6 +186,13 @@ def rubric_for(phase: DialogPhase) -> Tuple[str, str]:
 
 
 # Deterministic task_kind per deliberation phase (Phase 8C registry session).
+#: A role that keeps its own kind of task wherever it acts. Socrates asks a
+#: question in any phase; giving him the phase's kind would hand him the
+#: objection contract and make him an objector.
+ROLE_TASK_KIND: Dict[AgentRole, TaskKind] = {
+    AgentRole.SOCRATES: TaskKind.SOCRATIC_QUESTION,
+}
+
 PHASE_TASK_KIND: Dict[DialogPhase, TaskKind] = {
     DialogPhase.OPENING:          TaskKind.SOCRATIC_QUESTION,
     DialogPhase.INITIAL_RESPONSE: TaskKind.INITIAL_RESPONSE,
@@ -705,6 +717,9 @@ class CEDOrchestrator:
             "council_roster": self._council_roster(),
             "dialogue_so_far": self._dialogue_transcript(state),
         }
+        asked = self.socratic_questions(state)
+        if asked and phase is not DialogPhase.OPENING:
+            base["socratic_questions_so_far"] = asked
         # Phase 13: PUBLIC lessons from prior ratified dialogues on related
         # questions (never scores/identities) — the council builds on its past.
         # Phase 14: prefer the per-session cache (AI-ranked when ai_learning).
@@ -759,6 +774,16 @@ class CEDOrchestrator:
             return {"original_question": state.question,
                     "socratic_opening_question": self._socratic_opening(state)}
         if phase == DialogPhase.ELENCHUS:
+            if self._role_in_phase(state, phase, agent_id) is AgentRole.SOCRATES:
+                # He is asking, not attacking. The escalation mandates below are
+                # written for a critic and would turn the question into one.
+                return {
+                    "socratic_followup_mandate": SOCRATIC_FOLLOWUP_MANDATE,
+                    "socratic_opening_question": self._socratic_opening(state),
+                    "initial_responses": [
+                        {"role": m.role.value, "content": m.content}
+                        for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)],
+                }
             # The critic must know what hidden assumption Socrates targeted —
             # otherwise the elenchus cannot press where the dialogue is pointed.
             ctx: Dict[str, Any] = {
@@ -828,6 +853,23 @@ class CEDOrchestrator:
                 "critiques_raised": [m.content for m in state.moves_for_phase(DialogPhase.ELENCHUS)],
             }
         return {}
+
+    def _role_in_phase(self, state: SessionState, phase: DialogPhase,
+                       agent_id: str) -> Optional[AgentRole]:
+        """Which role this agent holds this phase. Pure and cheap to recompute."""
+        return self._registry_phase_assignment(state, phase).get(agent_id)
+
+    def socratic_questions(self, state: SessionState) -> List[Dict[str, Any]]:
+        """Every question Socrates has put, in order. Awareness across the whole
+        dialogue rather than one shot at the start."""
+        asked: List[Dict[str, Any]] = []
+        for move in state.moves:
+            if move.role is not AgentRole.SOCRATES:
+                continue
+            content = move.content if isinstance(move.content, dict) else {}
+            asked.append({"phase": move.phase.value,
+                          "question": str(content.get("question") or "")})
+        return asked
 
     def _socratic_regime(self, state: SessionState) -> str:
         """Which kind of question this task admits. Deterministic and free.
@@ -1028,7 +1070,7 @@ class CEDOrchestrator:
         self._apply_phase_roles(state, phase, assignment)
         items = sorted(assignment.items())
         adapters = self._ranked_adapters(state)   # Phase 21: analytics-informed routing
-        task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
+        phase_task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
         want_sections = (phase == DialogPhase.SYNTHESIS)
 
         def _build_task(agent_id: str, role: AgentRole, slot: int,
@@ -1041,7 +1083,8 @@ class CEDOrchestrator:
                 question=state.question,
                 context=self._registry_phase_context(state, phase, agent_id),
                 output_schema=schema, round_number=state.round_number,
-                task_kind=task_kind, slot_index=slot, attempt_index=attempt,
+                task_kind=ROLE_TASK_KIND.get(role, phase_task_kind),
+                slot_index=slot, attempt_index=attempt,
             )
 
         async def _one(slot: int, agent_id: str, role: AgentRole,
@@ -1309,6 +1352,8 @@ class CEDOrchestrator:
         for move in state.moves:
             if move.phase is not DialogPhase.ELENCHUS:
                 continue
+            if move.role is AgentRole.SOCRATES:
+                continue        # he asked a question; asking is not objecting
             target = _declared(move.content)
             core.add_objection(ObjectionRecord(
                 objection_id=_hybrid_id("obj", move.move_id),
@@ -1323,20 +1368,46 @@ class CEDOrchestrator:
                 raised_by=move.provider_id or move.agent_id,
             ))
 
-        for vote in final.ratification_votes:
-            if not vote.is_critical_block():
-                continue
-            named = vote.target_section.value if vote.target_section else None
+        def _project_ratification(objection_id: str, named: Optional[str],
+                                   text: str, raised_by: Optional[str]) -> None:
             target = section_claims.get(named) if named else None
             core.add_objection(ObjectionRecord(
-                objection_id=_hybrid_id("obj_rat", vote.voter_agent_id, vote.reason),
+                objection_id=objection_id,
                 target_claim_id=target or UNMAPPED_TARGET,
                 target_provenance=(
                     ObjectionTargetProvenance.RATIFICATION_TARGET_SECTION if target
                     else ObjectionTargetProvenance.UNMAPPED),
-                text=vote.reason or "critical blocking objection",
-                raised_by=vote.voter_agent_id,
+                text=text or "critical blocking objection",
+                raised_by=raised_by,
             ))
+
+        # The council path. `final.ratification_votes` belongs to the legacy
+        # single-evaluator session and is empty on every registry run, so for the
+        # whole life of this layer the best-targeted objections in the system —
+        # the only ones carrying a declared target_section — were the only ones
+        # being discarded. A council that returned repair_required was invisible
+        # to the layer deciding the release.
+        council = (final.audit_summary or {}).get("council_ratification") or {}
+        for entry in council.get("attributed_critical_objections") or []:
+            if not isinstance(entry, dict):
+                continue
+            _project_ratification(
+                _hybrid_id("obj_rat", str(entry.get("provider_id") or ""),
+                           str(entry.get("rationale") or "")),
+                entry.get("target_section"),
+                str(entry.get("rationale") or ""),
+                # The seat, so peer exclusion can keep a ratifier from verifying
+                # its own objection.
+                entry.get("provider_id") or entry.get("agent_id"))
+
+        # The legacy single-evaluator path, unchanged and still honoured.
+        for vote in final.ratification_votes:
+            if not vote.is_critical_block():
+                continue
+            _project_ratification(
+                _hybrid_id("obj_rat", vote.voter_agent_id, vote.reason),
+                vote.target_section.value if vote.target_section else None,
+                vote.reason, vote.voter_agent_id)
         return core
 
     async def run_objection_verification(
