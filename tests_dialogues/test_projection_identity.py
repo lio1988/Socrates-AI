@@ -11,6 +11,7 @@ All offline: scripted providers, no network, no key.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
@@ -18,11 +19,27 @@ from backend.dialogues.agent import SocraticAgent
 from backend.dialogues.ced import CEDOrchestrator
 from backend.dialogues.models import (
     ObjectionSeverity, RatificationDecision, RatificationVote, ShadowScoringMode,
+    TaskKind,
 )
 from backend.dialogues.provider_registry import (
     CouncilProviderRegistry, ScriptedMockProvider,
 )
 from backend.dialogues.providers import FakeProvider
+
+
+class TargetingMock(ScriptedMockProvider):
+    """A seat whose elenchus objections name the section they are about.
+
+    Without a declared target an objection maps to nothing and is never put to
+    a vote, so these tests would exercise no peer selection at all.
+    """
+
+    async def _produce_raw_text(self, task, agent_state) -> str:
+        if task.task_kind is TaskKind.ELENCHUS_OBJECTION:
+            return json.dumps({"content": {
+                "critique": "the load-bearing assumption was asserted, not shown",
+                "target_section": "core_answer"}, "confidence": 0.8})
+        return await super()._produce_raw_text(task, agent_state)
 
 TASK = ("Four researchers present once each. Anna presents before Ben. "
         "Clara presents immediately before David. Ben does not present last.")
@@ -33,7 +50,7 @@ def _run(session_id, seats=4):
     agents = [SocraticAgent(f"agent_{i}", provider) for i in range(4)]
     registry = CouncilProviderRegistry()
     for i in range(seats):
-        registry.register(ScriptedMockProvider(f"seat{i}"))
+        registry.register(TargetingMock(f"seat{i}"))
     ced = CEDOrchestrator(agents, provider, registry=registry,
                           shadow_scoring_mode=ShadowScoringMode.ALL_PHASES)
     final = asyncio.run(ced.run_registry_session(TASK, session_id=session_id))

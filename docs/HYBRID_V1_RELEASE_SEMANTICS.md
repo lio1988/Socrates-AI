@@ -87,3 +87,60 @@ otherwise and cannot make a council reason better. The property it adds is
 narrower and is the one that matters: **the protocol no longer manufactures
 strong epistemic support out of quality and consensus when authoritative support
 is absent.**
+
+## What an objection is about, and what follows from not knowing
+
+Added after the live five-analyst run, which is the clearest demonstration so
+far of why the question matters. A deterministic receipt established the
+`final_verdict` section. An uncorroborated objection, filed by the projection
+against `core_answer` because that section happened to sort first, held the
+entire release at `release_unresolved`. The objection had no established
+relationship to the thing it suppressed.
+
+### Targeting comes from provenance or it does not exist
+
+| priority | source | provenance recorded |
+|---|---|---|
+| 1 | a critical ratification ballot naming `target_section` | `ratification_target_section` |
+| 2 | an objection carrying an explicit section or claim identifier | `declared_identifier` |
+| 3 | nothing establishes a subject | `unmapped` |
+
+`UNMAPPED_TARGET` is a real outcome, not a failure path. The objection is
+recorded, appears in the audit, matches no claim, and is never put to a
+verification vote — it could move nothing whatever the verdict, so paying models
+to decide it buys nothing.
+
+Nothing countable maps an objection. Agreement between seats, confidence values,
+peer scores and ratification counts decide no target; only a declared identifier
+does. Four seats unanimously certain the answer is wrong, naming no section, map
+to nothing at all.
+
+For this to be reachable at all, `ELENCHUS_TARGET_DIRECTIVE` asks a critic to
+name the section its objection bears on, and says plainly that `"none"` is an
+honest answer costing nothing while a guessed section costs the answer.
+
+### The release decision follows the basis, not the noise
+
+`RELEASE_SUPPORTED` now requires every **basis-bearing** claim to assess as
+`SUPPORTED`. It is not withheld because something unresolved exists elsewhere in
+the session.
+
+The four cases, exhaustively:
+
+| situation | decision |
+|---|---|
+| conclusion supported, unrelated or unmapped objection open | `release_supported` |
+| unresolved objection targeting the basis-bearing claim | `release_unresolved` |
+| validated conclusion-scoped objection anywhere assembled | `blocked` |
+| no basis at all | `release_unresolved` |
+
+This needs no special case. A claim holding an admissible basis *and* an
+unresolved objection already assesses as `UNRESOLVED`, so a doubt aimed at the
+conclusion still blocks by the ordinary rule. A doubt aimed at an ancillary
+section stays in `unresolved_record_ids` for the audit and decides nothing about
+a conclusion it was never about.
+
+Two things this deliberately does not do. A receipt for `final_verdict` does not
+validate the other four sections — `claim_states` reports each claim on its own
+records, and the governing layer stays claim-level throughout. And an objection
+is never reassigned to a claim it did not name in order to make it count.

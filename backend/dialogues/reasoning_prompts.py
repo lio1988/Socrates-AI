@@ -443,6 +443,24 @@ Not-about-the-task example: {"content": {"objection_concerns_the_task": false,
 not what the task states."}, "confidence": 0.8}"""
 
 
+ELENCHUS_TARGET_DIRECTIVE = """**Name what your objection is about**
+Alongside your critique, say which part of the final answer it bears on. The
+five parts are fixed: core_answer, crucial_stress_test, blind_spots, nuance,
+final_verdict.
+
+This is not a formality. An objection whose subject cannot be established is
+recorded and then affects nothing - it is never attached to whichever part
+happens to come first, because an objection that suppresses a conclusion it was
+not about is worse than one that suppresses nothing.
+
+So answer "none" when your objection genuinely is not about any one part. That
+is an honest answer and costs you nothing; a guessed section costs the answer.
+
+Add this field to your `content`:
+  "target_section" - exactly one of core_answer | crucial_stress_test |
+                     blind_spots | nuance | final_verdict | none"""
+
+
 SCORE_CONTENT_DIRECTIVE = """\
 **Scoring output — REQUIRED structure (exact field names)**
 Your `content` MUST be a JSON object with EXACTLY these seven numeric fields, each
@@ -657,6 +675,8 @@ def build_reasoning_system_prompt(
         parts.append(TREE_REVISION_DIRECTIVE)
     if task_kind in _SCORE_KINDS:
         parts.append(SCORE_CONTENT_DIRECTIVE)
+    if task_kind == TaskKind.ELENCHUS_OBJECTION:
+        parts.append(ELENCHUS_TARGET_DIRECTIVE)
     if task_kind == TaskKind.OBJECTION_VERIFICATION:
         parts.append(OBJECTION_VERIFICATION_DIRECTIVE)
     if task_kind == TaskKind.COUNCIL_RATIFICATION:

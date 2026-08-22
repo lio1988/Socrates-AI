@@ -64,7 +64,9 @@ from .providers import LLMProvider
 from .agent import SocraticAgent
 from .provider_registry import CouncilProviderRegistry
 from .hybrid_epistemic import (
+    UNMAPPED_TARGET,
     ClaimRecord,
+    ObjectionTargetProvenance,
     apply_verification,
     parse_verification_response,
     HybridEpistemicState,
@@ -1141,37 +1143,69 @@ class CEDOrchestrator:
         yet, so an objection is recorded and unresolved rather than destructive.
         """
         core = HybridEpistemicState(state.session_id, state.question)
+        section_claims: Dict[str, str] = {}
         for section in (final.synthesis.sections if final.synthesis else []):
             if section.unresolved:
                 continue
+            claim_id = _hybrid_id("claim", state.session_id,
+                                  section.section_name.value)
+            section_claims[section.section_name.value] = claim_id
             core.add_claim(ClaimRecord(
-                claim_id=_hybrid_id("claim", state.session_id,
-                                    section.section_name.value),
+                claim_id=claim_id,
                 text=section.content,
                 section=section.section_name.value,
                 verification_class=VerificationClass.NOT_CURRENTLY_VERIFIABLE,
             ))
-        targets = list(core.claims)
-        if not targets:
+        if not section_claims:
             return core
+
+        def _declared(content) -> Optional[str]:
+            """A section or claim the objection itself names, or None.
+
+            Only an explicit identifier counts. Nothing is inferred from how
+            many agents agreed, how confident they were, or what scored highest
+            — those decide nothing here, by construction.
+            """
+            if not isinstance(content, dict):
+                return None
+            named = content.get("target_section") or content.get("target_claim_id")
+            if not isinstance(named, str):
+                return None
+            key = named.strip().lower()
+            if key in section_claims:
+                return section_claims[key]
+            if named in set(section_claims.values()):
+                return named
+            return None
+
         for move in state.moves:
             if move.phase is not DialogPhase.ELENCHUS:
                 continue
+            target = _declared(move.content)
             core.add_objection(ObjectionRecord(
                 objection_id=_hybrid_id("obj", move.move_id),
-                target_claim_id=targets[0],
+                target_claim_id=target or UNMAPPED_TARGET,
+                target_provenance=(
+                    ObjectionTargetProvenance.DECLARED_IDENTIFIER if target
+                    else ObjectionTargetProvenance.UNMAPPED),
                 text=str(move.content)[:400],
                 # The seat, not the logical agent: verification filters peers by
                 # provider_id, and an agent_id never matches one, which silently
                 # let a seat corroborate its own objection.
                 raised_by=move.provider_id or move.agent_id,
             ))
+
         for vote in final.ratification_votes:
             if not vote.is_critical_block():
                 continue
+            named = vote.target_section.value if vote.target_section else None
+            target = section_claims.get(named) if named else None
             core.add_objection(ObjectionRecord(
                 objection_id=_hybrid_id("obj_rat", vote.voter_agent_id, vote.reason),
-                target_claim_id=targets[0],
+                target_claim_id=target or UNMAPPED_TARGET,
+                target_provenance=(
+                    ObjectionTargetProvenance.RATIFICATION_TARGET_SECTION if target
+                    else ObjectionTargetProvenance.UNMAPPED),
                 text=vote.reason or "critical blocking objection",
                 raised_by=vote.voter_agent_id,
             ))
@@ -1196,6 +1230,10 @@ class CEDOrchestrator:
             return verdicts
 
         for objection_id, objection in sorted(core.objections.items()):
+            if not objection.is_mapped:
+                # It can move no claim whatever the verdict, so paying models to
+                # decide it would buy nothing. It stays RAISED and visible.
+                continue
             peers = [a for a in adapters if a.provider_id != objection.raised_by]
             if len(peers) < 2:
                 continue

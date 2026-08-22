@@ -39,14 +39,21 @@ class VerifyingMock(ScriptedMockProvider):
     """
 
     def __init__(self, provider_id, *, holds=False, span=C3, malformed=False,
-                 targets="conclusion"):
+                 targets="conclusion", elenchus_target="core_answer"):
         super().__init__(provider_id)
         self._holds = holds
         self._span = span
         self._malformed = malformed
         self._targets = targets
+        self._elenchus_target = elenchus_target
 
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
+        if task.task_kind is TaskKind.ELENCHUS_OBJECTION:
+            # An objection has to name its subject or it maps to nothing. These
+            # tests are about the verification gate, so they declare one.
+            return json.dumps({"content": {
+                "critique": "the enumeration was not shown to be exhaustive",
+                "target_section": self._elenchus_target}, "confidence": 0.8})
         if task.task_kind is not TaskKind.OBJECTION_VERIFICATION:
             return await super()._produce_raw_text(task, agent_state)
         if self._malformed:
@@ -146,11 +153,17 @@ def test_a_fabricated_citation_contributes_nothing_and_cannot_destroy():
 
 
 def test_plain_seats_that_cannot_verify_leave_everything_unresolved():
-    """The pre-wiring behaviour, still the safe default."""
+    """The pre-wiring behaviour, still the safe default.
+
+    A plain seat also names no target, so its objections map to nothing and are
+    never put to a vote. Either way nothing is destroyed, which is the property
+    under test.
+    """
     seats = [ScriptedMockProvider(f"seat{i}") for i in range(3)]
     _ced, final = _run(seats, "mid_plain")
     assert set(_verdicts(final).values()) <= {VerificationVerdict.NO_RECORDS.value}
-    assert final.governing_epistemic_status == SupportState.UNRESOLVED.value
+    assert final.governing_epistemic_status in {SupportState.UNRESOLVED.value,
+                                                SupportState.UNSUPPORTED.value}
 
 
 def test_too_few_seats_fails_quorum_before_any_release_is_reached():

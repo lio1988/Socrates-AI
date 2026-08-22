@@ -327,6 +327,24 @@ class ObjectionTransitionError(ValueError):
     """An illegal lifecycle move. Refused rather than silently normalised."""
 
 
+#: Target of an objection whose subject could not be established. It matches no
+#: claim, so every claim assessment ignores it, and it stays in the audit saying
+#: exactly that. The alternative — attaching it to whichever claim sorts first —
+#: lets an objection suppress a conclusion it was never about.
+UNMAPPED_TARGET = "__unmapped__"
+
+
+class ObjectionTargetProvenance(str, Enum):
+    """How an objection's target was decided. Never by a vote or a score."""
+
+    #: A ratification ballot named the section it objects to.
+    RATIFICATION_TARGET_SECTION = "ratification_target_section"
+    #: The objection carried an explicit section or claim identifier.
+    DECLARED_IDENTIFIER = "declared_identifier"
+    #: Nothing in the record establishes a subject.
+    UNMAPPED = "unmapped"
+
+
 class ObjectionRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -338,6 +356,15 @@ class ObjectionRecord(BaseModel):
     verification_id: Optional[str] = None
     #: Defaults to the non-destructive reading; only a verifier moves it.
     scope: ObjectionScope = ObjectionScope.JUSTIFICATION
+    #: How the target above was arrived at. Recorded so that "we could not tell"
+    #: is distinguishable from "we decided", which a bare claim id hides.
+    target_provenance: ObjectionTargetProvenance = \
+        ObjectionTargetProvenance.DECLARED_IDENTIFIER
+
+    @property
+    def is_mapped(self) -> bool:
+        """Does this objection have an established subject?"""
+        return self.target_claim_id != UNMAPPED_TARGET
 
     @property
     def is_destructive(self) -> bool:
@@ -1013,13 +1040,24 @@ def freeze_release(
     inconsistent = sorted(b.ballot_id for b in ballots
                           if ballot_is_inconsistent(b, state.verifications))
 
+    # Support is decided by the claims that actually carry a basis, not by
+    # whether anything anywhere is unresolved. A claim holding an admissible
+    # basis AND an unresolved objection assesses as UNRESOLVED already, so a
+    # doubt aimed at the conclusion still blocks; a doubt aimed at an ancillary
+    # section stays in unresolved_record_ids for the audit and decides nothing
+    # about a conclusion it was never about.
+    basis_bearing = sorted(cid for cid, a in assessments.items()
+                           if a.basis_record_ids)
     if blocked:
         decision = ReleaseDecision.BLOCKED
-    elif unresolved or not basis:
+    elif not basis_bearing:
         # Honest emission: the answer goes out, its epistemic state goes with it.
         decision = ReleaseDecision.RELEASE_UNRESOLVED
-    else:
+    elif all(assessments[cid].support_state is SupportState.SUPPORTED
+             for cid in basis_bearing):
         decision = ReleaseDecision.RELEASE_SUPPORTED
+    else:
+        decision = ReleaseDecision.RELEASE_UNRESOLVED
 
     frozen = {
         "session": state.session_id,
