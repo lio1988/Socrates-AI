@@ -64,11 +64,8 @@ from .providers import LLMProvider
 from .agent import SocraticAgent
 from .provider_registry import CouncilProviderRegistry
 from .hybrid_epistemic import (
-    REQUIRED_CORROBORATION,
     ClaimRecord,
-    apply_claim_verification,
     apply_verification,
-    parse_claim_verification_response,
     parse_verification_response,
     HybridEpistemicState,
     ObjectionRecord,
@@ -1156,19 +1153,16 @@ class CEDOrchestrator:
                 objection_id=_hybrid_id("obj", move.move_id),
                 target_claim_id=targets[0],
                 text=str(move.content)[:400],
-                # The seat, not the logical agent: verification filters peers by
-                # provider_id, and an agent_id never matches one, which silently
-                # let a seat corroborate its own objection.
-                raised_by=move.provider_id or move.agent_id,
+                raised_by=move.agent_id,
             ))
         for vote in final.ratification_votes:
-            if not vote.is_critical_block():
+            if not vote.is_schema_valid_critical_block():
                 continue
             core.add_objection(ObjectionRecord(
-                objection_id=_hybrid_id("obj_rat", vote.voter_agent_id, vote.reason),
+                objection_id=_hybrid_id("obj_rat", vote.agent_id, vote.rationale),
                 target_claim_id=targets[0],
-                text=vote.reason or "critical blocking objection",
-                raised_by=vote.voter_agent_id,
+                text=vote.rationale or "critical blocking objection",
+                raised_by=vote.agent_id,
             ))
         return core
 
@@ -1229,64 +1223,6 @@ class CEDOrchestrator:
             verdicts[objection_id] = verdict.value
         return verdicts
 
-    async def run_claim_verification(
-        self, state: SessionState, core, timeout_seconds: Optional[float] = None,
-    ) -> Dict[str, str]:
-        """Ask peer seats whether the task itself settles the council's answer.
-
-        Only the core_answer claim is checked. The other four sections elaborate
-        it; checking all five would multiply the call count to decide the same
-        thing.
-
-        Nothing here can turn agreement into support on its own: the records go
-        through the same corroboration gate that guards destruction, and a seat
-        that merely agrees with the claim is instructed to answer "not
-        established", which is what agreement without task material is.
-        """
-        verdicts: Dict[str, str] = {}
-        if self.registry is None or not core.claims:
-            return verdicts
-        target = next((cid for cid, claim in sorted(core.claims.items())
-                       if claim.section == "core_answer"), None)
-        if target is None:
-            return verdicts
-        adapters = self._healthy_adapters()
-        if len(adapters) < REQUIRED_CORROBORATION:
-            return verdicts                   # corroboration is impossible
-
-        task = AgentTask(
-            task_id=f"verify_claim_{target}",
-            session_id=state.session_id,
-            agent_id=target,
-            role=AgentRole.FINAL_EVALUATOR,
-            phase=DialogPhase.SYNTHESIS,
-            question=state.question,
-            context={"claim_under_test": core.claims[target].text,
-                     "original_task": core.task_text},
-            output_schema={"_role": "__claim_verification__", "_claim": target},
-            task_kind=TaskKind.CLAIM_VERIFICATION,
-        )
-        agent_state = AgentState(agent_id=target,
-                                 primary_role=AgentRole.FINAL_EVALUATOR,
-                                 assigned_role=AgentRole.FINAL_EVALUATOR)
-        responses = await asyncio.gather(*(
-            self.registry.run_adapter(a, task, agent_state, timeout_seconds)
-            for a in adapters))
-        records = []
-        for adapter, response in zip(adapters, responses):
-            if not response.ok or response.parsed_move is None:
-                continue
-            record = parse_claim_verification_response(
-                response.parsed_move.content,
-                task_text=core.task_text,
-                claim_id=target,
-                verifier_provider_id=adapter.provider_id)
-            if record is not None:
-                records.append(record)
-        verdict, _reason = apply_claim_verification(core, target, records)
-        verdicts[target] = verdict.value
-        return verdicts
-
     async def _apply_governing_release(self, state: SessionState,
                                        final: FinalResponse) -> None:
         """Decide the release from records and record it on the response.
@@ -1302,10 +1238,6 @@ class CEDOrchestrator:
             # against the task before anything is frozen. Only corroborated
             # verdicts move an objection; the rest stay unresolved.
             verdicts = await self.run_objection_verification(state, core)
-            # H3, the other direction: objection checks can only ever remove
-            # support, so without this the layer had no way to reach any state
-            # but unresolved.
-            claim_verdicts = await self.run_claim_verification(state, core)
             quality = [ms.score_breakdown.weighted_overall()
                        for ms in state.micro_scores]
             release = freeze_release(
@@ -1340,7 +1272,6 @@ class CEDOrchestrator:
         final.release_decision = release.release_decision.value
         final.audit_summary["governing_release"] = {
             "available": True,
-            "claim_verdicts": claim_verdicts,
             "release_decision": release.release_decision.value,
             "objection_verdicts": verdicts,
             "governing_epistemic_status": governing,
