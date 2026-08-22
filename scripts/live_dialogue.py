@@ -108,20 +108,25 @@ def main(argv=None) -> int:
     # Cheap: 2 seats (minimum quorum), NO shadow scoring -> fewer live calls.
     # Optional layers (lessons / trace / tree search) come from env switches.
     features, feature_notes = _resolve_features()
-    ced, mode = build_council(council_size=2,
-                              shadow_scoring_mode=ShadowScoringMode.OFF,
+    ced, mode = build_council(council_size=4,
+                              shadow_scoring_mode=ShadowScoringMode.ALL_PHASES,
                               **features)
 
+    seats = len(ced.registry.all_adapters()) if ced.registry else 0
+    scoring = ced.shadow_scoring_mode.value
+
     print("=" * _W)
-    if mode == "live":
-        print("  SOCRATES AI — LIVE SOCRATIC DIALOGUE (real model calls)")
-        print("  *** This makes ~10-15 real API calls — it costs a little money. ***")
+    # "mixed" is a live mode too. Testing only for "live" announced a free
+    # offline run while the council was making paid calls.
+    if mode in ("live", "mixed"):
+        print(f"  SOCRATES AI — LIVE SOCRATIC DIALOGUE ({mode}, real model calls)")
+        print("  *** Real API calls — this costs real money. ***")
     else:
         print("  SOCRATES AI — MOCK SOCRATIC DIALOGUE (offline, free, deterministic)")
         print("  (set CED_ENABLE_LIVE_PROVIDERS=1 + a real key for a live run)")
     print("=" * _W)
     print(f"  question : {question}")
-    print(f"  council  : 2 agents | scoring: off | mode: {mode}")
+    print(f"  council  : {seats} seats | scoring: {scoring} | mode: {mode}")
     print(f"  features : {' | '.join(feature_notes)}")
     print("-" * _W)
 
@@ -155,6 +160,25 @@ def main(argv=None) -> int:
     print("-" * _W)
 
     print(f"  ratification : {final.ratification_status}  (ratified={final.ratified})")
+    print("-" * _W)
+
+    # The two layers, side by side and named. Quality, ratification and
+    # agreement live on the left; nothing on the left can move the right.
+    gr = (final.audit_summary or {}).get("governing_release") or {}
+    print("  EPISTEMIC LAYERS (quality is not support):")
+    print(f"    legacy status      : {final.epistemic_status.value}"
+          f"   [compatibility, non-governing]")
+    if not gr.get("available", False):
+        print(f"    governing status   : unavailable ({gr.get('reason', 'not computed')})")
+    else:
+        print(f"    governing status   : {final.governing_epistemic_status}")
+        print(f"    release decision   : {final.release_decision}")
+        print(f"    basis records      : {gr.get('basis_record_ids') or '[] (nothing supports it)'}")
+        print(f"    claim verdict      : {gr.get('claim_verdicts') or {}}")
+        print(f"    objection verdicts : {gr.get('objection_verdicts') or {}}")
+        print(f"    unresolved records : {len(gr.get('unresolved_record_ids') or [])}")
+        if gr.get("blocked_reason"):
+            print(f"    blocked because    : {gr['blocked_reason']}")
     print("-" * _W)
     print("  FINAL ANSWER (assembled by the council):")
     if final.synthesis:

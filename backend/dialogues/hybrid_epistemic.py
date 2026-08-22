@@ -1286,6 +1286,53 @@ def corroborated_verdict(
             "reasoning; the conclusion is not refuted")
 
 
+def corroborated_claim_result(
+    records: Sequence[VerificationRecord],
+) -> Tuple[Optional[VerificationResult], VerificationVerdict, str]:
+    """Decide whether independent checks settle a claim.
+
+    Deliberately the same requirements as ``corroborated_verdict``: two
+    different verifiers, unanimous on the result, agreeing on a passage they
+    both cited. Support earned by a weaker standard than refutation would be a
+    thumb on the scale, and one seat's reading is never either.
+
+    Kept separate from the objection gate rather than generalised out of it: the
+    objection path is the one that can destroy a correct answer, and it is not
+    worth touching to save fifteen lines here.
+    """
+    usable = [r for r in records if r.result in (VerificationResult.VERIFIED,
+                                                 VerificationResult.FALSIFIED)]
+    if not usable:
+        return None, VerificationVerdict.NO_RECORDS, "no usable verification record"
+
+    by_verifier: Dict[str, VerificationRecord] = {}
+    for record in usable:
+        key = record.verifier_provider_id or record.verification_id
+        by_verifier.setdefault(key, record)
+    independent = list(by_verifier.values())
+
+    if len(independent) < REQUIRED_CORROBORATION:
+        return (None, VerificationVerdict.UNCORROBORATED,
+                f"{len(independent)} independent record(s); "
+                f"{REQUIRED_CORROBORATION} required")
+
+    results = {r.result for r in independent}
+    if len(results) > 1:
+        return (None, VerificationVerdict.CONFLICTING,
+                "verifiers disagree on whether the task settles the claim")
+
+    if not _share_an_anchor(independent):
+        return (None, VerificationVerdict.NO_ANCHOR_AGREEMENT,
+                "verifiers agreed on the result but cited different material")
+
+    result = results.pop()
+    if result is VerificationResult.VERIFIED:
+        return (result, VerificationVerdict.CORROBORATED_VALID,
+                f"{len(independent)} verifiers agree the task establishes the claim")
+    return (result, VerificationVerdict.CORROBORATED_INVALID,
+            f"{len(independent)} verifiers agree the task contradicts the claim")
+
+
 def apply_verification(
     state: HybridEpistemicState,
     objection_id: str,
@@ -1329,5 +1376,132 @@ def apply_verification(
     state.transition_objection(objection_id, target,
                                verification_id=deciding.verification_id)
     state.transitions.append({"kind": "verification_verdict", "id": objection_id,
+                              "verdict": verdict.value, "reason": reason})
+    return verdict, reason
+
+
+def claim_check_unsettled(claim_id: str, why: str) -> VerificationRecord:
+    """The protocol's record that the council checked and did not settle it.
+
+    Stored in place of the seats' own records when corroboration fails, so the
+    claim reads as UNRESOLVED - something bore on it and did not settle it -
+    rather than UNSUPPORTED, which would say nothing was ever checked. The
+    seats' individual answers are not lost; every response is already in the
+    session's moves.
+    """
+    return VerificationRecord(
+        verification_id=stable_id("ver", claim_id, "unsettled", why),
+        claim_id=claim_id,
+        verification_class=VerificationClass.NOT_CURRENTLY_VERIFIABLE,
+        method=None,
+        result=VerificationResult.INCONCLUSIVE,
+        rationale=why,
+        scope="none - independent corroboration was not reached",
+        limitations=("Says nothing about whether the claim is true. It records "
+                     "that the council's checks did not converge."),
+        provenance="protocol",
+    )
+
+
+def parse_claim_verification_response(
+    content: Any,
+    *,
+    task_text: str,
+    claim_id: str,
+    verifier_provider_id: str,
+) -> Optional[VerificationRecord]:
+    """Build a claim-directed record from a verifier's output, or return None.
+
+    Two separate questions, because collapsing them is what makes a sloppy
+    proof of a true statement look like a false statement:
+
+    * contradicted - the task's own material rules the claim out. This is the
+      only answer that can falsify, and it is a statement about the conclusion.
+    * established - the task's own material settles the claim affirmatively.
+
+    Anything else is INCONCLUSIVE, which is a real answer and the safe one.
+    """
+    if not isinstance(content, Mapping):
+        return None
+    raw_spans = content.get("cited_spans")
+    condition = str(content.get("condition_tested") or "").strip()
+    contradicted = content.get("claim_contradicted_by_task")
+    established = content.get("claim_established_by_task")
+    if contradicted not in (True, False, None):
+        return None
+    if established not in (True, False, None):
+        return None
+    if not isinstance(raw_spans, (list, tuple)) or not raw_spans or not condition:
+        return None
+
+    spans: List[Tuple[str, int]] = []
+    unresolved = 0
+    for item in raw_spans:
+        text = item.get("text") if isinstance(item, Mapping) else item
+        if not isinstance(text, str) or not text.strip():
+            return None
+        located = locate_span(task_text, text)
+        if located is None:
+            unresolved += 1
+            continue
+        offset, exact = located
+        spans.append((exact, offset))
+    if not spans:
+        return None                # nothing the verifier cited is in the task
+
+    if contradicted is True:
+        holds: Optional[bool] = False          # -> FALSIFIED
+    elif contradicted is False and established is True:
+        holds = True                           # -> VERIFIED
+    else:
+        holds = None                           # -> INCONCLUSIVE
+
+    try:
+        return verify_task_internal(
+            claim_id=claim_id,
+            objection_id=None,
+            task_text=task_text,
+            cited_spans=spans,
+            condition_tested=condition,
+            holds=holds,
+            rationale=str(content.get("rationale") or ""),
+            verifier_provider_id=verifier_provider_id,
+            unresolved_citations=unresolved,
+        )
+    except MalformedVerification:
+        return None
+
+
+def apply_claim_verification(
+    state: HybridEpistemicState,
+    claim_id: str,
+    records: Sequence[VerificationRecord],
+) -> Tuple[VerificationVerdict, str]:
+    """Store claim-directed checks only when independent verifiers corroborate.
+
+    The gate has to be here, before storage, because ``assess_claim`` admits any
+    stored VERIFIED record into a claim's basis. Storing one seat's VERIFIED and
+    filtering later would mean a single model's reading had already become
+    support.
+    """
+    candidates = [r for r in records if r.objection_id is None]
+    result, verdict, reason = corroborated_claim_result(candidates)
+
+    if result is None:
+        # Checked and unsettled is not the same as never checked. Only the
+        # former earns a record; NO_RECORDS means nothing usable came back, and
+        # saying "we examined this" about that would be a small lie.
+        if verdict is not VerificationVerdict.NO_RECORDS:
+            state.add_verification(claim_check_unsettled(claim_id, reason))
+    else:
+        for record in candidates:
+            if record.result is not result:
+                continue
+            try:
+                state.add_verification(record)
+            except MalformedVerification:
+                continue
+
+    state.transitions.append({"kind": "claim_verification", "id": claim_id,
                               "verdict": verdict.value, "reason": reason})
     return verdict, reason

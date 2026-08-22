@@ -443,6 +443,46 @@ Not-about-the-task example: {"content": {"objection_concerns_the_task": false,
 not what the task states."}, "confidence": 0.8}"""
 
 
+CLAIM_VERIFICATION_DIRECTIVE = """\
+**Claim verification - quote the task, and only the task**
+You are given ONE claim the council produced and the ORIGINAL TASK. Decide what
+the task's own words do to that claim. Whether the claim sounds right, whether
+you would have written it, and whether you agree with it are not the question.
+
+Every quotation in `cited_spans` MUST be copied from `original_task` in your
+context. Not from the claim. Copy character for character; you do NOT need to
+count characters or supply a position, the protocol locates your quotation
+itself. A quotation that does not occur in the original task is discarded.
+
+You are answering TWO SEPARATE questions, and conflating them is the specific
+error this is built to avoid:
+
+  1. Does the task CONTRADICT the claim? True only when the task's own material
+     rules the claim out - a stated constraint the claim violates, a condition
+     the claim gets backwards. This is the only answer that can refute a claim,
+     so give it only when you can point at the words that do the refuting.
+
+  2. Does the task ESTABLISH the claim? True only when the task's own material
+     settles it. A claim that is probably right, well argued, or agreed with by
+     everyone is NOT established - those are all reasons to say false here.
+
+An incomplete argument for a true statement leaves it true and unestablished.
+That is "contradicted: false, established: false", it is an extremely common
+answer, and it is the correct one whenever the task simply does not decide.
+
+Your `content` MUST be a JSON object with EXACTLY these fields:
+  "cited_spans"      - list of exact quotations copied from `original_task`
+  "condition_tested" - the exact condition you evaluated against the task
+  "claim_contradicted_by_task" - true / false / null
+  "claim_established_by_task"  - true / false / null
+  "rationale"        - why, referring to the text you quoted
+Example: {"content": {"cited_spans": ["Ben does not present last"],
+"condition_tested": "does the task's constraint fix Ben's position as claimed?",
+"claim_contradicted_by_task": false, "claim_established_by_task": true,
+"rationale": "The quoted constraint rules out the only competing order."},
+"confidence": 0.8}"""
+
+
 SCORE_CONTENT_DIRECTIVE = """\
 **Scoring output — REQUIRED structure (exact field names)**
 Your `content` MUST be a JSON object with EXACTLY these seven numeric fields, each
@@ -560,6 +600,7 @@ _EVALUATIVE_KINDS = {
     # A verification emits a verdict about someone else's objection, so it is a
     # judging task: no marker, no telos, no dialogue review.
     TaskKind.OBJECTION_VERIFICATION,
+    TaskKind.CLAIM_VERIFICATION,
 }
 
 
@@ -659,6 +700,8 @@ def build_reasoning_system_prompt(
         parts.append(SCORE_CONTENT_DIRECTIVE)
     if task_kind == TaskKind.OBJECTION_VERIFICATION:
         parts.append(OBJECTION_VERIFICATION_DIRECTIVE)
+    if task_kind == TaskKind.CLAIM_VERIFICATION:
+        parts.append(CLAIM_VERIFICATION_DIRECTIVE)
     if task_kind == TaskKind.COUNCIL_RATIFICATION:
         parts.append(RATIFICATION_CONTENT_DIRECTIVE)
         parts.append(RATIFICATION_COHERENCE_NOTE)

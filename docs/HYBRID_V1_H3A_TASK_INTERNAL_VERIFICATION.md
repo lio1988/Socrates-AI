@@ -257,12 +257,77 @@ was clipped and is marked unavailable. Tests must use the preserved constraints
 with constructed counterexamples; they cannot replay the original wording, and
 must not pretend to.
 
-## Boundary
+## 11. Claim-directed verification
 
-H3A is verification only. It does not promote anything to supported: a `VALID`
-counterexample record refutes, and nothing here creates support. H3B, H4 revision
-and revalidation, H5 contradiction validation, and every governing stage remain
-unimplemented and require separate approval.
+Added after eleven live sessions in which the governing layer returned
+`unresolved` every single time, whatever the question.
+
+The cause was structural rather than a bug. Every verification the canonical
+path produced was aimed at an *objection*, and `assess_claim` deliberately
+excludes objection-scoped records from a claim's basis — an objection check can
+only ever take support away. Nothing ever checked a claim, so no claim could
+ever acquire a basis, so the only reachable states were `unresolved` and
+`unsupported`. Honest, and uninformative.
+
+`run_claim_verification` asks peer seats the other question: does the task's own
+material bear on the council's answer? Only the `core_answer` claim is checked;
+the remaining sections elaborate it, and checking all five would multiply the
+call count to decide the same thing.
+
+### The question is deliberately split
+
+A verifier answers two fields, not one:
+
+* `claim_contradicted_by_task` — the task's material rules the claim out. This
+  is the only answer that can falsify, and it is a statement about the
+  conclusion.
+* `claim_established_by_task` — the task's material settles it affirmatively.
+
+Collapsing these is the same error that scope separation fixed for objections.
+An incomplete argument for a true statement leaves it true and unestablished,
+which is `contradicted: false, established: false` — a common and correct answer.
+The directive says so explicitly, because a model asked one merged question will
+answer the easier one.
+
+### The gate
+
+Identical to the one guarding destruction: two independent verifiers, unanimous
+on the result, citing a passage they both anchored (under the H3 anchor
+equivalence rule). Support earned by a weaker standard than refutation would be
+a thumb on the scale.
+
+The gate sits *before* storage, in `apply_claim_verification`, because
+`assess_claim` admits any stored `VERIFIED` record into a basis. Filtering after
+storage would mean one model's reading had already become support.
+
+### What it still refuses
+
+* one seat's `VERIFIED`, however confident — `UNCORROBORATED`
+* a council that merely agrees with the answer — agreement without task material
+  is `established: false` by instruction, and produces no usable record
+* verifiers who reach the same verdict citing different passages —
+  `NO_ANCHOR_AGREEMENT`
+* a fabricated citation — refused outright, contributing nothing
+
+### Checked-and-unsettled is not never-checked
+
+When the gate refuses, the protocol stores its own `INCONCLUSIVE` record so the
+claim reads `UNRESOLVED` — something bore on it and did not settle it. The one
+exception is `NO_RECORDS`: nothing usable came back, so claiming an examination
+took place would be false, and the claim keeps whatever state it had.
+
+## Boundary (revised)
+
+H3A was originally verification-only: a `VALID` counterexample refuted, and
+nothing created support. That held while every governing stage was unimplemented.
+With H7 routing the canonical release through `freeze_release`, the one-way
+boundary made the governing verdict a constant, which is not a safety property —
+a layer that says `unresolved` unconditionally distinguishes nothing.
+
+Support is therefore reachable, and only through the path above: a corroborated,
+anchored, task-internal check of the claim. Quality scores, confidence values,
+consensus, ratification, epistemic markers, model self-classification and one
+model's opinion of another remain incapable of creating support, unchanged.
 
 `backend/evidence/` stays empty. Building a substrate before H3B needs one would
 be speculative infrastructure.
