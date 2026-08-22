@@ -204,6 +204,10 @@ def main(argv=None) -> int:
             print(f"    computed checks    : {checks['problem_class']}, "
                   f"{checks['solution_count']} solution(s) -> {verdicts}")
         print(f"    objection verdicts : {gr.get('objection_verdicts') or {}}")
+        for o in gr.get("objections") or []:
+            print(f"      - {o['objection_id'][:18]} target={str(o['target_section']):20} "
+                  f"scope={o['scope']:13} state={o['state']:12} "
+                  f"via={o['targeting_provenance']}")
         print(f"    unresolved records : {len(gr.get('unresolved_record_ids') or [])}")
         if gr.get("blocked_reason"):
             print(f"    blocked because    : {gr['blocked_reason']}")
