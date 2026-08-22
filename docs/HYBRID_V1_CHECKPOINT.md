@@ -1,14 +1,15 @@
-# Hybrid v1 — checkpoint at `f8144cd`
+# Hybrid v1 — checkpoint at `fdf1c2b`
 
-State of the migration at the moment the governing layer first became capable of
-a verdict. Written so a later session can resume without re-deriving any of it.
+State of the migration at the point where `SUPPORTED` first became reachable by
+a route that does not involve asking a model. Written so a later session can
+resume without re-deriving any of it.
 
 | | |
 |---|---|
 | branch | `main` |
-| HEAD | `f8144cdb726504fa45573bc787d0c9b05c8b37ca` |
-| unpushed | 40 commits ahead of `origin/main` |
-| suites | `tests_dialogues` 1879 passed · repository 2186 passed, 23 pre-existing warnings |
+| HEAD | `fdf1c2bda0e82c82bc150291c4629085eee61ac7` |
+| unpushed | 43 commits ahead of `origin/main` |
+| suites | `tests_dialogues` 1880 passed · repository 2187 passed, 23 pre-existing warnings |
 | gates | `compileall` clean · `git diff --check` clean |
 
 ## Stage status
@@ -16,82 +17,98 @@ a verdict. Written so a later session can resume without re-deriving any of it.
 | stage | state | where |
 |---|---|---|
 | H0 baseline freeze | done | frozen fixtures |
-| H0.5 preservation contract | done | `test_h0_preservation_contract.py` (2) |
+| H0.5 preservation contract | done | `test_h0_preservation_contract.py` |
 | H1 shadow ledger | done | `test_hybrid_shadow_h1.py` |
 | H2 quality/support separation | done | `test_hybrid_support_h2.py` |
 | H3 verification — objection-directed | done | `test_objection_verification.py` (40) |
-| H3 verification — claim-directed | **done at this checkpoint** | `test_claim_verification.py` (32) |
-| H3B external evidence | **not implemented** | `backend/evidence/` holds only `__init__.py` |
+| H3 verification — claim-directed by seats | **tried and reverted** | see below |
+| H3 support — deterministic computation | **done at this checkpoint** | `test_task_checker.py` (32) |
+| H3B external evidence | not implemented | `backend/evidence/` holds only `__init__.py` |
 | H4 revision | done | `HybridEpistemicState.revise` |
-| H5 contradiction | done | `ContradictionRecord`, validated-only blocking |
-| H6 eligibility | done | `_eligibility`, derived from support state alone |
+| H5 contradiction | done | validated-only blocking |
+| H6 eligibility | done | derived from support state alone |
 | H7 canonical authority | done | `test_h7_canonical_authority.py` (18) |
 | H8 authority map | done | `test_hybrid_authority_h8.py` (11) |
 | H9 adversarial regression | done | `test_hybrid_epistemic_h3_h9.py` (28) |
 | H10 live benchmark | run once — **do not re-run**, it is paid | — |
 
 Supporting suites: anchor equivalence 21, mid-session sessions 10, hybrid
-invariants 15.
+invariants 15, projection identity 4.
 
 ## The law this is all built around
 
 `QUALITY != EPISTEMIC SUPPORT`
 
 Quality score, confidence, consensus, corroboration count, ratification
-popularity, epistemic marker, model self-classification, and one model's opinion
-of another may **never** create epistemic support, evidence, verification or
-truth. Every stage above is enforcement of that sentence, and
-`test_hybrid_invariants.py` is where it is pinned.
+popularity, epistemic marker, model self-classification, and one model's reading
+of the task may **never** create epistemic support, evidence, verification or
+truth. `test_hybrid_invariants.py` is where it is pinned.
 
-## What is proven, and by what
+## The attempt that was reverted, and why it matters
 
-**Offline, deterministically.** Support reachable only through a corroborated,
-anchored, task-internal check. Destruction reachable only through a corroborated
-objection that targets the *conclusion*. Anchor equivalence by source identity,
-source version and material span overlap — never by text similarity. A lone seat
-settles nothing in either direction. Agreement reached by citing different
-passages settles nothing. Fabricated citations contribute nothing rather than
-being downgraded into a weaker signal.
+`f8144cd` let peer seats check a claim against the task and recorded agreement
+between two of them, citing the same passage, as support. Reverted in `12c55de`
+the same day. The demonstration puts identical epistemic content through two
+doors:
 
-**Live, on paid runs.** Three real bugs that were invisible offline: the
-OpenRouter adapter never sent the canonical prompt; the score parser read a
-nested shape while models emit a flat one (0/26 scores); five task kinds got a
-"include the marker" instruction contradicted by an "EXACTLY these fields" list
-(0/8 → 7/9 after the marker became a named field).
+```
+declared as MODEL_ASSERTION evidence  ->  unsupported, basis []
+wrapped as a TASK_INTERNAL check      ->  supported,   basis [ver_2113...]
+```
 
-Across three Level-3 live runs the council answered correctly twice, the legacy
-layer said `well_supported` regardless, and the governing layer said
-`unresolved`. Run #3's near-miss — two seats citing the same span differing by a
-full stop — is why scope separation was done **before** anchor overlap. The other
-order would have falsified a correct answer, and
-`test_9_equivalent_anchors_with_a_justification_objection_do_not_falsify` is the
-frozen regression for it.
+`assess_claim` filtered evidence through `ADMISSIBLE_EVIDENCE_SOURCES` and did
+not filter verification records at all — safe only by accident, because nothing
+produced a claim-directed verification. Opening them to the basis routed a
+model's reading around the check that exists to refuse it.
+
+`quality 7.5 → truth` and `two seats plus one quote → truth` are the same
+mistake at different resolutions. This is the single most important thing in
+this document.
+
+**The structural fix**: `VerificationRecord.creates_support` requires
+`verifier_provider_id` to be unset. Support now depends on a stated property of
+the record, not on which record shapes happen not to exist yet.
+
+**Refutation is deliberately not symmetric.** A refutation exhibits a finite
+pointer — the task says X, the claim says not-X — which a reading can do. An
+establishment asserts a universal — nothing defeats the claim and the cited span
+suffices — which it cannot. A false refutation also fails into silence about a
+right answer; a false support fails into confident error.
+
+## The one route to support
+
+`backend/dialogues/task_checker.py`. No model at any point: it parses the task
+under a small explicit grammar, enumerates exhaustively, and emits
+`DETERMINISTIC_COMPUTATION` evidence attributed to the module.
+
+Demonstrated offline, with the legacy layer saying `well_supported` in all three:
+
+| council's answer | governing | release |
+|---|---|---|
+| correct order | `supported` | `release_supported` |
+| wrong order | `falsified` | `blocked` |
+| echoes the prompt | `unsupported` | `release_unresolved` |
+
+The completeness guard is the load-bearing part: any sentence mentioning one or
+two entities that the grammar cannot read aborts the whole check. A silently
+dropped constraint would report a uniqueness that does not hold — the one bug
+here capable of manufacturing false support.
 
 ## What is NOT proven
 
-1. **No live claim verification has ever run.** The layer is now *capable* of
-   reaching `supported`. Whether live models clear the bar — two seats quoting
-   the same passage and both answering `established: true` — is untested. This
-   is the single most valuable next experiment.
-2. **No external evidence substrate.** Any claim needing facts from outside the
-   task stays `unresolved` by construction, correctly.
-3. **Internal incoherence is invisible to both layers.** In the museum-director
-   run the council answered (B) correctly while its own stress-test section said
-   (B) "conflates correlation with causation" — backwards. Legacy said
-   `ratified_with_caveats`; governing said `unresolved`. Neither detects that an
-   answer contradicts itself. This is a fourth limitation, distinct from the
-   three already recorded.
-4. **Only `core_answer` is claim-checked.** The other four sections are never
-   verified against the task.
-
-## Deliberate boundary crossing at this checkpoint
-
-`HYBRID_V1_H3A_TASK_INTERNAL_VERIFICATION.md` originally stated that nothing in
-H3A creates support. That held while the governing stages were unimplemented;
-after H7 it made the governing verdict a constant, which distinguishes nothing
-and is not a safety property. Support is now reachable — through one path only,
-recorded in that document's revised Boundary section. Reverting `f8144cd`
-restores the old semantics cleanly.
+1. **Nothing here has run live.** No live session has ever produced a
+   `deterministic_checks` entry, and no live session has ever shown the
+   `EPISTEMIC LAYERS` block, which only landed in `dd28f48`.
+2. **The grammar covers single-slot ordering and nothing else.** The
+   museum-director style question — the one the operator most recently ran — is
+   not machine-checkable by this checker and stays `unresolved` by construction.
+   That is correct, and it is also most real questions.
+3. **No external evidence substrate.** Any claim needing facts from outside the
+   task stays `unresolved`.
+4. **Internal incoherence is invisible to both layers.** In the museum run the
+   council answered (B) correctly while its own stress-test section said (B)
+   "conflates correlation with causation" — backwards. Neither layer detects an
+   answer contradicting itself.
 
 ## Worktree
 
@@ -100,9 +117,8 @@ it is the operator's backup and is theirs to remove. Nothing else is dirty.
 
 ## Next safe step
 
-One live run of `scripts/live_dialogue.py` on a self-contained, task-checkable
-question, reading the new `EPISTEMIC LAYERS` block. Expected cost: the six
-dialogue phases, plus ratification, plus 3 peers per raised objection, plus one
-claim-verification round across all seats. The result to look for is whether
-`claim verdict` comes back as anything other than `no_records` — that single
-field is what the whole checkpoint is waiting on.
+One live run of `scripts/live_dialogue.py` on the frozen Level-3 ordering task —
+the one the checker's grammar covers. Two fields decide whether any of this
+works outside the test suite: `computed checks`, and whether `governing status`
+finally differs from `unresolved`. If the council answers correctly, this is the
+first run in which the governing layer should say `supported` and mean it.
