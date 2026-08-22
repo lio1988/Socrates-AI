@@ -461,9 +461,6 @@ def all_candidate_orders(text: str, roster: Sequence[str]) -> Set[Order]:
     contain ordering O" rather than "which single ordering does it propose".
     An occurrence of the roster is not an ordering: only a frame makes one.
     """
-    size = len(roster)
-    matches = list(re.finditer(
-        r"(" + "|".join(re.escape(x) for x in roster) + r")", text))
     found: Set[Order] = set()
     for frame in _FRAME.finditer(text):
         run = _read_run(text[frame.end():], roster)
