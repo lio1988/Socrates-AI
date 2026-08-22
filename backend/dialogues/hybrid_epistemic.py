@@ -234,6 +234,13 @@ class EvidenceSourceType(str, Enum):
     EXTERNAL_SOURCE = "external_source"
     HUMAN_PROVIDED = "human_provided"
     MODEL_ASSERTION = "model_assertion"
+    #: A model's reading of supplied material. Anchored, checkable as a
+    #: quotation, and still a reading: the citation is proved and the
+    #: interpretation of it is not.
+    MODEL_INTERPRETATION = "model_interpretation"
+    #: Several models reaching the same reading. Named so it can be refused by
+    #: name: agreement scales the assertion, not the evidence behind it.
+    CORROBORATED_MODEL_INTERPRETATION = "corroborated_model_interpretation"
 
 
 #: Source types that may contribute support. A model asserting something is not

@@ -76,9 +76,12 @@ from .hybrid_epistemic import (
     stable_id as _hybrid_id,
 )
 from .task_checker import (
-    check_ordering_task,
-    deterministic_refutation,
-    deterministic_support,
+    CheckerStatus,
+    ProblemClass,
+    evaluate_candidate,
+    model_task,
+    receipt_refutation,
+    receipt_support,
 )
 from .role_assignment import assign_primary_roles, stable_hash
 
@@ -1231,31 +1234,45 @@ class CEDOrchestrator:
             verdicts[objection_id] = verdict.value
         return verdicts
 
-    def apply_deterministic_checks(self, core) -> Dict[str, str]:
-        """Run the task checker over every projected claim. Costs nothing.
+    def apply_deterministic_checks(self, core) -> Dict[str, Any]:
+        """Evaluate each assembled claim against the task, deterministically.
 
-        No model calls and no network: the checker parses the task itself and
-        enumerates. It is the only path by which a claim can become SUPPORTED,
-        and it refuses any task its grammar does not fully cover, which is most
-        of them.
+        No model calls and no network: the checker reduces the task itself to
+        finite constraints and enumerates. It is the only channel that can put a
+        record into a claim's basis, and it declines far more tasks than it
+        accepts — a task it cannot represent unambiguously produces nothing,
+        which leaves every claim where it was.
         """
-        outcomes: Dict[str, str] = {}
-        check = check_ordering_task(core.task_text)
-        if check is None:
-            return outcomes
+        model, reason = model_task(core.task_text)
+        if model is None:
+            return {"applicable": False, "reason": reason.value}
+
+        summary: Dict[str, Any] = {
+            "applicable": True,
+            "problem_class": ProblemClass.FINITE_ORDERING.value,
+            "entities": list(model.entities),
+            "constraints": list(model.constraint_names),
+            "solution_count": len(model.solutions),
+            "claims": {},
+        }
         for claim_id, claim in sorted(core.claims.items()):
-            evidence = deterministic_support(check, claim_id, claim.text,
-                                             core.task_text)
-            if evidence is not None:
-                core.add_evidence(evidence)
-                outcomes[claim_id] = "supported_by_computation"
-                continue
-            refutation = deterministic_refutation(check, claim_id, claim.text,
-                                                  core.task_text)
-            if refutation is not None:
-                core.add_verification(refutation)
-                outcomes[claim_id] = "refuted_by_computation"
-        return outcomes
+            receipt = evaluate_candidate(core.task_text, claim.text)
+            entry: Dict[str, Any] = {"result": receipt.result.value,
+                                     "reason": receipt.reason}
+            if receipt.result is CheckerStatus.VALID:
+                entry["unique"] = receipt.candidate_is_unique
+                support = receipt_support(receipt, claim_id)
+                if support is not None:
+                    core.add_evidence(support)
+                    entry["receipt"] = receipt.digest()
+            elif receipt.result is CheckerStatus.INVALID:
+                entry["violated"] = list(receipt.violated_constraints)
+                refutation = receipt_refutation(receipt, claim_id, core.task_text)
+                if refutation is not None:
+                    core.add_verification(refutation)
+                    entry["receipt"] = receipt.digest()
+            summary["claims"][claim_id] = entry
+        return summary
 
     async def _apply_governing_release(self, state: SessionState,
                                        final: FinalResponse) -> None:

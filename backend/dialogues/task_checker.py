@@ -1,36 +1,45 @@
-"""A deterministic checker for ordering tasks stated entirely in the task text.
+"""Deterministic checking for finite, explicitly-constrained tasks.
 
-The only honest route to `SUPPORTED`. Everything else the council can produce is
-a model's reading — provably anchored, but still a reading — and a reading is
-what `MODEL_ASSERTION` exists to refuse. This module has no model in the loop at
-any point: it parses the task itself, under a grammar small enough to write
-down, and enumerates exhaustively.
+The only producer of admissible support. Everything else the council makes is a
+model's reading — anchored, quotable, and still a reading — which is what
+``MODEL_INTERPRETATION`` exists to refuse. Nothing here calls a model.
 
-The design rule throughout is **refuse rather than guess**. A task that does not
-fit the grammar produces nothing, and nothing is exactly the right answer: the
-claim stays unresolved, which is what it was before this file existed. The
-failure mode to avoid is a checker that half-understands a task, silently drops
-a constraint it could not parse, and reports a "unique" order that is unique
-only under the subset it happened to read.
+Three rules the rest of the file is built to keep:
 
-So the completeness guard matters more than the grammar does. Any sentence that
-mentions one or two of the entities and does not parse aborts the whole check.
-A dropped constraint is the one bug here that would manufacture false support,
-and it is cheaper to refuse a task we could have handled than to answer one we
-could not.
+**Parsing is not authority.** A deterministic evaluator is authoritative only
+once the task is already an unambiguous machine representation. Getting there is
+parsing, and parsing can be wrong. So every ambiguity is fatal to the check
+rather than resolved by preference: two readings of a sentence, a sentence about
+the entities that no pattern matches, a stated count that disagrees with the
+roster. A model may propose a parse; that proposal has no authority here and is
+not accepted as input.
 
-Scope: single-slot ordering. N named entities, each occupying one position, with
-constraints over relative and absolute position. Not a general solver, and not
-intended to become one — `EXTERNAL_EVIDENCE` and open-ended reasoning are out of
-reach by construction, not by omission.
+**Entity extraction is not relation extraction.** The words
+``Anna, Ben, Clara, David`` name four people. They do not say those four present
+in that order, and reading them as an ordering would let any text that lists the
+roster earn support for the arrangement that happens to match. A candidate order
+is recognised only where the task or claim presents one as an ordering — an
+explicit frame like "the order is" or "could the order be".
+
+**Three outcomes, never two.** VALID, INVALID and NOT_APPLICABLE are distinct.
+Collapsing NOT_APPLICABLE into INVALID would turn "we cannot represent this"
+into "this is false", which is the more damaging of the two mistakes and the
+easier one to make.
+
+Scope is deliberately small and is not intended to grow into a general prover.
+Anything wanting causal interpretation, analogy, intent, legal or scientific
+judgement, ordinary semantic entailment, probability or world knowledge is out
+of class by construction: it has no finite constraint form, so it never parses,
+so it returns NOT_APPLICABLE.
 """
 
 from __future__ import annotations
 
 import itertools
 import re
-from dataclasses import dataclass
-from typing import Callable, List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .hybrid_epistemic import (
     AnchorSpan,
@@ -45,55 +54,189 @@ from .hybrid_epistemic import (
     stable_id,
 )
 
-#: Identity written into every record this module produces. Deliberately not a
-#: model id: admissible evidence is never attributable to one.
-CHECKER_IDENTITY = "socrates.task_checker/v1"
+CHECKER_ID = "socrates.task_checker"
+CHECKER_VERSION = "v1"
+AUTHORITY_CLASS = EvidenceSourceType.DETERMINISTIC_COMPUTATION.value
 
-#: Above this the enumeration stops being free. Eight entities is 40320 orders.
+#: Enumeration budget. Eight entities is 40320 orders; beyond it the answer is
+#: RESOURCE_BOUND, never a heuristic shortcut.
 MAX_ENTITIES = 8
 
 _NUMBER_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5,
                  "six": 6, "seven": 7, "eight": 8}
 
 Order = Tuple[str, ...]
-Constraint = Callable[[Order], bool]
+Predicate = Callable[[Order], bool]
+
+
+class ProblemClass(str, Enum):
+    """What the checker recognises. Everything else is out of class."""
+
+    #: N named entities in N ordered slots, under relative and absolute
+    #: position constraints: before, after, immediately before/after, first,
+    #: last, position N, and exclusions of those.
+    FINITE_ORDERING = "finite_ordering"
+
+
+class CheckerStatus(str, Enum):
+    VALID = "valid"
+    INVALID = "invalid"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class NotApplicableReason(str, Enum):
+    """Why the checker declined. Never a verdict about the claim."""
+
+    OUT_OF_CLASS = "out_of_class"
+    NO_ROSTER = "no_roster"
+    COUNT_MISMATCH = "count_mismatch"
+    DUPLICATE_ENTITY = "duplicate_entity"
+    NO_CONSTRAINTS = "no_constraints"
+    UNPARSEABLE_CONSTRAINT = "unparseable_constraint"
+    AMBIGUOUS_PARSE = "ambiguous_parse"
+    RESOURCE_BOUND = "resource_bound"
+    NO_CANDIDATE = "no_candidate"
+    AMBIGUOUS_CANDIDATE = "ambiguous_candidate"
+    UNSATISFIABLE_TASK = "unsatisfiable_task"
+
+
+# ── the receipt ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class CheckerReceipt:
+    """An auditable record of one deterministic evaluation.
+
+    Deliberately not a bare VERIFIED flag. A reader who has the task text can
+    replay every field: the entities that were extracted, the constraints they
+    were reduced to, what was tested against them, and which of them the
+    candidate satisfied or violated. A flag asks to be trusted; this does not.
+    """
+
+    result: CheckerStatus
+    problem_class: Optional[str] = None
+    normalized_entities: Tuple[str, ...] = ()
+    normalized_constraints: Tuple[str, ...] = ()
+    #: The task's own sentences the constraints were read from, verbatim. The
+    #: normalised forms above are the checker's paraphrase; these are what a
+    #: reader can look up, and what a refutation anchors to.
+    cited_spans: Tuple[str, ...] = ()
+    candidate_checked: Optional[str] = None
+    violated_constraints: Tuple[str, ...] = ()
+    satisfied_constraints: Tuple[str, ...] = ()
+    input_digest: str = ""
+    reason: Optional[str] = None
+    solution_count: Optional[int] = None
+    candidate_is_valid: Optional[bool] = None
+    candidate_is_invalid: Optional[bool] = None
+    candidate_is_unique: Optional[bool] = None
+    statement_must_hold: Optional[bool] = None
+    statement_could_hold: Optional[bool] = None
+    checker_id: str = CHECKER_ID
+    checker_version: str = CHECKER_VERSION
+    deterministic: bool = True
+    authority_class: str = AUTHORITY_CLASS
+
+    @property
+    def is_applicable(self) -> bool:
+        return self.result is not CheckerStatus.NOT_APPLICABLE
+
+    @property
+    def establishes_the_candidate(self) -> bool:
+        """May this receipt create support?
+
+        Only when the task *determines* the answer: a candidate order that is
+        the only one satisfying the constraints, or a statement true under every
+        satisfying assignment. A candidate that merely could hold is consistent
+        with the task, which is not the same as established by it.
+        """
+        if self.result is not CheckerStatus.VALID:
+            return False
+        return bool(self.candidate_is_unique) or bool(self.statement_must_hold)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Canonical, ordered, JSON-safe. Two runs must produce byte equality."""
+        return {
+            "checker_id": self.checker_id,
+            "checker_version": self.checker_version,
+            "problem_class": self.problem_class,
+            "normalized_entities": list(self.normalized_entities),
+            "normalized_constraints": list(self.normalized_constraints),
+            "cited_spans": list(self.cited_spans),
+            "candidate_checked": self.candidate_checked,
+            "result": self.result.value,
+            "violated_constraints": list(self.violated_constraints),
+            "satisfied_constraints": list(self.satisfied_constraints),
+            "input_digest": self.input_digest,
+            "reason": self.reason,
+            "solution_count": self.solution_count,
+            "candidate_is_valid": self.candidate_is_valid,
+            "candidate_is_invalid": self.candidate_is_invalid,
+            "candidate_is_unique": self.candidate_is_unique,
+            "statement_must_hold": self.statement_must_hold,
+            "statement_could_hold": self.statement_could_hold,
+            "deterministic": self.deterministic,
+            "authority_class": self.authority_class,
+        }
+
+    def digest(self) -> str:
+        import json
+        return source_digest(json.dumps(self.to_dict(), sort_keys=False,
+                                        ensure_ascii=False))
+
+
+def _declined(reason: NotApplicableReason, *, digest: str = "",
+              entities: Tuple[str, ...] = (),
+              constraints: Tuple[str, ...] = (),
+              candidate: Optional[str] = None) -> CheckerReceipt:
+    """A receipt for a check that did not happen. Still auditable."""
+    return CheckerReceipt(
+        result=CheckerStatus.NOT_APPLICABLE, problem_class=None,
+        normalized_entities=entities, normalized_constraints=constraints,
+        candidate_checked=candidate, input_digest=digest, reason=reason.value)
 
 
 # ── the grammar ──────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class _Rule:
-    """One parsed constraint: how to test it, and the words it came from."""
-
     describe: str
     span: str
-    test: Constraint
+    test: Predicate = field(compare=False, repr=False,
+                            default=lambda order: True)
 
 
-def _before(a: str, b: str) -> Constraint:
+def _before(a: str, b: str) -> Predicate:
     return lambda order: order.index(a) < order.index(b)
 
 
-def _immediately_before(a: str, b: str) -> Constraint:
+def _immediately_before(a: str, b: str) -> Predicate:
     return lambda order: order.index(b) - order.index(a) == 1
 
 
-def _at(a: str, index: int) -> Constraint:
+def _at(a: str, index: int) -> Predicate:
     return lambda order: order.index(a) == index % len(order)
 
 
-def _not_at(a: str, index: int) -> Constraint:
+def _not_at(a: str, index: int) -> Predicate:
     return lambda order: order.index(a) != index % len(order)
 
 
-def _sentences(text: str) -> List[str]:
-    """Split into candidate statements, keeping each one's exact source text.
+_ORDINALS = {"first": 0, "second": 1, "third": 2, "fourth": 3, "fifth": 4,
+             "sixth": 5, "seventh": 6, "eighth": 7, "last": -1}
 
-    Bullets, numbering and newlines are all statement separators here; a task
-    that lists its constraints as `* Anna presents before Ben.` must split the
-    same way as one that writes them as prose.
-    """
-    parts = re.split(r"(?<=[.;:])\s+|\n+", text)
+#: Words that make a sentence's constraint content genuinely uncertain. Their
+#: presence alongside entities is ambiguity, not an unknown pattern: a
+#: conditional or disjunctive constraint has more than one reading and the
+#: checker has no way to pick between them.
+_AMBIGUITY_MARKERS = (
+    "unless", "otherwise", "either", " or ", "if ", "maybe", "perhaps",
+    "possibly", "probably", "usually", "typically", "might", "may ", "could ",
+    "should", "at least one of", "some of", "prefer", "tends", "likely",
+)
+
+
+def _sentences(text: str) -> List[str]:
+    parts = re.split(r"(?<=[.;:?!])\s+|\n+", text)
     out = []
     for part in parts:
         cleaned = re.sub(r"^\s*(?:[-*•]|\(?\d+[.)])\s*", "", part).strip()
@@ -103,227 +246,342 @@ def _sentences(text: str) -> List[str]:
 
 
 def _normalise(sentence: str) -> str:
-    return re.sub(r"\s+", " ", sentence).strip().rstrip(".;:").strip()
+    return re.sub(r"\s+", " ", sentence).strip().rstrip(".;:?!").strip()
 
 
-def _parse_sentence(sentence: str, names: Sequence[str]) -> Optional[_Rule]:
-    """One sentence to one constraint, or None if it is not one we know."""
-    text = _normalise(sentence)
+def _patterns(names: Sequence[str]) -> Tuple[Tuple[str, Callable[[Any], _Rule]], ...]:
     n = "|".join(re.escape(x) for x in names)
     verb = r"(?:presents?|speaks?|goes|appears?|is scheduled)"
-
-    patterns: Tuple[Tuple[str, Callable[[re.Match], _Rule]], ...] = (
+    ordinal = "|".join(_ORDINALS)
+    return (
         (rf"^({n})\s+{verb}\s+immediately\s+before\s+({n})$",
-         lambda m: _Rule(f"{m[1]} immediately before {m[2]}", text,
+         lambda m: _Rule(f"{m[1]} immediately before {m[2]}", "",
                          _immediately_before(m[1], m[2]))),
         (rf"^({n})\s+{verb}\s+immediately\s+after\s+({n})$",
-         lambda m: _Rule(f"{m[2]} immediately before {m[1]}", text,
+         lambda m: _Rule(f"{m[2]} immediately before {m[1]}", "",
                          _immediately_before(m[2], m[1]))),
         (rf"^({n})\s+{verb}\s+before\s+({n})$",
-         lambda m: _Rule(f"{m[1]} before {m[2]}", text, _before(m[1], m[2]))),
+         lambda m: _Rule(f"{m[1]} before {m[2]}", "", _before(m[1], m[2]))),
         (rf"^({n})\s+{verb}\s+after\s+({n})$",
-         lambda m: _Rule(f"{m[2]} before {m[1]}", text, _before(m[2], m[1]))),
-        (rf"^({n})\s+(?:is|{verb})\s+last$",
-         lambda m: _Rule(f"{m[1]} last", text, _at(m[1], -1))),
-        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb})\s+last$",
-         lambda m: _Rule(f"{m[1]} not last", text, _not_at(m[1], -1))),
-        (rf"^({n})\s+(?:is|{verb})\s+first$",
-         lambda m: _Rule(f"{m[1]} first", text, _at(m[1], 0))),
-        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb})\s+first$",
-         lambda m: _Rule(f"{m[1]} not first", text, _not_at(m[1], 0))),
+         lambda m: _Rule(f"{m[2]} before {m[1]}", "", _before(m[2], m[1]))),
+        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb})\s+({ordinal})$",
+         lambda m: _Rule(f"{m[1]} not {m[2].lower()}", "",
+                         _not_at(m[1], _ORDINALS[m[2].lower()]))),
+        (rf"^({n})\s+(?:is|{verb})\s+({ordinal})$",
+         lambda m: _Rule(f"{m[1]} {m[2].lower()}", "",
+                         _at(m[1], _ORDINALS[m[2].lower()]))),
+        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb})\s+in\s+position\s+(\d+)$",
+         lambda m: _Rule(f"{m[1]} not position {m[2]}", "",
+                         _not_at(m[1], int(m[2]) - 1))),
+        (rf"^({n})\s+(?:is|{verb})\s+in\s+position\s+(\d+)$",
+         lambda m: _Rule(f"{m[1]} position {m[2]}", "",
+                         _at(m[1], int(m[2]) - 1))),
     )
-    for pattern, build in patterns:
+
+
+def _parse_constraint(sentence: str, names: Sequence[str]
+                      ) -> Tuple[Optional[_Rule], Optional[NotApplicableReason]]:
+    """One sentence to one rule, or a reason the checker must decline.
+
+    Two readings is ambiguity and one reading is a parse; zero readings of a
+    sentence that talks about the entities is a constraint we cannot see, which
+    is just as fatal. Enumerating without it would report a uniqueness that the
+    task does not actually have.
+    """
+    text = _normalise(sentence)
+    lowered = f" {text.lower()} "
+    if any(marker in lowered for marker in _AMBIGUITY_MARKERS):
+        return None, NotApplicableReason.AMBIGUOUS_PARSE
+
+    found: List[_Rule] = []
+    for pattern, build in _patterns(names):
         match = re.match(pattern, text, re.IGNORECASE)
         if match:
-            return build(match)
-    return None
+            rule = build(match)
+            found.append(_Rule(rule.describe, text, rule.test))
+    if not found:
+        return None, NotApplicableReason.UNPARSEABLE_CONSTRAINT
+    if len({r.describe for r in found}) > 1:
+        return None, NotApplicableReason.AMBIGUOUS_PARSE
+    return found[0], None
 
 
 # ── reading the task ─────────────────────────────────────────────────────────
 
-def _roster(text: str) -> Optional[Tuple[str, ...]]:
+def _roster(text: str) -> Tuple[Optional[Tuple[str, ...]], Optional[NotApplicableReason]]:
     """The entity list, from an explicit `A, B, C, and D` enumeration.
 
-    Requiring the list to be written out is the point. Inferring a roster from
-    capitalised words would let a stray proper noun quietly join the puzzle.
+    Requiring it written out is the point. Harvesting capitalised words would
+    let a stray proper noun join the puzzle, and the checker would enumerate a
+    problem the task never posed.
     """
     match = re.search(
         r"\b([A-Z][a-z]+)((?:,\s*[A-Z][a-z]+)+)\s*,?\s+and\s+([A-Z][a-z]+)\b", text)
     if match is None:
-        return None
+        return None, NotApplicableReason.NO_ROSTER
     middle = re.findall(r"[A-Z][a-z]+", match.group(2))
     names = (match.group(1), *middle, match.group(3))
     if len(set(names)) != len(names):
-        return None
-    if not 2 <= len(names) <= MAX_ENTITIES:
-        return None
+        return None, NotApplicableReason.DUPLICATE_ENTITY
+    if len(names) < 2:
+        return None, NotApplicableReason.NO_ROSTER
+    if len(names) > MAX_ENTITIES:
+        return None, NotApplicableReason.RESOURCE_BOUND
 
-    # A stated count that disagrees with the list means we have misread one of
-    # them, and guessing which would be exactly the wrong move.
     stated = re.search(r"\b(" + "|".join(_NUMBER_WORDS) + r")\b",
                        text[:match.start()], re.IGNORECASE)
     if stated and _NUMBER_WORDS[stated.group(1).lower()] != len(names):
-        return None
-    return names
+        return None, NotApplicableReason.COUNT_MISMATCH
+    return names, None
 
 
 @dataclass(frozen=True)
-class TaskCheck:
-    """What deterministic enumeration established about the task."""
+class TaskModel:
+    """A task reduced to an unambiguous machine representation."""
 
-    roster: Tuple[str, ...]
-    rules: Tuple[str, ...]
-    spans: Tuple[Tuple[str, int], ...]
-    valid_orders: Tuple[Order, ...]
-
-    @property
-    def determines_a_unique_order(self) -> bool:
-        return len(self.valid_orders) == 1
+    entities: Tuple[str, ...]
+    rules: Tuple[_Rule, ...]
+    solutions: Tuple[Order, ...]
+    digest: str
 
     @property
-    def unique_order(self) -> Optional[Order]:
-        return self.valid_orders[0] if self.determines_a_unique_order else None
+    def constraint_names(self) -> Tuple[str, ...]:
+        return tuple(r.describe for r in self.rules)
+
+    @property
+    def cited_spans(self) -> Tuple[str, ...]:
+        return tuple(r.span for r in self.rules)
+
+    @property
+    def spans(self) -> Tuple[Tuple[str, int], ...]:
+        return tuple((r.span, 0) for r in self.rules)
 
 
-def check_ordering_task(task_text: str) -> Optional[TaskCheck]:
-    """Enumerate a task's valid orders, or refuse.
+def model_task(task_text: str) -> Tuple[Optional[TaskModel], Optional[NotApplicableReason]]:
+    """Reduce a task to entities, constraints and its full solution set.
 
-    Returns None whenever anything is unclear: no explicit roster, a sentence
-    mentioning entities that the grammar does not cover, a stated count that
-    disagrees with the list. None means "this checker has nothing to say", which
-    leaves every claim exactly where it was.
+    Returns (None, reason) at the first sign that the reduction is not safe.
     """
-    names = _roster(task_text)
+    names, reason = _roster(task_text)
     if names is None:
-        return None
+        return None, reason
 
     rules: List[_Rule] = []
     for sentence in _sentences(task_text):
         mentioned = [x for x in names if re.search(rf"\b{re.escape(x)}\b", sentence)]
         if not mentioned:
-            continue                      # framing, instructions, a question
+            continue                            # framing, instructions, question
         if len(mentioned) == len(names):
-            continue                      # the roster sentence itself
-        rule = _parse_sentence(sentence, names)
+            continue                            # the roster sentence itself
+        rule, why = _parse_constraint(sentence, names)
         if rule is None:
-            # A sentence about the entities that we cannot read. It may be a
-            # constraint, and enumerating without it would report a uniqueness
-            # that does not hold.
-            return None
+            return None, why
         rules.append(rule)
 
     if not rules:
-        return None                       # nothing to enumerate against
+        return None, NotApplicableReason.NO_CONSTRAINTS
 
-    spans: List[Tuple[str, int]] = []
-    for rule in rules:
-        offset = task_text.find(rule.span)
-        if offset < 0:
-            return None                   # normalisation lost the exact wording
-        spans.append((rule.span, offset))
-
-    valid = tuple(order for order in itertools.permutations(names)
-                  if all(rule.test(order) for rule in rules))
-    return TaskCheck(roster=names, rules=tuple(r.describe for r in rules),
-                     spans=tuple(spans), valid_orders=valid)
+    solutions = tuple(order for order in itertools.permutations(names)
+                      if all(rule.test(order) for rule in rules))
+    return TaskModel(entities=names, rules=tuple(rules), solutions=solutions,
+                     digest=source_digest(task_text)), None
 
 
-# ── reading a claim ──────────────────────────────────────────────────────────
+# ── reading a candidate ──────────────────────────────────────────────────────
 
-def _squash(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+_FRAME = re.compile(
+    r"\b(?:order|ordering|sequence|arrangement|schedule|ranking|line[-\s]?up|"
+    r"permutation)\b[^.;:!?]{0,24}?(?:\bis\b|\bare\b|\bwas\b|\bbe\b|:|=)\s*",
+    re.IGNORECASE)
+
+_SEPARATOR = re.compile(
+    r"^(?:\s*(?:,|;|and|then|followed\s+by|before|<|-|–|—|→|->)\s*)+",
+    re.IGNORECASE)
 
 
-def order_asserted_by(claim_text: str, roster: Sequence[str],
-                      task_text: str = "") -> Optional[Order]:
-    """The complete ordering a claim states, or None if it states none clearly.
+def _read_run(text: str, roster: Sequence[str]) -> Optional[Order]:
+    """Read a run of roster names joined only by ordering separators."""
+    names_re = re.compile(r"^(" + "|".join(re.escape(x) for x in roster) + r")\b")
+    got: List[str] = []
+    cursor = 0
+    while len(got) < len(roster):
+        match = names_re.match(text[cursor:])
+        if match is None:
+            break
+        got.append(match.group(1))
+        cursor += match.end()
+        if len(got) == len(roster):
+            break
+        gap = _SEPARATOR.match(text[cursor:])
+        if gap is None:
+            break
+        cursor += gap.end()
+    if len(got) != len(roster) or len(set(got)) != len(roster):
+        return None
+    return tuple(got)
 
-    Every window of `len(roster)` consecutive name mentions that forms a
-    permutation must agree. A claim that lays out one order and then discusses
-    a rejected alternative asserts two, and this refuses rather than picking.
 
-    Windows whose wording is lifted verbatim from the task are not assertions.
-    A section that opens by quoting "Anna, Ben, Clara, and David — must present"
-    has repeated the roster, and reading that as a proposed order would hand out
-    support for echoing the question — which, when the roster happens to be
-    listed in the answer's order, is exactly the false positive that costs most.
+def candidate_order(text: str, roster: Sequence[str]
+                    ) -> Tuple[Optional[Order], Optional[NotApplicableReason]]:
+    """The ordering a text explicitly presents as one, or a reason there is none.
+
+    An occurrence of the roster is not an ordering. "Anna, Ben, Clara, David"
+    names four people; only a frame — "the order is", "could the sequence be" —
+    presents them as an arrangement. Without that this would hand out support to
+    any text that happens to list the entities in the answer's order, which is
+    exactly what a task's own roster sentence does.
     """
-    size = len(roster)
-    matches = list(re.finditer(
-        r"\b(" + "|".join(re.escape(x) for x in roster) + r")\b", claim_text))
-    haystack = _squash(task_text)
     found = set()
-    for i in range(len(matches) - size + 1):
-        window = matches[i:i + size]
-        names = tuple(m.group(0) for m in window)
-        if len(set(names)) != size:
-            continue
-        phrase = _squash(claim_text[window[0].start():window[-1].end()])
-        if haystack and phrase in haystack:
-            continue                      # the task's own words, quoted back
-        found.add(names)
-    return found.pop() if len(found) == 1 else None
+    for frame in _FRAME.finditer(text):
+        run = _read_run(text[frame.end():], roster)
+        if run is not None:
+            found.add(run)
+    if not found:
+        return None, NotApplicableReason.NO_CANDIDATE
+    if len(found) > 1:
+        return None, NotApplicableReason.AMBIGUOUS_CANDIDATE
+    return found.pop(), None
+
+
+# ── the three evaluations ────────────────────────────────────────────────────
+
+def evaluate_candidate(task_text: str, candidate_text: str) -> CheckerReceipt:
+    """Check one proposed ordering against the task's constraints.
+
+    VALID means it satisfies every parsed constraint; ``candidate_is_unique``
+    says whether it is the only one that does. INVALID names the constraints it
+    breaks. NOT_APPLICABLE means the checker could not safely represent the
+    problem and says nothing at all about the candidate.
+    """
+    model, reason = model_task(task_text)
+    if model is None:
+        return _declined(reason, digest=source_digest(task_text))
+
+    order, why = candidate_order(candidate_text, model.entities)
+    if order is None:
+        return _declined(why, digest=model.digest, entities=model.entities,
+                         constraints=model.constraint_names)
+
+    satisfied = tuple(r.describe for r in model.rules if r.test(order))
+    violated = tuple(r.describe for r in model.rules if not r.test(order))
+    valid = not violated
+    return CheckerReceipt(
+        result=CheckerStatus.VALID if valid else CheckerStatus.INVALID,
+        problem_class=ProblemClass.FINITE_ORDERING.value,
+        normalized_entities=model.entities,
+        normalized_constraints=model.constraint_names,
+        cited_spans=model.cited_spans,
+        candidate_checked=", ".join(order),
+        violated_constraints=violated,
+        satisfied_constraints=satisfied,
+        input_digest=model.digest,
+        solution_count=len(model.solutions),
+        candidate_is_valid=valid,
+        candidate_is_invalid=not valid,
+        candidate_is_unique=(valid and len(model.solutions) == 1),
+        statement_could_hold=valid,
+        statement_must_hold=(valid and len(model.solutions) == 1),
+    )
+
+
+def evaluate_statement(task_text: str, statement_text: str) -> CheckerReceipt:
+    """Check a positional statement against every satisfying assignment.
+
+    ``statement_must_hold`` is true only when the statement holds under all of
+    them — never inferred from one satisfying example. ``statement_could_hold``
+    is true when at least one satisfies it. A statement no assignment satisfies
+    is INVALID; a statement the grammar cannot read is NOT_APPLICABLE, and the
+    two must not be confused.
+    """
+    model, reason = model_task(task_text)
+    if model is None:
+        return _declined(reason, digest=source_digest(task_text))
+    if not model.solutions:
+        return _declined(NotApplicableReason.UNSATISFIABLE_TASK,
+                         digest=model.digest, entities=model.entities,
+                         constraints=model.constraint_names)
+
+    rule, why = _parse_constraint(statement_text, model.entities)
+    if rule is None:
+        return _declined(why, digest=model.digest, entities=model.entities,
+                         constraints=model.constraint_names,
+                         candidate=_normalise(statement_text))
+
+    holding = [order for order in model.solutions if rule.test(order)]
+    must = len(holding) == len(model.solutions)
+    could = bool(holding)
+    return CheckerReceipt(
+        result=CheckerStatus.VALID if could else CheckerStatus.INVALID,
+        problem_class=ProblemClass.FINITE_ORDERING.value,
+        normalized_entities=model.entities,
+        normalized_constraints=model.constraint_names,
+        cited_spans=model.cited_spans,
+        candidate_checked=rule.describe,
+        violated_constraints=() if could else (rule.describe,),
+        satisfied_constraints=(rule.describe,) if could else (),
+        input_digest=model.digest,
+        solution_count=len(model.solutions),
+        statement_must_hold=must,
+        statement_could_hold=could,
+    )
 
 
 # ── emitting records ─────────────────────────────────────────────────────────
 
-def deterministic_support(check: TaskCheck, claim_id: str, claim_text: str,
-                          task_text: str = "") -> Optional[EvidenceRecord]:
-    """Admissible support: the task determines one order and the claim states it.
+def _receipt_text(receipt: CheckerReceipt) -> str:
+    import json
+    return json.dumps(receipt.to_dict(), sort_keys=False, ensure_ascii=False)
 
-    `DETERMINISTIC_COMPUTATION`, attributed to this module rather than to any
-    seat, so it passes `ADMISSIBLE_EVIDENCE_SOURCES` for the reason that rule
-    exists — the computation is reproducible by anyone, from the task alone.
+
+def receipt_support(receipt: CheckerReceipt, claim_id: str) -> Optional[EvidenceRecord]:
+    """Admissible support, and only from a receipt that determines the answer.
+
+    Attributed to the checker, never to a seat: the computation is reproducible
+    by anyone holding the task, which is the property
+    ``ADMISSIBLE_EVIDENCE_SOURCES`` is actually asking for.
     """
-    order = check.unique_order
-    if order is None:
-        return None
-    if order_asserted_by(claim_text, check.roster, task_text) != order:
+    if not receipt.establishes_the_candidate:
         return None
     return EvidenceRecord(
-        evidence_id=stable_id("ev", claim_id, "checker", "-".join(order)),
+        evidence_id=stable_id("ev", claim_id, receipt.digest()),
         claim_id=claim_id,
         stance=EvidenceStance.SUPPORTING,
         source_type=EvidenceSourceType.DETERMINISTIC_COMPUTATION,
-        source_identity=CHECKER_IDENTITY,
-        content=(f"Exhaustive enumeration of {len(check.roster)}! orders under "
-                 f"{len(check.rules)} constraints leaves exactly one: "
-                 f"{', '.join(order)}."),
-        citation="; ".join(text for text, _ in check.spans),
+        source_identity=f"{CHECKER_ID}/{CHECKER_VERSION}",
+        content=_receipt_text(receipt),
+        citation="; ".join(receipt.cited_spans),
+        receipt_ref=receipt.digest(),
         provenance="deterministic_computation",
     )
 
 
-def deterministic_refutation(check: TaskCheck, claim_id: str, claim_text: str,
-                             task_text: str) -> Optional[VerificationRecord]:
-    """The task determines one order and the claim states a different one.
-
-    Carries no `verifier_provider_id`: nothing read this, it was computed.
-    """
-    order = check.unique_order
-    if order is None:
-        return None
-    asserted = order_asserted_by(claim_text, check.roster, task_text)
-    if asserted is None or asserted == order:
+def receipt_refutation(receipt: CheckerReceipt, claim_id: str,
+                       task_text: str) -> Optional[VerificationRecord]:
+    """A refutation the checker computed. Carries no verifier: nothing read it."""
+    if receipt.result is not CheckerStatus.INVALID:
         return None
     digest = source_digest(task_text)
+    spans = []
+    for text in receipt.cited_spans:
+        offset = task_text.find(text)
+        if offset >= 0:
+            spans.append(AnchorSpan(text=text, offset=offset, source_id="task",
+                                    source_digest=digest))
+    if not spans:
+        return None                   # nothing to anchor to; say nothing
     return VerificationRecord(
-        verification_id=stable_id("ver", claim_id, "checker", "-".join(asserted)),
+        verification_id=stable_id("ver", claim_id, receipt.digest()),
         claim_id=claim_id,
         objection_id=None,
         verification_class=VerificationClass.TASK_INTERNAL,
         method=VerificationMethod.TASK_INTERNAL_CHECK,
-        authoritative_inputs=tuple(
-            AnchorSpan(text=text, offset=offset, source_id="task",
-                       source_digest=digest)
-            for text, offset in check.spans),
-        condition_tested=f"is {', '.join(asserted)} consistent with the constraints?",
+        authoritative_inputs=tuple(spans),
+        condition_tested=f"does {receipt.candidate_checked} satisfy the constraints?",
         result=VerificationResult.FALSIFIED,
-        rationale=(f"The claimed order {', '.join(asserted)} violates the cited "
-                   f"constraints; enumeration leaves only {', '.join(order)}."),
-        scope="the cited task material only",
-        limitations=("Exhaustive over the parsed constraints. It proves the "
-                     "claimed order is not among the valid ones; it does not "
-                     "judge anything the grammar could not read."),
+        rationale=(f"Violates: {'; '.join(receipt.violated_constraints)}. "
+                   f"{_receipt_text(receipt)}"),
+        scope="the parsed constraints only",
+        limitations=("Exhaustive over the constraints the grammar read. It says "
+                     "nothing about anything the grammar could not represent."),
         provenance="deterministic_computation",
     )

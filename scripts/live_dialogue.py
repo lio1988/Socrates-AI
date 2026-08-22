@@ -105,7 +105,8 @@ def main(argv=None) -> int:
     argv = sys.argv if argv is None else argv
     question = argv[1] if len(argv) > 1 else DEFAULT_QUESTION
 
-    # Cheap: 2 seats (minimum quorum), NO shadow scoring -> fewer live calls.
+    # Four seats with ALL_PHASES scoring: more live calls, and the four
+    # distinct model configurations the council is meant to have.
     # Optional layers (lessons / trace / tree search) come from env switches.
     features, feature_notes = _resolve_features()
     ced, mode = build_council(council_size=4,
@@ -176,7 +177,15 @@ def main(argv=None) -> int:
         print(f"    governing status   : {final.governing_epistemic_status}")
         print(f"    release decision   : {final.release_decision}")
         print(f"    basis records      : {gr.get('basis_record_ids') or '[] (nothing supports it)'}")
-        print(f"    computed checks    : {gr.get('deterministic_checks') or '{} (nothing computed)'}")
+        checks = gr.get("deterministic_checks") or {}
+        if not checks.get("applicable"):
+            print(f"    computed checks    : not applicable "
+                  f"({checks.get('reason', 'not run')})")
+        else:
+            verdicts = {cid: e.get("result")
+                        for cid, e in (checks.get("claims") or {}).items()}
+            print(f"    computed checks    : {checks['problem_class']}, "
+                  f"{checks['solution_count']} solution(s) -> {verdicts}")
         print(f"    objection verdicts : {gr.get('objection_verdicts') or {}}")
         print(f"    unresolved records : {len(gr.get('unresolved_record_ids') or [])}")
         if gr.get("blocked_reason"):

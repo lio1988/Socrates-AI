@@ -301,25 +301,62 @@ which record types happen not to exist yet.
 
 ### The one route: `backend/dialogues/task_checker.py`
 
-No model at any point. It parses the task under a grammar small enough to write
-down — an explicit `A, B, C, and D` roster, and relative or absolute position
-constraints — enumerates all orders, and emits a `DETERMINISTIC_COMPUTATION`
-evidence record attributed to the module, never to a seat.
+No model at any point, and deliberately narrow.
 
-The completeness guard matters more than the grammar. Any sentence mentioning one
-or two entities that the grammar cannot parse **aborts the whole check**: a
-dropped constraint would report a uniqueness that does not hold, which is the one
-bug here that manufactures false support. Likewise a stated count disagreeing
-with the roster, a repeated name, or a roster beyond the enumeration budget.
+**Supported problem class.** `FINITE_ORDERING` only: N named entities in N
+ordered slots, under before / after / immediately before / immediately after /
+first / last / position N, and the negations of those. An explicit
+`A, B, C, and D` roster is required; a stated count must agree with it.
 
-A claim that merely quotes the task asserts nothing. The mock council opens each
-section by echoing the prompt, and the roster there happens to be listed in the
-answer's order; reading that as a proposed order would hand out support for
-repetition. Windows whose wording is lifted verbatim from the task are skipped.
+**Out of class, by construction.** Causal interpretation, analogy, intent, legal
+or scientific judgement, ordinary semantic entailment, probability and world
+knowledge have no finite constraint form, so they never parse, so the answer is
+`NOT_APPLICABLE`. The museum-director question is out of class and stays
+`unresolved` — correctly, and permanently.
 
-Scope is single-slot ordering and is not intended to grow into a general solver.
-Every other question stays `unresolved`, which is what it was before this file
-existed.
+**Parsing is not authority.** A deterministic evaluator is authoritative only
+once the task is already an unambiguous machine representation, and getting
+there is parsing. So ambiguity is fatal rather than resolved:
+
+| situation | reason |
+|---|---|
+| sentence matches two patterns with different meanings | `AMBIGUOUS_PARSE` |
+| conditional, disjunctive or hedged constraint | `AMBIGUOUS_PARSE` |
+| sentence about the entities matching no pattern | `UNPARSEABLE_CONSTRAINT` |
+| no explicit roster / count mismatch / duplicate name | `NO_ROSTER` etc. |
+| roster beyond the enumeration budget | `RESOURCE_BOUND` |
+| no ordering frame in the candidate text | `NO_CANDIDATE` |
+| two different candidate orders proposed | `AMBIGUOUS_CANDIDATE` |
+
+A model may propose a parse. That proposal has no authority here and is not
+accepted as input — asking an LLM to pick the reading and then calling the
+result deterministic would be the same laundering in a new costume.
+
+**Entity extraction is not relation extraction.** `Anna, Ben, Clara, David`
+names four people; it does not say they present in that order. A candidate is
+recognised only behind an explicit frame — "the order is", "could the sequence
+be", "the arrangement:". Without this, any text listing the roster would earn
+support for the arrangement that happens to match, starting with the task's own
+roster sentence and every council section that opens by quoting the prompt.
+
+**Three outcomes, never two.** `VALID`, `INVALID`, `NOT_APPLICABLE`. Collapsing
+the third into the second would turn "we cannot represent this" into "this is
+false" — the more damaging mistake, and the easier one to make.
+
+**Must and could.** Enumeration is exhaustive, so `statement_must_hold` is true
+only when every satisfying assignment satisfies the statement, and
+`statement_could_hold` when at least one does. "Must" is never inferred from a
+single satisfying example, and `candidate_is_unique` requires the solution count
+to be exactly one. Only `must_hold` or `unique` creates support: a candidate
+that merely *could* hold is consistent with the task, not established by it.
+
+**A receipt, not a flag.** Every evaluation emits a `CheckerReceipt` carrying
+`checker_id`, `checker_version`, `problem_class`, `normalized_entities`,
+`normalized_constraints`, `cited_spans`, `candidate_checked`, `result`,
+`violated_constraints`, `satisfied_constraints`, `input_digest`, `reason`,
+`solution_count`, the five verdict flags, `deterministic` and `authority_class`.
+It serialises canonically and digests stably, so a reader holding the task can
+replay every step. A flag asks to be trusted; a receipt does not.
 
 ## Boundary (revised)
 
@@ -328,11 +365,14 @@ while every governing stage was unimplemented. After H7 routed the canonical
 release through `freeze_release`, a one-way boundary made the governing verdict a
 constant, which distinguishes nothing.
 
-Support is now reachable, and only through deterministic computation over the
-task. Quality scores, confidence values, consensus, corroboration counts,
-ratification, epistemic markers, model self-classification and one model's
-reading of the task all remain incapable of creating support — the last of those
-by an explicit check rather than by absence.
+Support is now reachable, and only through a deterministic receipt over the
+task. The inadmissible classes are named rather than merely absent:
+`MODEL_ASSERTION`, `MODEL_INTERPRETATION` and
+`CORROBORATED_MODEL_INTERPRETATION` all exist in `EvidenceSourceType` so that
+they can be refused by name, and `VerificationRecord.creates_support` refuses a
+check carrying a `verifier_provider_id`. Quality scores, confidence values,
+consensus, corroboration counts, ratification verdicts, epistemic markers and
+the number of agreeing agents remain incapable of creating support.
 
 `backend/evidence/` stays empty. Building a substrate before H3B needs one would
 be speculative infrastructure.
