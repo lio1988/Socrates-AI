@@ -85,6 +85,10 @@ from .task_checker import (
     receipt_refutation,
     receipt_support,
 )
+from .reasoning_prompts import (
+    SOCRATIC_MANDATE_CONSTRAINT,
+    SOCRATIC_MANDATE_OPEN,
+)
 from .role_assignment import assign_primary_roles, stable_hash
 
 
@@ -744,7 +748,13 @@ class CEDOrchestrator:
         """Phase-targeted extracts (kept alongside the full transcript so each role
         sees BOTH the whole flow and the material it must directly engage)."""
         if phase == DialogPhase.OPENING:
-            return {}
+            # Which question the task admits, decided by the same reducer the
+            # checker uses. The council is told the SHAPE to ask for, never a
+            # solution or a solution count — the mandate carries neither.
+            regime = self._socratic_regime(state)
+            return {"socratic_question_mandate": (
+                SOCRATIC_MANDATE_CONSTRAINT if regime == "finite_constraint"
+                else SOCRATIC_MANDATE_OPEN)}
         if phase == DialogPhase.INITIAL_RESPONSE:
             return {"original_question": state.question,
                     "socratic_opening_question": self._socratic_opening(state)}
@@ -818,6 +828,56 @@ class CEDOrchestrator:
                 "critiques_raised": [m.content for m in state.moves_for_phase(DialogPhase.ELENCHUS)],
             }
         return {}
+
+    def _socratic_regime(self, state: SessionState) -> str:
+        """Which kind of question this task admits. Deterministic and free.
+
+        A task that reduces to explicit finite constraints has nothing hidden to
+        expose; one that does not is where classical elenchus belongs. The
+        reduction is the checker's, so the two stay in step: if the checker can
+        model the task, the opening is asked to probe the answer space rather
+        than to look for an assumption that is printed on the page.
+        """
+        model, _reason = model_task(state.question)
+        return "finite_constraint" if model is not None else "open"
+
+    def _socratic_audit(self, state: SessionState) -> Dict[str, Any]:
+        """What the opening actually was. Observability only — decides nothing.
+
+        The rival candidate is run through the checker so the audit can say
+        whether the question pointed at a real near miss or a phantom. That
+        result is never shown to the council and never reaches a claim: a
+        model's guess must not become evidence, and a probe is a guess.
+        """
+        opening = state.moves_for_phase(DialogPhase.OPENING)
+        regime = self._socratic_regime(state)
+        audit: Dict[str, Any] = {"regime": regime, "asked": bool(opening)}
+        if not opening:
+            return audit
+        content = opening[0].content if isinstance(opening[0].content, dict) else {}
+        audit["question"] = str(content.get("question") or "")[:400]
+
+        if regime == "finite_constraint":
+            rival = content.get("rival_candidate")
+            audit["rival_candidate"] = rival if isinstance(rival, str) else None
+            audit["discriminating_rule"] = content.get("discriminating_rule")
+            if isinstance(rival, str) and rival.strip():
+                probe = evaluate_candidate(state.question, f"The order is {rival}")
+                audit["rival_checker_result"] = probe.result.value
+                audit["rival_violated"] = list(probe.violated_constraints)
+                # A near miss is what was asked for; the true answer or an
+                # unreadable string means the question did not do its job.
+                audit["rival_is_a_near_miss"] = (
+                    probe.result is CheckerStatus.INVALID
+                    and len(probe.violated_constraints) == 1)
+        else:
+            one = str(content.get("if_answered_one_way") or "").strip()
+            other = str(content.get("if_answered_another_way") or "").strip()
+            audit["branches_given"] = bool(one and other)
+            # Identical consequences mean the answer cannot change the
+            # conclusion, which is the definition of a wasted question.
+            audit["branches_discriminate"] = bool(one and other and one != other)
+        return audit
 
     @staticmethod
     def _socratic_opening(state: SessionState) -> str:
@@ -1639,6 +1699,7 @@ class CEDOrchestrator:
             "quarantine_excluded": self._quarantine_exclusions(),
             "phase_retries": self._phase_retries.get(state.session_id, []),
             "phase_dispatch": self._phase_dispatch.get(state.session_id, []),
+            "socratic_opening": self._socratic_audit(state),
             "seat_routing": {
                 "topic": classify_topic(state.question).value,
                 "order": [a.provider_id for a in self._ranked_adapters(state)],

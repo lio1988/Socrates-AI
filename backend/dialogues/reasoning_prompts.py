@@ -72,8 +72,11 @@ decoration — each carries an obligation:
     `confidence_disagreement_mandate` / `low_diversity_alert` — an escalation
     mandate for THIS round. It overrides your default emphasis; honor it, but
     never fabricate to satisfy it.
-  - `socratic_opening_question` — the assumption the dialogue is aimed at.
-    Every move should be traceable to it or explicitly widen it.
+  - `socratic_question_mandate` — which KIND of opening question this task
+    admits, chosen mechanically from the task's own structure. It tells you the
+    shape to ask for; it carries no answer and no hint of one.
+  - `socratic_opening_question` — what the dialogue is aimed at. Every move
+    should be traceable to it or explicitly widen it.
   - `critiques_raised` / `critiques_from_council` / `critiques` — objections
     actually made. Engage the strongest one directly; do not substitute a
     weaker one."""
@@ -196,11 +199,13 @@ ROLE_EXEMPLARS = {
 
 ROLE_REASONING = {
     AgentRole.SOCRATES: (
-        "Ask exactly ONE question — the single most load-bearing one: the hidden "
-        "assumption or ambiguity whose resolution would most change the conclusion. "
-        "Do NOT answer it yourself. A good Socratic question exposes what everyone "
-        "is taking for granted. Do not re-open what prior lessons already settled — "
-        "aim where the council's memory is weakest or most contested."
+        "Ask exactly ONE question: the one whose answer would most change what the "
+        "council concludes. Do NOT answer it yourself — the method is that the "
+        "answer comes from them. A question whose every reasonable answer leads to "
+        "the same conclusion is decoration and costs the council a turn. What "
+        "counts as load-bearing depends on the task, and your context says which "
+        "kind you are facing; follow it rather than reaching for a hidden "
+        "assumption by habit. Do not re-open what prior lessons already settled."
     ),
     AgentRole.ELENCHUS_CRITIC: (
         "Find the strongest, most specific weakness — a real contradiction, an "
@@ -459,6 +464,70 @@ is an honest answer and costs you nothing; a guessed section costs the answer.
 Add this field to your `content`:
   "target_section" - exactly one of core_answer | crucial_stress_test |
                      blind_spots | nuance | final_verdict | none"""
+
+
+# ── Socratic Question Policy v1: the question form the task actually admits ───
+# Selected by CED from a deterministic reduction of the task, never by a model.
+# Neither mandate carries a solution, a solution count, or any hint of the
+# answer: they choose the SHAPE of the question, not its content.
+
+SOCRATIC_MANDATE_CONSTRAINT = """\
+**This task states its own rules.**
+
+Every constraint is written on the page. There is no hidden premise to expose,
+so do not manufacture one: "what are we assuming?" has no answer when the
+assumptions are printed, and a question with no answer costs the council a turn
+it cannot get back.
+
+What is NOT on the page is the derivation — specifically, which rule kills the
+most attractive wrong arrangement. That is what a council actually gets wrong.
+Twice already this council has produced a correct order while admitting it had
+not ruled out the alternatives. Your question is what forces that work.
+
+So construct the arrangement a careful reader is most likely to land on and be
+wrong about. Not an obviously broken one — the near miss: it should satisfy most
+of the rules and fail one. Then hand it over and ask them to test it.
+
+Do not say whether you think it is right. Do not show your own derivation. Pose
+the candidate and make them do the work; that is the entire method.
+
+Your `content` MUST be a JSON object with these fields:
+  "question"            — the single question you are putting to the council
+  "rival_candidate"     — the complete arrangement you want tested, written out
+                          in full, or null if you genuinely cannot construct a
+                          plausible near miss
+  "discriminating_rule" — the stated rule you believe settles it, quoted from
+                          the task
+  "epistemic_marker"    — the honest status of your question: exactly one of the
+                          marker values listed earlier
+
+Example of the FORM (a different puzzle — imitate the form, not the content):
+{"content": {"question": "Could the running order be Mira, Otto, Noor - and if
+not, which stated rule rules it out?", "rival_candidate": "Mira, Otto, Noor",
+"discriminating_rule": "Noor does not run immediately after Mira",
+"epistemic_marker": "hypothesis"}, "confidence": 0.6}"""
+
+
+SOCRATIC_MANDATE_OPEN = """\
+**This task does not state its own rules.**
+
+Here the load-bearing thing genuinely is unstated — an ambiguity the whole
+dispute rests on, or a premise everyone is treating as settled. One question,
+aimed at the strongest version of the position, never at a convenient weak one.
+
+The test of a Socratic question is not that it sounds deep. It is that the
+answer changes the conclusion. So before you commit to it, say what the council
+should conclude under two different answers. If those two are the same, you have
+the wrong question and the turn is wasted — find another.
+
+Do not answer it yourself.
+
+Your `content` MUST be a JSON object with these fields:
+  "question"                — the single question
+  "if_answered_one_way"     — what the council should conclude under one answer
+  "if_answered_another_way" — what they should conclude under a different answer
+  "epistemic_marker"        — the honest status of your question: exactly one of
+                              the marker values listed earlier"""
 
 
 SCORE_CONTENT_DIRECTIVE = """\

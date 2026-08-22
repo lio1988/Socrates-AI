@@ -167,6 +167,23 @@ def main(argv=None) -> int:
 
     # The two layers, side by side and named. Quality, ratification and
     # agreement live on the left; nothing on the left can move the right.
+    so = (final.audit_summary or {}).get("socratic_opening") or {}
+    if so:
+        print("  SOCRATIC OPENING:")
+        print(f"    regime           : {so.get('regime')}")
+        print(f"    question         : {str(so.get('question') or '')[:120]}")
+        if so.get("rival_candidate") is not None:
+            print(f"    rival candidate  : {so['rival_candidate']}")
+            print(f"    checker on rival : {so.get('rival_checker_result')} "
+                  f"{so.get('rival_violated')}")
+            print(f"    genuine near miss: {so.get('rival_is_a_near_miss')}")
+        elif so.get("regime") == "finite_constraint":
+            print("    rival candidate  : none offered")
+        else:
+            print(f"    branches given   : {so.get('branches_given')} "
+                  f"discriminate={so.get('branches_discriminate')}")
+        print("-" * _W)
+
     gr = (final.audit_summary or {}).get("governing_release") or {}
     print("  EPISTEMIC LAYERS (quality is not support):")
     print(f"    legacy status      : {final.epistemic_status.value}"
