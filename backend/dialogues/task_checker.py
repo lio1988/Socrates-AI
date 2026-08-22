@@ -213,6 +213,15 @@ def _immediately_before(a: str, b: str) -> Predicate:
     return lambda order: order.index(b) - order.index(a) == 1
 
 
+def _not_before(a: str, b: str) -> Predicate:
+    """Positions are distinct and totally ordered, so "not before" is "after"."""
+    return lambda order: order.index(a) > order.index(b)
+
+
+def _not_immediately_before(a: str, b: str) -> Predicate:
+    return lambda order: order.index(b) - order.index(a) != 1
+
+
 def _at(a: str, index: int) -> Predicate:
     return lambda order: order.index(a) == index % len(order)
 
@@ -260,6 +269,24 @@ def _patterns(names: Sequence[str]) -> Tuple[Tuple[str, Callable[[Any], _Rule]],
             r"is scheduled|is placed|is positioned)")
     ordinal = "|".join(_ORDINALS)
     return (
+        # Exclusions. "Ben is not immediately before Anna" has exactly one
+        # reading and is as finite as its positive form; refusing it was a
+        # missing case rather than a boundary. Anchoring keeps the negated
+        # `immediately` form from also matching the plain negated form.
+        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb}|isn't)\s+"
+         rf"immediately\s+before\s+({n})$",
+         lambda m: _Rule(f"{m[1]} not immediately before {m[2]}", "",
+                         _not_immediately_before(m[1], m[2]))),
+        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb}|isn't)\s+"
+         rf"immediately\s+after\s+({n})$",
+         lambda m: _Rule(f"{m[2]} not immediately before {m[1]}", "",
+                         _not_immediately_before(m[2], m[1]))),
+        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb}|isn't)\s+before\s+({n})$",
+         lambda m: _Rule(f"{m[1]} not before {m[2]}", "",
+                         _not_before(m[1], m[2]))),
+        (rf"^({n})\s+(?:is\s+not|does\s+not\s+{verb}|isn't)\s+after\s+({n})$",
+         lambda m: _Rule(f"{m[2]} not before {m[1]}", "",
+                         _not_before(m[2], m[1]))),
         (rf"^({n})\s+{verb}\s+immediately\s+before\s+({n})$",
          lambda m: _Rule(f"{m[1]} immediately before {m[2]}", "",
                          _immediately_before(m[1], m[2]))),

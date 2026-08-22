@@ -565,10 +565,29 @@ def test_immediately_before_does_not_also_match_the_plain_form():
     assert model.constraint_names == ("Anna immediately before Ben", "Clara last")
 
 
-def test_a_negated_relation_is_still_refused():
-    """The grammar has no "not before". Fail closed rather than drop it."""
+@pytest.mark.parametrize("constraint,expected", [
+    ("Anna is not before Ben", "Anna not before Ben"),
+    ("Anna is not after Ben", "Ben not before Anna"),
+    ("Anna is not immediately before Ben", "Anna not immediately before Ben"),
+    ("Anna is not immediately after Ben", "Ben not immediately before Anna"),
+])
+def test_an_exclusion_is_read_as_the_relation_it_excludes(constraint, expected):
+    """Negated relations were refused as unparseable; they are single-reading.
+
+    Added for the controlled negative control, where the one constraint the
+    false candidate breaks is a negative one. Positions are distinct and totally
+    ordered, so "not before" is "after" and needs no extra machinery.
+    """
+    task = f"Three people — Anna, Ben, and Clara — present. {constraint}. Clara is last."
+    model, reason = model_task(task)
+    assert model is not None, reason
+    assert expected in model.constraint_names
+
+
+def test_a_negation_the_grammar_does_not_cover_is_still_refused():
+    """Fail-closed did not move: only the listed exclusions were added."""
     task = ("Three people — Anna, Ben, and Clara — present. "
-            "Anna is not before Ben. Clara is last.")
+            "Anna is not adjacent to Ben. Clara is last.")
     model, reason = model_task(task)
     assert model is None
     assert reason is NotApplicableReason.UNPARSEABLE_CONSTRAINT
