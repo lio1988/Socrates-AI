@@ -10,6 +10,7 @@ import pytest
 
 from backend.dialogues.agent import SocraticAgent
 from backend.dialogues.ced import CEDOrchestrator
+from backend.dialogues.ced_search_projection import project_search_state
 from backend.dialogues.hybrid_epistemic import (
     ClaimRecord,
     ContradictionRecord,
@@ -42,7 +43,6 @@ from backend.dialogues.socrates_zero import (
     ContractValidationError,
     SearchBudget,
     TerminalStatus,
-    project_search_state,
 )
 
 

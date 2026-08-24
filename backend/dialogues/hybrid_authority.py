@@ -84,6 +84,12 @@ AUTHORITY_MAP: Tuple[SubsystemAuthority, ...] = (
         AuthorityClass.AUTHORITATIVE,
         "provider readiness, quorum, fail-closed statuses",
         "Fail-closed behaviour is authoritative; a failure never becomes an answer."),
+    SubsystemAuthority(
+        "CED search-state projection", "backend.dialogues.ced_search_projection",
+        AuthorityClass.AUTHORITATIVE,
+        "read-only validation and projection of canonical CED/Hybrid records",
+        "A trusted boundary may read governing records and emit immutable search "
+        "references. It cannot mutate the source or decide epistemic state."),
 
     # ── quality: how well it was argued ──────────────────────────────────────
     SubsystemAuthority(

@@ -8,6 +8,7 @@ import pytest
 
 from backend.dialogues.agent import SocraticAgent
 from backend.dialogues.ced import CEDOrchestrator
+from backend.dialogues.ced_search_projection import project_search_state
 from backend.dialogues.models import AgentMove, AgentRole, DialogPhase, TaskKind
 from backend.dialogues.provider_registry import (
     CouncilProviderRegistry,
@@ -26,7 +27,6 @@ from backend.dialogues.socrates_zero import (
     SearchState,
     SearchStrategy,
     TerminalStatus,
-    project_search_state,
 )
 
 

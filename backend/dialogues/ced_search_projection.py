@@ -1,20 +1,25 @@
-"""Side-effect-free projection of canonical public CED/Hybrid state."""
+"""Trusted CED-side projection into immutable SocratesZero search state.
+
+This bridge lives on the governing side of the authority boundary because it
+must read Hybrid records.  The search package receives only the resulting
+frozen references and never imports or reaches the governing core directly.
+"""
 
 from __future__ import annotations
 
 import hashlib
 from typing import Optional, Sequence, Tuple
 
-from ..ced import CanonicalTaskSpec
-from ..hybrid_epistemic import (
+from .ced import CanonicalTaskSpec
+from .hybrid_epistemic import (
     UNMAPPED_TARGET,
     ContradictionState,
     HybridEpistemicState,
     ObjectionState,
 )
-from ..models import AgentRole, DialogPhase, ProviderStatus, SessionState
-from ..socratic import AporiaRecord, CommitmentRecord, live_commitments
-from .contracts import (
+from .models import AgentRole, DialogPhase, ProviderStatus, SessionState
+from .socratic import AporiaRecord, CommitmentRecord, live_commitments
+from .socrates_zero.contracts import (
     BudgetUsage,
     ContractValidationError,
     MoveHistoryRef,
