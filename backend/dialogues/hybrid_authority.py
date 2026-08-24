@@ -140,6 +140,12 @@ AUTHORITY_MAP: Tuple[SubsystemAuthority, ...] = (
         "deliberation tree", "backend.dialogues.ced", AuthorityClass.SEARCH,
         "optional UCB-selected revision expansions enriching the draft pool",
         "Proposes candidates. Eligibility stays governed."),
+    SubsystemAuthority(
+        "SocratesZero search contracts", "backend.dialogues.socrates_zero",
+        AuthorityClass.SEARCH,
+        "runtime-inert state, action, budget, strategy and receipt interfaces",
+        "Search may propose and rank only CED-legal actions. CED and the Hybrid "
+        "core retain every governing veto."),
 
     # ── learning ─────────────────────────────────────────────────────────────
     SubsystemAuthority(
