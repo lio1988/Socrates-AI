@@ -46,6 +46,12 @@
     ignored by construction and tested for immunity;
   - structured component audits are deterministic and receipt-linkable;
   - Value calls neither Policy nor Constitution and has no runtime authority.
+- Phase 3C deterministic strategies are complete:
+  - Greedy selects Policy argmax across the complete hard-legal set;
+  - Best-of-N evaluates at most four explicit one-ply successor states;
+  - successor and aggregate sibling usage are fail-closed and budget-enforced;
+  - Value, Policy, and action-ID tie-break roles remain separate;
+  - neither strategy executes an action or controls canonical CED.
 - Implementation checkpoint: `8d6770b` (`feat: add SocratesZero search
   contracts v0`).
 
@@ -283,3 +289,53 @@ KNOWN ISSUES:
 
 NEXT: Phase 3C deterministic strategy baselines — Greedy first, then
 matched-budget Best-of-N — still with zero production authority.
+
+## Deterministic one-ply strategy milestone
+
+DONE: implemented `GreedyStrategy` and `BestOfNStrategy` behind the canonical
+async `SearchStrategy` contract. Greedy chooses the maximum Policy prior over
+the complete hard-legal generated set and reports root Value separately.
+Best-of-N freezes maximum `N=4`, consumes injected immutable one-ply successors,
+enforces exact branch and aggregate usage, and chooses by successor Value, then
+Policy prior, then action ID. Neither strategy executes its selection.
+
+TESTS:
+
+- Greedy-specific: `27 passed`;
+- Best-of-N-specific: `24 passed`;
+- contracts plus both strategy suites: `70 passed`;
+- full SocratesZero bundle: `149 passed`;
+- Hybrid H8 authority plus SocratesZero: `160 passed`;
+- full `tests_dialogues`: `2215 passed, 1 skipped`;
+- repository-wide: `2522 passed, 1 skipped, 23 pre-existing warnings`;
+- staged `git diff --check`: passed;
+- no live external call was made.
+
+FILES CHANGED:
+
+- `backend/dialogues/socrates_zero/strategy.py` — Greedy and Best-of-N;
+- `backend/dialogues/socrates_zero/contracts.py` — additive `ActionSuccessor`
+  and `SuccessorStateEvaluator` seam;
+- `backend/dialogues/socrates_zero/__init__.py` — runtime-inert exports;
+- two dedicated strategy test modules;
+- canonical ADR/technical reference and branch checkpoints.
+
+COMMITS:
+
+- `8e10dfe` — deterministic Greedy strategy;
+- `aa2c1dd` — budgeted one-ply Best-of-N strategy.
+
+KNOWN ISSUES:
+
+- no canonical CED successor evaluator/action executor exists; injected test or
+  experimental evaluators cannot mutate governing CED state;
+- the deterministic legal generator currently returns canonical subsets, not
+  diverse or sampled action proposals;
+- evaluator identity and a standalone per-candidate event/receipt schema remain
+  deferred; v0 uses parallel receipt tuples for action-to-successor mapping;
+- no matched benchmark yet establishes Greedy or Best-of-N quality gains;
+- the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
+  duplicate FastAPI operation IDs.
+
+NEXT: Phase 4 bounded PUCT over the same injected successor seam, with
+transpositions/progressive widening and still zero production authority.

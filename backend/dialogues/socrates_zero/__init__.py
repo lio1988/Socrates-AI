@@ -3,7 +3,8 @@
 Importing this package has no runtime side effects and does not enable search.
 It exposes immutable contracts, the explicit fixed-rotation baseline strategy,
 deterministic legal-action machinery, and model-free advisory policy/value
-baselines. The default CED path remains the only execution path.
+baselines plus deterministic runtime-inert strategy baselines. The default CED
+path remains the only execution path.
 """
 
 from .contracts import (

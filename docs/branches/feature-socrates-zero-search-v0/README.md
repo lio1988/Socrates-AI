@@ -5,7 +5,7 @@
 Build SocratesZero as a governed, optional search layer around canonical CED,
 starting from runtime-inert contracts, a read-only board-state projection, hard
 legal moves, the unchanged fixed-rotation baseline, and deterministic advisory
-Policy and Value baselines.
+Policy/Value plus one-ply Greedy/Best-of-N strategy baselines.
 
 ## Success criterion
 
@@ -19,13 +19,14 @@ This branch contains the search boundary ADR, immutable contracts, explicit
 fixed baseline, trusted CED-side projection, deterministic legal-action
 constitution, model-free heuristic/uniform PolicyPrior implementations, tests,
 model-free neutral/heuristic ValueEstimator implementations, and durable
-checkpoints.
+checkpoints. It now also contains deterministic Greedy and budgeted Best-of-N
+selectors plus the injected successor-state contract required by Best-of-N.
 
 ## Non-goals
 
-No production action control, learned Policy/Value, Greedy/Best-of-N strategy,
-MCTS, RL, neural dependency, CUDA path, or live API call is part of the current
-milestone.
+No production action control, canonical successor executor, shadow wiring,
+MCTS, learned Policy/Value, RL, neural dependency, CUDA path, or live API call
+is part of the current milestone.
 
 Baseline HEAD: `277ca2ec130ce120dba9c4d894a3c58138b25528`.
 

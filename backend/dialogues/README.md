@@ -1367,6 +1367,37 @@ support, legality, actions, stopping decisions, or execution.
 
 ---
 
+## Phase 3C — Deterministic one-ply strategy baselines (experimental)
+
+`GreedyStrategy` (`greedy-strategy/v0`) asks Constitution for the hard-legal
+set, requires the action generator to preserve that complete set, and chooses
+the highest Policy prior. Equal priors use stable action-ID order. Value is
+evaluated once on the current root and is reported separately; Greedy never
+pretends that root `V(s)` is an action-conditioned `Q(s,a)`, so its action
+statistics retain zero visits and zero mean values.
+
+A genuine Best-of-N requires successor states. The additive `ActionSuccessor`
+and `SuccessorStateEvaluator` contracts provide only that missing experimental
+injection seam: `action_id -> successor SearchState + branch-local usage_delta`.
+They do not implement, call, or authorize a CED action executor.
+
+`BestOfNStrategy` (`best-of-n-strategy/v0`) freezes `N=4`. Remaining node,
+expansion, and depth budgets may reduce the candidate count. Every generated
+candidate must stay inside the hard-legal set; every successor must be exactly
+one ply deeper, link back to the root, retain the same hard budget, and match
+its declared path usage. Aggregate sibling usage is enforced against the same
+budget. Selection orders by successor `V(s')`, then Policy prior, then action
+ID. In the existing receipt schema, parallel deterministic tuples preserve the
+audit link `expanded_action_ids[i] -> visited_state_ids[i+1]`.
+
+Both strategies fail closed on malformed states, actions, priors, values,
+successor links, or usage. Neither executes its selected action, mutates CED,
+calls a provider by itself, controls a production response, or grants support.
+There is still no canonical successor evaluator/executor or shadow runtime
+wiring; those are later integration milestones.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

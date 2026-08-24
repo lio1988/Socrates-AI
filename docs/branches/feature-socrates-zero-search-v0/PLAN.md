@@ -54,6 +54,17 @@ preserving byte-for-byte default CED behavior.
 6. [done] Prove Value calls neither Policy nor Constitution.
 7. [done] Run focused, authority, dialogue-wide, and repository-wide tests.
 
+## Deterministic one-ply strategy baselines
+
+1. [done] Implement Greedy Policy argmax over the complete hard-legal set.
+2. [done] Keep root Value separate from action-conditioned statistics.
+3. [done] Add the minimal injected successor-state/evaluator contract.
+4. [done] Implement fixed-maximum `N=4` one-ply Best-of-N.
+5. [done] Enforce parent/depth/budget/path-usage successor invariants.
+6. [done] Aggregate sibling compute under one shared hard budget.
+7. [done] Preserve deterministic action-to-successor receipt linking.
+8. [done] Prove zero runtime execution authority and run full regressions.
+
 ## Validation gates
 
 - deterministic identity and strict-schema tests pass;
@@ -73,11 +84,12 @@ preserving byte-for-byte default CED behavior.
    execution boundary.
 4. [done] Heuristic and uniform PolicyPrior reference implementations.
 5. [done] Neutral and Heuristic ValueEstimator reference implementations.
-6. [next] Greedy and matched-budget Best-of-N strategy baselines.
-7. Bounded PUCT with transpositions and progressive widening.
-8. Shadow-only execution and episode/receipt comparison.
-9. Learned priors/value only after sufficient governed experience.
-10. True RL/self-play only after search and evaluation evidence justify it.
+6. [done] Deterministic Greedy strategy baseline.
+7. [done] Budgeted one-ply Best-of-N with injected successors.
+8. [next] Bounded PUCT with transpositions and progressive widening.
+9. Shadow-only execution and episode/receipt comparison.
+10. Learned priors/value only after sufficient governed experience.
+11. True RL/self-play only after search and evaluation evidence justify it.
 
 ## Stop conditions
 

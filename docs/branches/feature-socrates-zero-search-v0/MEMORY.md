@@ -66,6 +66,19 @@
   unavailable until SearchState exposes canonical outcome semantics.
 - Value range is `[-1,+1]`; structural invalidity raises rather than becoming
   `-1`. Each evaluation has a deterministic structured component audit/hash.
+- `GreedyStrategy` v0 requires the complete hard-legal generated set and selects
+  Policy argmax with an action-ID tie-break. Root Value remains separate from
+  action statistics; no successor or action-conditioned value is fabricated.
+- A genuine Best-of-N required an additive transition seam absent from Phase 1.
+  `ActionSuccessor` binds one action to one immutable successor SearchState and
+  exact branch-local usage; injected `SuccessorStateEvaluator` has no execution
+  or governing authority.
+- `BestOfNStrategy` v0 freezes maximum `N=4`, caps candidates by remaining
+  nodes/expansions/depth, aggregates exact sibling usage, and selects by
+  successor Value, Policy prior, then action ID.
+- Best-of-N receipts preserve the deterministic positional mapping
+  `expanded_action_ids[i] -> visited_state_ids[i+1]`. No canonical successor
+  evaluator/executor, shadow integration, or candidate event schema exists yet.
 
 ## Protected local state
 

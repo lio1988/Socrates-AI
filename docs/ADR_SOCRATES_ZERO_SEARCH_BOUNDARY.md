@@ -1,6 +1,7 @@
 # ADR: SocratesZero Search Boundary v0
 
-Status: accepted through deterministic model-free Policy and Value foundations on
+Status: accepted through deterministic model-free Policy, Value, and one-ply
+strategy foundations on
 `feature/socrates-zero-search-v0`
 
 Baseline: commit `277ca2ec130ce120dba9c4d894a3c58138b25528`
@@ -235,6 +236,38 @@ Value calls neither Policy nor `Constitution.legal_actions()` and has no
 epistemic or execution authority. Phase 3B adds no Greedy, Best-of-N, MCTS, RL,
 neural, or CUDA implementation.
 
+## Phase 3C deterministic strategy boundary
+
+Greedy and Best-of-N implement the existing async `SearchStrategy` contract and
+return the existing `SearchResult`/`SearchReceipt`; neither is connected to CED
+execution. `GreedyStrategy` (`greedy-strategy/v0`) ranks the complete generated
+hard-legal set by Policy prior, breaks ties by action ID, and reports root
+`V(s)` separately. It records no fabricated visits, successor expansions, or
+action-conditioned values.
+
+The Phase-1 interface had no transition seam, so a real Best-of-N could not
+compare successor Value without inventing `Q(s,a)` or fabricated states. The
+smallest additive correction is `ActionSuccessor` plus the injected
+`SuccessorStateEvaluator` protocol. An outcome binds one legal action ID to one
+immutable one-ply SearchState and an exact branch-local `BudgetUsage` delta.
+The evaluator is experimental input, not a production executor or governing
+observation source.
+
+`BestOfNStrategy` (`best-of-n-strategy/v0`) freezes maximum `N=4`. Available
+nodes, expansions, and depth can reduce N. Candidate successors are evaluated
+in action-ID order; aggregate sibling compute is enforced against one shared
+hard budget. Successor `V(s')` ranks first, Policy prior breaks equal-Value
+ties, and action ID is final. The current receipt's parallel deterministic
+`expanded_action_ids` and post-root `visited_state_ids` preserve each
+action-to-successor link without silently changing the frozen v0 statistics
+schema.
+
+Terminal Stop and no-legal/budget-exhausted roots do not fabricate successors.
+Both strategies validate all inputs and values, execute nothing, and have no
+support, verification, ratification, stopping, or production-response
+authority. Phase 3C adds no canonical successor evaluator, provider call,
+shadow wiring, PUCT/MCTS, learning, neural, or CUDA implementation.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
@@ -250,16 +283,21 @@ neural, or CUDA implementation.
   SocratesZero benchmark episodes do not yet exist.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
-- Greedy/Best-of-N, transposition storage, PUCT, progressive
-  widening, shadow execution, learned policy/value, self-play, and MuZero-style
-  models are deferred in that order.
+- No canonical CED action executor or `SuccessorStateEvaluator` implementation
+  exists; Best-of-N is composable only with an injected experimental evaluator.
+- Candidate-evaluator identity and a standalone per-candidate event/receipt
+  record are deferred to the later receipt/event integration milestone.
+- Transposition storage, PUCT, progressive widening, shadow execution, learned
+  policy/value, self-play, and MuZero-style models are deferred in that order.
 
 ## Consequences
 
 The branch now has the equivalent of an immutable board, hard legal moves, an
 explicit handcrafted baseline player, and versioned advisory Policy and Value
-baselines. It is still runtime-inert and gives Policy, Value, and future search
-no execution or epistemic authority. The cost is intentional: this milestone
-makes no quality claim, cannot recognize positive verified progress until the
-state contract exposes it safely, and keeps its handcrafted estimates weak,
-transparent, and unexecuted.
+baselines plus deterministic Greedy and budgeted one-ply Best-of-N selectors.
+It is still runtime-inert and gives Policy, Value, successor evaluators, and
+future search no execution or epistemic authority. The cost is intentional:
+this milestone makes no quality claim, has no canonical environment transition,
+cannot recognize positive verified progress until the state contract exposes
+it safely, and keeps its handcrafted estimates weak, transparent, and
+unexecuted.
