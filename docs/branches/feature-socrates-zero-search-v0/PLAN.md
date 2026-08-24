@@ -44,6 +44,16 @@ preserving byte-for-byte default CED behavior.
 5. [done] Prove Policy cannot call Constitution to re-decide legality.
 6. [done] Run focused, authority, dialogue-wide, and repository-wide tests.
 
+## Leakage-safe state Value
+
+1. [done] Reuse the canonical async `ValueEstimator` contract and `[-1,+1]` range.
+2. [done] Implement versioned Neutral and Heuristic estimators.
+3. [done] Restrict v0 to inspectable unresolved/terminal penalty signals.
+4. [done] Add deterministic reason-coded audits and receipt-compatible hashes.
+5. [done] Prove forbidden metadata and fixture futures cannot affect Value.
+6. [done] Prove Value calls neither Policy nor Constitution.
+7. [done] Run focused, authority, dialogue-wide, and repository-wide tests.
+
 ## Validation gates
 
 - deterministic identity and strict-schema tests pass;
@@ -62,8 +72,8 @@ preserving byte-for-byte default CED behavior.
 3. [done] Deterministic legal-action generator validated at the canonical CED
    execution boundary.
 4. [done] Heuristic and uniform PolicyPrior reference implementations.
-5. [next] HeuristicValueEstimator.
-6. Greedy and matched-budget Best-of-N baselines.
+5. [done] Neutral and Heuristic ValueEstimator reference implementations.
+6. [next] Greedy and matched-budget Best-of-N strategy baselines.
 7. Bounded PUCT with transpositions and progressive widening.
 8. Shadow-only execution and episode/receipt comparison.
 9. Learned priors/value only after sufficient governed experience.

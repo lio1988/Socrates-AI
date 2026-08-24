@@ -54,6 +54,18 @@
 - Every heuristic-supported action retains final probability at least `1e-6`;
   singleton input maps to `1.0`, empty input stays empty, and
   `UniformPolicyPrior` is the versioned `1/N` reference.
+- Value consumes one current valid SearchState only. It cannot call Policy,
+  Constitution, providers, future episode outcomes, benchmark labels, or reward.
+- `NeutralValueEstimator` v0 returns `0.0`. `HeuristicValueEstimator` v0 is
+  penalty-only: unresolved contradictions (`-0.08`, floor `-0.24`), unresolved
+  questions (`-0.05`, floor `-0.20`), blocked terminal (`-0.20`), and exhausted
+  budget (`-0.10`). Answer-ready and abstained states are neutral.
+- Opaque verification digests, evidence count, consensus, scores, markers,
+  provider/model identity, prose, Policy context, and candidate-answer polish
+  are forbidden Value signals. Positive verified/resolved progress must remain
+  unavailable until SearchState exposes canonical outcome semantics.
+- Value range is `[-1,+1]`; structural invalidity raises rather than becoming
+  `-1`. Each evaluation has a deterministic structured component audit/hash.
 
 ## Protected local state
 

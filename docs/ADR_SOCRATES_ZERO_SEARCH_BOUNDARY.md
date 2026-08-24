@@ -1,6 +1,6 @@
 # ADR: SocratesZero Search Boundary v0
 
-Status: accepted through the deterministic model-free policy-prior foundation on
+Status: accepted through deterministic model-free Policy and Value foundations on
 `feature/socrates-zero-search-v0`
 
 Baseline: commit `277ca2ec130ce120dba9c4d894a3c58138b25528`
@@ -202,6 +202,39 @@ epistemic markers, provider/model identity, or natural-language length. It has
 no execution or governing authority. Heuristic v0 is neither learning nor RL,
 and this phase adds no Value, Greedy, Best-of-N, MCTS, neural, or CUDA path.
 
+## Phase 3B deterministic Value boundary
+
+Value estimates the promise of one current valid `SearchState`; it does not
+decide truth, legality, verification, action preference, or execution. Both
+estimators use the canonical async `ValueEstimator` contract and the range
+`[-1,+1]`. `NeutralValueEstimator` (`neutral-value-estimator/v0`) returns
+`0.0`. `HeuristicValueEstimator` (`heuristic-value-estimator/v0`) exposes a
+deterministic structured component audit and stable audit ID.
+
+Heuristic v0 is penalty-only. Unresolved contradictions contribute `-0.08`
+each down to `-0.24`; unresolved questions/objections contribute `-0.05` each
+down to `-0.20`; blocked and budget-exhausted terminal states contribute
+`-0.20` and `-0.10`. `ANSWER_READY` and `ABSTAINED` are explicit neutral
+components: completion is not verification, and epistemically honest abstention
+is not failure.
+
+The frozen component reason codes are `unresolved_contradiction`,
+`unresolved_question`, `terminal_blocked`, `terminal_budget_exhausted`,
+`answer_ready_is_not_verification`, and `epistemic_abstention`.
+
+This conservatism is required by repository truth. Projected contradiction and
+question collections contain unresolved records only, while verification
+outcomes are not inspectable through `ObservationRef` semantic digests. Value
+therefore assigns no fabricated reward for resolution or verification. It also
+ignores scores, consensus, ratification popularity, epistemic markers,
+provider/model identity, prose, evidence/citation count, Policy context, and
+future fixture labels/rewards. Invalid structural terminal combinations fail
+closed instead of mapping to `-1`.
+
+Value calls neither Policy nor `Constitution.legal_actions()` and has no
+epistemic or execution authority. Phase 3B adds no Greedy, Best-of-N, MCTS, RL,
+neural, or CUDA implementation.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
@@ -217,15 +250,16 @@ and this phase adds no Value, Greedy, Best-of-N, MCTS, neural, or CUDA path.
   SocratesZero benchmark episodes do not yet exist.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
-- Heuristic Value, Greedy/Best-of-N, transposition storage, PUCT, progressive
+- Greedy/Best-of-N, transposition storage, PUCT, progressive
   widening, shadow execution, learned policy/value, self-play, and MuZero-style
   models are deferred in that order.
 
 ## Consequences
 
 The branch now has the equivalent of an immutable board, hard legal moves, an
-explicit handcrafted baseline player, and versioned advisory distributions over
-legal moves. It is still runtime-inert and gives Policy, later Value, and search
+explicit handcrafted baseline player, and versioned advisory Policy and Value
+baselines. It is still runtime-inert and gives Policy, Value, and future search
 no execution or epistemic authority. The cost is intentional: this milestone
-makes no quality claim and its first strategic preferences remain handcrafted,
-weak, transparent, and unexecuted.
+makes no quality claim, cannot recognize positive verified progress until the
+state contract exposes it safely, and keeps its handcrafted estimates weak,
+transparent, and unexecuted.

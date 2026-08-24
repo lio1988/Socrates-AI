@@ -1335,6 +1335,38 @@ model-free, versioned, and production-inert.
 
 ---
 
+## Phase 3B — Leakage-safe model-free Value baselines (experimental)
+
+`NeutralValueEstimator` and `HeuristicValueEstimator` implement the existing
+async `ValueEstimator` protocol over one current immutable `SearchState`. Their
+range is `[-1,+1]`; neutral v0 always returns `0.0` for structurally valid
+states. Neither estimator calls Policy, Constitution, a provider, the
+filesystem, or any future episode/evaluation record.
+
+Heuristic v0 is deliberately penalty-only because the current SearchState does
+not expose resolved contradiction/question status or verification outcome
+outside opaque semantic digests. It starts at `0.0` and uses:
+
+- unresolved contradiction: `-0.08` per record, capped at `-0.24`;
+- unresolved question/objection: `-0.05` per record, capped at `-0.20`;
+- terminal blocked: `-0.20`;
+- terminal budget exhausted: `-0.10`;
+- answer ready and epistemic abstention: explicit neutral `0.0` components.
+
+The frozen v0 reason codes are `unresolved_contradiction`,
+`unresolved_question`, `terminal_blocked`, `terminal_budget_exhausted`,
+`answer_ready_is_not_verification`, and `epistemic_abstention`.
+
+Completion is not verification. Evidence/citation count, prose, consensus,
+scores, markers, provider/model identity, Policy context, candidate-answer
+polish, and opaque verification records do not affect Value. Each evaluation
+returns a structured immutable audit with stable reason codes, canonical refs,
+raw/bounded Value, and a deterministic audit ID for future receipt linking.
+This layer is advisory and production-inert; it cannot create evidence,
+support, legality, actions, stopping decisions, or execution.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:

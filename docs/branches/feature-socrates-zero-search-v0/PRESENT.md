@@ -39,6 +39,13 @@
   - a `1e-6` exploration floor preserves every legal action;
   - uniform v0 provides the separate `1/N` research control;
   - neither policy has execution or epistemic authority.
+- Phase 3B Value baselines are complete:
+  - neutral v0 returns `0.0` for every structurally valid state;
+  - heuristic v0 applies only capped unresolved/terminal penalties;
+  - future outcomes and forbidden quality/consensus/provider/prose signals are
+    ignored by construction and tested for immunity;
+  - structured component audits are deterministic and receipt-linkable;
+  - Value calls neither Policy nor Constitution and has no runtime authority.
 - Implementation checkpoint: `8d6770b` (`feat: add SocratesZero search
   contracts v0`).
 
@@ -225,5 +232,54 @@ KNOWN ISSUES:
 - the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
   duplicate FastAPI operation IDs.
 
-NEXT: implement the separate model-free `HeuristicValueEstimator`; do not wire
-Policy argmax into runtime execution.
+## Deterministic leakage-safe Value milestone
+
+DONE: implemented `NeutralValueEstimator` and `HeuristicValueEstimator` behind
+the existing async `ValueEstimator` protocol with range `[-1,+1]`. Neutral v0
+returns `0.0`. Heuristic v0 is a conservative penalty-only baseline over
+canonical unresolved contradictions/questions and terminal blocked/budget
+status. Answer-ready completion and epistemic abstention remain neutral. Every
+evaluation exposes stable reason-coded components, raw/bounded Value, canonical
+refs, and a deterministic audit ID.
+
+TESTS:
+
+- Value-specific: `21 passed`;
+- Policy-specific regression: `13 passed`;
+- full SocratesZero bundle: `98 passed`;
+- focused SocratesZero + acceptance/marker + CED rotation/identity/retry:
+  `292 passed`;
+- Hybrid H8 authority plus SocratesZero: `109 passed`;
+- full `tests_dialogues`: `2164 passed, 1 skipped`;
+- repository-wide: `2471 passed, 1 skipped, 23 pre-existing warnings`;
+- staged `git diff --check`: passed;
+- no live external call was made.
+
+FILES CHANGED:
+
+- `backend/dialogues/socrates_zero/value.py` — neutral/heuristic estimators,
+  structural input validation, capped rules, audits, and deterministic hashes;
+- `backend/dialogues/socrates_zero/__init__.py` — public runtime-inert exports;
+- `tests_dialogues/test_socrates_zero_value_estimator.py` — contracts, bounds,
+  monotonicity, terminal semantics, immunity, leakage and separation tests;
+- canonical ADR/technical reference and branch checkpoints.
+
+COMMIT:
+
+- `cf5f4d0` — leakage-safe neutral and heuristic ValueEstimator baselines.
+
+KNOWN ISSUES:
+
+- SearchState exposes verification records as opaque digests, not inspectable
+  verified/falsified/inconclusive outcomes, so v0 safely assigns no verification
+  reward or penalty;
+- resolved contradiction/question status is absent from projected collections,
+  so v0 cannot reward canonical resolution without fabricating it;
+- penalty families can represent related epistemic events and are intentionally
+  small/capped because exact cross-record causal identity is unavailable;
+- no matched evaluation yet shows heuristic Value outperforming Neutral Value;
+- the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
+  duplicate FastAPI operation IDs.
+
+NEXT: Phase 3C deterministic strategy baselines — Greedy first, then
+matched-budget Best-of-N — still with zero production authority.
