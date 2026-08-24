@@ -57,6 +57,7 @@ from .policy import (
     PolicyAdjustment,
     UniformPolicyPrior,
 )
+from .strategy import GREEDY_STRATEGY_VERSION, GreedyStrategy
 from .value import (
     HEURISTIC_VALUE_ESTIMATOR_VERSION,
     HEURISTIC_VALUE_RULES_V0,
@@ -77,6 +78,7 @@ __all__ = [
     "FIXED_ROTATION_BASELINE_ADAPTER_VERSION",
     "LEGAL_ACTION_GENERATOR_VERSION",
     "LEGAL_ACTION_VOCABULARY_VERSION",
+    "GREEDY_STRATEGY_VERSION",
     "HEURISTIC_POLICY_MIN_PROBABILITY",
     "HEURISTIC_POLICY_PRIOR_VERSION",
     "HEURISTIC_VALUE_ESTIMATOR_VERSION",
@@ -100,6 +102,7 @@ __all__ = [
     "DeterministicLegalActionGenerator",
     "FixedRotationBaselineAdapter",
     "FixedRotationBaselineStrategy",
+    "GreedyStrategy",
     "HeuristicPolicyPrior",
     "HeuristicValueEstimator",
     "LegalAction",
