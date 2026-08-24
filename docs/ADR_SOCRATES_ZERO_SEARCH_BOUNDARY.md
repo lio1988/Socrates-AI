@@ -1,7 +1,7 @@
 # ADR: SocratesZero Search Boundary v0
 
-Status: accepted through deterministic model-free Policy, Value, and one-ply
-strategy foundations on
+Status: accepted through deterministic model-free Policy, Value, one-ply
+strategy foundations, and bounded one-real-ply PUCT on
 `feature/socrates-zero-search-v0`
 
 Baseline: commit `277ca2ec130ce120dba9c4d894a3c58138b25528`
@@ -268,6 +268,75 @@ support, verification, ratification, stopping, or production-response
 authority. Phase 3C adds no canonical successor evaluator, provider call,
 shadow wiring, PUCT/MCTS, learning, neural, or CUDA implementation.
 
+## Phase 4 bounded deterministic PUCT boundary
+
+`PUCTStrategy` (`puct-strategy/v0`) is a serial, runtime-inert allocator over
+the same hard-legal actions, Policy, Value, budget, and experimental successor
+seam as the frozen baselines. It does not execute the selected action. Its
+immutable `PUCTConfig` (`puct-config/v0`) exposes an untuned canonical
+`c_puct=1.0`, rejects non-finite/disabled values, and bounds the numeric range
+to `(0,100]`.
+
+For root state `s`, edge `a` is selected by:
+
+```text
+Q(s,a) + c_puct * P(a|s) * sqrt(max(1, N(s))) / (1 + N(s,a))
+```
+
+Unvisited Q is explicitly zero. The `max(1,N)` term makes the first selection
+prior-ordered rather than dependent on accidental zero ties. Selection ties
+use score descending, prior descending, then action ID ascending. The complete
+hard-legal set is registered as root edges; neither Policy nor Value may remove
+or add an edge. Positive-prior edges remain reachable as their exploration term
+grows under sufficient budget.
+
+Every simulation selects one root edge, invokes the injected evaluator on the
+same immutable root, validates one real child, evaluates that observed child
+with the configured Value, and backs the Value into the edge/root running mean.
+Repeated edge visits are repeated charged evaluator calls, never cached
+pseudo-visits. Q is therefore mean observed successor V, distinct from V(s).
+Backup is undiscounted and retains one epistemic utility orientation; it never
+alternates signs as if CED were a two-player zero-sum game.
+
+The existing successor protocol gives no recursive-safety, determinism,
+isolation, capability, or cost-bearing failure guarantee, and the repository
+contains no canonical successor executor. PUCT v0 therefore freezes maximum
+safe relative depth at one even when `SearchBudget.max_depth` is larger. Child
+states are recorded and valued but never passed back to the evaluator or
+Constitution. This is adaptive root search, not fabricated multi-ply MCTS.
+Identical child state IDs retain separate path-local nodes/statistics and are
+recorded only as duplicate-state diagnostics.
+
+Existing `ActionSuccessor` accounting requires one node and one expansion per
+real observation so PUCT preserves matched counters with Best-of-N. Full root
+edge registration is bounded deterministic in-memory bookkeeping and invents
+no usage delta. Before each observation the strategy checks nodes, expansions,
+and depth. The evaluator receives current aggregate usage and must reserve
+model/tool/token/cost/time before work because only it knows the prospective
+delta; PUCT then validates branch-local and aggregate returned usage exactly.
+
+Root completion is deterministic: visit count descending, Q descending, prior
+descending, then action ID ascending. Terminal roots are validated but neither
+expanded nor observed and return no fabricated Stop selection. A successor
+error invalidates the entire v0 search; there is no arbitrary negative reward,
+silent prune, or invented continuation.
+
+The frozen canonical `SearchReceipt` is not silently expanded.
+`PUCTSearchReceipt` (`puct-search-receipt/v0`) is a linked immutable companion
+containing config/dependency identities, bounded node/edge/simulation facts,
+P/N/Q, successor and leaf IDs/Values, exact usage, deterministic tie rules,
+duplicate states, failure/pruning fields, selection, and termination.
+`PUCTStrategy.search()` still satisfies `SearchStrategy` and returns the
+canonical `SearchResult`; `evaluate()` returns that result with its rich PUCT
+receipt. No hidden reasoning or volatile timestamp participates in identity.
+
+The deterministic fixtures prove both directions of adaptive compute: a tiny
+budget follows a misleading high-prior branch, while sufficient budget observes
+and selects the better lower-prior branch. Neutral and heuristic Value share the
+same engine and produce separately auditable behavior. No shadow or production
+wiring, Gumbel, progressive widening, MuZero, RL, neural, CUDA, or parallel tree
+mutation is introduced.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
@@ -284,20 +353,24 @@ shadow wiring, PUCT/MCTS, learning, neural, or CUDA implementation.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
 - No canonical CED action executor or `SuccessorStateEvaluator` implementation
-  exists; Best-of-N is composable only with an injected experimental evaluator.
-- Candidate-evaluator identity and a standalone per-candidate event/receipt
-  record are deferred to the later receipt/event integration milestone.
-- Transposition storage, PUCT, progressive widening, shadow execution, learned
-  policy/value, self-play, and MuZero-style models are deferred in that order.
+  exists; Best-of-N and PUCT are composable only with an injected experimental
+  evaluator.
+- Safe recursive transitions, shared transposition storage, progressive
+  widening, and shadow execution remain deferred. Learned policy/value,
+  self-play, and MuZero-style models require later evidence and explicit scope.
+- The successor exception contract carries no usage delta, so work consumed by
+  a failing evaluator cannot yet be represented in a completed partial receipt;
+  PUCT v0 fails the whole search rather than guessing.
 
 ## Consequences
 
 The branch now has the equivalent of an immutable board, hard legal moves, an
-explicit handcrafted baseline player, and versioned advisory Policy and Value
-baselines plus deterministic Greedy and budgeted one-ply Best-of-N selectors.
-It is still runtime-inert and gives Policy, Value, successor evaluators, and
-future search no execution or epistemic authority. The cost is intentional:
-this milestone makes no quality claim, has no canonical environment transition,
-cannot recognize positive verified progress until the state contract exposes
-it safely, and keeps its handcrafted estimates weak, transparent, and
-unexecuted.
+explicit handcrafted baseline player, versioned advisory Policy and Value,
+deterministic Greedy and budgeted one-ply Best-of-N, plus bounded serial PUCT
+that can rationally overturn Policy from real observed leaf Value. It is still
+runtime-inert and gives Policy, Value, successor evaluators, and search no
+execution or epistemic authority. The cost is intentional: this milestone makes
+no comparative quality claim, has no canonical or recursively safe environment
+transition, cannot recognize positive verified progress until the state
+contract exposes it safely, and keeps its estimates weak, transparent, bounded,
+auditable, and unexecuted.

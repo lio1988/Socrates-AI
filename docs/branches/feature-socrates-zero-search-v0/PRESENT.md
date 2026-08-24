@@ -52,8 +52,18 @@
   - successor and aggregate sibling usage are fail-closed and budget-enforced;
   - Value, Policy, and action-ID tie-break roles remain separate;
   - neither strategy executes an action or controls canonical CED.
-- Implementation checkpoint: `8d6770b` (`feat: add SocratesZero search
-  contracts v0`).
+- Phase 4 bounded deterministic PUCT is complete:
+  - `puct-strategy/v0` adaptively allocates repeated real root successor
+    observations using explicit PUCT and an untuned `c_puct=1.0`;
+  - safe relative depth is frozen at one because the experimental successor
+    protocol supplies no recursive capability guarantee;
+  - path-local node/edge statistics, exact same-orientation backup,
+    deterministic ties, exact usage, and a linked rich audit are replay-stable;
+  - lower-prior observed Value can overturn misleading Policy with sufficient
+    budget, while tiny budget remains Policy-biased;
+  - no PUCT result has production authority or live dialogue wiring.
+- Current implementation checkpoint: `c7e45b9` (`feat: add bounded
+  deterministic PUCT strategy`).
 
 ## Unchanged state
 
@@ -337,5 +347,78 @@ KNOWN ISSUES:
 - the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
   duplicate FastAPI operation IDs.
 
-NEXT: Phase 4 bounded PUCT over the same injected successor seam, with
-transpositions/progressive widening and still zero production authority.
+HISTORICAL NEXT: Phase 4 bounded PUCT over the same injected successor seam.
+The completed design below kept transpositions path-local and correctly
+deferred progressive widening.
+
+## Bounded deterministic PUCT milestone
+
+DONE: implemented serial `PUCTStrategy` (`puct-strategy/v0`) over the complete
+hard-legal root edge set. `PUCTConfig` (`puct-config/v0`) freezes the canonical,
+untuned `c_puct=1.0` and finite `(0,100]` range. Selection uses
+`Q + c_puct * P * sqrt(max(1,N)) / (1+N_a)` with score, prior, then action-ID
+ties. Final root selection uses visits, Q, prior, then action ID.
+
+Every visit performs a fresh experimental successor call from the immutable
+root and consumes its actual usage; no cached Value creates a pseudo-visit.
+Observed leaf V is backed up without sign alternation or discount. The seam has
+no recursive capability declaration or canonical implementation, so v0's safe
+relative depth is exactly one regardless of a larger configured depth. Child
+states are never evaluator inputs, duplicate semantic state IDs keep path-local
+statistics, and no second CED transition engine exists.
+
+The frozen `SearchReceipt` schema and baseline identities remain unchanged.
+`PUCTSearchReceipt` (`puct-search-receipt/v0`) is a separately versioned,
+immutable linked companion with dependency IDs, config, nodes, edges, P/N/Q,
+successor IDs, leaf Values, simulations, exact usage, tie rules, duplicate-state
+diagnostics, failure/pruning fields, selected root action, and termination.
+Completed receipts cannot silently encode failed or pruned branches. Any
+successor failure invalidates the entire search because the current seam has no
+cost-bearing failure result contract.
+
+TESTS:
+
+- PUCT-specific: `53 passed`;
+- Greedy-specific: `27 passed`;
+- Best-of-N-specific: `24 passed`;
+- Policy-specific: `13 passed`;
+- Value-specific: `21 passed`;
+- contracts plus Greedy/Best-of-N/PUCT: `123 passed`;
+- full SocratesZero bundle: `202 passed`;
+- Hybrid H8 plus SocratesZero: `213 passed`;
+- focused CED/Socratic regressions: `142 passed`;
+- full `tests_dialogues`: `2268 passed, 1 skipped`;
+- repository-wide: `2575 passed, 1 skipped, 23 pre-existing warnings`;
+- `git diff --check`: passed;
+- no live external call was made.
+
+FILES CHANGED:
+
+- `backend/dialogues/socrates_zero/puct.py` — config, explicit node/edge/
+  simulation/audit contracts and bounded serial PUCT engine;
+- `backend/dialogues/socrates_zero/__init__.py` — runtime-inert public exports;
+- `tests_dialogues/test_socrates_zero_puct_strategy.py` — deterministic search,
+  math, budget, failure, isolation, replay, transposition and no-fake-depth tests;
+- canonical ADR and branch checkpoints.
+
+COMMIT:
+
+- `c7e45b9` — bounded deterministic one-real-ply PUCT strategy and tests.
+
+KNOWN ISSUES:
+
+- no canonical CED successor evaluator/action executor exists;
+- recursive successor safety is unproven, so v0 cannot perform real multi-ply
+  selection even when the hard budget permits more depth;
+- model/tool/token/cost/time pre-reservation belongs to the injected evaluator
+  because the strategy cannot know an unseen delta; every returned delta is
+  still checked exactly in aggregate;
+- evaluator exceptions cannot carry consumed usage under the current protocol,
+  so v0 fails the entire search rather than fabricating a partial receipt;
+- heuristic Value remains penalty-only and often ties;
+- no matched-compute evidence yet establishes PUCT over simpler baselines;
+- the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
+  duplicate FastAPI operation IDs.
+
+NEXT: Phase 5 shadow matched-compute evaluation harness comparing fixed
+rotation, Greedy, Best-of-N, and PUCT. Do not start RL.

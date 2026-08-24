@@ -65,6 +65,20 @@ preserving byte-for-byte default CED behavior.
 7. [done] Preserve deterministic action-to-successor receipt linking.
 8. [done] Prove zero runtime execution authority and run full regressions.
 
+## Bounded deterministic PUCT
+
+1. [done] Inspect the successor seam and freeze safe relative depth at one.
+2. [done] Add immutable `puct-config/v0` with untuned default `c_puct=1.0`.
+3. [done] Register the complete hard-legal root edge set without pruning.
+4. [done] Allocate serial simulations using explicit deterministic PUCT math.
+5. [done] Require one fresh, charged successor observation for every visit.
+6. [done] Keep Q as undiscounted same-orientation mean backed-up leaf Value.
+7. [done] Keep duplicate semantic states path-local and diagnostic only.
+8. [done] Add a bounded rich PUCT companion receipt without mutating v0 receipts.
+9. [done] Prove misleading-Policy override, replay, budgets, isolation, failures,
+   terminal handling, estimator interchangeability, and no fake depth.
+10. [done] Run focused, dialogue-wide, and repository-wide acceptance gates.
+
 ## Validation gates
 
 - deterministic identity and strict-schema tests pass;
@@ -86,8 +100,8 @@ preserving byte-for-byte default CED behavior.
 5. [done] Neutral and Heuristic ValueEstimator reference implementations.
 6. [done] Deterministic Greedy strategy baseline.
 7. [done] Budgeted one-ply Best-of-N with injected successors.
-8. [next] Bounded PUCT with transpositions and progressive widening.
-9. Shadow-only execution and episode/receipt comparison.
+8. [done] Bounded serial one-real-ply PUCT with path-local duplicate states.
+9. [next] Phase 5 shadow-only matched-compute evaluation harness.
 10. Learned priors/value only after sufficient governed experience.
 11. True RL/self-play only after search and evaluation evidence justify it.
 

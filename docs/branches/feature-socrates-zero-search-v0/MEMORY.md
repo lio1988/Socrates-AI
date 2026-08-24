@@ -22,8 +22,8 @@
 - Legacy graph/CBE/Dung components are non-governing and must not be wired into
   the new search path as authority.
 - The current SocratesZero package is a runtime-inert research surface: no
-  runtime flag reader, execution, provider call, MCTS, learning, PyTorch, GPU,
-  or CUDA.
+  runtime flag reader, execution, provider call, learning, PyTorch, GPU, or
+  CUDA. Its PUCT implementation is standalone experimental search only.
 - `CanonicalTaskSpec` is the single read-only fixed-orchestration extraction;
   `_run_registry_phase()` consumes it, so the baseline adapter copies no
   rotation business logic.
@@ -79,6 +79,36 @@
 - Best-of-N receipts preserve the deterministic positional mapping
   `expanded_action_ids[i] -> visited_state_ids[i+1]`. No canonical successor
   evaluator/executor, shadow integration, or candidate event schema exists yet.
+- `SuccessorStateEvaluator` guarantees only an async action-linked
+  `ActionSuccessor` plus branch-local usage. It declares no determinism,
+  isolation, recursive capability, failure record, or canonical executor; no
+  repository implementation establishes safe descendant reuse.
+- `PUCTStrategy` is `puct-strategy/v0`; its immutable config is
+  `puct-config/v0`, canonical untuned `c_puct=1.0`, allowed range `(0,100]`.
+- PUCT v0 is hard-frozen to one real ply relative to the root even when
+  `SearchBudget.max_depth` is larger. Every simulation calls the experimental
+  evaluator from the immutable root and consumes exactly one real node and one
+  expansion; there are no cached pseudo-visits or imagined descendants.
+- Selection is `Q + c_puct * P * sqrt(max(1,N)) / (1+N_a)`, with score, prior,
+  then action-ID ties. Root selection uses visits, Q, prior, then action ID.
+  Q is the undiscounted mean of observed successor V values in one epistemic
+  orientation: no player sign flip and no hidden discount.
+- All hard-legal root edges are registered. Repeated observations allocate
+  compute adaptively; a lower-prior branch can overturn Policy when observed V
+  and budget justify it. Policy and Value still cannot change legality.
+- Identical successor state IDs retain path-local nodes/statistics. Duplicate
+  IDs are receipt diagnostics only; v0 has no shared transposition table.
+- The frozen canonical `SearchReceipt` remains unchanged. `PUCTSearchReceipt`
+  (`puct-search-receipt/v0`) is a linked immutable companion containing config,
+  dependency identities, nodes, edges, simulations, priors, N/Q, successors,
+  Values, usage, tie rules, duplicates, and termination. `search()` returns the
+  canonical `SearchResult`; `evaluate()` returns it with the rich receipt.
+- Structural budget capacity is checked before evaluator work. The evaluator
+  receives aggregate usage and owns pre-work reservation for model/tool/token/
+  cost/time deltas unknowable to the strategy; returned deltas are revalidated
+  branch-locally and in aggregate. Exceptions invalidate the entire v0 search.
+- A terminal PUCT root is neither expanded nor observed and returns no
+  fabricated Stop selection. No PUCT output is wired into production CED.
 
 ## Protected local state
 
