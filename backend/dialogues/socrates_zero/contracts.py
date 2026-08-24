@@ -96,6 +96,10 @@ class SearchTerminationReason(str, Enum):
 
 class ActionKind(str, Enum):
     ASK_SOCRATIC_QUESTION = "ask_socratic_question"
+    RUN_ELENCHUS = "run_elenchus"
+    REFLECT = "reflect"
+    RECONSTRUCT = "reconstruct"
+    RATIFY = "ratify"
     DEFINE_TERM = "define_term"
     PROPOSE_CLAIM = "propose_claim"
     CHALLENGE_CLAIM = "challenge_claim"

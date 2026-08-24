@@ -35,6 +35,7 @@ from .contracts import (
     stable_contract_id,
     validate_action_references,
 )
+from .baseline import FixedRotationBaselineAdapter, FixedRotationBaselineStrategy
 
 SOCRATES_ZERO_ENABLED_ENV = "SOCRATES_ZERO_ENABLED"
 SOCRATES_ZERO_DEFAULT_ENABLED = False
@@ -52,6 +53,8 @@ __all__ = [
     "BudgetExceeded",
     "BudgetUsage",
     "ContractValidationError",
+    "FixedRotationBaselineAdapter",
+    "FixedRotationBaselineStrategy",
     "LegalAction",
     "MoveHistoryRef",
     "ObservationRef",

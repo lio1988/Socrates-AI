@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .models import (
@@ -231,6 +232,23 @@ PHASE_TASK_KIND: Dict[DialogPhase, TaskKind] = {
     DialogPhase.RECONSTRUCTION:   TaskKind.RECONSTRUCTION_PROPOSAL,
     DialogPhase.SYNTHESIS:        TaskKind.SYNTHESIS_DRAFT,
 }
+
+
+@dataclass(frozen=True)
+class CanonicalTaskSpec:
+    """Read-only identity of one task chosen by canonical CED scheduling.
+
+    This is an extraction point, not an alternate scheduler.  Registry
+    execution consumes these same specs so experiments can observe the fixed
+    baseline without reproducing its rotation rules.
+    """
+
+    phase: DialogPhase
+    round_number: int
+    slot_index: int
+    agent_id: str
+    role: AgentRole
+    task_kind: TaskKind
 
 # Deliberation phases driven through the provider registry in Phase 8C (the
 # RATIFICATION verdict still runs through the council's own evaluator).
@@ -1168,6 +1186,7 @@ class CEDOrchestrator:
 
     def _registry_phase_assignment(
         self, state: SessionState, phase: DialogPhase,
+        round_index: Optional[int] = None,
     ) -> Dict[str, AgentRole]:
         """Deterministic role assignment for a registry-driven phase."""
         if phase == DialogPhase.SYNTHESIS:
@@ -1175,7 +1194,35 @@ class CEDOrchestrator:
         if phase == DialogPhase.REFLECTION:
             responders = [m.agent_id for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)]
             return {aid: AgentRole.REFLECTOR for aid in responders}
-        return self.assign_roles_for_phase(state, phase, state.round_number)
+        effective_round = state.round_number if round_index is None else round_index
+        return self.assign_roles_for_phase(state, phase, effective_round)
+
+    def canonical_registry_task_specs(
+        self,
+        state: SessionState,
+        phase: DialogPhase,
+        round_index: Optional[int] = None,
+    ) -> Tuple[CanonicalTaskSpec, ...]:
+        """Expose canonical fixed-orchestration decisions without mutation.
+
+        The returned tuple is the exact sorted assignment/task-kind source used
+        by ``_run_registry_phase``.  It contains no prompt, provider route,
+        score, or model output and performs no external call.
+        """
+        effective_round = state.round_number if round_index is None else round_index
+        assignment = self._registry_phase_assignment(state, phase, effective_round)
+        phase_task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
+        return tuple(
+            CanonicalTaskSpec(
+                phase=phase,
+                round_number=effective_round,
+                slot_index=slot,
+                agent_id=agent_id,
+                role=role,
+                task_kind=ROLE_TASK_KIND.get(role, phase_task_kind),
+            )
+            for slot, (agent_id, role) in enumerate(sorted(assignment.items()))
+        )
 
     def _healthy_adapters(self) -> List["LLMProviderAdapter"]:
         """Phase 16 self-healing: quarantined seats (chronic, evidence-gated
@@ -1309,11 +1356,11 @@ class CEDOrchestrator:
         per-phase quorum. Move ids come from task identity (NOT completion order).
         """
         state.advance_phase(phase)
-        assignment = self._registry_phase_assignment(state, phase)
+        task_specs = self.canonical_registry_task_specs(state, phase)
+        assignment = {spec.agent_id: spec.role for spec in task_specs}
         self._apply_phase_roles(state, phase, assignment)
-        items = sorted(assignment.items())
+        items = [(spec.agent_id, spec.role) for spec in task_specs]
         adapters = self._ranked_adapters(state)   # Phase 21: analytics-informed routing
-        phase_task_kind = PHASE_TASK_KIND.get(phase, TaskKind.INITIAL_RESPONSE)
         want_sections = (phase == DialogPhase.SYNTHESIS)
 
         def _build_task(agent_id: str, role: AgentRole, slot: int,
@@ -1326,7 +1373,7 @@ class CEDOrchestrator:
                 question=state.question,
                 context=self._registry_phase_context(state, phase, agent_id),
                 output_schema=schema, round_number=state.round_number,
-                task_kind=ROLE_TASK_KIND.get(role, phase_task_kind),
+                task_kind=task_specs[slot].task_kind,
                 slot_index=slot, attempt_index=attempt,
             )
 
