@@ -19,6 +19,16 @@ from .contracts import (
     SearchBudget,
     stable_contract_id,
 )
+from .policy import (
+    HEURISTIC_POLICY_PRIOR_VERSION,
+    UNIFORM_POLICY_PRIOR_VERSION,
+)
+from .puct import PUCT_STRATEGY_VERSION
+from .strategy import BEST_OF_N_STRATEGY_VERSION, GREEDY_STRATEGY_VERSION
+from .value import (
+    HEURISTIC_VALUE_ESTIMATOR_VERSION,
+    NEUTRAL_VALUE_ESTIMATOR_VERSION,
+)
 
 
 SEARCH_KERNEL_EVALUATION_CONTRACT_VERSION = (
@@ -227,6 +237,22 @@ class EvaluationIdentity(_FrozenEvaluationContract):
             )
         ):
             raise ContractValidationError("evaluation identity fields cannot be blank")
+        if self.strategy_id not in {
+            GREEDY_STRATEGY_VERSION,
+            BEST_OF_N_STRATEGY_VERSION,
+            PUCT_STRATEGY_VERSION,
+        }:
+            raise ContractValidationError("evaluation uses an unfrozen strategy")
+        if self.policy_id not in {
+            UNIFORM_POLICY_PRIOR_VERSION,
+            HEURISTIC_POLICY_PRIOR_VERSION,
+        }:
+            raise ContractValidationError("evaluation uses an unfrozen Policy")
+        if self.value_id not in {
+            NEUTRAL_VALUE_ESTIMATOR_VERSION,
+            HEURISTIC_VALUE_ESTIMATOR_VERSION,
+        }:
+            raise ContractValidationError("evaluation uses an unfrozen Value")
         if self.budget_profile_id not in {
             profile.profile_id for profile in MATCHED_SUCCESSOR_BUDGET_PROFILES
         }:
