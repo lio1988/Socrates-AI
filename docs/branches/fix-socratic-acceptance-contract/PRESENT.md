@@ -26,7 +26,7 @@ FILES CHANGED:
   dialogue suite;
 - branch README, MEMORY, PLAN, PRESENT.
 
-COMMIT: pending (`fix: enforce epistemic marker contract`). The preceding
+COMMIT: `5d248c3` (`fix: enforce epistemic marker contract`). The preceding
 acceptance implementation remains `6d352de` and its checkpoint is `25d5086`.
 
 KNOWN ISSUES: the 23 warnings are pre-existing Pydantic `.dict()` deprecations
