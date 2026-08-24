@@ -139,6 +139,48 @@ def test_the_session_survives_a_refused_question():
     assert final.synthesis is not None
 
 
+def test_firewall_rejected_socrates_is_retried_once_and_never_reflected():
+    """Provider-OK injection is still a missing Socrates move, not a valid question."""
+    ced = _council(Injecting, phase_retry=True)
+    final = asyncio.run(
+        ced.run_registry_session(
+            TASK,
+            session_id="inject-role-critical-retry",
+        )
+    )
+    state = ced.get_session("inject-role-critical-retry")
+
+    q_tasks = [
+        entry for entry in state.task_log
+        if (
+            entry.phase is DialogPhase.ELENCHUS
+            and entry.task_kind is TaskKind.SOCRATIC_QUESTION
+            and entry.round_index == 0
+        )
+    ]
+
+    # Provider/schema succeeded, but the firewall rejected both attempts.
+    assert {entry.attempt_index for entry in q_tasks} == {0, 1}
+    assert all(entry.move_id is None for entry in q_tasks)
+
+    # A rejected Socratic question can never authorize Reflection.
+    reflections = [
+        move for move in state.moves
+        if move.phase is DialogPhase.REFLECTION
+    ]
+    assert reflections == []
+
+    retries = [
+        row for row in ced._phase_retries.get(state.session_id, [])
+        if row["phase"] == DialogPhase.ELENCHUS.value
+    ]
+    assert retries
+    assert retries[-1]["rescued"] is False
+
+    # Fail closed on this dialectical cycle, not on the whole research session.
+    assert final.synthesis is not None
+
+
 # ══ 1 / 6. the information firewall ══════════════════════════════════════════
 
 class Recording(ScriptedMockProvider):

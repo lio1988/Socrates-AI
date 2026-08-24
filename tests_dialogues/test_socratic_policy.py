@@ -106,6 +106,29 @@ class Maieutic(ScriptedMockProvider):
         return await super()._produce_raw_text(task, agent_state)
 
 
+class RetryOnceMiddleSocrates(Maieutic):
+    """Round 1 Socrates fails once; the role-critical reroute must rescue it."""
+
+    async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
+        if (task.task_kind is TaskKind.SOCRATIC_QUESTION
+                and task.phase is DialogPhase.ELENCHUS
+                and task.round_number == 1
+                and task.attempt_index == 0):
+            return "definitely-not-json"
+        return await super()._produce_raw_text(task, agent_state)
+
+
+class FailMiddleSocrates(Maieutic):
+    """Round 1 Socrates never yields a valid move, including the bounded retry."""
+
+    async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
+        if (task.task_kind is TaskKind.SOCRATIC_QUESTION
+                and task.phase is DialogPhase.ELENCHUS
+                and task.round_number == 1):
+            return "definitely-not-json"
+        return await super()._produce_raw_text(task, agent_state)
+
+
 def _council(seats=4, *, cls=Maieutic, max_followups=2, **kwargs):
     provider = FakeProvider()
     registry = CouncilProviderRegistry()
@@ -212,6 +235,86 @@ def test_reflection_happens_inside_every_cycle():
                    if m.phase is DialogPhase.REFLECTION]
     for later in followups[1:]:
         assert any(r < later for r in reflections), order
+
+
+def test_role_critical_socrates_is_retried_even_when_quorum_already_passed():
+    """Two critics are quorum, but they cannot stand in for the question."""
+    ced = _council(cls=RetryOnceMiddleSocrates, max_followups=2)
+    # The live build_council path enables phase retry. Direct unit
+    # construction keeps the legacy default off, so enable it here to
+    # exercise the role-critical Socrates rescue path.
+    ced.phase_retry = True
+    _run(ced, "role-critical-retry")
+    state = ced.get_session("role-critical-retry")
+
+    q_tasks = [
+        entry for entry in state.task_log
+        if (entry.phase is DialogPhase.ELENCHUS
+            and entry.task_kind is TaskKind.SOCRATIC_QUESTION
+            and entry.round_index == 1)
+    ]
+    assert any(entry.attempt_index == 0 and entry.move_id is None
+               for entry in q_tasks)
+    assert any(entry.attempt_index == 1 and entry.move_id is not None
+               for entry in q_tasks)
+
+    reflections = [
+        entry for entry in state.task_log
+        if entry.phase is DialogPhase.REFLECTION and entry.round_index == 1
+    ]
+    assert reflections, "reflection runs only after the rescued current-round question"
+
+    retries = ced._phase_retries.get(state.session_id, [])
+    assert retries
+    assert retries[-1]["rescued"] is True
+
+
+def test_reflection_never_answers_a_stale_question_when_current_socrates_fails():
+    """The live regression: cycle 1 had critics + reflection but no Socrates."""
+    ced = _council(cls=FailMiddleSocrates, max_followups=2)
+    # Match the live council rescue configuration for the exhausted
+    # retry case as well.
+    ced.phase_retry = True
+    _run(ced, "no-stale-reflection")
+    state = ced.get_session("no-stale-reflection")
+
+    failed_q = [
+        entry for entry in state.task_log
+        if (entry.phase is DialogPhase.ELENCHUS
+            and entry.task_kind is TaskKind.SOCRATIC_QUESTION
+            and entry.round_index == 1)
+    ]
+    assert failed_q
+    assert all(entry.move_id is None for entry in failed_q)
+
+    stale_reflections = [
+        entry for entry in state.task_log
+        if entry.phase is DialogPhase.REFLECTION and entry.round_index == 1
+    ]
+    assert stale_reflections == []
+
+    later_questions = [
+        entry for entry in state.task_log
+        if (entry.phase is DialogPhase.ELENCHUS
+            and entry.task_kind is TaskKind.SOCRATIC_QUESTION
+            and entry.round_index > 1)
+    ]
+    assert later_questions == []
+
+    allowed, why = ced.another_socratic_cycle(state)
+    assert allowed is False
+    assert why == "no valid Socratic question was produced this cycle"
+
+    responder = next(
+        move.agent_id for move in state.moves
+        if move.phase is DialogPhase.INITIAL_RESPONSE
+    )
+    ctx = ced._registry_phase_context(state, DialogPhase.REFLECTION, responder)
+    assert ctx["socratic_question_to_answer"] == ""
+
+    log = ced._cycle_log[state.session_id]
+    assert log[-1]["continue"] is False
+    assert log[-1]["reason"] == "no valid Socratic question was produced this cycle"
 
 
 def test_the_follow_up_is_asked_after_the_critics_have_spoken():

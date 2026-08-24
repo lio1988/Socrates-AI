@@ -1003,6 +1003,30 @@ class CEDOrchestrator:
         return sum(1 for m in self._socratic_moves(state)
                    if m.phase is not DialogPhase.OPENING)
 
+    def _socratic_followups_for_round(
+        self, state: SessionState, round_number: Optional[int] = None,
+    ) -> List["AgentMove"]:
+        """Accepted follow-up questions belonging to exactly one dialogue round.
+
+        A previous round's valid question must never authorize a later reflection
+        after the current Socrates slot failed. TaskLogEntry carries the CED-owned
+        round identity; only entries linked to an accepted move count.
+        """
+        target = state.round_number if round_number is None else round_number
+        accepted_move_ids = {
+            entry.move_id
+            for entry in state.task_log
+            if (entry.move_id is not None
+                and entry.phase is DialogPhase.ELENCHUS
+                and entry.task_kind is TaskKind.SOCRATIC_QUESTION
+                and entry.round_index == target)
+        }
+        return [
+            move for move in self._socratic_moves(state)
+            if move.phase is DialogPhase.ELENCHUS
+            and move.move_id in accepted_move_ids
+        ]
+
     def another_socratic_cycle(self, state: SessionState) -> Tuple[bool, str]:
         """CED decides, mechanically. Socrates recommends and is not obeyed.
 
@@ -1012,8 +1036,7 @@ class CEDOrchestrator:
         used = self._socratic_followups_made(state)
         if used >= self.max_socratic_followups:
             return False, f"max_socratic_followups={self.max_socratic_followups} reached"
-        asked = [m for m in self._socratic_moves(state)
-                 if m.phase is not DialogPhase.OPENING]
+        asked = self._socratic_followups_for_round(state)
         if not asked:
             return False, "no valid Socratic question was produced this cycle"
         state_hint = read_inquiry_state(asked[-1].content)
@@ -1025,7 +1048,9 @@ class CEDOrchestrator:
         return [m for m in state.moves if m.role is AgentRole.SOCRATES]
 
     def _latest_socratic_question(self, state: SessionState) -> str:
-        asked = self._socratic_moves(state)
+        # Reflection is cycle-local. Returning an older question here would turn
+        # a provider/schema failure into a fabricated continuation of dialogue.
+        asked = self._socratic_followups_for_round(state)
         if not asked:
             return ""
         content = asked[-1].content if isinstance(asked[-1].content, dict) else {}
@@ -1383,12 +1408,37 @@ class CEDOrchestrator:
         # not destroy the whole session (and everything already paid for). Retry
         # ONLY the failed slots, ONCE, REROUTED to the next seat (offset+1), with
         # attempt_index=1 so move identity stays deterministic and duplicate-free.
+        #
+        # A Socratic follow-up is role-critical inside ELENCHUS: two successful
+        # critics may satisfy aggregate quorum, but they cannot substitute for the
+        # question that the following REFLECTION is supposed to answer. Therefore
+        # a missing/rejected Socrates move gets the same one bounded rerouted retry
+        # even when aggregate phase quorum has already been met.
         # All attempts remain in the task_log — nothing is hidden or rewritten.
         ok_count = sum(1 for r in responses if r.ok)
+        missing_socratic = (
+            phase is DialogPhase.ELENCHUS
+            and bool(wave_b)
+            and not self._socratic_followups_for_round(state)
+        )
         if (self.phase_retry and adapters and items
-                and ok_count < effective_quorum):
+                and (ok_count < effective_quorum or missing_socratic)):
             failed = [(t.slot_index, items[t.slot_index][0], items[t.slot_index][1])
                       for t, r in pairs if not r.ok]
+            failed_slots = {slot for slot, _, _ in failed}
+            if missing_socratic:
+                # A firewall-rejected Socratic response can be provider-OK yet
+                # deliberately have no accepted move_id. Treat that logical slot
+                # as failed for rescue purposes too.
+                for task, _resp in pairs:
+                    if (task.task_kind is TaskKind.SOCRATIC_QUESTION
+                            and task.slot_index not in failed_slots):
+                        failed.append((
+                            task.slot_index,
+                            items[task.slot_index][0],
+                            items[task.slot_index][1],
+                        ))
+                        failed_slots.add(task.slot_index)
             # Seats already serving this phase: the successful siblings, plus
             # each reroute as it is planned, so two failed slots cannot both be
             # sent to the same free seat.
@@ -1418,7 +1468,14 @@ class CEDOrchestrator:
                   for slot, aid, role, offset in plan)))
             retry_responses = _absorb(retry_pairs)
             merged = [r for _, r in pairs if r.ok] + retry_responses
-            rescued = sum(1 for r in merged if r.ok) >= effective_quorum
+            role_critical_rescued = (
+                not missing_socratic
+                or bool(self._socratic_followups_for_round(state))
+            )
+            rescued = (
+                sum(1 for r in merged if r.ok) >= effective_quorum
+                and role_critical_rescued
+            )
             self._phase_retries.setdefault(state.session_id, []).append({
                 "phase": phase.value,
                 "failed_slots": [slot for slot, _, _ in failed],
@@ -1478,7 +1535,22 @@ class CEDOrchestrator:
 
         phase_results: List[Tuple[DialogPhase, CouncilRoundResult]] = []
         cycle_log: List[Dict[str, Any]] = []
+        missing_question_reason = "no valid Socratic question was produced this cycle"
         for phase in REGISTRY_SESSION_PHASES:
+            # REFLECTION is not a generic quorum phase: it has one specific
+            # stimulus to answer. If this round produced no accepted Socratic
+            # follow-up (including after bounded rescue), do not silently reuse
+            # an older question. End the dialectic and let reconstruction consume
+            # the public material that actually exists.
+            if (phase is DialogPhase.REFLECTION
+                    and not self._socratic_followups_for_round(state)):
+                cycle_log.append({
+                    "after_cycle": state.round_number,
+                    "continue": False,
+                    "reason": missing_question_reason,
+                })
+                continue
+
             result = await self._run_registry_phase(state, phase, timeout_seconds)
             phase_results.append((phase, result))
             if not result.proceed:
@@ -1496,7 +1568,17 @@ class CEDOrchestrator:
                 if not allowed:
                     break
                 state.round_number += 1
+                cycle_aborted = False
                 for cycle_phase in SOCRATIC_CYCLE_PHASES:
+                    if (cycle_phase is DialogPhase.REFLECTION
+                            and not self._socratic_followups_for_round(state)):
+                        cycle_log.append({
+                            "after_cycle": state.round_number,
+                            "continue": False,
+                            "reason": missing_question_reason,
+                        })
+                        cycle_aborted = True
+                        break
                     result = await self._run_registry_phase(
                         state, cycle_phase, timeout_seconds)
                     phase_results.append((cycle_phase, result))
@@ -1504,6 +1586,8 @@ class CEDOrchestrator:
                         return self._registry_fallback_final(
                             state, result.warning, blocked_phase=cycle_phase,
                             phase_results=phase_results)
+                if cycle_aborted:
+                    break
         self._cycle_log[sid] = cycle_log
 
         # Downstream council machinery (reads CED-owned state.moves).
