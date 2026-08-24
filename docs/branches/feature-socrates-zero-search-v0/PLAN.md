@@ -33,6 +33,7 @@ preserving byte-for-byte default CED behavior.
 5. [done] Implement deterministic phase-aware hard legal actions.
 6. [done] Prove baseline decisions are legal on actual CED phase prefixes.
 7. [done] Run focused, dialogue-wide, and repository-wide validation.
+8. [done] Harden explicit semantic versions and contradictory terminal input.
 
 ## Validation gates
 

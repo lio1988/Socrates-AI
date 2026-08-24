@@ -173,6 +173,10 @@ The first executable research foundation remains read-only and runtime-inert:
   reconstruction bounds fail closed; terminal snapshots expose only `STOP`.
   The baseline action is tested to be a member of the legal set for actual CED
   phase prefixes from Opening through Synthesis.
+- Projection, baseline-adapter translation, legal-action vocabulary, and legal
+  generator semantics each expose an explicit `v0` identifier. A source state
+  that contains a final response before canonical `COMPLETE` is rejected rather
+  than projected as an ambiguous terminal board.
 
 No method in this milestone calls `legal_actions()` from production execution,
 reads the feature flag, or permits a selected action to control CED.

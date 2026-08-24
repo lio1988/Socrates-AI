@@ -30,6 +30,8 @@
   - CED/Hybrid records project read-only into deterministic SearchState;
   - hard legal actions are deterministic, phase-aware, target-valid and bounded;
   - the fixed baseline is proven to remain inside the legal set;
+  - Phase-2 projector/adapter/vocabulary/generator semantics are explicitly
+    versioned and contradictory pre-COMPLETE final state fails closed;
   - search retains zero production execution authority.
 - Implementation checkpoint: `8d6770b` (`feat: add SocratesZero search
   contracts v0`).
@@ -130,12 +132,12 @@ strategy produces an auditable receipt but executes nothing.
 
 TESTS:
 
-- SocratesZero contracts/baseline/projection/legal actions: `60 passed`;
+- SocratesZero contracts/baseline/projection/legal actions: `64 passed`;
 - focused SocratesZero + acceptance/marker + CED rotation/identity/retry:
-  `254 passed`;
-- Hybrid authority plus SocratesZero after boundary correction: `71 passed`;
-- full `tests_dialogues`: `2126 passed, 1 skipped`;
-- repository-wide: `2433 passed, 1 skipped, 23 pre-existing warnings`;
+  `258 passed`;
+- Hybrid authority plus SocratesZero after boundary correction: `75 passed`;
+- full `tests_dialogues`: `2130 passed, 1 skipped`;
+- repository-wide: `2437 passed, 1 skipped, 23 pre-existing warnings`;
 - `git diff --check`: passed;
 - no live external call was made.
 
@@ -156,6 +158,7 @@ COMMITS:
 - `14326a1` — deterministic canonical SearchState projection;
 - `dad0a8f` — deterministic CED hard legal actions;
 - `95d19c3` — H8-preserving trusted projection boundary.
+- `d0ba719` — explicit Phase-2 versions and contradictory-terminal hardening.
 
 KNOWN ISSUES:
 

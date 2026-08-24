@@ -38,6 +38,12 @@
   final synthesis, ratification, and terminal stop.
 - The fixed baseline is proven inside the legal set for actual canonical phase
   prefixes from Opening through Synthesis.
+- Phase-2 semantic surfaces are separately versioned as
+  `ced-search-state-projection/v0`, `ced-fixed-rotation-adapter/v0`,
+  `ced-legal-action-vocabulary/v0`, and
+  `ced-deterministic-legal-action-generator/v0`.
+- `final_response` before canonical `DialogPhase.COMPLETE` is inconsistent
+  source state and the projection must fail closed.
 
 ## Protected local state
 
