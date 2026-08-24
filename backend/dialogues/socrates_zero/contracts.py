@@ -180,6 +180,7 @@ class MoveHistoryRef(_FrozenContract):
     """Relevant accepted-move identity; random task IDs are deliberately absent."""
 
     move_id: str
+    semantic_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     phase: str
     round_index: int = Field(ge=0)
     agent_id: str
@@ -293,6 +294,10 @@ class SearchState(_FrozenContract):
     question: str
     phase: str
     round_number: int = Field(default=0, ge=0)
+    active_agent_id: Optional[str] = None
+    active_role: Optional[str] = None
+    active_slot_index: int = Field(default=0, ge=0)
+    active_attempt_index: int = Field(default=0, ge=0)
 
     active_claims: Tuple[SemanticArtifactRef, ...] = ()
     evidence: Tuple[SemanticArtifactRef, ...] = ()
@@ -372,6 +377,13 @@ class SearchState(_FrozenContract):
 
     @model_validator(mode="after")
     def canonicalize_and_identify(self) -> "SearchState":
+        if (self.active_agent_id is None) != (self.active_role is None):
+            raise ContractValidationError(
+                "active_agent_id and active_role must both be present or absent"
+            )
+        if self.active_agent_id is not None:
+            _nonblank(self.active_agent_id)
+            _nonblank(self.active_role or "")
         for field_name in self._ARTIFACT_FIELDS:
             canonical = self._canonical_artifacts(getattr(self, field_name), field_name)
             object.__setattr__(self, field_name, canonical)
@@ -417,6 +429,10 @@ class SearchState(_FrozenContract):
             "question": self.question,
             "phase": self.phase,
             "round_number": self.round_number,
+            "active_agent_id": self.active_agent_id,
+            "active_role": self.active_role,
+            "active_slot_index": self.active_slot_index,
+            "active_attempt_index": self.active_attempt_index,
             **artifacts,
             "role_history": [item.model_dump(mode="json") for item in self.role_history],
             "move_history": [item.model_dump(mode="json") for item in self.move_history],

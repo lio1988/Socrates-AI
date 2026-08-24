@@ -36,6 +36,7 @@ from .contracts import (
     validate_action_references,
 )
 from .baseline import FixedRotationBaselineAdapter, FixedRotationBaselineStrategy
+from .projection import project_search_state
 
 SOCRATES_ZERO_ENABLED_ENV = "SOCRATES_ZERO_ENABLED"
 SOCRATES_ZERO_DEFAULT_ENABLED = False
@@ -74,4 +75,5 @@ __all__ = [
     "canonical_json",
     "stable_contract_id",
     "validate_action_references",
+    "project_search_state",
 ]
