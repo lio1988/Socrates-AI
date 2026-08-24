@@ -106,7 +106,7 @@ class Injecting(ScriptedMockProvider):
                 "operator": MaieuticOperator.DRAW_CONSEQUENCE.value,
                 "grounded_in": [], "introduces_new_proposition": False,
                 "inquiry_state": InquiryState.CONTINUE_INQUIRY.value,
-                "epistemic_marker": "hypothesis"}, "confidence": 0.6})
+                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.6})
         return await super()._produce_raw_text(task, agent_state)
 
 
@@ -358,7 +358,8 @@ class RepeatObjector(ScriptedMockProvider):
         if task.task_kind is TaskKind.ELENCHUS_OBJECTION:
             return json.dumps({"content": {
                 "objection": "the derivation was never shown to be exhaustive",
-                "target_section": "core_answer"}, "confidence": 0.9})
+                "target_section": "core_answer",
+                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.9})
         return await super()._produce_raw_text(task, agent_state)
 
 

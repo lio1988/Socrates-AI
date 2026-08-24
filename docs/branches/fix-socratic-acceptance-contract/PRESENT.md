@@ -2,30 +2,36 @@
 
 ## Current checkpoint
 
-DONE: verified baseline ancestry, added phase-aware deterministic Socratic
-content validation, applied it before CED move acceptance, made the offline
-scripted provider obey the same contract, and added negative/end-to-end tests.
+DONE: completed the separate epistemic-marker milestone. The canonical
+`marker_is_contracted(task_kind)` predicate now governs prompt and parser;
+deliberative moves reject missing, non-string, or non-canonical markers, and
+evaluative moves reject semantically misplaced markers. Deterministic and
+canned fixtures now emit canonical markers only for contracted tasks. Marker
+data remains advisory and has no CED authority.
 
 TESTS:
 
-- acceptance/firewall/policy: `87 passed`;
-- acceptance plus retry/identity/registry/live-view/Hybrid shadow:
-  `131 passed`;
-- full `tests_dialogues`: `2064 passed, 1 skipped`;
-- repository-wide: `2359 passed, 1 skipped, 23 pre-existing warnings`.
+- focused marker/acceptance/firewall/policy/learning bundle: `190 passed`;
+- direct parser/provider transport bundle: `130 passed`;
+- end-to-end custom-provider bundle: `104 passed`;
+- full `tests_dialogues`: `2066 passed, 1 skipped`;
+- repository-wide: `2373 passed, 1 skipped, 23 pre-existing warnings`.
 
 FILES CHANGED:
 
-- `backend/dialogues/socratic.py`;
-- `backend/dialogues/ced.py`;
-- `backend/dialogues/provider_registry.py` (offline mock fixture only);
-- `tests_dialogues/test_socratic_acceptance_contract.py`;
+- `backend/dialogues/provider_registry.py`;
+- `backend/dialogues/reasoning_prompts.py`;
+- `backend/dialogues/README.md`;
+- marker contract tests plus deterministic/canned provider fixtures across the
+  dialogue suite;
 - branch README, MEMORY, PLAN, PRESENT.
 
-COMMIT: `6d352de` (`fix: enforce Socratic move acceptance contract`).
+COMMIT: pending (`fix: enforce epistemic marker contract`). The preceding
+acceptance implementation remains `6d352de` and its checkpoint is `25d5086`.
 
-KNOWN ISSUES: marker omission/malformed-marker acceptance is intentionally
-unchanged until the separate marker milestone. No live external call was made.
+KNOWN ISSUES: the 23 warnings are pre-existing Pydantic `.dict()` deprecations
+and duplicate FastAPI operation IDs. No live external call was made.
 
-NEXT: enforce the already-documented marker contract in a separate atomic
-change.
+NEXT: integrate the reviewed acceptance and marker commits into
+`feature/socrates-zero-search-v0` by cherry-pick, then rerun focused and full
+regressions there.

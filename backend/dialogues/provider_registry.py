@@ -39,6 +39,7 @@ from .models import (
 )
 from .providers import FakeProvider
 from .model_identity import authoritative_model_identity
+from .reasoning_prompts import marker_is_contracted
 from .socratic import InquiryState, MaieuticOperator
 
 
@@ -138,16 +139,31 @@ def parse_and_validate_move(
         )
     except (ValidationError, KeyError, TypeError) as exc:
         return None, ProviderStatus.SCHEMA_ERROR, f"schema validation failed: {exc}"
-    # Phase 18: lift the move's epistemic marker (the honesty vocabulary) out of
-    # the content so CED can check marker↔confidence consistency mechanically.
-    # An invalid/absent marker is simply not lifted — never a rejection.
-    if isinstance(data["content"], dict):
-        raw_marker = data["content"].get("epistemic_marker")
-        if raw_marker:
-            try:
-                move.epistemic_markers = [EpistemicMarker(str(raw_marker))]
-            except (ValueError, TypeError):
-                pass
+    # The same single predicate governs both the prompt contract and parser.
+    # A provider-valid envelope is incomplete when its task requires a marker;
+    # evaluative tasks reject one because they judge someone else's claim and
+    # therefore have no meaningful self-epistemic marker.
+    content = data["content"]
+    marker_required = marker_is_contracted(task.task_kind)
+    marker_present = "epistemic_marker" in content
+    raw_marker = content.get("epistemic_marker")
+    if marker_required and not marker_present:
+        return (None, ProviderStatus.SCHEMA_ERROR,
+                "schema validation failed: epistemic_marker is required")
+    if not marker_required and marker_present:
+        return (None, ProviderStatus.SCHEMA_ERROR,
+                "schema validation failed: epistemic_marker is not permitted "
+                "for this task kind")
+    if marker_required:
+        if not isinstance(raw_marker, str):
+            return (None, ProviderStatus.SCHEMA_ERROR,
+                    "schema validation failed: epistemic_marker must be a string")
+        try:
+            marker = EpistemicMarker(raw_marker)
+        except ValueError:
+            return (None, ProviderStatus.SCHEMA_ERROR,
+                    "schema validation failed: epistemic_marker is not canonical")
+        move.epistemic_markers = [marker]
     return move, ProviderStatus.OK, None
 
 
@@ -382,6 +398,7 @@ class ScriptedMockProvider(BaseProviderAdapter):
                 "transferable_principle": "Prefer scope-limited claims with explicit "
                                           "uncertainty over universal assertions.",
                 "pitfalls": ["overclaiming beyond the cited evidence"],
+                "epistemic_marker": "reasonable_hypothesis",
             }, "confidence": 0.8})
         if task.task_kind == TaskKind.LESSON_CONSOLIDATION:
             n = len(task.context.get("lessons_to_consolidate", []) or [])
@@ -391,10 +408,14 @@ class ScriptedMockProvider(BaseProviderAdapter):
                 "transferable_principle": "Generalize only to the domains the evidence "
                                           "actually covers.",
                 "pitfalls": ["treating repeated agreement as independent confirmation"],
+                "epistemic_marker": "reasonable_hypothesis",
             }, "confidence": 0.8})
         if task.task_kind == TaskKind.LESSON_RELEVANCE:
             n = len(task.context.get("candidate_lessons", []) or [])
-            return json.dumps({"content": {"relevant_indices": list(range(min(2, n)))},
+            return json.dumps({"content": {
+                "relevant_indices": list(range(min(2, n))),
+                "epistemic_marker": "reasonable_hypothesis",
+            },
                                "confidence": 0.7})
         if task.task_kind == TaskKind.PROCESS_REVIEW:
             return json.dumps({"content": {
@@ -402,6 +423,7 @@ class ScriptedMockProvider(BaseProviderAdapter):
                 "what_failed": "The synthesis initially under-used the strongest objection.",
                 "advice_for_next_dialogue": "Ground the crucial stress test in the strongest "
                                             "objection actually raised.",
+                "epistemic_marker": "reasonable_hypothesis",
             }, "confidence": 0.75})
         # Phase 8C.2 peer scoring → return a structured score payload (the scored
         # content is the move/section text; the FakeProvider produces the breakdown).
@@ -426,6 +448,11 @@ class ScriptedMockProvider(BaseProviderAdapter):
         if isinstance(out, dict) and "confidence" in out:
             conf = out.get("confidence", 0.7)
             out = {k: v for k, v in out.items() if k != "confidence"}
+        if isinstance(out, dict) and marker_is_contracted(task.task_kind):
+            # Deterministic fixture output must satisfy the same task-kind
+            # contract as a real provider.  The marker remains advisory data;
+            # it does not alter evidence, scores, or CED authority.
+            out["epistemic_marker"] = "reasonable_hypothesis"
         return json.dumps({"content": out, "confidence": conf})
 
 

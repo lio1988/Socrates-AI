@@ -103,7 +103,8 @@ def test_real_adapter_path_offline_is_key_safe(monkeypatch, capsys):
     # Patch the SEAM (_produce_raw_text) so the anthropic SDK is never imported and
     # no network is touched — the rest of the live adapter + validation runs for real.
     async def fake_produce(self, task, agent_state):
-        return '{"content": {"text": "water is wet"}, "confidence": 0.66}'
+        return ('{"content": {"text": "water is wet", "epistemic_marker": '
+                '"reasonable_hypothesis"}, "confidence": 0.66}')
 
     monkeypatch.setattr(mod.LiveAnthropicAdapter, "_produce_raw_text", fake_produce)
     rc = mod.main(env={mod.FLAG_ENV: "1", mod.KEY_ENV: FAKE_KEY})

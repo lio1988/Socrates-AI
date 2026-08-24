@@ -39,11 +39,39 @@ def test_marker_lifted_from_content():
     assert move.content["epistemic_marker"] == "reasonable_hypothesis"   # content kept intact
 
 
-def test_invalid_or_missing_marker_never_rejects():
-    for content in ({"thesis": "x", "epistemic_marker": "nonsense"}, {"thesis": "x"}):
-        move, status, _ = parse_and_validate_move(
+def test_invalid_or_missing_required_marker_rejects():
+    for content in (
+        {"thesis": "x", "epistemic_marker": "nonsense"},
+        {"thesis": "x", "epistemic_marker": 3},
+        {"thesis": "x"},
+    ):
+        move, status, error = parse_and_validate_move(
             json.dumps({"content": content, "confidence": 0.7}), _task(), meta={})
-        assert status.value == "ok" and move.epistemic_markers == []
+        assert status.value == "schema_error" and move is None
+        assert "epistemic_marker" in error
+
+
+def test_marker_on_evaluative_task_is_rejected_as_wrong_contract():
+    move, status, error = parse_and_validate_move(
+        json.dumps({"content": {
+            "score": 8,
+            "epistemic_marker": "reasonable_hypothesis",
+        }, "confidence": 0.7}),
+        _task(TaskKind.MOVE_SCORE),
+        meta={},
+    )
+    assert status.value == "schema_error" and move is None
+    assert "not permitted" in error
+
+
+def test_evaluative_task_without_marker_remains_valid_envelope():
+    move, status, error = parse_and_validate_move(
+        json.dumps({"content": {"score": 8}, "confidence": 0.7}),
+        _task(TaskKind.MOVE_SCORE),
+        meta={},
+    )
+    assert status.value == "ok" and error is None
+    assert move.epistemic_markers == []
 
 
 # ── bands ↔ enum alignment + directive contract ───────────────────────────────

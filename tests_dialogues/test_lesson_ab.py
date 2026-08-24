@@ -40,7 +40,9 @@ MATCHING_QUESTION = "deliberation scoring assembly"
 
 
 def _draft_json(marker):
-    return json.dumps({"content": {f: f"{marker} {f}" for f in _SECTIONS},
+    content = {f: f"{marker} {f}" for f in _SECTIONS}
+    content["epistemic_marker"] = "reasonable_hypothesis"
+    return json.dumps({"content": content,
                        "confidence": 0.8})
 
 

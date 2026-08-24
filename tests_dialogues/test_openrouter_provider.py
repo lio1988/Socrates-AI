@@ -66,7 +66,9 @@ def test_exact_model_and_valid_move(monkeypatch):
         return {
             "id": "resp_1",
             "model": "vendor/model",
-            "choices": [{"message": {"content": json.dumps({"content": {"text": "ok"}, "confidence": 0.8})}}],
+            "choices": [{"message": {"content": json.dumps({"content": {
+                "text": "ok", "epistemic_marker": "reasonable_hypothesis",
+            }, "confidence": 0.8})}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 2},
         }
 
@@ -144,7 +146,10 @@ def test_transport_delivers_canonical_prompt_kernel_and_devil_mandate(monkeypatc
                 "id": "resp_prompt_delivery",
                 "model": "vendor/model",
                 "choices": [{"message": {"content": json.dumps({
-                    "content": {"objection": "The consensus assumes its conclusion."},
+                    "content": {
+                        "objection": "The consensus assumes its conclusion.",
+                        "epistemic_marker": "reasonable_hypothesis",
+                    },
                     "confidence": 0.81,
                 })}}],
             })

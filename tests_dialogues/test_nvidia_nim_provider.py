@@ -95,7 +95,9 @@ def test_nvidia_request_carries_full_reasoning_prompt_and_schema_context():
 
 def test_nvidia_valid_envelope_parses_through_existing_registry_validation():
     adapter = _adapter(envelope=nvidia_chat_envelope(json.dumps({
-        "content": {"text": "NVIDIA seat response"}, "confidence": 0.72,
+        "content": {"text": "NVIDIA seat response",
+                    "epistemic_marker": "reasonable_hypothesis"},
+        "confidence": 0.72,
     })))
     resp = asyncio.run(adapter.generate_agent_move(_task(), _state()))
     assert resp.status == ProviderStatus.OK

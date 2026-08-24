@@ -62,7 +62,9 @@ _SECTIONS = ("core_answer", "crucial_stress_test", "blind_spots",
 
 
 def _sections_json(marker):
-    return json.dumps({"content": {f: f"{marker} {f}" for f in _SECTIONS},
+    content = {f: f"{marker} {f}" for f in _SECTIONS}
+    content["epistemic_marker"] = "reasonable_hypothesis"
+    return json.dumps({"content": content,
                        "confidence": 0.8})
 
 

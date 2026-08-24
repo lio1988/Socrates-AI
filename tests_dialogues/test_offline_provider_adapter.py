@@ -47,8 +47,11 @@ def _task(kind, *, role=AgentRole.SYNTHESIZER, phase=DialogPhase.SYNTHESIS,
     )
 
 
-def _move_envelope(payload, conf=0.7, model=DEFAULT_OFFLINE_MODEL):
+def _move_envelope(payload, conf=0.7, model=DEFAULT_OFFLINE_MODEL, *, marker=True):
     """Wrap a CED move payload in an Anthropic text envelope (the canned-fixture path)."""
+    payload = dict(payload)
+    if marker:
+        payload["epistemic_marker"] = "reasonable_hypothesis"
     text = json.dumps({"content": payload, "confidence": conf})
     return anthropic_text_envelope(text, model=model)
 
@@ -89,7 +92,7 @@ def test_returns_valid_provider_response_from_fixture():
     assert resp.ok
     assert resp.status == ProviderStatus.OK
     assert resp.provider_id == "offline_x"
-    assert resp.parsed_move.content == {"text": "A grounded claim."}
+    assert resp.parsed_move.content["text"] == "A grounded claim."
     assert resp.parsed_move.confidence == pytest.approx(0.66)
     assert resp.latency_ms is not None
 
@@ -108,7 +111,7 @@ def test_supports_deliberation_output():
 
 def test_supports_move_scoring_output():
     adapter = offline_canned_adapter(
-        "p", by_task_kind={TaskKind.MOVE_SCORE: _move_envelope(_SCORE_PAYLOAD)})
+        "p", by_task_kind={TaskKind.MOVE_SCORE: _move_envelope(_SCORE_PAYLOAD, marker=False)})
     resp = _run(adapter.generate_agent_move(_task(TaskKind.MOVE_SCORE), _state()))
     assert resp.ok
     # the adapter carries the provider's score payload verbatim — it does not compute it
@@ -117,7 +120,7 @@ def test_supports_move_scoring_output():
 
 def test_supports_section_scoring_output():
     adapter = offline_canned_adapter(
-        "p", by_task_kind={TaskKind.SECTION_SCORE: _move_envelope(_SCORE_PAYLOAD)})
+        "p", by_task_kind={TaskKind.SECTION_SCORE: _move_envelope(_SCORE_PAYLOAD, marker=False)})
     resp = _run(adapter.generate_agent_move(_task(TaskKind.SECTION_SCORE), _state()))
     assert resp.ok
     assert resp.parsed_move.content == _SCORE_PAYLOAD
@@ -125,7 +128,8 @@ def test_supports_section_scoring_output():
 
 def test_supports_council_ratification_output():
     adapter = offline_canned_adapter(
-        "p", by_task_kind={TaskKind.COUNCIL_RATIFICATION: _move_envelope(_VERDICT_PAYLOAD, 0.85)})
+        "p", by_task_kind={TaskKind.COUNCIL_RATIFICATION:
+                            _move_envelope(_VERDICT_PAYLOAD, 0.85, marker=False)})
     resp = _run(adapter.generate_agent_move(
         _task(TaskKind.COUNCIL_RATIFICATION, phase=DialogPhase.RATIFICATION), _state()))
     assert resp.ok
@@ -153,13 +157,14 @@ def test_non_dict_content_is_schema_error():
 
 def test_json_repair_still_works_through_offline_adapter():
     # code-fenced + trailing comma → repaired, then schema-validated (not bypassed)
-    fenced = "```json\n{\"content\": {\"text\": \"ok\"}, \"confidence\": 0.7,}\n```"
+    fenced = ("```json\n{\"content\": {\"text\": \"ok\", \"epistemic_marker\": "
+              "\"reasonable_hypothesis\"}, \"confidence\": 0.7,}\n```")
     adapter = offline_canned_adapter(
         "p", by_task_kind={TaskKind.INITIAL_RESPONSE: anthropic_text_envelope(fenced)})
     resp = _run(adapter.generate_agent_move(_task(TaskKind.INITIAL_RESPONSE), _state()))
     assert resp.ok
     assert resp.repair_attempted and resp.repair_succeeded
-    assert resp.parsed_move.content == {"text": "ok"}
+    assert resp.parsed_move.content["text"] == "ok"
 
 
 # ── (8) missing / failed output → honest provider status, no fabrication ──────
@@ -220,7 +225,7 @@ def test_adapter_carries_score_verbatim_no_recompute():
     # the adapter returns exactly the provider's payload — it does not re-derive scores
     custom = dict(_SCORE_PAYLOAD, epistemic_value=2.5)
     adapter = offline_canned_adapter(
-        "p", by_task_kind={TaskKind.MOVE_SCORE: _move_envelope(custom)})
+        "p", by_task_kind={TaskKind.MOVE_SCORE: _move_envelope(custom, marker=False)})
     resp = _run(adapter.generate_agent_move(_task(TaskKind.MOVE_SCORE), _state()))
     assert resp.parsed_move.content["epistemic_value"] == 2.5
 

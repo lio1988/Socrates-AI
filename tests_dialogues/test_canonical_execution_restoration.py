@@ -195,7 +195,10 @@ def test_move_score_uses_typed_parsed_move_confidence(confidence):
         question=Q,
         task_kind=TaskKind.SYNTHESIS_DRAFT,
     )
-    candidate = _parsed_response(candidate_task, {"text": "candidate"}, 0.5).parsed_move
+    candidate = _parsed_response(candidate_task, {
+        "text": "candidate",
+        "epistemic_marker": "reasonable_hypothesis",
+    }, 0.5).parsed_move
     score_task = ced._build_move_score_task(
         state, candidate, "seat_1", DialogPhase.SYNTHESIS, 0,
     )

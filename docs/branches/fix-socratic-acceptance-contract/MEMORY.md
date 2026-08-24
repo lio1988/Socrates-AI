@@ -10,7 +10,11 @@
   malformed references authorize no Reflection.
 - Cycle-locality, maximum two follow-ups, retry bounds, append-only commitment
   history, reconstruction timing, and model independence remain unchanged.
-- Marker enforcement is a separate atomic milestone.
+- `marker_is_contracted(task_kind)` is the sole authority for whether a marker
+  is required. Deliberative moves require one canonical string value;
+  evaluative moves must not carry one.
+- Marker validation is schema completeness only. Markers remain advisory and
+  cannot create evidence, scores, verification, ratification, or CED authority.
 
 ## Protected local state
 

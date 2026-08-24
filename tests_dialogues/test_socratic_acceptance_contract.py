@@ -112,7 +112,11 @@ def test_opening_and_fully_grounded_followup_are_distinct_valid_contracts():
 class EmptySocrates(ScriptedMockProvider):
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
         if task.task_kind is TaskKind.SOCRATIC_QUESTION:
-            return json.dumps({"content": {}, "confidence": 0.7})
+            return json.dumps({"content": {
+                "question": "",
+                "operator": MaieuticOperator.CLARIFY.value,
+                "epistemic_marker": "open_uncertainty",
+            }, "confidence": 0.7})
         return await super()._produce_raw_text(task, agent_state)
 
 
@@ -140,7 +144,11 @@ def test_provider_ok_empty_question_never_receives_an_accepted_move_id():
         task_kind=TaskKind.SOCRATIC_QUESTION,
     )
     move, status, error = parse_and_validate_move(
-        json.dumps({"content": {}, "confidence": 0.7}), task
+        json.dumps({"content": {
+            "question": "",
+            "operator": MaieuticOperator.CLARIFY.value,
+            "epistemic_marker": "open_uncertainty",
+        }, "confidence": 0.7}), task
     )
     assert status.value == "ok" and error is None and move is not None
 

@@ -144,7 +144,8 @@ class _Blocking(ScriptedMockProvider):
     async def _produce_raw_text(self, task, agent_state) -> str:
         if task.task_kind is TaskKind.ELENCHUS_OBJECTION:
             return json.dumps({"content": {"critique": "unshown assumption",
-                                           "target_section": "nuance"},
+                                           "target_section": "nuance",
+                                           "epistemic_marker": "reasonable_hypothesis"},
                                "confidence": 0.8})
         return await super()._produce_raw_text(task, agent_state)
 

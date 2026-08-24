@@ -735,7 +735,8 @@ hit, or a collapse after a weak one) is a calibration failure. Include all three
 fields in your content alongside your revised position.
 Example: {"content": {"revised_position": "…", "prior_confidence": 0.8,
 "evidence_force": "strong", "posterior_confidence": 0.55,
-"what_changed": "…"}, "confidence": 0.55}"""
+"what_changed": "…", "epistemic_marker": "reasonable_hypothesis"},
+"confidence": 0.55}"""
 
 _SCORE_KINDS = {TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE}
 

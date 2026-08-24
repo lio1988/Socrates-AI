@@ -51,8 +51,10 @@ _SECTIONS = (
 
 
 def _draft_json(marker):
+    content = {name: f"{marker} {name}" for name in _SECTIONS}
+    content["epistemic_marker"] = "reasonable_hypothesis"
     return json.dumps({
-        "content": {name: f"{marker} {name}" for name in _SECTIONS},
+        "content": content,
         "confidence": 0.8,
     })
 

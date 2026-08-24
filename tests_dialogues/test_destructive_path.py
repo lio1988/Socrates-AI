@@ -318,7 +318,8 @@ class FalseAnswerCouncil(ScriptedMockProvider):
                 "crucial_stress_test": "We tested every alternative and found none.",
                 "blind_spots": "None material.",
                 "nuance": "The constraints are unambiguous.",
-                "final_verdict": self._answer}, "confidence": 0.99})
+                "final_verdict": self._answer,
+                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.99})
         return await super()._produce_raw_text(task, agent_state)
 
 

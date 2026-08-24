@@ -65,7 +65,7 @@ class Maieutic(ScriptedMockProvider):
                 return json.dumps({"content": {
                     "question": "Which stated constraints fix a position outright?",
                     "operator": MaieuticOperator.ELICIT_COMMITMENT.value,
-                    "epistemic_marker": "hypothesis"}, "confidence": 0.6})
+                    "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.6})
             refs = []
             if self._grounded:
                 for row in task.context.get("public_commitments") or []:
@@ -81,13 +81,13 @@ class Maieutic(ScriptedMockProvider):
                 "inquiry_state": (InquiryState.CONTINUE_INQUIRY.value
                                   if self._keep_going
                                   else InquiryState.READY_FOR_RECONSTRUCTION.value),
-                "epistemic_marker": "hypothesis"}, "confidence": 0.6})
+                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.6})
 
         if task.task_kind is TaskKind.INITIAL_RESPONSE:
             return json.dumps({"content": {
                 "analysis": "Two positions are fixed by the stated rules.",
                 "commitments": [C1, C2],
-                "epistemic_marker": "hypothesis"}, "confidence": 0.7})
+                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.7})
 
         if task.task_kind is TaskKind.REFLECTION_REVISION:
             live = task.context.get("current_public_commitments") or []
@@ -98,7 +98,7 @@ class Maieutic(ScriptedMockProvider):
                 "commitments_retained": [live[0]["commitment_id"]] if live else [],
                 "new_commitments": (["The middle four remain to be assigned."]
                                     if self._revise else []),
-                "epistemic_marker": "hypothesis"}
+                "epistemic_marker": "reasonable_hypothesis"}
             if self._revise and len(live) > 1:
                 content["commitments_withdrawn"] = [live[1]["commitment_id"]]
             return json.dumps({"content": content, "confidence": 0.7})

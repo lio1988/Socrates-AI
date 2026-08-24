@@ -53,7 +53,8 @@ class VerifyingMock(ScriptedMockProvider):
             # tests are about the verification gate, so they declare one.
             return json.dumps({"content": {
                 "critique": "the enumeration was not shown to be exhaustive",
-                "target_section": self._elenchus_target}, "confidence": 0.8})
+                "target_section": self._elenchus_target,
+                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.8})
         if task.task_kind is not TaskKind.OBJECTION_VERIFICATION:
             return await super()._produce_raw_text(task, agent_state)
         if self._malformed:

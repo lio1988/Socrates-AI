@@ -38,7 +38,8 @@ class TargetingMock(ScriptedMockProvider):
         if task.task_kind is TaskKind.ELENCHUS_OBJECTION:
             return json.dumps({"content": {
                 "critique": "the load-bearing assumption was asserted, not shown",
-                "target_section": "core_answer"}, "confidence": 0.8})
+                "target_section": "core_answer",
+                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.8})
         return await super()._produce_raw_text(task, agent_state)
 
 TASK = ("Four researchers present once each. Anna presents before Ben. "

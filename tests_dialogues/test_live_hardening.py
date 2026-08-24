@@ -45,14 +45,14 @@ def _task(kind=TaskKind.ELENCHUS_OBJECTION, phase=DialogPhase.ELENCHUS,
 def test_trailing_prose_after_json_is_parsed():
     raw = ('```json\n{"content": {"x": "ok"}, "confidence": 0.8}\n```\n\n'
            "Note: here is my additional commentary that used to break parsing.")
-    move, status, err = parse_and_validate_move(raw, _task(), meta={})
+    move, status, err = parse_and_validate_move(raw, _task(kind=None), meta={})
     assert status.value == "ok" and move.content == {"x": "ok"}
 
 
 def test_second_json_block_after_first_is_ignored():
     raw = ('{"content": {"x": "first"}, "confidence": 0.7}\n'
            '{"content": {"x": "second"}, "confidence": 0.9}')
-    move, status, _ = parse_and_validate_move(raw, _task(), meta={})
+    move, status, _ = parse_and_validate_move(raw, _task(kind=None), meta={})
     assert status.value == "ok" and move.content == {"x": "first"}
 
 
@@ -194,13 +194,14 @@ def test_retry_recovers_from_transient_rate_limit(monkeypatch):
         calls["n"] += 1
         if calls["n"] == 1:
             raise _fake_exc("RateLimitError")
-        return '{"content": {"x": "recovered"}, "confidence": 0.8}'
+        return ('{"content": {"x": "recovered", "epistemic_marker": '
+                '"reasonable_hypothesis"}, "confidence": 0.8}')
 
     monkeypatch.setattr(LP.LiveAnthropicAdapter, "_produce_raw_text", flaky)
     resp = asyncio.run(_adapter(retries=1).generate_agent_move(
         _task(TaskKind.INITIAL_RESPONSE, DialogPhase.INITIAL_RESPONSE, AgentRole.SYNTHESIZER),
         None))
-    assert resp.ok and resp.parsed_move.content == {"x": "recovered"}
+    assert resp.ok and resp.parsed_move.content["x"] == "recovered"
     assert resp.retry_count == 1 and calls["n"] == 2
 
 

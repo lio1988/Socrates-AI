@@ -986,8 +986,10 @@ persistence (`calibration_v0`).
 open_uncertainty | unsubstantiated_claim) existed since V1 but never reached
 the live path. Now: deliberating agents are told the **exact vocabulary and its
 confidence ceilings** (`EPISTEMIC_MARKER_DIRECTIVE`), the registry parser lifts
-`content.epistemic_marker` into `move.epistemic_markers` (invalid/missing →
-simply not lifted, never a rejection), and CED **checks marker↔confidence
+`content.epistemic_marker` into `move.epistemic_markers`. The canonical
+`marker_is_contracted(task_kind)` predicate now governs both prompt and parser:
+missing/malformed markers reject deliberative moves, while evaluative tasks
+reject a marker as semantically misplaced. CED **checks marker↔confidence
 consistency mechanically**: a move tagged `unsubstantiated_claim` at confidence
 0.9 is an epistemic inconsistency — recorded in the audit
 (`epistemic_consistency`: tagged / violations / ceilings), never rewritten.
