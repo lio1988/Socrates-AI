@@ -57,6 +57,17 @@ from .policy import (
     PolicyAdjustment,
     UniformPolicyPrior,
 )
+from .value import (
+    HEURISTIC_VALUE_ESTIMATOR_VERSION,
+    HEURISTIC_VALUE_RULES_V0,
+    NEUTRAL_VALUE_ESTIMATOR_VERSION,
+    VALUE_MAX,
+    VALUE_MIN,
+    HeuristicValueEstimator,
+    NeutralValueEstimator,
+    ValueAudit,
+    ValueComponent,
+)
 
 SOCRATES_ZERO_ENABLED_ENV = "SOCRATES_ZERO_ENABLED"
 SOCRATES_ZERO_DEFAULT_ENABLED = False
@@ -68,7 +79,12 @@ __all__ = [
     "LEGAL_ACTION_VOCABULARY_VERSION",
     "HEURISTIC_POLICY_MIN_PROBABILITY",
     "HEURISTIC_POLICY_PRIOR_VERSION",
+    "HEURISTIC_VALUE_ESTIMATOR_VERSION",
+    "HEURISTIC_VALUE_RULES_V0",
+    "NEUTRAL_VALUE_ESTIMATOR_VERSION",
     "UNIFORM_POLICY_PRIOR_VERSION",
+    "VALUE_MAX",
+    "VALUE_MIN",
     "SOCRATES_ZERO_DEFAULT_ENABLED",
     "SOCRATES_ZERO_ENABLED_ENV",
     "ActionGenerator",
@@ -85,8 +101,10 @@ __all__ = [
     "FixedRotationBaselineAdapter",
     "FixedRotationBaselineStrategy",
     "HeuristicPolicyPrior",
+    "HeuristicValueEstimator",
     "LegalAction",
     "MoveHistoryRef",
+    "NeutralValueEstimator",
     "ObservationRef",
     "PolicyContextEntry",
     "PolicyActionAudit",
@@ -103,6 +121,8 @@ __all__ = [
     "SemanticArtifactRef",
     "TerminalStatus",
     "UniformPolicyPrior",
+    "ValueAudit",
+    "ValueComponent",
     "ValueEstimator",
     "canonical_json",
     "stable_contract_id",
