@@ -147,6 +147,11 @@ shared `AtomicReceiptStore` is authoritative over durable bytes, not truth.
 
 - There is no canonical cross-provider token/cost meter yet.
 - Random `AgentTask.task_id` cannot be load-bearing replay identity.
+- The registry parser currently validates the generic `AgentMove` envelope, not
+  every role-specific content contract. In particular, an empty Socrates
+  `content` object can pass generic parsing and the current Socratic screen
+  without producing a grounded question. This is a baseline constitutional
+  validation gap to fix separately, not evidence for relaxing search legality.
 - There is no general constitutional action executor or complete legal-action
   generator yet.
 - The current evaluation families are heterogeneous; matched-compute
