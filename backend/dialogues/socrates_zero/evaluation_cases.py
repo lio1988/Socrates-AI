@@ -115,7 +115,6 @@ class SuccessorObservationBlueprint(_FrozenEvaluationContract):
 class StrategyCaseView(_FrozenEvaluationContract):
     """Complete fixture input available to the harness, with no ground truth."""
 
-    case_id: str
     root_state: SearchState
     hard_legal_actions: Tuple[LegalAction, ...]
     successor_observations: Tuple[SuccessorObservationBlueprint, ...]
@@ -172,7 +171,6 @@ class EvaluationCase(_FrozenEvaluationContract):
 
     def strategy_view(self) -> StrategyCaseView:
         return StrategyCaseView(
-            case_id=self.case_id,
             root_state=self.root_state,
             hard_legal_actions=self.hard_legal_actions,
             successor_observations=self.successor_observations,

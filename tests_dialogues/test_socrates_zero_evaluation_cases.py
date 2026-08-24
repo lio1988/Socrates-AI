@@ -73,8 +73,8 @@ def test_strategy_view_contains_no_ground_truth_labels_or_optimal_action():
     assert "ground_truth" not in payload
     assert "optimal_action" not in serialized
     assert "outcome_value" not in serialized
+    assert case.case_id not in serialized
     assert set(payload) == {
-        "case_id",
         "root_state",
         "hard_legal_actions",
         "successor_observations",
