@@ -37,6 +37,7 @@ from .contracts import (
 )
 from .baseline import FixedRotationBaselineAdapter, FixedRotationBaselineStrategy
 from .projection import project_search_state
+from .constitution import CEDSearchConstitution, DeterministicLegalActionGenerator
 
 SOCRATES_ZERO_ENABLED_ENV = "SOCRATES_ZERO_ENABLED"
 SOCRATES_ZERO_DEFAULT_ENABLED = False
@@ -54,6 +55,8 @@ __all__ = [
     "BudgetExceeded",
     "BudgetUsage",
     "ContractValidationError",
+    "CEDSearchConstitution",
+    "DeterministicLegalActionGenerator",
     "FixedRotationBaselineAdapter",
     "FixedRotationBaselineStrategy",
     "LegalAction",

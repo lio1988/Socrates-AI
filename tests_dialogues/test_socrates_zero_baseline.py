@@ -17,6 +17,7 @@ from backend.dialogues.providers import FakeProvider
 from backend.dialogues.socrates_zero import (
     ActionKind,
     BudgetUsage,
+    CEDSearchConstitution,
     ContractValidationError,
     FixedRotationBaselineAdapter,
     FixedRotationBaselineStrategy,
@@ -25,6 +26,7 @@ from backend.dialogues.socrates_zero import (
     SearchState,
     SearchStrategy,
     TerminalStatus,
+    project_search_state,
 )
 
 
@@ -272,3 +274,44 @@ def test_terminal_baseline_selects_stop_only():
         )
     )
     assert result.selected_action == stop
+
+
+def test_every_real_fixed_rotation_decision_projects_to_a_hard_legal_action():
+    ced = _ced()
+    state = ced.create_session("What survives examination?", session_id="inside-rules")
+    adapter = FixedRotationBaselineAdapter(ced)
+    constitution = CEDSearchConstitution(
+        max_socratic_followups=ced.max_socratic_followups
+    )
+
+    async def exercise():
+        for phase in (
+            DialogPhase.OPENING,
+            DialogPhase.INITIAL_RESPONSE,
+            DialogPhase.ELENCHUS,
+            DialogPhase.REFLECTION,
+            DialogPhase.RECONSTRUCTION,
+            DialogPhase.SYNTHESIS,
+        ):
+            for spec in adapter.task_specs(state, phase):
+                projected = project_search_state(
+                    state,
+                    spec,
+                    budget=_budget(),
+                    budget_usage=BudgetUsage(nodes=1),
+                    commitments=ced.commitment_ledger(state),
+                    aporia_records=ced.aporia_records(state),
+                )
+                legal = constitution.legal_actions(projected)
+                expected = FixedRotationBaselineStrategy.expected_action_kind(projected)
+                matching = [
+                    action
+                    for action in legal
+                    if action.kind is expected and action.target_id is None
+                ]
+                assert len(matching) == 1, (phase, spec, legal)
+                constitution.validate_action(projected, matching[0])
+            result = await ced._run_registry_phase(state, phase, None)
+            assert result.proceed
+
+    asyncio.run(exercise())
