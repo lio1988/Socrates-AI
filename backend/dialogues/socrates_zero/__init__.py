@@ -37,14 +37,26 @@ from .contracts import (
     stable_contract_id,
     validate_action_references,
 )
-from .baseline import FixedRotationBaselineAdapter, FixedRotationBaselineStrategy
-from .constitution import CEDSearchConstitution, DeterministicLegalActionGenerator
+from .baseline import (
+    FIXED_ROTATION_BASELINE_ADAPTER_VERSION,
+    FixedRotationBaselineAdapter,
+    FixedRotationBaselineStrategy,
+)
+from .constitution import (
+    LEGAL_ACTION_GENERATOR_VERSION,
+    LEGAL_ACTION_VOCABULARY_VERSION,
+    CEDSearchConstitution,
+    DeterministicLegalActionGenerator,
+)
 
 SOCRATES_ZERO_ENABLED_ENV = "SOCRATES_ZERO_ENABLED"
 SOCRATES_ZERO_DEFAULT_ENABLED = False
 
 __all__ = [
     "SEARCH_CONTRACT_SCHEMA_VERSION",
+    "FIXED_ROTATION_BASELINE_ADAPTER_VERSION",
+    "LEGAL_ACTION_GENERATOR_VERSION",
+    "LEGAL_ACTION_VOCABULARY_VERSION",
     "SOCRATES_ZERO_DEFAULT_ENABLED",
     "SOCRATES_ZERO_ENABLED_ENV",
     "ActionGenerator",

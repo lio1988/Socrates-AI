@@ -130,6 +130,10 @@ def test_adapter_delegates_to_canonical_rotation_without_mutating_state(phase, e
     assert state.model_dump(mode="json") == before
 
 
+def test_baseline_adapter_translation_has_an_explicit_version():
+    assert FixedRotationBaselineAdapter.version == "ced-fixed-rotation-adapter/v0"
+
+
 def test_reflection_specs_are_exactly_the_initial_responders():
     ced = _ced()
     state = ced.create_session("q", session_id="reflection-baseline")

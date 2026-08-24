@@ -8,6 +8,7 @@ from datetime import timedelta
 
 import pytest
 
+from backend.dialogues import ced_search_projection
 from backend.dialogues.agent import SocraticAgent
 from backend.dialogues.ced import CEDOrchestrator
 from backend.dialogues.ced_search_projection import project_search_state
@@ -27,6 +28,7 @@ from backend.dialogues.models import (
     AgentMove,
     AgentRole,
     DialogPhase,
+    FinalResponse,
     ProviderStatus,
     TaskKind,
     TaskLogEntry,
@@ -220,6 +222,13 @@ def test_projection_is_side_effect_free_and_populates_only_canonical_records():
     assert projected.provider_receipts == ()
 
 
+def test_projection_semantics_have_an_explicit_version():
+    assert (
+        ced_search_projection.SEARCH_STATE_PROJECTION_VERSION
+        == "ced-search-state-projection/v0"
+    )
+
+
 def test_volatile_runtime_fields_do_not_change_projected_semantic_identity():
     source = _source_fixture()
     first = _project(source)
@@ -319,6 +328,16 @@ def test_terminal_state_is_derived_from_canonical_final_state():
     source[1] = None
     projected = _project(tuple(source))
     assert projected.terminal_status is TerminalStatus.BLOCKED
+
+
+def test_noncomplete_source_with_final_response_fails_closed():
+    source = list(_source_fixture())
+    source[0].final_response = FinalResponse(
+        session_id=source[0].session_id,
+        question=source[0].question,
+    )
+    with pytest.raises(ContractValidationError, match="non-complete.*final response"):
+        _project(tuple(source))
 
 
 @pytest.mark.parametrize(

@@ -33,6 +33,8 @@ from .socrates_zero.contracts import (
 )
 
 
+SEARCH_STATE_PROJECTION_VERSION = "ced-search-state-projection/v0"
+
 _PHASE_ORDER = {phase.value: index for index, phase in enumerate(DialogPhase)}
 _UNRESOLVED_OBJECTION_STATES = {
     ObjectionState.RAISED,
@@ -71,6 +73,10 @@ def _validate_source(
 ) -> None:
     if not state.question.strip():
         raise ContractValidationError("source state question must not be blank")
+    if state.phase is not DialogPhase.COMPLETE and state.final_response is not None:
+        raise ContractValidationError(
+            "non-complete source state cannot contain a final response"
+        )
     if state.phase is DialogPhase.COMPLETE:
         if task is not None:
             raise ContractValidationError("a complete source state cannot have an active task")
@@ -426,4 +432,4 @@ def project_search_state(
     )
 
 
-__all__ = ["project_search_state"]
+__all__ = ["SEARCH_STATE_PROJECTION_VERSION", "project_search_state"]

@@ -17,10 +17,15 @@ from .contracts import (
 )
 
 
+LEGAL_ACTION_VOCABULARY_VERSION = "ced-legal-action-vocabulary/v0"
+LEGAL_ACTION_GENERATOR_VERSION = "ced-deterministic-legal-action-generator/v0"
+
+
 class CEDSearchConstitution:
     """Generate legality only; no ranking, quality judgment, or execution."""
 
     version = "ced-search-constitution/v0"
+    action_vocabulary_version = LEGAL_ACTION_VOCABULARY_VERSION
 
     _PHASES_BY_TASK = {
         TaskKind.SOCRATIC_QUESTION.value: {
@@ -182,7 +187,7 @@ class DeterministicLegalActionGenerator:
     """Bounded, model-free adapter over a CED-owned hard legal set."""
 
     name = "deterministic_legal_actions"
-    version = "v0"
+    version = LEGAL_ACTION_GENERATOR_VERSION
 
     async def generate(
         self,
@@ -203,4 +208,9 @@ class DeterministicLegalActionGenerator:
         return ordered[:limit]
 
 
-__all__ = ["CEDSearchConstitution", "DeterministicLegalActionGenerator"]
+__all__ = [
+    "LEGAL_ACTION_GENERATOR_VERSION",
+    "LEGAL_ACTION_VOCABULARY_VERSION",
+    "CEDSearchConstitution",
+    "DeterministicLegalActionGenerator",
+]

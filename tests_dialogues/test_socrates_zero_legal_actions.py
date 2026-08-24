@@ -92,6 +92,17 @@ def _kinds(state: SearchState):
     return tuple(action.kind for action in CEDSearchConstitution().legal_actions(state))
 
 
+def test_legal_vocabulary_and_generator_have_explicit_versions():
+    assert (
+        CEDSearchConstitution.action_vocabulary_version
+        == "ced-legal-action-vocabulary/v0"
+    )
+    assert (
+        DeterministicLegalActionGenerator.version
+        == "ced-deterministic-legal-action-generator/v0"
+    )
+
+
 def test_opening_and_initial_response_have_only_their_real_macro_action():
     opening = _state(TaskKind.SOCRATIC_QUESTION.value, DialogPhase.OPENING)
     assert _kinds(opening) == (ActionKind.ASK_SOCRATIC_QUESTION,)

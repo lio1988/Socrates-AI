@@ -21,12 +21,17 @@ from .contracts import (
 )
 
 
+FIXED_ROTATION_BASELINE_ADAPTER_VERSION = "ced-fixed-rotation-adapter/v0"
+
+
 class FixedRotationBaselineAdapter:
     """Read-only view of decisions owned by ``CEDOrchestrator``.
 
     The adapter contains no rotation table and performs no scheduling.  It
     delegates to the extraction point consumed by canonical registry execution.
     """
+
+    version = FIXED_ROTATION_BASELINE_ADAPTER_VERSION
 
     def __init__(self, orchestrator: CEDOrchestrator) -> None:
         self._orchestrator = orchestrator
@@ -143,6 +148,7 @@ class FixedRotationBaselineStrategy:
 
 
 __all__ = [
+    "FIXED_ROTATION_BASELINE_ADAPTER_VERSION",
     "FixedRotationBaselineAdapter",
     "FixedRotationBaselineStrategy",
 ]
