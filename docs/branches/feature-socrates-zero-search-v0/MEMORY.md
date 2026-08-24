@@ -21,9 +21,23 @@
   epistemic-marker presence. Marker data remains advisory and non-governing.
 - Legacy graph/CBE/Dung components are non-governing and must not be wired into
   the new search path as authority.
-- The current SocratesZero package is contracts only: no runtime flag reader,
-  execution, provider call,
-  MCTS, learning, PyTorch, GPU, or CUDA.
+- The current SocratesZero package is a runtime-inert research surface: no
+  runtime flag reader, execution, provider call, MCTS, learning, PyTorch, GPU,
+  or CUDA.
+- `CanonicalTaskSpec` is the single read-only fixed-orchestration extraction;
+  `_run_registry_phase()` consumes it, so the baseline adapter copies no
+  rotation business logic.
+- `backend/dialogues/ced_search_projection.py` is a trusted CED-side bridge.
+  It may read governing records and emit frozen digests; the search package is
+  forbidden from importing the Hybrid core directly.
+- SearchState projection includes only recorded/validated source material.
+  Provider receipts remain absent when exact canonical observation records are
+  unavailable; no completeness is fabricated.
+- The initial hard vocabulary is: Socratic question, initial proposal, generic
+  elenchus, targeted challenge, reflection, targeted defence, reconstruction,
+  final synthesis, ratification, and terminal stop.
+- The fixed baseline is proven inside the legal set for actual canonical phase
+  prefixes from Opening through Synthesis.
 
 ## Protected local state
 

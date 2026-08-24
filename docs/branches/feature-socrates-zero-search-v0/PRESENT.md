@@ -25,6 +25,12 @@
     `177 passed`;
   - post-integration repository-wide: `2392 passed, 1 skipped, 23 pre-existing
     deprecation/OpenAPI warnings`.
+- The board-state/legal-moves milestone is complete:
+  - canonical fixed-rotation task specs are explicit and reused by execution;
+  - CED/Hybrid records project read-only into deterministic SearchState;
+  - hard legal actions are deterministic, phase-aware, target-valid and bounded;
+  - the fixed baseline is proven to remain inside the legal set;
+  - search retains zero production execution authority.
 - Implementation checkpoint: `8d6770b` (`feat: add SocratesZero search
   contracts v0`).
 
@@ -112,6 +118,56 @@ KNOWN ISSUES:
 - no general legal-action generator/executor or state projector exists yet;
 - no canonical cross-provider token/cost meter exists yet.
 
-NEXT: implement the unchanged fixed-rotation baseline adapter and read-only
-state projection as prerequisites for the first deterministic legal-action
-generator.
+## Board state and legal moves milestone
+
+DONE: established SocratesZero's first board/rules/player foundation. The
+canonical registry phase runner and `FixedRotationBaselineAdapter` consume the
+same frozen task specs. A trusted CED-side bridge projects only recorded public
+CED/Hybrid artifacts into immutable SearchState. `CEDSearchConstitution` emits
+the initial deterministic 10-family legal vocabulary with hard Reflection,
+follow-up, reconstruction, phase, target and terminal gates. The baseline
+strategy produces an auditable receipt but executes nothing.
+
+TESTS:
+
+- SocratesZero contracts/baseline/projection/legal actions: `60 passed`;
+- focused SocratesZero + acceptance/marker + CED rotation/identity/retry:
+  `254 passed`;
+- Hybrid authority plus SocratesZero after boundary correction: `71 passed`;
+- full `tests_dialogues`: `2126 passed, 1 skipped`;
+- repository-wide: `2433 passed, 1 skipped, 23 pre-existing warnings`;
+- `git diff --check`: passed;
+- no live external call was made.
+
+FILES CHANGED:
+
+- `backend/dialogues/ced.py` — canonical frozen task-spec extraction reused by
+  existing registry execution;
+- `backend/dialogues/ced_search_projection.py` — trusted read-only projection;
+- `backend/dialogues/socrates_zero/{baseline,constitution,contracts}.py` and
+  package exports;
+- `backend/dialogues/hybrid_authority.py` — explicit trusted bridge authority;
+- three focused SocratesZero test modules plus baseline integration tests;
+- canonical ADR/technical docs and branch checkpoints.
+
+COMMITS:
+
+- `405c839` — fixed-rotation baseline extraction and strategy;
+- `14326a1` — deterministic canonical SearchState projection;
+- `dad0a8f` — deterministic CED hard legal actions;
+- `95d19c3` — H8-preserving trusted projection boundary.
+
+KNOWN ISSUES:
+
+- no search action executor exists and no experimental choice controls CED;
+- fixed task-spec equivalence currently covers registry deliberation from
+  Opening through Synthesis; council ratification uses its separate path;
+- provider observations remain absent from SearchState when no canonical exact
+  semantic receipt exists; cross-provider token/cost metering is still absent;
+- the legal vocabulary is intentionally initial, not a complete future action
+  ontology;
+- the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
+  duplicate FastAPI operation IDs.
+
+NEXT: implement model-free `HeuristicPolicyPrior` and `HeuristicValueEstimator`,
+then compare Greedy and matched-budget Best-of-N against the fixed baseline.

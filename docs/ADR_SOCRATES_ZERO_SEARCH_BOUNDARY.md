@@ -1,6 +1,7 @@
 # ADR: SocratesZero Search Boundary v0
 
-Status: accepted for Phase 1 contracts on `feature/socrates-zero-search-v0`
+Status: accepted through the board-state/legal-moves foundation on
+`feature/socrates-zero-search-v0`
 
 Baseline: commit `277ca2ec130ce120dba9c4d894a3c58138b25528`
 
@@ -143,17 +144,50 @@ shared `AtomicReceiptStore` is authoritative over durable bytes, not truth.
   they contain no hidden chain of thought.
 - Interfaces are provider-neutral and have no neural/CUDA dependency.
 
+## Board-state and legal-moves implementation
+
+The first executable research foundation remains read-only and runtime-inert:
+
+- `CEDOrchestrator.canonical_registry_task_specs()` is the one extraction point
+  for fixed orchestration. Canonical registry execution consumes the same
+  frozen specs; the experimental baseline contains no copied rotation table.
+- `FixedRotationBaselineStrategy` translates CED's already-selected task kind
+  into one hard-legal macro-action. It performs no provider, generator, prior,
+  or value call and executes nothing.
+- `ced_search_projection.py` is a trusted CED-side boundary. It may read the
+  governing Hybrid records, validates references, and emits only immutable
+  digests/IDs into `SearchState`. The non-governing search package never imports
+  or reaches `hybrid_epistemic` directly.
+- The projection excludes timestamps, task/session audit UUIDs, route IDs,
+  latency, scores, and unavailable provider completeness. It includes accepted
+  move content digests, stable role/move history, authoritative live
+  commitments, admissible evidence, structured unresolved objections,
+  contradictions, verification records, and candidate reconstruction/synthesis
+  references when those records actually exist.
+- `CEDSearchConstitution` emits a deterministic initial vocabulary of Socratic
+  question, initial proposal, generic elenchus, targeted claim challenge,
+  reflection, targeted claim defence, reconstruction, final synthesis,
+  ratification, and terminal stop. Stable order is action type plus canonical
+  target/parameter encoding.
+- Reflection requires an accepted same-cycle Socratic question; follow-up and
+  reconstruction bounds fail closed; terminal snapshots expose only `STOP`.
+  The baseline action is tested to be a member of the legal set for actual CED
+  phase prefixes from Opening through Synthesis.
+
+No method in this milestone calls `legal_actions()` from production execution,
+reads the feature flag, or permits a selected action to control CED.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
 - Random `AgentTask.task_id` cannot be load-bearing replay identity.
-- The registry parser currently validates the generic `AgentMove` envelope, not
-  every role-specific content contract. In particular, an empty Socrates
-  `content` object can pass generic parsing and the current Socratic screen
-  without producing a grounded question. This is a baseline constitutional
-  validation gap to fix separately, not evidence for relaxing search legality.
-- There is no general constitutional action executor or complete legal-action
-  generator yet.
+- Role-specific content validation beyond the hardened Socratic contract
+  remains partial.
+- The initial legal vocabulary is deliberately bounded and no general
+  constitutional action executor exists yet.
+- Canonical task-spec equivalence currently covers registry deliberation from
+  Opening through Synthesis; council ratification remains a separate canonical
+  provider path.
 - The current evaluation families are heterogeneous; matched-compute
   SocratesZero benchmark episodes do not yet exist.
 - General external-world verification remains incomplete outside declared
@@ -164,7 +198,8 @@ shared `AtomicReceiptStore` is authoritative over durable bytes, not truth.
 
 ## Consequences
 
-The first code slice is importable and testable but runtime-inert. It gives
-later work one versioned language for state, legal actions, budgets, strategy,
-priors, values, results, and receipts without weakening any current authority.
-The cost is that it intentionally produces no quality gain yet.
+The branch now has the equivalent of an immutable board, hard legal moves, and
+an explicit handcrafted baseline player. It is still runtime-inert and gives
+later policy/value/search work no execution or epistemic authority. The cost is
+intentional: this milestone produces no quality gain and makes no strategic
+choice beyond replaying the existing baseline.

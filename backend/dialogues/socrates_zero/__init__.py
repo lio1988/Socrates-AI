@@ -1,7 +1,9 @@
-"""SocratesZero research surface.
+"""Runtime-inert SocratesZero research surface.
 
 Importing this package has no runtime side effects and does not enable search.
-The default CED path remains the fixed-rotation baseline.
+It exposes immutable contracts, the explicit fixed-rotation baseline strategy,
+and deterministic legal-action machinery. The default CED path remains the
+only execution path.
 """
 
 from .contracts import (

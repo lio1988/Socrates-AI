@@ -1277,6 +1277,33 @@ already the loudest question.)
 
 ---
 
+## Phase 29 — SocratesZero board state and hard legal moves (experimental)
+
+The SocratesZero branch now exposes the current handcrafted player without
+rewriting it. `CEDOrchestrator.canonical_registry_task_specs()` is a pure
+read-only extraction point consumed by the existing registry phase runner and
+by `FixedRotationBaselineAdapter`. The adapter therefore delegates to the same
+role/task decision the runtime executes.
+
+`ced_search_projection.py` validates and projects recorded CED/Hybrid public
+state into immutable `SearchState` references. It lives on the trusted CED side
+of the H8 boundary: the search package never imports the governing Hybrid core.
+Timestamps, latency, random audit IDs, route IDs and scores do not enter state
+identity; accepted move content, structured epistemic records and exact known
+model provenance do.
+
+`CEDSearchConstitution.legal_actions()` emits a deterministic initial set of
+macro-actions and targeted claim actions. It enforces same-cycle Reflection,
+bounded Socratic follow-ups, single-use reconstruction, phase/task agreement,
+valid targets and terminal-only Stop. `DeterministicLegalActionGenerator`
+returns only a bounded canonical subset of the supplied hard set.
+
+This is research infrastructure only. No search-selected action controls CED,
+no provider call is added, and no Policy, Value, MCTS, RL, neural or CUDA path
+exists.
+
+---
+
 ## Safety note
 
 Do **not** commit secrets or local artifacts:
