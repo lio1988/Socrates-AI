@@ -15,9 +15,14 @@
   SocratesZero.
 - Provider failures remain failures; exact actual-model identity is a protocol
   fact; no silent substitution or fabricated output is permitted.
+- Provider-envelope success is not CED acceptance. Socratic content is checked
+  phase-aware at the CED boundary before accepted move identity is assigned.
+- `marker_is_contracted(task_kind)` is the single prompt/parser authority for
+  epistemic-marker presence. Marker data remains advisory and non-governing.
 - Legacy graph/CBE/Dung components are non-governing and must not be wired into
   the new search path as authority.
-- Phase 1 is contracts only: no runtime flag reader, execution, provider call,
+- The current SocratesZero package is contracts only: no runtime flag reader,
+  execution, provider call,
   MCTS, learning, PyTorch, GPU, or CUDA.
 
 ## Protected local state

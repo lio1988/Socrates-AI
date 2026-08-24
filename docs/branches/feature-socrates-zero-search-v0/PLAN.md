@@ -16,6 +16,14 @@ preserving byte-for-byte default CED behavior.
 5. Classify the package as search authority, never governing authority.
 6. Add focused contract tests and run the full dialogue regression suite.
 
+## Acceptance integration hardening
+
+1. [done] Isolate and enforce phase-aware Socratic content acceptance.
+2. [done] Prove rejected questions receive no accepted move ID or Reflection.
+3. [done] Enforce the existing marker contract from one canonical predicate.
+4. [done] Integrate the reviewed commits by cherry-pick.
+5. [done] Rerun combined focused and repository-wide regressions.
+
 ## Validation gates
 
 - deterministic identity and strict-schema tests pass;
@@ -31,7 +39,8 @@ preserving byte-for-byte default CED behavior.
 
 1. Formal adapter for the unchanged fixed-rotation baseline.
 2. Read-only CED/Hybrid to `SearchState` projection.
-3. Deterministic/heuristic legal action generator.
+3. Deterministic legal-action generator validated at the canonical CED
+   execution boundary.
 4. Heuristic prior/value and matched-budget Best-of-N.
 5. Bounded PUCT with transpositions and progressive widening.
 6. Shadow-only execution and episode/receipt comparison.
