@@ -3,7 +3,8 @@
 Strategies may select from a CED-owned hard-legal set.  They do not execute the
 selection, mutate CED state, manufacture successor states, or grant epistemic
 status.  Greedy v0 is deliberately one-step: Policy ranks actions and Value
-evaluates the current root state only.
+evaluates the current root state only. Best-of-N consumes explicit successors
+from an injected evaluator; the strategy never manufactures them.
 """
 
 from __future__ import annotations
@@ -15,8 +16,11 @@ from typing import Iterable, Tuple
 from pydantic import ValidationError
 
 from .contracts import (
+    ActionKind,
     ActionPrior,
     ActionStatistics,
+    ActionSuccessor,
+    BudgetUsage,
     ContractValidationError,
     LegalAction,
     SearchBudget,
@@ -30,6 +34,8 @@ from .contracts import (
 
 
 GREEDY_STRATEGY_VERSION = "greedy-strategy/v0"
+BEST_OF_N_STRATEGY_VERSION = "best-of-n-strategy/v0"
+BEST_OF_N_CANDIDATE_COUNT_V0 = 4
 _PROBABILITY_TOLERANCE = 1e-12
 
 
@@ -240,7 +246,259 @@ class GreedyStrategy:
         )
 
 
+def _validated_successor(
+    value: ActionSuccessor,
+    *,
+    root: SearchState,
+    action: LegalAction,
+    budget: SearchBudget,
+) -> ActionSuccessor:
+    if not isinstance(value, ActionSuccessor):
+        raise ContractValidationError(
+            "successor evaluator must return an ActionSuccessor"
+        )
+    if value.action_id != action.action_id:
+        raise ContractValidationError("successor action ID does not match candidate")
+    successor = _validated_state(value.state)
+    if successor.parent_state_id != root.state_id:
+        raise ContractValidationError("successor parent must be the initial state")
+    if successor.budget != budget:
+        raise ContractValidationError("successor budget must equal the search budget")
+    if successor.depth != root.depth + 1:
+        raise ContractValidationError("successor must be exactly one search ply deeper")
+
+    delta = value.usage_delta
+    if delta.nodes != 1 or delta.expansions != 1:
+        raise ContractValidationError(
+            "each Best-of-N successor must consume one node and one expansion"
+        )
+    if delta.max_depth_observed != successor.depth:
+        raise ContractValidationError(
+            "successor usage must record its exact observed depth"
+        )
+    expected_path_usage = root.budget_usage.plus(delta)
+    if successor.budget_usage != expected_path_usage:
+        raise ContractValidationError(
+            "successor state usage does not match its branch-local usage delta"
+        )
+    budget.enforce(expected_path_usage)
+    return ActionSuccessor(
+        action_id=value.action_id,
+        state=successor,
+        usage_delta=delta,
+    )
+
+
+class BestOfNStrategy:
+    """Evaluate at most four explicit one-ply successors and select the best.
+
+    Successor Value is the primary ordering signal.  Equal Values use Policy
+    prior and then stable action-ID order.  The injected evaluator owns no CED
+    execution authority and must return immutable states plus exact usage.
+    """
+
+    name = "best_of_n_strategy"
+    version = BEST_OF_N_STRATEGY_VERSION
+    candidate_count = BEST_OF_N_CANDIDATE_COUNT_V0
+
+    def __init__(self, successor_evaluator) -> None:
+        if not callable(getattr(successor_evaluator, "evaluate_successor", None)):
+            raise ContractValidationError(
+                "Best-of-N requires a SuccessorStateEvaluator"
+            )
+        self._successor_evaluator = successor_evaluator
+
+    async def search(
+        self,
+        initial_state: SearchState,
+        *,
+        constitution: SearchConstitution,
+        action_generator,
+        policy_prior,
+        value_estimator,
+        budget: SearchBudget,
+    ) -> SearchResult:
+        state = _validated_state(initial_state)
+        if budget != state.budget:
+            raise ContractValidationError(
+                "Best-of-N budget must equal the projected state's hard budget"
+            )
+        budget.enforce(state.budget_usage)
+
+        hard_legal = _actions(
+            constitution.legal_actions(state),
+            owner="hard-legal",
+        )
+        if state.terminal_status is not TerminalStatus.NON_TERMINAL:
+            if len(hard_legal) != 1 or hard_legal[0].kind is not ActionKind.STOP:
+                raise ContractValidationError(
+                    "terminal Best-of-N state requires exactly one hard-legal Stop"
+                )
+            selected = hard_legal[0]
+            constitution.validate_action(state, selected)
+            return _result(
+                strategy_name=self.name,
+                strategy_version=self.version,
+                state=state,
+                budget=budget,
+                selected_action=selected,
+                estimated_value=await _root_value(value_estimator, state),
+                priors=(ActionPrior(action_id=selected.action_id, probability=1.0),),
+                termination_reason=SearchTerminationReason.TERMINAL_STATE,
+            )
+        if not hard_legal:
+            return _result(
+                strategy_name=self.name,
+                strategy_version=self.version,
+                state=state,
+                budget=budget,
+                selected_action=None,
+                estimated_value=await _root_value(value_estimator, state),
+                priors=(),
+                termination_reason=SearchTerminationReason.NO_LEGAL_ACTIONS,
+            )
+
+        remaining_nodes = budget.max_nodes - state.budget_usage.nodes
+        remaining_expansions = (
+            budget.max_expansions - state.budget_usage.expansions
+        )
+        depth_available = state.depth < budget.max_depth
+        limit = (
+            min(
+                self.candidate_count,
+                len(hard_legal),
+                max(0, remaining_nodes),
+                max(0, remaining_expansions),
+            )
+            if depth_available
+            else 0
+        )
+        if limit == 0:
+            return _result(
+                strategy_name=self.name,
+                strategy_version=self.version,
+                state=state,
+                budget=budget,
+                selected_action=None,
+                estimated_value=await _root_value(value_estimator, state),
+                priors=(),
+                termination_reason=SearchTerminationReason.BUDGET_EXHAUSTED,
+            )
+
+        generated = _actions(
+            await action_generator.generate(
+                state,
+                hard_legal_actions=hard_legal,
+                limit=limit,
+            ),
+            owner="generated",
+        )
+        hard_ids = {action.action_id for action in hard_legal}
+        generated_ids = tuple(action.action_id for action in generated)
+        if set(generated_ids) - hard_ids:
+            raise ContractValidationError(
+                "generated Best-of-N candidate falls outside the hard-legal set"
+            )
+        if len(generated) != limit:
+            raise ContractValidationError(
+                "action generator must return exactly the requested candidate count"
+            )
+        for action in generated:
+            constitution.validate_action(state, action)
+
+        priors = _validated_priors(
+            await policy_prior.priors(state, generated),
+            candidate_ids=generated_ids,
+        )
+        probability_by_id = {
+            prior.action_id: prior.probability for prior in priors
+        }
+
+        aggregate_usage = state.budget_usage
+        evaluated = []
+        for action in sorted(generated, key=lambda item: item.action_id):
+            outcome = _validated_successor(
+                await self._successor_evaluator.evaluate_successor(
+                    state,
+                    action,
+                    budget=budget,
+                    aggregate_usage=aggregate_usage,
+                ),
+                root=state,
+                action=action,
+                budget=budget,
+            )
+            aggregate_usage = aggregate_usage.plus(outcome.usage_delta)
+            budget.enforce(aggregate_usage)
+            estimated_value = await _root_value(value_estimator, outcome.state)
+            evaluated.append((action, outcome, estimated_value))
+
+        selected_action, selected_outcome, selected_value = min(
+            evaluated,
+            key=lambda item: (
+                -item[2],
+                -probability_by_id[item[0].action_id],
+                item[0].action_id,
+            ),
+        )
+        provider_receipt_ids = tuple(
+            sorted(
+                {
+                    receipt.record_id
+                    for _, outcome, _ in evaluated
+                    for receipt in outcome.state.provider_receipts
+                }
+            )
+        )
+        verification_result_ids = tuple(
+            sorted(
+                {
+                    result.record_id
+                    for _, outcome, _ in evaluated
+                    for result in outcome.state.verification_results
+                }
+            )
+        )
+        receipt = SearchReceipt(
+            strategy_name=self.name,
+            strategy_version=self.version,
+            initial_state_id=state.state_id,
+            final_state_id=selected_outcome.state.state_id,
+            selected_action_id=selected_action.action_id,
+            visited_state_ids=(state.state_id,) + tuple(
+                outcome.state.state_id for _, outcome, _ in evaluated
+            ),
+            expanded_action_ids=tuple(
+                action.action_id for action, _, _ in evaluated
+            ),
+            provider_receipt_ids=provider_receipt_ids,
+            verification_result_ids=verification_result_ids,
+            budget=budget,
+            usage=aggregate_usage,
+            termination_reason=SearchTerminationReason.COMPLETED,
+        )
+        return SearchResult(
+            initial_state_id=state.state_id,
+            final_state_id=selected_outcome.state.state_id,
+            selected_action=selected_action,
+            estimated_value=selected_value,
+            action_statistics=tuple(
+                ActionStatistics(
+                    action_id=action.action_id,
+                    prior=probability_by_id[action.action_id],
+                    visit_count=1,
+                    mean_value=value,
+                )
+                for action, _, value in evaluated
+            ),
+            receipt=receipt,
+        )
+
+
 __all__ = [
+    "BEST_OF_N_CANDIDATE_COUNT_V0",
+    "BEST_OF_N_STRATEGY_VERSION",
     "GREEDY_STRATEGY_VERSION",
+    "BestOfNStrategy",
     "GreedyStrategy",
 ]

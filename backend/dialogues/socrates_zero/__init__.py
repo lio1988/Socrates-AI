@@ -13,6 +13,7 @@ from .contracts import (
     ActionParameter,
     ActionPrior,
     ActionStatistics,
+    ActionSuccessor,
     ActionTargetKind,
     BudgetExceeded,
     BudgetUsage,
@@ -31,6 +32,7 @@ from .contracts import (
     SearchStrategy,
     SearchTerminationReason,
     SemanticArtifactRef,
+    SuccessorStateEvaluator,
     TerminalStatus,
     ValueEstimator,
     canonical_json,
@@ -57,7 +59,13 @@ from .policy import (
     PolicyAdjustment,
     UniformPolicyPrior,
 )
-from .strategy import GREEDY_STRATEGY_VERSION, GreedyStrategy
+from .strategy import (
+    BEST_OF_N_CANDIDATE_COUNT_V0,
+    BEST_OF_N_STRATEGY_VERSION,
+    GREEDY_STRATEGY_VERSION,
+    BestOfNStrategy,
+    GreedyStrategy,
+)
 from .value import (
     HEURISTIC_VALUE_ESTIMATOR_VERSION,
     HEURISTIC_VALUE_RULES_V0,
@@ -75,6 +83,8 @@ SOCRATES_ZERO_DEFAULT_ENABLED = False
 
 __all__ = [
     "SEARCH_CONTRACT_SCHEMA_VERSION",
+    "BEST_OF_N_CANDIDATE_COUNT_V0",
+    "BEST_OF_N_STRATEGY_VERSION",
     "FIXED_ROTATION_BASELINE_ADAPTER_VERSION",
     "LEGAL_ACTION_GENERATOR_VERSION",
     "LEGAL_ACTION_VOCABULARY_VERSION",
@@ -94,9 +104,11 @@ __all__ = [
     "ActionParameter",
     "ActionPrior",
     "ActionStatistics",
+    "ActionSuccessor",
     "ActionTargetKind",
     "BudgetExceeded",
     "BudgetUsage",
+    "BestOfNStrategy",
     "ContractValidationError",
     "CEDSearchConstitution",
     "DeterministicLegalActionGenerator",
@@ -122,6 +134,7 @@ __all__ = [
     "SearchStrategy",
     "SearchTerminationReason",
     "SemanticArtifactRef",
+    "SuccessorStateEvaluator",
     "TerminalStatus",
     "UniformPolicyPrior",
     "ValueAudit",

@@ -574,6 +574,23 @@ class ActionStatistics(_FrozenContract):
     _action_id_nonblank = field_validator("action_id")(_nonblank)
 
 
+class ActionSuccessor(_FrozenContract):
+    """One action-linked successor plus its exact branch-local usage delta.
+
+    The state remains only an experimental observation supplied by an injected
+    evaluator.  This record does not execute the action or make the successor
+    governing CED state. Additive counters in ``usage_delta`` are local to this
+    branch; ``max_depth_observed`` is the absolute depth reached, matching
+    ``BudgetUsage.plus`` semantics.
+    """
+
+    action_id: str
+    state: SearchState
+    usage_delta: BudgetUsage
+
+    _action_id_nonblank = field_validator("action_id")(_nonblank)
+
+
 class SearchReceipt(_FrozenContract):
     """Audit receipt containing bounded public facts, never hidden reasoning."""
 
@@ -692,6 +709,25 @@ class ActionGenerator(Protocol):
 
 
 @runtime_checkable
+class SuccessorStateEvaluator(Protocol):
+    """Injected experimental transition seam with no production authority.
+
+    ``aggregate_usage`` is the compute already consumed across sibling
+    candidates, so an implementation can reserve resources before evaluating
+    the next branch.
+    """
+
+    async def evaluate_successor(
+        self,
+        state: SearchState,
+        action: LegalAction,
+        *,
+        budget: SearchBudget,
+        aggregate_usage: BudgetUsage,
+    ) -> ActionSuccessor: ...
+
+
+@runtime_checkable
 class PolicyPrior(Protocol):
     async def priors(
         self, state: SearchState, legal_actions: Sequence[LegalAction]
@@ -727,6 +763,7 @@ __all__ = [
     "ActionParameter",
     "ActionPrior",
     "ActionStatistics",
+    "ActionSuccessor",
     "ActionTargetKind",
     "BudgetExceeded",
     "BudgetUsage",
@@ -745,6 +782,7 @@ __all__ = [
     "SearchStrategy",
     "SearchTerminationReason",
     "SemanticArtifactRef",
+    "SuccessorStateEvaluator",
     "TerminalStatus",
     "ValueEstimator",
     "canonical_json",
