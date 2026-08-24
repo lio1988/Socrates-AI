@@ -31,6 +31,7 @@ from .models import (
     AgentState,
     AgentTask,
     CouncilRoundResult,
+    DialogPhase,
     EpistemicMarker,
     ProviderResponse,
     ProviderStatus,
@@ -38,6 +39,7 @@ from .models import (
 )
 from .providers import FakeProvider
 from .model_identity import authoritative_model_identity
+from .socratic import InquiryState, MaieuticOperator
 
 
 # ── Council configuration (Phase 8A defaults) ─────────────────────────────────
@@ -327,6 +329,46 @@ class ScriptedMockProvider(BaseProviderAdapter):
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
         if self.delay_seconds:
             await asyncio.sleep(self.delay_seconds)
+        # The deterministic mock obeys the same phase-aware Socratic content
+        # contract expected from a real provider. This is fixture behavior, not
+        # a fallback: production output is never repaired or synthesized here.
+        if task.task_kind == TaskKind.SOCRATIC_QUESTION:
+            out = self._fake.complete(
+                "", "", {"_role": task.role.value, "_question": task.question},
+                agent_id=task.agent_id,
+            )
+            question = str(out.get("question") or "") if isinstance(out, dict) else ""
+            marker = (str(out.get("epistemic_marker") or "open_uncertainty")
+                      if isinstance(out, dict) else "open_uncertainty")
+            if task.phase is DialogPhase.OPENING:
+                return json.dumps({"content": {
+                    "question": question,
+                    "operator": MaieuticOperator.EXPOSE_PREMISE.value,
+                    "epistemic_marker": marker,
+                }, "confidence": 0.7})
+
+            refs: List[Dict[str, str]] = []
+            for field, ref_type, id_field in (
+                ("public_commitments", "commitment", "commitment_id"),
+                ("elenchus_critiques", "critique", "critique_id"),
+                ("aporia_records", "aporia", "aporia_id"),
+            ):
+                rows = task.context.get(field) or []
+                if rows and isinstance(rows[0], dict) and rows[0].get(id_field):
+                    refs.append({"ref_type": ref_type,
+                                 "ref_id": str(rows[0][id_field])})
+                    break
+            return json.dumps({"content": {
+                "question": question,
+                "operator": MaieuticOperator.REQUEST_GROUNDS.value,
+                "grounded_in": refs,
+                "introduces_new_proposition": False,
+                # Preserve the historical generic-mock shape: one accepted
+                # follow-up, then reconstruction. Tests that exercise another
+                # cycle use an explicit provider declaring CONTINUE_INQUIRY.
+                "inquiry_state": InquiryState.READY_FOR_RECONSTRUCTION.value,
+                "epistemic_marker": marker,
+            }, "confidence": 0.7})
         # Phase 8C.1 council ratification → return a strict verdict, not a draft.
         if task.task_kind == TaskKind.COUNCIL_RATIFICATION:
             verdict = self._ratification_verdict(task)

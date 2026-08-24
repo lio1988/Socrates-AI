@@ -102,10 +102,8 @@ from .socratic import (
     commitment_events_from_reflection,
     commitments_from_move,
     live_commitments,
-    parse_grounding,
     read_inquiry_state,
-    read_operator,
-    resolve_grounding,
+    validate_socratic_content,
 )
 from .role_assignment import assign_primary_roles, stable_hash
 
@@ -920,27 +918,37 @@ class CEDOrchestrator:
 
     def _screen_socratic_move(self, state: SessionState, task: AgentTask,
                               resp: "ProviderResponse") -> Optional[str]:
-        """Refuse a Socratic question that hands over an answer. None = accepted.
+        """Refuse an invalid Socratic move before it receives public identity.
 
-        Mechanical where a mechanical check exists and silent where it does not:
-        an open-domain question reports NOT_APPLICABLE rather than a fabricated
-        clean bill of health, and no model is asked to certify that no leak
-        occurred.
+        Provider success proves only that the generic AgentMove envelope parsed.
+        The phase-aware content contract and answer-injection firewall are CED
+        vetoes. None means accepted; a string records the refusal reason.
         """
         content = resp.parsed_move.content
-        question = str(content.get("question") or "") if isinstance(content, dict) else ""
-        prior = [str(m.content) for m in state.moves]
-        check, why = check_answer_injection(question, state.question, prior)
+        validation = validate_socratic_content(
+            content,
+            followup=task.phase is not DialogPhase.OPENING,
+            public_ids=self._public_ids(state),
+        )
+        question = validation.question
+        if question:
+            prior = [str(m.content) for m in state.moves]
+            check, why = check_answer_injection(question, state.question, prior)
+        else:
+            check = InjectionCheck.NOT_APPLICABLE
+            why = f"not run without a valid question string: {validation.reason}"
 
         row: Dict[str, Any] = {
             "phase": task.phase.value,
             "cycle": state.round_number,
             "provider_id": resp.provider_id,
             "question": question[:400],
-            "operator": (read_operator(content).value
-                         if read_operator(content) else None),
-            "inquiry_state": (read_inquiry_state(content).value
-                              if read_inquiry_state(content) else None),
+            "operator": (validation.operator.value
+                         if validation.operator else None),
+            "inquiry_state": (validation.inquiry_state.value
+                              if validation.inquiry_state else None),
+            "content_contract_accepted": validation.accepted,
+            "content_contract_reason": validation.reason,
             "injection_check": check.value,
             "injection_detail": why,
             "self_declared_new_proposition": (
@@ -948,16 +956,15 @@ class CEDOrchestrator:
                 if isinstance(content, dict) else None),
         }
         if task.phase is not DialogPhase.OPENING:
-            refs = parse_grounding(content.get("grounded_in")
-                                   if isinstance(content, dict) else None)
-            resolved, unresolved = resolve_grounding(refs, self._public_ids(state))
             row["grounded_in_resolved"] = [{"ref_type": t, "ref_id": i}
-                                           for t, i in resolved]
+                                           for t, i in validation.grounded_in]
             row["grounded_in_unresolved"] = [{"ref_type": t, "ref_id": i}
-                                             for t, i in unresolved]
-            row["is_grounded"] = bool(resolved)
+                                             for t, i in validation.unresolved_grounding]
+            row["is_grounded"] = bool(validation.grounded_in)
         self._socratic_audit_rows.setdefault(state.session_id, []).append(row)
 
+        if not validation.accepted:
+            return validation.reason
         if check is InjectionCheck.ANSWER_INJECTION_DETECTED:
             return why
         aporia = aporia_from_content(

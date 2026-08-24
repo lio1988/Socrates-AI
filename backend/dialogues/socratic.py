@@ -22,6 +22,7 @@ alone decides whether the dialogue continues.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -270,6 +271,115 @@ def resolve_grounding(
         (resolved if ref_id in public_ids.get(ref_type, set())
          else unresolved).append((ref_type, ref_id))
     return resolved, unresolved
+
+
+@dataclass(frozen=True)
+class SocraticContentValidation:
+    """Deterministic result of the phase-aware Socratic content contract.
+
+    This validates whether a provider-OK ``AgentMove`` may become a public
+    Socratic move. It does not validate truth, quality, or prompt compliance.
+    """
+
+    accepted: bool
+    reason: str
+    question: str = ""
+    operator: Optional[MaieuticOperator] = None
+    inquiry_state: Optional[InquiryState] = None
+    grounded_in: Tuple[Tuple[str, str], ...] = ()
+    unresolved_grounding: Tuple[Tuple[str, str], ...] = ()
+
+
+def validate_socratic_content(
+    content: Any,
+    *,
+    followup: bool,
+    public_ids: Optional[Mapping[str, Set[str]]] = None,
+) -> SocraticContentValidation:
+    """Apply the hard content contract for an opening or follow-up question.
+
+    Opening questions require a real string question and one known maieutic
+    operator. Follow-ups additionally require a non-empty, entirely valid set
+    of typed references to already-public artifacts, a boolean declaration that
+    no new proposition was introduced (which must be false), and a known
+    inquiry-state recommendation.
+
+    Invalid fields are never coerced. In particular, ``123`` does not become a
+    question and malformed grounding entries are not silently dropped.
+    """
+    if not isinstance(content, Mapping):
+        return SocraticContentValidation(False, "content must be an object")
+
+    raw_question = content.get("question")
+    if not isinstance(raw_question, str):
+        return SocraticContentValidation(False, "question must be a string")
+    question = raw_question.strip()
+    if not question:
+        return SocraticContentValidation(False, "question must be non-empty")
+
+    operator = read_operator(content)
+    if operator is None:
+        return SocraticContentValidation(
+            False, "operator must name one canonical maieutic operator",
+            question=question,
+        )
+
+    if not followup:
+        return SocraticContentValidation(
+            True, "accepted opening question", question=question,
+            operator=operator,
+        )
+
+    raw_grounding = content.get("grounded_in")
+    if not isinstance(raw_grounding, (list, tuple)) or not raw_grounding:
+        return SocraticContentValidation(
+            False, "follow-up grounded_in must be a non-empty list",
+            question=question, operator=operator,
+        )
+    grounding = tuple(parse_grounding(raw_grounding))
+    if len(grounding) != len(raw_grounding):
+        return SocraticContentValidation(
+            False, "follow-up grounded_in contains a malformed reference",
+            question=question, operator=operator, grounded_in=grounding,
+        )
+
+    resolved, unresolved = resolve_grounding(grounding, public_ids or {})
+    if unresolved:
+        return SocraticContentValidation(
+            False, "follow-up grounded_in contains an unresolved reference",
+            question=question, operator=operator,
+            grounded_in=tuple(resolved),
+            unresolved_grounding=tuple(unresolved),
+        )
+    if not resolved:
+        return SocraticContentValidation(
+            False, "follow-up grounded_in resolves to no public material",
+            question=question, operator=operator,
+        )
+
+    introduces = content.get("introduces_new_proposition")
+    if not isinstance(introduces, bool):
+        return SocraticContentValidation(
+            False, "introduces_new_proposition must be a boolean",
+            question=question, operator=operator, grounded_in=tuple(resolved),
+        )
+    if introduces:
+        return SocraticContentValidation(
+            False, "Socrates may not introduce a new proposition",
+            question=question, operator=operator, grounded_in=tuple(resolved),
+        )
+
+    inquiry_state = read_inquiry_state(content)
+    if inquiry_state is None:
+        return SocraticContentValidation(
+            False, "inquiry_state must name one canonical inquiry state",
+            question=question, operator=operator, grounded_in=tuple(resolved),
+        )
+    return SocraticContentValidation(
+        True, "accepted grounded follow-up question",
+        question=question, operator=operator, inquiry_state=inquiry_state,
+        grounded_in=tuple(resolved),
+    )
 
 
 # ── aporia: a public condition, never a verdict ──────────────────────────────
