@@ -287,8 +287,10 @@ def _case(
     )
 
 
-def _pair(prefix: str, kinds: Tuple[ActionKind, ...]) -> Tuple[LegalAction, ...]:
-    return tuple(_action(kind, f"{prefix}_{index}") for index, kind in enumerate(kinds))
+def _pair(_case_name: str, kinds: Tuple[ActionKind, ...]) -> Tuple[LegalAction, ...]:
+    # Strategy-facing actions deliberately carry no case/category label.  The
+    # case name is accepted only to keep fixture declarations readable here.
+    return tuple(_action(kind, f"branch_{index}") for index, kind in enumerate(kinds))
 
 
 _EIGHT_KINDS = (

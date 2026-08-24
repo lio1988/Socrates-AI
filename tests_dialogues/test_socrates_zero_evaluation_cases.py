@@ -82,6 +82,20 @@ def test_strategy_view_contains_no_ground_truth_labels_or_optimal_action():
     }
 
 
+def test_strategy_facing_state_and_actions_do_not_expose_case_or_category_names():
+    for case in FROZEN_SEARCH_KERNEL_CASE_SET.cases:
+        view = case.strategy_view().model_dump(mode="json")
+        strategy_surface = repr(
+            {
+                "root_state": view["root_state"],
+                "hard_legal_actions": view["hard_legal_actions"],
+                "successor_observations": view["successor_observations"],
+            }
+        ).lower()
+        assert case.case_name.lower() not in strategy_surface
+        assert case.category.value.lower() not in strategy_surface
+
+
 def test_case_and_case_set_identity_replay_exactly():
     case_set = FROZEN_SEARCH_KERNEL_CASE_SET
     replay = EvaluationCaseSet.model_validate(case_set.model_dump(mode="python"))
