@@ -22,10 +22,10 @@ FILES CHANGED:
 - `tests_dialogues/test_socratic_acceptance_contract.py`;
 - branch README, MEMORY, PLAN, PRESENT.
 
-COMMIT: pending immediate implementation checkpoint.
+COMMIT: `6d352de` (`fix: enforce Socratic move acceptance contract`).
 
 KNOWN ISSUES: marker omission/malformed-marker acceptance is intentionally
 unchanged until the separate marker milestone. No live external call was made.
 
-NEXT: commit this acceptance milestone, then enforce the already-documented
-marker contract in a separate atomic change.
+NEXT: enforce the already-documented marker contract in a separate atomic
+change.
