@@ -1299,8 +1299,39 @@ valid targets and terminal-only Stop. `DeterministicLegalActionGenerator`
 returns only a bounded canonical subset of the supplied hard set.
 
 This is research infrastructure only. No search-selected action controls CED,
-no provider call is added, and no Policy, Value, MCTS, RL, neural or CUDA path
-exists.
+no provider call is added, and this board/rules layer invokes no Policy, Value,
+MCTS, RL, neural or CUDA path.
+
+---
+
+## Phase 30 — Deterministic model-free policy priors (experimental)
+
+`HeuristicPolicyPrior` implements the existing `PolicyPrior` protocol over an
+already-legal action tuple. It never calls `legal_actions()`, generates an
+action, repairs a target, interprets prose, calls a provider, estimates Value,
+or executes a choice. Constitution remains the sole legality owner.
+
+Heuristic v0 starts every action at weight `1.0` and applies only three public
+signal families: unresolved contradictions modestly favor generic Elenchus and
+claim challenge; unresolved questions modestly favor questioning, Elenchus,
+claim challenge, and Reflection; a resolved canonical claim target modestly
+favors targeted challenge or defence. Structured reason codes expose every
+adjustment. Scores, consensus, ratification, epistemic markers, provider/model
+identity, and raw prose are not policy signals.
+
+The frozen v0 deltas are:
+
+- unresolved contradiction: `RUN_ELENCHUS +1.0`, `CHALLENGE_CLAIM +0.75`;
+- unresolved question: `ASK_SOCRATIC_QUESTION +0.75`,
+  `RUN_ELENCHUS +0.5`, `CHALLENGE_CLAIM +0.5`, `REFLECT +0.5`;
+- valid canonical claim target: `CHALLENGE_CLAIM +0.25`,
+  `DEFEND_CLAIM +0.25`.
+
+Weights normalize to a finite distribution in canonical action order. Every
+supplied action retains a final probability of at least `1e-6`; singleton sets
+receive `1.0`, and empty sets stay empty. `UniformPolicyPrior` supplies the
+separate `1/N` research control. Both policies are deterministic, read-only,
+model-free, versioned, and production-inert.
 
 ---
 

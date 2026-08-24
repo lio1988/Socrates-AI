@@ -1,6 +1,6 @@
 # ADR: SocratesZero Search Boundary v0
 
-Status: accepted through the board-state/legal-moves foundation on
+Status: accepted through the deterministic model-free policy-prior foundation on
 `feature/socrates-zero-search-v0`
 
 Baseline: commit `277ca2ec130ce120dba9c4d894a3c58138b25528`
@@ -181,6 +181,27 @@ The first executable research foundation remains read-only and runtime-inert:
 No method in this milestone calls `legal_actions()` from production execution,
 reads the feature flag, or permits a selected action to control CED.
 
+## Phase 3A deterministic policy boundary
+
+Constitution defines what is legal. Policy receives an already-legal tuple and
+ranks only that tuple; it cannot generate, legalize, repair, execute, or grant
+epistemic status to an action. `HeuristicPolicyPrior` therefore depends on
+`SearchState` public structure and canonical action metadata only, while
+`UniformPolicyPrior` is the explicit `1/N` control.
+
+Heuristic v0 uses base weight `1.0` and three inspectable signal families:
+unresolved contradiction, unresolved question, and valid canonical claim
+target. Its fixed adjustment table is public in code and every applied change
+has a structured reason code. Normalization preserves canonical action order,
+reserves final probability `1e-6` for every supplied action, returns `1.0` for a
+singleton, and returns empty output for empty input. The versions are
+`heuristic-policy-prior/v0` and `uniform-policy-prior/v0`.
+
+Policy does not read quality scores, agreement, ratification popularity,
+epistemic markers, provider/model identity, or natural-language length. It has
+no execution or governing authority. Heuristic v0 is neither learning nor RL,
+and this phase adds no Value, Greedy, Best-of-N, MCTS, neural, or CUDA path.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
@@ -196,14 +217,15 @@ reads the feature flag, or permits a selected action to control CED.
   SocratesZero benchmark episodes do not yet exist.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
-- Transposition storage, Best-of-N, heuristic prior/value, PUCT, progressive
+- Heuristic Value, Greedy/Best-of-N, transposition storage, PUCT, progressive
   widening, shadow execution, learned policy/value, self-play, and MuZero-style
   models are deferred in that order.
 
 ## Consequences
 
-The branch now has the equivalent of an immutable board, hard legal moves, and
-an explicit handcrafted baseline player. It is still runtime-inert and gives
-later policy/value/search work no execution or epistemic authority. The cost is
-intentional: this milestone produces no quality gain and makes no strategic
-choice beyond replaying the existing baseline.
+The branch now has the equivalent of an immutable board, hard legal moves, an
+explicit handcrafted baseline player, and versioned advisory distributions over
+legal moves. It is still runtime-inert and gives Policy, later Value, and search
+no execution or epistemic authority. The cost is intentional: this milestone
+makes no quality claim and its first strategic preferences remain handcrafted,
+weak, transparent, and unexecuted.

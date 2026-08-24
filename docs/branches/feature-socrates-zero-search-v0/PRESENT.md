@@ -33,6 +33,12 @@
   - Phase-2 projector/adapter/vocabulary/generator semantics are explicitly
     versioned and contradictory pre-COMPLETE final state fails closed;
   - search retains zero production execution authority.
+- Phase 3A deterministic policy priors are complete:
+  - heuristic v0 ranks only supplied legal actions from three public signals;
+  - every adjustment is exposed by a structured reason code;
+  - a `1e-6` exploration floor preserves every legal action;
+  - uniform v0 provides the separate `1/N` research control;
+  - neither policy has execution or epistemic authority.
 - Implementation checkpoint: `8d6770b` (`feat: add SocratesZero search
   contracts v0`).
 
@@ -172,5 +178,52 @@ KNOWN ISSUES:
 - the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
   duplicate FastAPI operation IDs.
 
-NEXT: implement model-free `HeuristicPolicyPrior` and `HeuristicValueEstimator`,
-then compare Greedy and matched-budget Best-of-N against the fixed baseline.
+## Deterministic model-free policy prior milestone
+
+DONE: implemented `HeuristicPolicyPrior` and `UniformPolicyPrior` behind the
+existing async `PolicyPrior` contract. Input actions are schema/reference
+validated, deduplicated, and canonically ordered, but Policy never calls
+Constitution to re-decide legality. Heuristic v0 uses only unresolved
+contradiction, unresolved question, and valid claim-target signals. Structured
+audit records expose base weight, reason-coded deltas, final weight, and
+normalized probability. No action is generated or executed.
+
+TESTS:
+
+- policy-specific: `13 passed`;
+- full SocratesZero bundle: `77 passed`;
+- focused SocratesZero + acceptance/marker + CED rotation/identity/retry:
+  `271 passed`;
+- Hybrid H8 authority plus SocratesZero: `88 passed`;
+- full `tests_dialogues`: `2143 passed, 1 skipped`;
+- repository-wide: `2450 passed, 1 skipped, 23 pre-existing warnings`;
+- staged `git diff --check`: passed;
+- no live external call was made.
+
+FILES CHANGED:
+
+- `backend/dialogues/socrates_zero/policy.py` — heuristic/uniform priors,
+  canonical normalization, exploration floor, and structured audit records;
+- `backend/dialogues/socrates_zero/__init__.py` — public runtime-inert exports;
+- `tests_dialogues/test_socrates_zero_policy_prior.py` — policy invariants,
+  rule controls, malformed-input and Constitution-separation tests;
+- canonical ADR/technical reference and branch checkpoints.
+
+COMMIT:
+
+- `4ff3798` — deterministic heuristic and uniform PolicyPrior implementations.
+
+KNOWN ISSUES:
+
+- most current phase states have one legal macro-action, so v0 is informative
+  mainly in Elenchus/Reflection states with targeted alternatives;
+- Phase 2 exposes no VERIFY or evidence-seeking legal action, so v0 contains no
+  fabricated verification/evidence preference;
+- contradiction and objection references are digest-based and do not expose
+  semantic target relationships to Policy;
+- no matched evaluation yet establishes that heuristic v0 outperforms uniform;
+- the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
+  duplicate FastAPI operation IDs.
+
+NEXT: implement the separate model-free `HeuristicValueEstimator`; do not wire
+Policy argmax into runtime execution.

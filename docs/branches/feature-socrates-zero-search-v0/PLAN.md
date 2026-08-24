@@ -35,6 +35,15 @@ preserving byte-for-byte default CED behavior.
 7. [done] Run focused, dialogue-wide, and repository-wide validation.
 8. [done] Harden explicit semantic versions and contradictory terminal input.
 
+## Deterministic policy prior
+
+1. [done] Reuse the canonical `PolicyPrior` and `ActionPrior` contracts.
+2. [done] Implement versioned model-free heuristic and uniform priors.
+3. [done] Keep support exactly within the supplied legal action set.
+4. [done] Add canonical normalization, exploration floor, and reason-code audit.
+5. [done] Prove Policy cannot call Constitution to re-decide legality.
+6. [done] Run focused, authority, dialogue-wide, and repository-wide tests.
+
 ## Validation gates
 
 - deterministic identity and strict-schema tests pass;
@@ -43,8 +52,8 @@ preserving byte-for-byte default CED behavior.
 - repository-wide tests pass;
 - `git diff --check` passes;
 - protected pre-existing untracked files remain untouched;
-- staged diff contains only this branch's ADR, checkpoints, contracts,
-  authority classification, and tests.
+- staged diff contains only the scoped branch implementation, tests, ADR, and
+  checkpoints.
 
 ## Deferred sequence
 
@@ -52,12 +61,13 @@ preserving byte-for-byte default CED behavior.
 2. [done] Read-only CED/Hybrid to `SearchState` projection.
 3. [done] Deterministic legal-action generator validated at the canonical CED
    execution boundary.
-4. [next] Heuristic PolicyPrior and ValueEstimator, then Greedy and matched-budget
-   Best-of-N baselines.
-5. Bounded PUCT with transpositions and progressive widening.
-6. Shadow-only execution and episode/receipt comparison.
-7. Learned priors/value only after sufficient governed experience.
-8. True RL/self-play only after search and evaluation evidence justify it.
+4. [done] Heuristic and uniform PolicyPrior reference implementations.
+5. [next] HeuristicValueEstimator.
+6. Greedy and matched-budget Best-of-N baselines.
+7. Bounded PUCT with transpositions and progressive widening.
+8. Shadow-only execution and episode/receipt comparison.
+9. Learned priors/value only after sufficient governed experience.
+10. True RL/self-play only after search and evaluation evidence justify it.
 
 ## Stop conditions
 

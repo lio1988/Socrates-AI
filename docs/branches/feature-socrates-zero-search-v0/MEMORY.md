@@ -44,6 +44,16 @@
   `ced-deterministic-legal-action-generator/v0`.
 - `final_response` before canonical `DialogPhase.COMPLETE` is inconsistent
   source state and the projection must fail closed.
+- Constitution owns legality; Policy may rank only the supplied legal set and
+  cannot call back into `legal_actions()`, generate actions, or execute one.
+- `HeuristicPolicyPrior` v0 is deterministic and model-free. It uses only three
+  public signal families: unresolved contradiction, unresolved question, and
+  valid canonical claim target. Every applied delta has a structured reason
+  code, and no score, consensus, marker, provider identity, or prose heuristic
+  is admitted.
+- Every heuristic-supported action retains final probability at least `1e-6`;
+  singleton input maps to `1.0`, empty input stays empty, and
+  `UniformPolicyPrior` is the versioned `1/N` reference.
 
 ## Protected local state
 
