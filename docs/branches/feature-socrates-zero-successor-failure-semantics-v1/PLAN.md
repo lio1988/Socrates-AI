@@ -28,7 +28,7 @@ scope.
 7. [done] Write the canonical decision report and required branch documents.
 8. [done] Run only the allowed existing tests, artifact integrity checks, and
    `git diff --check`; record exact results.
-9. [pending] Commit documentation only, verify clean tracked state and protected
+9. [done] Commit documentation only, verify clean tracked state and protected
    untracked files, and report the Phase 8R checkpoint.
 
 ## Validation gates

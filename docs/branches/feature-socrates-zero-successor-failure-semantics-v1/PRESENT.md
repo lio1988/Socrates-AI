@@ -4,6 +4,7 @@
 
 - Branch: `feature/socrates-zero-successor-failure-semantics-v1`.
 - Sealed analysis base: `f1497faa762cd33e4cc939bd7bd18fa6d2ea974c`.
+- Canonical decision-report commit: `3598f6e`.
 - Sealed Phase 8 artifact status: `FALSIFIED`.
 - Sealed Phase 8 artifact SHA-256:
   `00f9ba13bc2f52c970da9021c725b4941be1ff3a37705ce95f02d369671587ea`.
@@ -51,15 +52,14 @@ changed.
 - Focused CED production parity: `241 passed in 12.49s` across canonical
   execution/extraction, Socratic acceptance/firewall/policy, TaskLog, registry
   council/scoring/demo, baseline, and marker-contract tests.
-- Pre-commit scope verification: five new Markdown files only.
+- Decision-report commit `3598f6e`: five new Markdown files only.
 - `git diff --cached --check`: passed.
 - Aggregate, artifact builder, replay-publication, live-provider, model, and tool
   calls: `0`.
 
 ## Remaining work
 
-Commit the verified documentation-only checkpoint and verify the final
-worktree. No Phase 8R analysis or test work remains. Phase 8.5 and all
+No Phase 8R analysis, test, or checkpoint work remains. Phase 8.5 and all
 learning/shadow/depth work remain blocked pending a fully passed v2 experiment.
 
 ## Worktree
@@ -69,7 +69,6 @@ untouched and outside the diff.
 
 ## Next safe step
 
-Create the documentation-only checkpoint commit. After that, the next
-separately authorized engineering branch is only
+The next separately authorized engineering branch is only
 `feature/socrates-zero-canonical-successor-parity-v2`, whose complete pre-result
 contracts must be frozen before any new aggregate.
