@@ -166,4 +166,3 @@ def project_search_state_v1(
 
 
 __all__ = ["SEARCH_STATE_V1_PROJECTION_VERSION", "project_search_state_v1"]
-
