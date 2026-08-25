@@ -308,7 +308,7 @@ def test_temporal_prefix_forbidden_metadata_and_future_outcomes_do_not_enter_val
 
     equivalence = next(
         pair for pair in FROZEN_VALUE_V1_EVALUATION_CASE_SET.pairs
-        if pair.pair_name == "canonical-pair-033"
+        if pair.pair_name == "canonical-v1-pair-031"
     ).estimator_view()
     assert _value(equivalence.left_state) == _value(equivalence.right_state)
 

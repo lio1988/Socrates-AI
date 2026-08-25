@@ -10,6 +10,9 @@
   in `backend/dialogues/ced_search_value_v1_contracts.py`.
 - The exact nine-category `18/27` canonical source-recipe suite, metric IDs,
   split, thresholds, semantic digest, SHA lock, and leakage tests are complete.
+- The original `/v0` holdout lineage was invalidated after a pre-harness unit
+  test touched pair 033. The repaired `/v1` case set has new neutral identities,
+  a replacement pair-033 recipe, and no Value result yet.
 - `HeuristicValueEstimatorV1` now implements only the frozen penalty-only
   semantics at `backend/dialogues/ced_search_value_v1.py`.
 - Estimator/case/v0/observability focused verification: `72 passed`.

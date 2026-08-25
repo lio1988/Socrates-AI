@@ -54,7 +54,7 @@ from .socrates_zero.contracts import (
 )
 
 
-VALUE_V1_EVAL_CASE_SET_VERSION = "socrateszero-value-v1-eval-case-set/v0"
+VALUE_V1_EVAL_CASE_SET_VERSION = "socrateszero-value-v1-eval-case-set/v1"
 VALUE_V1_EVAL_HARNESS_VERSION = "socrateszero-value-v1-eval-harness/v0"
 VALUE_V1_EVAL_PAIR_SCHEMA_VERSION = "socrateszero-value-v1-eval-pair/v0"
 VALUE_V1_EVAL_CASE_SET_DIGEST_PREFIX = "szvaluev1cases"
@@ -574,7 +574,7 @@ def _state(
     **kwargs,
 ) -> CanonicalStateBlueprint:
     return CanonicalStateBlueprint(
-        blueprint_id=f"canonical-state-{ordinal:03d}-{slot}",
+        blueprint_id=f"canonical-v1-state-{ordinal:03d}-{slot}",
         claims=claims,
         **kwargs,
     )
@@ -595,7 +595,7 @@ def _pair(
         else ValueV1EvaluationSplit.HOLDOUT
     )
     return ValueV1EvaluationPair(
-        pair_name=f"canonical-pair-{ordinal:03d}",
+        pair_name=f"canonical-v1-pair-{ordinal:03d}",
         category=category,
         split=split,
         left=_state(ordinal, 0, **left),
@@ -618,7 +618,8 @@ _B = ValueV1PairExpectation.RIGHT_BETTER
 _Q = ValueV1PairExpectation.REQUIRED_TIE
 
 
-# Frozen before estimator implementation and before any development/holdout run.
+# V1 recovery lineage: frozen after estimator semantics were already committed,
+# and before any Value result on these state identities or any holdout run.
 _FROZEN_PAIRS = (
     # 1. Canonical support-state distinctions that should help.
     _pair(1, _U, 0, _L, left={"claims": (_claim(supporting_evidence_count=1),)}, right={}),
@@ -659,7 +660,7 @@ _FROZEN_PAIRS = (
     # 7. States where v0 and v1 should remain equivalent.
     _pair(31, _E, 0, _Q, left={}, right={}),
     _pair(32, _E, 1, _Q, left={"claims": (_claim(supporting_evidence_count=1),)}, right={"claims": (_claim(deterministic_verified_count=1),)}),
-    _pair(33, _E, 2, _Q, left={"claims": (_claim(weak_evidence_count=1),)}, right={"claims": (_claim(model_assertion_count=1),)}),
+    _pair(33, _E, 2, _Q, left={"claims": (_claim(model_verified_count=2),)}, right={"claims": (_claim(model_verified_count=1),)}),
     _pair(34, _E, 3, _Q, left={"claims": (_claim(supporting_evidence_count=1), _claim(supporting_evidence_count=1))}, right={"claims": (_claim(supporting_evidence_count=1),)}),
     _pair(35, _E, 4, _Q, left={"aporia_count": 1}, right={"aporia_count": 1}),
     # 8. Resolution may remove a penalty but may never create a bonus.

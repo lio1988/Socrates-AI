@@ -2,12 +2,21 @@
 
 ## Status
 
-This is the pre-result freeze for the Phase 7 one-factor experiment. No Value
-v1 development or holdout result existed when this case lineage was committed.
+This is the repaired pre-result freeze for the Phase 7 one-factor experiment.
+The originally committed `/v0` case lineage is preserved in Git but invalidated:
+an estimator metamorphic unit test accidentally evaluated holdout pair 033
+before the harness chronology was frozen. No aggregate metrics or artifact were
+produced, but scientific isolation requires a new version rather than a silent
+repair.
+
+The authoritative `/v1` lineage uses new neutral state identities and replaces
+the exposed pair-033 recipe. Estimator rules, weights, ordering, thresholds, and
+metric semantics did not change. No Value result on `/v1` existed when this
+recovery freeze was committed.
 
 ```text
 estimator: heuristic-value-estimator/v1
-case-set: socrateszero-value-v1-eval-case-set/v0
+case-set: socrateszero-value-v1-eval-case-set/v1
 harness: socrateszero-value-v1-eval-harness/v0
 development: 18 pairs
 holdout: 27 pairs
@@ -17,13 +26,13 @@ total: 45 pairs
 Case-set semantic digest:
 
 ```text
-szvaluev1cases_ef483e920f55d5bbf6385e2e6646ce579a27babf190eda467bdcf5c03c8a7b5e
+szvaluev1cases_5fad13cb294223cf76bcc7783bed1a5ac0bed56b22b4f5aa6ba73edaefbd18e3
 ```
 
 Canonical case-set JSON SHA-256:
 
 ```text
-e90a8974f0bc359d02d3433b4df25fe96cfe59c43d1d2106fae76d43a74e25b8
+22122913601c9fc39265fbdc44a3f3cec02030333c7317e971db42fb3a436afd
 ```
 
 ## Frozen categories

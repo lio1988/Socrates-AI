@@ -19,7 +19,10 @@
   `-0.20`, budget-exhausted `-0.10`, answer-ready/abstained neutral.
 - Evidence, verification, lifecycle, digests, source IDs, and counts are
   structural/audit inputs only and never independent directional features.
-- Evaluation IDs are `socrateszero-value-v1-eval-case-set/v0` and
+- The initially frozen `socrateszero-value-v1-eval-case-set/v0` lineage is
+  invalidated because a unit test evaluated holdout pair 033 before harness
+  freeze. The authoritative recovery case set is separately versioned
+  `socrateszero-value-v1-eval-case-set/v1`; the unchanged harness semantic ID is
   `socrateszero-value-v1-eval-harness/v0`.
 - Exactly 45 pairs are required: two development and three holdout pairs in
   each of nine frozen categories.

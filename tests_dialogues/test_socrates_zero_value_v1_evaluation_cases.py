@@ -30,10 +30,10 @@ from backend.dialogues.socrates_zero import TerminalStatus
 
 _CASE_SET_DIGEST = (
     "szvaluev1cases_"
-    "ef483e920f55d5bbf6385e2e6646ce579a27babf190eda467bdcf5c03c8a7b5e"
+    "5fad13cb294223cf76bcc7783bed1a5ac0bed56b22b4f5aa6ba73edaefbd18e3"
 )
 _CASE_SET_SHA256 = (
-    "e90a8974f0bc359d02d3433b4df25fe96cfe59c43d1d2106fae76d43a74e25b8"
+    "22122913601c9fc39265fbdc44a3f3cec02030333c7317e971db42fb3a436afd"
 )
 _PHASE5_SHA256 = (
     "21aa870a790f80186c0cd2b66878fa0d6344399fdf9e5386e399c7032569886c"
@@ -43,7 +43,7 @@ _PHASE5_SHA256 = (
 def test_frozen_ids_thresholds_and_exact_balanced_split():
     case_set = FROZEN_VALUE_V1_EVALUATION_CASE_SET
     assert case_set.case_set_id == VALUE_V1_EVAL_CASE_SET_VERSION \
-        == "socrateszero-value-v1-eval-case-set/v0"
+        == "socrateszero-value-v1-eval-case-set/v1"
     assert VALUE_V1_EVAL_HARNESS_VERSION \
         == "socrateszero-value-v1-eval-harness/v0"
     assert len(case_set.pairs) == 45
@@ -149,13 +149,17 @@ def test_development_and_holdout_are_separate_and_nonterminal_dominates_holdout(
 
 def test_blueprints_derive_expected_governing_states_without_manual_assignment():
     pairs = FROZEN_VALUE_V1_EVALUATION_CASE_SET.pairs
-    first = next(pair for pair in pairs if pair.pair_name == "canonical-pair-001")
+    first = next(
+        pair for pair in pairs if pair.pair_name == "canonical-v1-pair-001"
+    )
     first_view = first.estimator_view()
     assert first_view.left_state.claim_assessments[0].support_state \
         is SupportState.SUPPORTED
     assert first_view.right_state.claim_assessments[0].support_state \
         is SupportState.UNSUPPORTED
-    fifth = next(pair for pair in pairs if pair.pair_name == "canonical-pair-005")
+    fifth = next(
+        pair for pair in pairs if pair.pair_name == "canonical-v1-pair-005"
+    )
     fifth_view = fifth.estimator_view()
     assert fifth_view.left_state.claim_assessments[0].support_state \
         is SupportState.FALSIFIED
