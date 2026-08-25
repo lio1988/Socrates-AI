@@ -7,11 +7,11 @@ chronologically frozen canonical holdout and no architecture expansion.
 
 ## Ordered work
 
-1. [in progress] Freeze estimator semantic constants and structured audit
+1. [done] Freeze estimator semantic constants and structured audit
    contracts without implementing estimator behavior.
-2. [pending] Freeze evaluation contracts, all 45 canonical case blueprints,
+2. [done] Freeze evaluation contracts, all 45 canonical case blueprints,
    split, metrics, thresholds, and identity/label firewalls.
-3. [pending] Add leakage, provenance, reward-farming, terminal, purity, and
+3. [in progress] Add leakage, provenance, reward-farming, terminal, purity, and
    malformed-input tests.
 4. [pending] Implement `heuristic-value-estimator/v1` without changing v0.
 5. [pending] Run development validation without semantic tuning.

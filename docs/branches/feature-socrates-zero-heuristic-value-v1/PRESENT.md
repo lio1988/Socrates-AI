@@ -8,7 +8,9 @@
 - No estimator behavior or evaluation result exists yet.
 - Frozen Value-v1 semantic and audit contracts live at the trusted CED boundary
   in `backend/dialogues/ced_search_value_v1_contracts.py`.
-- Current activity: freeze all 45 canonical evaluation blueprints.
+- The exact nine-category `18/27` canonical source-recipe suite, metric IDs,
+  split, thresholds, semantic digest, SHA lock, and leakage tests are complete.
+- No estimator behavior and no development/holdout result exists yet.
 
 ## Worktree
 
@@ -17,5 +19,5 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit semantic/audit contracts, then freeze all 45 evaluation blueprints and
-thresholds before estimator implementation or any holdout execution.
+Commit the frozen evaluation lineage, then implement the estimator against the
+already-fixed contracts and guardrails without semantic tuning.
