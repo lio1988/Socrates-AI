@@ -40,6 +40,8 @@
 - The aggregate evaluator is frozen separately and must turn evaluation
   failures into `FALSIFIED` evidence. Replay-lock publication must compare the
   actual authoritative and reverse-order replay artifacts internally.
+- The complete pre-result evaluator/docs freeze is commit `36393fe`. No
+  aggregate builder had run when that commit was created.
 - `move_id` remains the exact canonical CED ID and contains no branch entropy.
   Random production `task_id` and timestamps are non-semantic audit fields.
 - Canonical rejection is distinct from `SUCCESSOR_UNAVAILABLE`. A provider-OK

@@ -24,9 +24,9 @@ and no change to frozen Phase 5/7 artifacts or search components.
    resource receipts.
 7. [done] Add mandatory contract, rejection, isolation, leakage, budget,
    delegation, idempotence, order, and compatibility tests.
-8. [in progress] Finish the evaluator/artifact/threshold/replay-lock contract
-   freeze, commit it, issue the required pre-aggregate report, then run the
-   first authoritative aggregate and independent byte replay exactly once.
+8. [in progress] The evaluator/artifact/threshold/replay-lock contract freeze
+   is committed. Issue the required pre-aggregate report, then run the first
+   authoritative aggregate and independent byte replay exactly once.
 9. [pending] Run the complete post-result Phase 8 regression matrix, static duplication
    audit, hashes, and `git diff --check`.
 10. [pending] Finalize canonical/branch documentation and durable commits.

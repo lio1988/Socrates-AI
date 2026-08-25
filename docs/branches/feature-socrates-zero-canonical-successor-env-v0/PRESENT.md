@@ -21,7 +21,7 @@
 ## Commits
 
 - `5ad83db` — freeze authoritative Phase 8 observation lineage.
-- Final evaluator/docs pre-result freeze commit — pending.
+- `36393fe` — freeze Phase 8 parity evaluator before results.
 
 ## Verification
 
@@ -34,8 +34,8 @@
 
 ## Remaining work
 
-Commit all evaluator contracts/tests/docs, report the exact mandatory
-pre-aggregate checkpoint, then run the first aggregate. If it passes, publish the artifact
+Report the exact mandatory pre-aggregate checkpoint, then run the first
+aggregate. If it passes, publish the artifact
 once, perform the independent reverse-order rebuild, publish the replay lock,
 and run the complete regression matrix.
 
@@ -45,5 +45,5 @@ The two protected pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Create the final pre-result evaluator/docs freeze commit. Do not run aggregate
-parity before that commit and the required checkpoint report.
+Issue the required pre-aggregate checkpoint report from clean tracked HEAD.
+Only after that report may the first authoritative aggregate run.

@@ -27,6 +27,9 @@ reason: Raw provider output was rebound to caller-created task/provider
 
 The repaired v1 lineage was committed before any aggregate result in
 `5ad83db` (`feat: freeze authoritative Phase 8 observation lineage`).
+The evaluator, artifact, falsification, threshold, reverse-replay, and
+write-once contracts were then frozen—still before any aggregate result—in
+`36393fe` (`feat: freeze Phase 8 parity evaluator before results`).
 
 ## Frozen identities
 

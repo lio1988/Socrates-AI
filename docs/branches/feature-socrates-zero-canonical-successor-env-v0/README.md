@@ -30,7 +30,8 @@ independent replay must be deterministic.
 The original v0 corpus is preserved but explicitly invalidated for
 authoritative parity because it rebound raw output to caller metadata. The
 observation-bound corpus v1 and its manifest are frozen in commit `5ad83db`.
-The aggregate has not yet run. See
+The complete pre-result evaluator contract is frozen in `36393fe`. The
+aggregate has not yet run. See
 `../../SOCRATES_ZERO_PHASE8_AUTHORITATIVE_OBSERVATION_LINEAGE_V1.md` for the
 full pre-result contract.
 
