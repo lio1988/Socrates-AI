@@ -36,5 +36,13 @@ BestOfN test improved selection from `2/7` to `7/7` without resource or
 guardrail regression. See
 [`docs/SOCRATES_ZERO_VALUE_V1_PHASE7.md`](../../SOCRATES_ZERO_VALUE_V1_PHASE7.md).
 
+Phase 7.5 then completed the required documentation-only architecture gate.
+It selected **CANONICAL SUCCESSOR ENVIRONMENT NEXT** because real shadow
+collection cannot yet reuse an isolated CED-owned action transition. The
+selected next branch is
+`feature/socrates-zero-canonical-successor-env-v0`; it is an offline
+one-transition parity/isolation foundation, not depth two. See
+[`docs/SOCRATES_ZERO_PHASE7_5_ARCHITECTURE_DECISION_GATE.md`](../../SOCRATES_ZERO_PHASE7_5_ARCHITECTURE_DECISION_GATE.md).
+
 Branch context: [MEMORY.md](MEMORY.md) · [PLAN.md](PLAN.md) ·
 [PRESENT.md](PRESENT.md)

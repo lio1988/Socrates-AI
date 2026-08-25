@@ -52,6 +52,28 @@
 - Phase 7 stops after recommending a new decision gate. It does not choose
   between read-only real counterfactual shadow collection and safe canonical
   successor-environment work.
+- Phase 7.5 completed that decision gate without changing code or running live
+  calls. The exact decision is `CANONICAL SUCCESSOR ENVIRONMENT NEXT`.
+- The dependency ordering is Relationship 1: a CED-owned isolated canonical
+  one-transition foundation must exist before real counterfactual shadow
+  collection is safe.
+- The minimum shared primitive is an immutable canonical branch capsule plus
+  `prepare_transition`, external observation injection, explicit
+  accepted/rejected/failed/unavailable outcome, complete resource receipt, and
+  canonical `SearchState v1` successor projection.
+- The primitive belongs to CED and must reuse one shared transition kernel.
+  SocratesZero may request, observe, search, and evaluate but may not duplicate
+  transition rules.
+- `DEPTH 2 NOT READY` and `SHADOW ISOLATION NOT READY` remain the exact
+  current classifications.
+- The current experimental champion is SearchState v1 + UniformPolicyPrior/v0
+  + HeuristicValueEstimator/v1 + BestOfNStrategy/v0, N=4, depth=1. It has no
+  production authority.
+- The next branch is
+  `feature/socrates-zero-canonical-successor-env-v0`. Its first experiment is
+  offline one-transition parity and source/sibling isolation only.
+- Learned Value, learned Policy, Experience Store, RL, self-play, MuZero, and
+  production dynamic SocratesZero remain not earned.
 
 ## Protected local state
 

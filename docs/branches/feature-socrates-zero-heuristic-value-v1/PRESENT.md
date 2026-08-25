@@ -46,9 +46,28 @@
   `86b8f43c2dd9173100adfb7d5c84c6cc96df46a528407c203a3ce0930d117637`.
 - Phase 7 implementation, primary/secondary artifacts, replay locks, complete
   regression matrix, ADR, and methodology/result documentation are complete.
+- Phase 7.5 audited every experimental successor seam, actual CED transition
+  owner, branch-mutable state family, replay/snapshot donor, provider control,
+  counterfactual-fairness requirement, and learning/RL prerequisite.
+- The exact Phase 7.5 decision is `CANONICAL SUCCESSOR ENVIRONMENT NEXT`.
+  Option A has the larger eventual external-validity payoff, but currently
+  depends on the CED-owned one-transition parity/isolation primitive selected
+  under Option B.
+- Depth two, real shadow execution, provider calls, Experience Store, learned
+  Policy/Value, RL, and production authority remain locked.
+- The next branch, not started here, is
+  `feature/socrates-zero-canonical-successor-env-v0`.
 
 ## Verification
 
+- Phase 7.5 required gates: Value v1 `77 passed`; Phase 6 canonical
+  observability/projection v1 `17 passed`; Phase 5 evaluation integrity
+  `37 passed`.
+- Exact Phase 5, Phase 7 primary, and Phase 7 BestOfN SHA-256 locks rechecked;
+  Phase 5 Git blob remains
+  `0488de8a555658a55312d8b1da8614ab9347743b`.
+- `git diff --cached --check` passes and the Phase 7.5 scope contains six
+  documentation paths only.
 - Value v1 `77`; Value v0 `21`; contracts v0 `19`; projection v0 `11`;
   observability/projection v1 `17`;
 - Policy `13`; Greedy `27`; BestOfN `24`; PUCT `53`; Phase 5 evaluation `37`;
@@ -66,6 +85,7 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Stop. A new architecture decision gate must choose whether the next experiment
-is read-only real counterfactual shadow collection or safe canonical successor
-environment work. Do not start either automatically.
+Stop before implementation on this branch. If separately authorized, create
+`feature/socrates-zero-canonical-successor-env-v0` and freeze an offline
+CED-owned one-transition parity/isolation experiment. Do not run real shadow
+calls or unlock depth two.

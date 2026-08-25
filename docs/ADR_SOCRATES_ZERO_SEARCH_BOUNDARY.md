@@ -583,6 +583,51 @@ next action must be a new decision gate choosing between read-only real
 counterfactual shadow collection and safe successor-environment work; Phase 7
 does not choose or start either.
 
+## Phase 7.5 successor-versus-shadow architecture decision
+
+Phase 7.5 is documentation-only and selects exactly one next engineering
+milestone: **CANONICAL SUCCESSOR ENVIRONMENT NEXT**.
+
+The selection is about dependency order, not a preference for deeper or more
+complex search. Real one-ply shadow data would provide the largest immediate
+external-validity signal, but the current repository cannot collect it safely:
+SuccessorStateEvaluator has only fixture implementations, CED does not consume
+LegalAction, _run_registry_phase executes and mutates a whole phase, and no
+branch capsule covers SessionState, TaskLog, commitments, aporia, provider
+bindings, retries, Hybrid state, external stores, or provider usage.
+
+The accepted open-world transition model separates action preparation from
+external observation: canonical state plus legal action yields a pending
+canonical transition; adding a real or recorded observation yields a canonical
+transition result. Provider execution must remain outside transition semantics.
+The result may be accepted, rejected, failed, or SUCCESSOR_UNAVAILABLE. It may
+never invent provider output, evidence, verification, acceptance, role
+advancement, or TaskLog entries.
+
+The next branch is feature/socrates-zero-canonical-successor-env-v0. Its only
+hypothesis is that CED can expose one isolated action-plus-observation
+transition through a shared CED-owned kernel and reproduce the existing
+canonical path for the same root, supported legal action, and recorded
+observation without mutating the source or a sibling branch. Unsupported
+actions must remain unavailable. This milestone is offline, one-transition,
+default-disabled, and grants no SocratesZero execution authority.
+
+Depth two remains **NOT READY**. The selected milestone must first prove a
+complete branch snapshot, canonical task cursor, observation injection,
+identity-preserving isolation, exact failure/resource accounting, deterministic
+transition receipts, and SearchState v1 successor projection. Only a later gate
+may authorize real one-ply shadow calls; a still later gate may reconsider
+recursive search.
+
+The current experimental champion remains SearchState v1, Uniform Policy v0,
+Value v1, and BestOfN v0 with N=4 and depth one. It is a research configuration
+only. PUCT tuning, synthetic depth two, Heuristic Policy tuning, learned
+Policy/Value, Experience Store, RL, self-play, MuZero, and production dynamic
+SocratesZero remain not earned.
+
+The complete analysis is recorded in
+docs/SOCRATES_ZERO_PHASE7_5_ARCHITECTURE_DECISION_GATE.md.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.

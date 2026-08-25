@@ -20,6 +20,14 @@ chronologically frozen canonical holdout and no architecture expansion.
    replay it, and classify the primary gate.
 8. [done] Run the matched BestOfN secondary gate; primary passed.
 9. [done] Run the full required regression matrix and finalize docs/ADR.
+10. [done] Audit successor seams, CED transition ownership, open-world
+    observation separation, depth-two blockers, branch isolation, replay
+    primitives, provider controls, fairness, episode schema, and learning/RL
+    readiness.
+11. [done] Compare read-only real shadow collection against a canonical
+    successor environment and choose exactly one next milestone.
+12. [done] Select `CANONICAL SUCCESSOR ENVIRONMENT NEXT`, define the bounded
+    offline one-transition hypothesis, and preserve every Phase 7 component.
 
 ## Stop conditions
 
@@ -29,6 +37,8 @@ metrics, thresholds, or ordering after the first holdout result.
 
 ## Completion
 
-Primary and secondary gates both passed. Phase 7 is complete and stops before
-PUCT, shadow collection, successor-environment work, learned Value, or RL. A
-new architecture decision gate is required for any next step.
+Primary and secondary gates both passed. Phase 7 is complete. Phase 7.5 is also
+complete as an analysis-only gate and selects
+`feature/socrates-zero-canonical-successor-env-v0` as the single next branch.
+Implementation does not begin here. Real shadow calls, depth two, learning, RL,
+and production authority remain blocked.
