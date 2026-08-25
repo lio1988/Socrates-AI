@@ -14,14 +14,25 @@
 - Evaluator `/v1` contracts cover the five supported cases, fourteen
   unavailable probes, thirteen parity fields, strict zero-failure thresholds,
   measured isolation/call evidence, reverse-order replay, and write-once
-  publication. Final hardening is complete and awaits its freeze commit.
-- The authoritative aggregate has not run. No Phase 8 artifact exists.
+  publication. Final hardening is committed at `36393fe`.
+- The authoritative aggregate ran exactly once and produced `FALSIFIED`.
+- Supported authoritative parity is 5/5. Unavailable negatives are 13/14.
+- `wrong-provider` expected `OBSERVATION_PROVIDER_MISMATCH` but the actual
+  fail-closed reason is `ROOT_CONTEXT_MISMATCH`; provider roster is already
+  part of the CED-owned canonical task context.
+- No second aggregate, independent replay, or replay lock was run.
+- The immutable artifact is committed at `07ec5ab`, ID
+  `cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0`,
+  SHA-256
+  `00f9ba13bc2f52c970da9021c725b4941be1ff3a37705ce95f02d369671587ea`.
 - No live provider/model/tool call has occurred.
 
 ## Commits
 
 - `5ad83db` — freeze authoritative Phase 8 observation lineage.
 - `36393fe` — freeze Phase 8 parity evaluator before results.
+- `1a9e571` — checkpoint the complete pre-aggregate freeze.
+- `07ec5ab` — record the first, falsified Phase 8 parity artifact.
 
 ## Verification
 
@@ -29,15 +40,16 @@
 - Focused CED production parity: `241 passed`.
 - Frozen Phase 5/7 artifact integrity: `10 passed`.
 - Evaluator contract/schema gate: `8 passed`.
+- Combined Phase 8 pre-result gate: `75 passed`.
 - All three Phase 5/7 hashes match their sealed values.
-- Aggregate executions: `0`.
+- Aggregate executions at the pre-result freeze: `0`.
+- First authoritative aggregate: `FALSIFIED`.
+- Aggregate executions: `1`; independent replay executions: `0`.
 
 ## Remaining work
 
-Report the exact mandatory pre-aggregate checkpoint, then run the first
-aggregate. If it passes, publish the artifact
-once, perform the independent reverse-order rebuild, publish the replay lock,
-and run the complete regression matrix.
+Preserve the immutable artifact and this durable falsification checkpoint, then
+stop. Do not relax the v1 taxonomy or rerun under the same semantic IDs.
 
 ## Worktree
 
@@ -45,5 +57,5 @@ The two protected pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Issue the required pre-aggregate checkpoint report from clean tracked HEAD.
-Only after that report may the first authoritative aggregate run.
+After this durable checkpoint is committed, verify artifact bytes and protected
+files, then stop. Phase 8.5 is not authorized.

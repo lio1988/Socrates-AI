@@ -24,12 +24,13 @@ and no change to frozen Phase 5/7 artifacts or search components.
    resource receipts.
 7. [done] Add mandatory contract, rejection, isolation, leakage, budget,
    delegation, idempotence, order, and compatibility tests.
-8. [in progress] The evaluator/artifact/threshold/replay-lock contract freeze
-   is committed. Issue the required pre-aggregate report, then run the first
-   authoritative aggregate and independent byte replay exactly once.
-9. [pending] Run the complete post-result Phase 8 regression matrix, static duplication
-   audit, hashes, and `git diff --check`.
-10. [pending] Finalize canonical/branch documentation and durable commits.
+8. [stopped] The frozen evaluator was run exactly once. It produced a
+   `FALSIFIED` artifact: supported parity 5/5, unavailable negatives 13/14,
+   with one `wrong-provider` failure-reason mismatch. No replay lock was run.
+9. [not run] The complete post-result expansion gate is not used to promote a
+   falsified hypothesis. Pre-result production and frozen-artifact gates remain
+   green and the immutable result is preserved.
+10. [in progress] Finalize the durable falsification checkpoint and stop.
 
 ## Stop conditions
 
@@ -37,3 +38,6 @@ Stop and falsify the hypothesis if parity requires copied CED rules, if any
 canonical result diverges, if source/sibling/production isolation fails, if
 identity or resource truth cannot be preserved, if observation fabrication is
 required, or if any unsupported case silently creates a successor.
+
+The frozen threshold also requires every unavailable probe to reproduce its
+predeclared reason. That stop condition triggered for `wrong-provider`.

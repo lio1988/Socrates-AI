@@ -57,8 +57,21 @@
   `d8faecb7b3f134036afaa67a2fc84acc53e23a2e44a57971a45eefe4fdbaf8ca`.
 - Frozen Phase 7 BestOfN SHA-256:
   `86b8f43c2dd9173100adfb7d5c84c6cc96df46a528407c203a3ce0930d117637`.
-- No authoritative Phase 8 aggregate or artifact exists at the current
-  pre-result checkpoint.
+- The first authoritative artifact is immutable at commit `07ec5ab`, ID
+  `cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0`,
+  SHA-256
+  `00f9ba13bc2f52c970da9021c725b4941be1ff3a37705ce95f02d369671587ea`.
+- Its frozen hypothesis status is `FALSIFIED`. Supported parity is 5/5 and
+  unavailable negatives are 13/14. `wrong-provider` expected
+  `OBSERVATION_PROVIDER_MISMATCH` but returned `ROOT_CONTEXT_MISMATCH` because
+  changing the provider roster changes the CED-owned `council_roster` task
+  context before the provider-ID compatibility check.
+- The failed probe still created no successor, used no replay resources,
+  dispatched no provider, and mutated neither source nor production control.
+  The falsification is an exact predeclared taxonomy mismatch, not unsafe
+  acceptance.
+- No independent aggregate replay or replay lock was run after falsification.
+  The v1 artifact must never be rewritten; Phase 8.5 is not earned.
 
 ## Protected local state
 

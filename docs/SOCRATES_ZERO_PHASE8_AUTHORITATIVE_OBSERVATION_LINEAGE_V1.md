@@ -2,12 +2,14 @@
 
 ## Status
 
-Pre-result repair and freeze for
-`feature/socrates-zero-canonical-successor-env-v0`.
+The first authoritative aggregate was executed exactly once from the committed
+pre-result freeze on `feature/socrates-zero-canonical-successor-env-v0`.
 
-The authoritative aggregate has not been run and no Phase 8 parity artifact
-exists at this checkpoint. The hypothesis remains open until the committed
-evaluator is executed once against the frozen corpus.
+The frozen evaluation result is **FALSIFIED**. All five supported authoritative
+parity cases passed, but one predeclared unavailable probe did not reproduce its
+frozen failure-reason taxonomy. No tuning, corpus/threshold/parity change,
+second aggregate, or independent replay was performed after observing the
+result.
 
 ## Scientific repair
 
@@ -252,13 +254,82 @@ Phase 7 BestOfN:
 86b8f43c2dd9173100adfb7d5c84c6cc96df46a528407c203a3ce0930d117637
 ```
 
-## Locked next step
+## First authoritative result
 
-After focused tests, production regressions, historical hash checks,
-documentation, and the final pre-result commit all pass, report
-the complete required pre-aggregate checkpoint. Only then execute the first
-authoritative aggregate once, publish the canonical artifact write-once, run
-the independent reverse-order replay, and publish its replay lock.
+The committed evaluator was executed once after the mandatory pre-aggregate
+report. It produced the following write-once artifact:
+
+```text
+path:
+docs/branches/feature-socrates-zero-canonical-successor-env-v0/artifacts/
+socrateszero_canonical_successor_parity_v1.json
+
+artifact ID:
+cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0
+
+SHA-256:
+00f9ba13bc2f52c970da9021c725b4941be1ff3a37705ce95f02d369671587ea
+
+artifact commit:
+07ec5ab14cd1599ffd6c8c4b6442d56d51129f11
+
+hypothesis status:
+FALSIFIED
+```
+
+Frozen aggregate metrics:
+
+```text
+supported authoritative cases:      5
+accepted parity:                     1 / 1
+canonical rejection parity:         4 / 4
+unavailable negatives:             13 / 14
+evaluation failures:                0
+unavailable reason mismatches:      1
+provider-binding probe failures:    1
+
+all semantic/status/rejection/move-ID/TaskLog/commitment/phase-role/
+SearchState/processor/observation/other-binding/isolation/receipt/resource/
+Value/idempotence/fabrication/future-label mismatches or failures: 0
+
+aggregate provider dispatches:      0
+live calls:                         0
+tool calls:                         0
+historical fixture dispatches:      5
+```
+
+The sole mismatch is `wrong-provider`:
+
+```text
+expected: OBSERVATION_PROVIDER_MISMATCH
+actual:   ROOT_CONTEXT_MISMATCH
+status:   SUCCESSOR_UNAVAILABLE
+successor created: false
+source mutation: false
+production mutation: false
+provider dispatches: 0
+replay usage: 0
+```
+
+Changing the provider roster also changes the CED-owned opening task context,
+because `council_roster` is part of `_registry_phase_context`. Compatibility
+therefore fails at the earlier, stronger context-digest check before reaching
+the provider-ID check. The system failed closed safely and deterministically,
+but the frozen probe required the later provider-specific reason. Under the
+predeclared thresholds this is a real reason-taxonomy mismatch and the result
+must remain `FALSIFIED`; it cannot be reclassified after observation.
+
+## Locked stop
+
+No replay lock was produced because the first frozen hypothesis result was
+falsified and the mandate requires stopping without post-result relaxation.
+The artifact must never be rewritten. Phase 8 is not complete and Phase 8.5 is
+not earned.
+
+Any future attempt to distinguish provider mismatch from provider-induced
+context mismatch requires an explicit new semantic version, a newly frozen
+probe design, and a fresh corpus/evaluator lineage. It must not alter or rerun
+this v1 result under the same IDs.
 
 No live providers, second transition, depth two, recursive search, Value or
 Policy change, Experience Store, learning, RL, Hybrid authority, or production
