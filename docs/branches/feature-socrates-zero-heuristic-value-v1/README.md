@@ -27,5 +27,14 @@ actions, successor semantics, Greedy, BestOfN, PUCT, CED/Hybrid authority,
 Phase 5 artifacts, providers, depth two, learned Value, RL, or production
 wiring. No live calls and no post-holdout tuning.
 
+## Result
+
+Both pre-registered gates passed. The authoritative primary holdout improved
+ordered accuracy from `2/7` under Value v0 to `7/7` under Value v1 with all
+required ties and hard-safety gates passing. The separately frozen matched
+BestOfN test improved selection from `2/7` to `7/7` without resource or
+guardrail regression. See
+[`docs/SOCRATES_ZERO_VALUE_V1_PHASE7.md`](../../SOCRATES_ZERO_VALUE_V1_PHASE7.md).
+
 Branch context: [MEMORY.md](MEMORY.md) · [PLAN.md](PLAN.md) ·
 [PRESENT.md](PRESENT.md)

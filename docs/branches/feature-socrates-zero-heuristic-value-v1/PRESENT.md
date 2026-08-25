@@ -44,6 +44,20 @@
   `szvaluev1bestofnartifact_c154689cd122f5f7dd68da5d7b31c34b26d049233e6425d3758f56491b11522d`;
   SHA-256 is
   `86b8f43c2dd9173100adfb7d5c84c6cc96df46a528407c203a3ce0930d117637`.
+- Phase 7 implementation, primary/secondary artifacts, replay locks, complete
+  regression matrix, ADR, and methodology/result documentation are complete.
+
+## Verification
+
+- Value v1 `77`; Value v0 `21`; contracts v0 `19`; projection v0 `11`;
+  observability/projection v1 `17`;
+- Policy `13`; Greedy `27`; BestOfN `24`; PUCT `53`; Phase 5 evaluation `37`;
+- SocratesZero `333`; Hybrid H8 + SocratesZero `344`; focused CED/Socratic
+  `252`;
+- `tests_dialogues`: `2399 passed, 1 skipped`;
+- repository-wide: `2706 passed, 1 skipped, 23 pre-existing warnings`;
+- Phase 5 artifact SHA unchanged; primary and secondary replay/byte locks pass;
+- provider/model/live calls: `0`.
 
 ## Worktree
 
@@ -52,5 +66,6 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit and replay-lock the secondary artifact, then complete every required
-regression suite and durable Phase 7 methodology/result/ADR checkpoint.
+Stop. A new architecture decision gate must choose whether the next experiment
+is read-only real counterfactual shadow collection or safe canonical successor
+environment work. Do not start either automatically.

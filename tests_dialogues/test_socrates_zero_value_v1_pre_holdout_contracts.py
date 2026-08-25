@@ -88,5 +88,6 @@ def test_primary_gate_refuses_development_run_as_holdout():
         primary_gate_for_holdout(development)
 
 
-def test_authoritative_output_does_not_exist_before_first_holdout_run():
-    assert not Path(DEFAULT_OUTPUT).exists()
+def test_authoritative_output_path_remains_the_frozen_branch_artifact_path():
+    assert Path(DEFAULT_OUTPUT).parent.name == "artifacts"
+    assert Path(DEFAULT_OUTPUT).name == "socrateszero_value_v1_primary_v0.json"

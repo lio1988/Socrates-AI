@@ -542,6 +542,47 @@ success thresholds and falsification rules are recorded in
 `docs/SOCRATES_ZERO_VALUE_V1_DECISION_GATE.md`. Learned Value and RL remain not
 earned.
 
+## Phase 7 deterministic Value v1 experiment
+
+Phase 7 implements the single experiment authorized by Phase 6.5. The new
+`heuristic-value-estimator/v1` remains on the trusted CED side, requires
+canonical SearchState v1, and is penalty-only. It scores one worst active
+governing `SupportState` at most once, optionally adds one canonical Socratic
+remainder, suppresses every overlapping record representation, assigns no
+`SUPPORTED` or closure bonus, and gives terminal semantics absolute precedence.
+
+The first `/v0` case lineage was explicitly invalidated after a unit test
+touched one holdout pair before harness freeze. No semantic tuning followed.
+The separately versioned authoritative
+`socrateszero-value-v1-eval-case-set/v1` lineage was committed with new neutral
+identities before any result on that lineage. This recovery is part of the
+scientific record, not hidden test repair.
+
+The primary holdout decision is `VALUE V1 HYPOTHESIS PASSED`. Value v0 ranked
+`2/7` ordered pairs correctly; Value v1 ranked `7/7`, including the independent
+nonterminal subset, for a `+71.43` percentage-point improvement. Value v1 tied
+all `20/20` required guardrails and recorded zero directional errors, ordered
+ties, ranking loss, forbidden inputs, positive components, mutations, missing
+sources, or receipt mismatches.
+
+The primary pass unlocked only the pre-registered secondary test. With the
+unchanged `BestOfNStrategy/v0`, `UniformPolicyPrior/v0`, N=4, depth one, and
+matched successor budget four, Value v0 selected `2/7` ordered winners and
+Value v1 selected `7/7`. Guardrail, resource-usage, successor-accounting, and
+failure regressions are all zero. PUCT was not run and remains outside the
+gate.
+
+The durable methodology, chronology, exact rules, artifacts, hashes, results,
+verification counts, limitations, and next-decision boundary are recorded in
+`docs/SOCRATES_ZERO_VALUE_V1_PHASE7.md`.
+
+The architectural decision is bounded: deterministic canonical readiness
+discrimination and offline one-ply utility are supported. No production,
+real-model, recursive-environment, learned-Value, or RL claim is earned. The
+next action must be a new decision gate choosing between read-only real
+counterfactual shadow collection and safe successor-environment work; Phase 7
+does not choose or start either.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
@@ -558,10 +599,10 @@ earned.
   Socrates dialogue benchmark.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
-- SearchState v1 exposes useful governing distinctions, but no Value version
-  consumes it yet. Phase 6.5 earned a transparent Value v1 implementation
-  experiment, but whether it improves the new leakage-safe holdout remains an
-  unanswered and explicitly falsifiable question.
+- SearchState v1 now has a passing deterministic Value-v1 structural experiment
+  and a passing matched one-ply offline BestOfN experiment. Real-dialogue
+  density, real successor fidelity, and production generalization remain
+  unknown and require a separate decision gate.
 - No canonical CED action executor or `SuccessorStateEvaluator` implementation
   exists; Best-of-N and PUCT are composable only with an injected experimental
   evaluator.

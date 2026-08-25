@@ -19,10 +19,16 @@ chronologically frozen canonical holdout and no architecture expansion.
 7. [done] Execute the first holdout once, persist its immutable artifact,
    replay it, and classify the primary gate.
 8. [done] Run the matched BestOfN secondary gate; primary passed.
-9. [in progress] Run the full required regression matrix and finalize docs/ADR.
+9. [done] Run the full required regression matrix and finalize docs/ADR.
 
 ## Stop conditions
 
 Stop before secondary search if any primary threshold fails. Preserve every
 negative authoritative artifact. Do not tune weights, cases, labels, split,
 metrics, thresholds, or ordering after the first holdout result.
+
+## Completion
+
+Primary and secondary gates both passed. Phase 7 is complete and stops before
+PUCT, shadow collection, successor-environment work, learned Value, or RL. A
+new architecture decision gate is required for any next step.

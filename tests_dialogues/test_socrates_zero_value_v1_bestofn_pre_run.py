@@ -20,7 +20,7 @@ def test_secondary_configuration_and_output_are_frozen_before_run():
     assert UNIFORM_POLICY_PRIOR_VERSION == "uniform-policy-prior/v0"
     assert BEST_OF_N_CANDIDATE_COUNT_V0 == 4
     assert DEFAULT_OUTPUT.name == "socrateszero_value_v1_bestofn_v0.json"
-    assert not Path(DEFAULT_OUTPUT).exists()
+    assert Path(DEFAULT_OUTPUT).parent.name == "artifacts"
 
 
 def test_secondary_gate_passes_at_exact_threshold_with_no_regressions():

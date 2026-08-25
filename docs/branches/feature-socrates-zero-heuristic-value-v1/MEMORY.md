@@ -36,6 +36,22 @@
 - The sealed Phase 5 normalized artifact SHA-256 remains
   `21aa870a790f80186c0cd2b66878fa0d6344399fdf9e5386e399c7032569886c`.
 - Learned Value and RL remain not earned; Value v1 remains advisory only.
+- Authoritative primary decision: `VALUE V1 HYPOTHESIS PASSED`. Value v0
+  ordered/nonterminal accuracy was `2/7`; Value v1 was `7/7`, delta `+71.43pp`.
+  Required ties were `20/20` and every hard-safety count was zero.
+- Primary artifact ID/SHA are
+  `szvaluev1artifact_803646dbfff5a0449309bf4690ddcc8b6e374fe80ab5826d5fc56c749dc27e49`
+  and `d8faecb7b3f134036afaa67a2fc84acc53e23a2e44a57971a45eefe4fdbaf8ca`.
+- Authoritative secondary decision: `VALUE V1 BESTOFN GATE PASSED`. Matched
+  UniformPolicy/BestOfN selection improved from `2/7` to `7/7`; all resource,
+  accounting, guardrail, and failure regression counts were zero.
+- Secondary artifact ID/SHA are
+  `szvaluev1bestofnartifact_c154689cd122f5f7dd68da5d7b31c34b26d049233e6425d3758f56491b11522d`
+  and `86b8f43c2dd9173100adfb7d5c84c6cc96df46a528407c203a3ce0930d117637`.
+- Both artifacts replay semantically, by identity, and byte-for-byte.
+- Phase 7 stops after recommending a new decision gate. It does not choose
+  between read-only real counterfactual shadow collection and safe canonical
+  successor-environment work.
 
 ## Protected local state
 
