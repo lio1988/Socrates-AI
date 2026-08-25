@@ -14,10 +14,12 @@ from backend.dialogues.ced_canonical_successor_cases import (
 )
 from backend.dialogues.ced_canonical_successor_contracts import (
     FORBIDDEN_RECORDED_OBSERVATION_FIELDS,
+    CanonicalBranchCapsule,
     CanonicalTaskIdentity,
     HistoricalUsageKnowledge,
     ObservationCaptureKind,
     PendingCanonicalTransition,
+    ProviderBindingIdentity,
     validate_recorded_observation_compatibility,
 )
 from backend.dialogues.models import (
@@ -38,6 +40,7 @@ from backend.dialogues.socrates_zero.contracts import (
     BudgetUsage,
     LegalAction,
     SearchBudget,
+    canonical_json,
 )
 from tests_dialogues.test_phase8c_registry_session import Q as GETTIER_QUESTION
 from tests_dialogues.test_provider_adapters import _task as provider_fixture_task
@@ -91,26 +94,45 @@ def _pending() -> PendingCanonicalTransition:
         request_semantic_digest="3" * 64,
         model_config_digest="4" * 64,
     )
+    budget = SearchBudget(
+        max_nodes=2,
+        max_expansions=1,
+        max_model_calls=0,
+        max_tool_calls=0,
+        max_tokens=0,
+        max_cost_microusd=0,
+        max_wall_time_ms=0,
+        max_depth=1,
+    )
+    usage = BudgetUsage(nodes=1)
+    capsule = CanonicalBranchCapsule(
+        session_id="phase8-corpus-session",
+        search_state_v1_id="phase8-corpus-root-state",
+        source_snapshot_json=canonical_json({"fixture": "phase8-corpus-root"}),
+        normalized_semantic_digest="5" * 64,
+        configuration_digest="6" * 64,
+        canonical_task=task,
+        provider_bindings=(ProviderBindingIdentity(
+            agent_id=task.agent_id,
+            provider_id="phase8-corpus-provider",
+            model_id="mock/phase8-corpus-provider",
+            model_config_digest=task.model_config_digest,
+        ),),
+        budget=budget,
+        budget_usage=usage,
+    )
     return PendingCanonicalTransition(
-        source_capsule_id="phase8-corpus-capsule",
-        source_branch_id="phase8-corpus-branch",
-        root_state_v1_id="phase8-corpus-root-state",
+        source_capsule=capsule,
+        source_capsule_id=capsule.capsule_id,
+        source_branch_id=capsule.branch_id,
+        root_state_v1_id=capsule.search_state_v1_id,
         selected_action=action,
         complete_legal_action_ids=(action.action_id,),
         canonical_task=task,
         expected_provider_id="phase8-corpus-provider",
         expected_model_id="mock/phase8-corpus-provider",
-        budget=SearchBudget(
-            max_nodes=2,
-            max_expansions=1,
-            max_model_calls=0,
-            max_tool_calls=0,
-            max_tokens=0,
-            max_cost_microusd=0,
-            max_wall_time_ms=0,
-            max_depth=1,
-        ),
-        budget_before=BudgetUsage(nodes=1),
+        budget=budget,
+        budget_before=usage,
         canonical_processor_ids=(
             "CEDOrchestrator._apply_registry_response",
             "CEDOrchestrator._finalize_registry_phase",

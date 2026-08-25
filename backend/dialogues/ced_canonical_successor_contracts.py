@@ -386,7 +386,12 @@ class NewExecutionUsage(_FrozenContract):
 
 
 class PendingCanonicalTransition(_FrozenContract):
-    """Validated reservation for one legal action; it applies no observation."""
+    """Validated reservation for one legal action; it applies no observation.
+
+    The detached source capsule is embedded so ``pending + observation`` is a
+    complete, serializable replay input.  No process-local capsule registry or
+    mutable source CED reference is required by ``apply_observation``.
+    """
 
     schema_version: Literal[
         PENDING_CANONICAL_TRANSITION_SCHEMA_VERSION
@@ -396,6 +401,7 @@ class PendingCanonicalTransition(_FrozenContract):
     transition_id: Optional[str] = None
     replay_task_id: Optional[str] = None
 
+    source_capsule: CanonicalBranchCapsule
     source_capsule_id: str
     source_branch_id: str
     root_state_v1_id: str
@@ -419,6 +425,28 @@ class PendingCanonicalTransition(_FrozenContract):
 
     @model_validator(mode="after")
     def validate_reservation_and_identify(self) -> "PendingCanonicalTransition":
+        capsule = self.source_capsule
+        if self.source_capsule_id != capsule.capsule_id:
+            raise ContractValidationError(
+                "pending source_capsule_id does not match the embedded capsule"
+            )
+        if self.source_branch_id != capsule.branch_id:
+            raise ContractValidationError(
+                "pending source_branch_id does not match the embedded capsule"
+            )
+        if self.root_state_v1_id != capsule.search_state_v1_id:
+            raise ContractValidationError(
+                "pending root_state_v1_id does not match the embedded capsule"
+            )
+        if self.canonical_task != capsule.canonical_task:
+            raise ContractValidationError(
+                "pending canonical task does not match the embedded capsule"
+            )
+        if self.budget != capsule.budget or self.budget_before != capsule.budget_usage:
+            raise ContractValidationError(
+                "pending budget does not match the embedded capsule"
+            )
+
         legal_ids = _canonical_tuple(
             self.complete_legal_action_ids, "complete_legal_action_ids"
         )

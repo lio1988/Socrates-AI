@@ -115,6 +115,7 @@ def _pending(**updates: Any) -> PendingCanonicalTransition:
     capsule = updates.pop("capsule", _capsule())
     action = updates.pop("selected_action", _action())
     values = {
+        "source_capsule": capsule,
         "source_capsule_id": capsule.capsule_id,
         "source_branch_id": capsule.branch_id,
         "root_state_v1_id": capsule.search_state_v1_id,
@@ -328,7 +329,7 @@ def test_pending_freezes_exact_supported_family_and_one_offline_reservation() ->
     with pytest.raises(ValidationError, match="complete hard-legal set"):
         _pending(complete_legal_action_ids=("different-action",))
     with pytest.raises(ValidationError, match="opening/Socrates"):
-        _pending(canonical_task=_task(round_number=1))
+        _pending(capsule=_capsule(canonical_task=_task(round_number=1)))
     with pytest.raises(ValidationError, match="reserve one successor"):
         _pending(reserved_usage=NewExecutionUsage.not_applied())
 
