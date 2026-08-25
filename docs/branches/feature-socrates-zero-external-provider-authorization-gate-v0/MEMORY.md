@@ -36,3 +36,39 @@
 - Exactly one of the four mandated decisions must be selected, with no tie.
 - No authorization manifest may contain TBD, UNKNOWN, defaults, ranges or
   mutable `latest` identifiers.
+
+## Gate decision
+
+- Exact decision: `PROVIDER-ADAPTER HARDENING REQUIRED`.
+- Selected hardening base: OpenRouter
+  `OpenRouterProviderAdapter`, exact repository candidate model
+  `openai/gpt-4.1-mini`; current selection status `REJECTED`.
+- Section 60 applies before Section 61 because the adapter itself is not yet
+  adequate. External credential/network hardening remains a later gate.
+- Exact next branch:
+  `feature/socrates-zero-provider-adapter-controls-v0`.
+- No authorization manifest or manifest ID was issued.
+
+## Decisive adapter blockers
+
+- Acquisition Contract v0 accepts only its exact canned transport; no external
+  acquisition adapter exists.
+- No canonical final-byte request renderer/digest/length exists.
+- The OpenRouter council prompt contains task/session/agent/process metadata and
+  is not built from `AcquisitionSemanticRequest` alone.
+- OpenRouter omits maximum output tokens and does not freeze upstream provider
+  routing, seed, fallback, tools or complete termination behavior.
+- Raw response, usage completeness and frozen integer-micro-USD cost evidence
+  are absent.
+- No candidate has a frozen pricing record.
+
+## Verification evidence
+
+- Acquisition focused suite: `214 passed`.
+- Phase 5/7/8 and core-lock integrity suite: `106 passed`.
+- Static/canned adapter suite: `96 passed, 1 deselected`.
+- The deselected test probes credential-environment presence and was excluded by
+  the gate's zero-credential-access rule.
+- Existing credential-broker and independent external-network-boundary canned
+  suites: none found; this is blocking evidence, not a pass.
+- Live/network/credential/provider/model/tool activity: `0/0/0/0/0/0`.

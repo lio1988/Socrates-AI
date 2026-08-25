@@ -29,3 +29,6 @@ production integration, action-family extension, learning or RL.
 
 Branch context: [MEMORY.md](MEMORY.md) · [PLAN.md](PLAN.md) ·
 [PRESENT.md](PRESENT.md)
+
+Canonical decision report:
+[SOCRATES_ZERO_PHASE8_5B_EXTERNAL_PROVIDER_AUTHORIZATION_GATE.md](../../SOCRATES_ZERO_PHASE8_5B_EXTERNAL_PROVIDER_AUTHORIZATION_GATE.md)

@@ -20,12 +20,12 @@ CED application, adapter hardening implementation or production wiring.
 
 1. [done] Verify the parent checkpoint and create the dedicated gate branch.
 2. [done] Offline-verify the sealed acquisition artifact and replay evidence.
-3. [in progress] Inventory every implemented provider and adapter path.
-4. [pending] Audit all mandatory candidate controls and allowed dry runs.
-5. [pending] Select exactly one gate decision.
-6. [pending] Write the canonical gate report and complete branch checkpoints.
-7. [pending] Run all required integrity/static/canned gates.
-8. [pending] Commit a clean durable decision checkpoint.
+3. [done] Inventory every implemented provider and adapter path.
+4. [done] Audit all mandatory candidate controls and allowed dry runs.
+5. [done] Select exactly one gate decision.
+6. [done] Write the canonical gate report and complete branch checkpoints.
+7. [done] Run all required integrity/static/canned gates.
+8. [done] Commit a clean durable decision checkpoint.
 
 ## Stop conditions
 
