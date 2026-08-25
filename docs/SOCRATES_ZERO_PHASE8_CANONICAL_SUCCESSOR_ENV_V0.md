@@ -1,5 +1,12 @@
 # SocratesZero Phase 8 — Canonical Successor Environment v0
 
+> Historical architecture freeze. The original v0 recorded-observation corpus
+> described by this document is preserved but is **INVALIDATED / SUPERSEDED FOR
+> AUTHORITATIVE PHASE-8 PARITY** because raw provider output was rebound to
+> caller-created task/provider metadata. The repaired, observation-bound v1
+> lineage is specified in
+> `SOCRATES_ZERO_PHASE8_AUTHORITATIVE_OBSERVATION_LINEAGE_V1.md`.
+
 ## Status
 
 Pre-implementation architecture, corpus, identity, and parity contract frozen
@@ -253,4 +260,3 @@ Experience Store, learned component, RL, or production authority is permitted.
 
 Not run yet. The corpus, contracts, failure semantics, receipt schema, and parity
 fields must be committed before the first aggregate parity artifact.
-

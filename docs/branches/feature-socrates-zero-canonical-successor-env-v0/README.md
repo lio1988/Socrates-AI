@@ -9,11 +9,12 @@ transition for the canonical opening Socratic-question family.
 ## Success criterion
 
 For every frozen authoritative case, the same canonical root, the same hard-
-legal `ASK_SOCRATIC_QUESTION` action, and the same recorded observation must
+legal `ASK_SOCRATIC_QUESTION` action, and the same exact recorded observation,
+bound to its original semantic task/context/provider/model/configuration, must
 produce the same normalized canonical successor as the existing CED path. The
 source, sibling, and production states must remain unchanged; identities,
 SearchState-v1 projection, resources, receipts, artifact serialization, and
-replay must be deterministic.
+independent replay must be deterministic.
 
 ## Scope
 
@@ -24,6 +25,15 @@ replay must be deterministic.
   parity corpus, artifact, and replay lock;
 - recorded offline observations only and zero provider/model/tool calls.
 
+## Lineage status
+
+The original v0 corpus is preserved but explicitly invalidated for
+authoritative parity because it rebound raw output to caller metadata. The
+observation-bound corpus v1 and its manifest are frozen in commit `5ad83db`.
+The aggregate has not yet run. See
+`../../SOCRATES_ZERO_PHASE8_AUTHORITATIVE_OBSERVATION_LINEAGE_V1.md` for the
+full pre-result contract.
+
 ## Non-goals
 
 No other legal-action family, live or shadow provider collection, generic
@@ -33,4 +43,3 @@ wiring.
 
 Branch context: [MEMORY.md](MEMORY.md) · [PLAN.md](PLAN.md) ·
 [PRESENT.md](PRESENT.md)
-

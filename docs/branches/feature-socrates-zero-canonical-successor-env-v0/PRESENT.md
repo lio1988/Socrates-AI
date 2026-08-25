@@ -2,30 +2,42 @@
 
 ## Current state
 
-- Branch created from exact Phase 7.5 HEAD
-  `803c31b285c0ac6f9f40af1fb61ec8c67fc56e42`.
-- Repository truth, frozen hashes, canonical CED path, mutable surfaces, and
-  existing recorded fixtures have been audited read-only.
-- The sole supported family and all pre-implementation contracts/parity fields
-  are frozen in `docs/SOCRATES_ZERO_PHASE8_CANONICAL_SUCCESSOR_ENV_V0.md`.
-- No implementation or production behavior change exists yet.
-- No provider/model/tool call has occurred.
+- The repaired authoritative observation lineage is committed at `5ad83db`.
+- The historical v0 corpus remains preserved and explicitly invalidated.
+- Corpus v1 freezes five exact canonical captures through unchanged offline
+  donor producers: one accepted and four canonical rejections.
+- Full semantic task/context/provider/model/configuration binding, exact
+  manifest membership, caller-rebinding firewall, future-label firewall, and
+  the single-family environment are implemented and focused-tested.
+- CED owns outcome classification and both production/replay use the same
+  CED-owned response-application/finalization seam.
+- Evaluator `/v1` contracts cover the five supported cases, fourteen
+  unavailable probes, thirteen parity fields, strict zero-failure thresholds,
+  measured isolation/call evidence, reverse-order replay, and write-once
+  publication. Final hardening is complete and awaits its freeze commit.
+- The authoritative aggregate has not run. No Phase 8 artifact exists.
+- No live provider/model/tool call has occurred.
 
-## Changed files
+## Commits
 
-- Phase 8 branch documentation and frozen architecture report only.
+- `5ad83db` — freeze authoritative Phase 8 observation lineage.
+- Final evaluator/docs pre-result freeze commit — pending.
 
 ## Verification
 
-- Starting tracked worktree was clean.
-- All three Phase 5/7 hashes matched their sealed values.
-- Existing authoritative opening observations were recaptured through the
-  unmodified offline `_run_registry_phase` for audit only.
+- Recording/corpus/contracts/environment: `67 passed`.
+- Focused CED production parity: `241 passed`.
+- Frozen Phase 5/7 artifact integrity: `10 passed`.
+- Evaluator contract/schema gate: `8 passed`.
+- All three Phase 5/7 hashes match their sealed values.
+- Aggregate executions: `0`.
 
 ## Remaining work
 
-Freeze contracts/corpus, perform the shared CED extraction, implement the
-isolated environment, freeze the artifact, and run the full regression matrix.
+Commit all evaluator contracts/tests/docs, report the exact mandatory
+pre-aggregate checkpoint, then run the first aggregate. If it passes, publish the artifact
+once, perform the independent reverse-order rebuild, publish the replay lock,
+and run the complete regression matrix.
 
 ## Worktree
 
@@ -33,6 +45,5 @@ The two protected pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit this architecture checkpoint, then add frozen contracts and corpus
-without running aggregate parity results.
-
+Create the final pre-result evaluator/docs freeze commit. Do not run aggregate
+parity before that commit and the required checkpoint report.
