@@ -42,6 +42,26 @@
   live call, production wiring, or new authority exists.
 - Final full-suite counts are `2322 passed, 1 skipped` for `tests_dialogues` and
   `2629 passed, 1 skipped, 23 pre-existing warnings` repository-wide.
+- Phase 6.5 classifies only active `ClaimAssessment.support_state` as a safe new
+  directional Value family. Evidence, verification, objection, contradiction,
+  provenance and eligibility fields are structural or derived and may not add
+  independent contributions.
+- The Value v1 decision is `VALUE V1 IMPLEMENTATION EARNED`, meaning one
+  falsifiable deterministic experiment—not production or performance proof.
+- The predeclared shape is penalty-only, base `0.0`, range `[-1,+1]`, no
+  positive `SUPPORTED` bonus, one worst active claim state, no counts, and a
+  terminal firewall.
+- Exact initial deficits are `FALSIFIED -0.20`,
+  `EXTERNAL_EVIDENCE_REQUIRED -0.12`, `UNRESOLVED -0.08`, and
+  `UNSUPPORTED -0.05`; a state-level Socratic remainder is at most `-0.05`.
+  Frozen terminal components remain blocked `-0.20` and exhausted `-0.10`.
+- The required next evaluation IDs are
+  `socrateszero-value-v1-eval-case-set/v0` and
+  `socrateszero-value-v1-eval-harness/v0`, with 18 development and 27 holdout
+  pairs frozen before estimator code.
+- The next branch is `feature/socrates-zero-heuristic-value-v1`. Learned Value,
+  RL, PUCT work, depth two, shadow collection and production authority remain
+  not earned.
 
 ## Protected local state
 

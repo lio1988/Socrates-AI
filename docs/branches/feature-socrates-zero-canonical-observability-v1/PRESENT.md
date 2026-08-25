@@ -2,7 +2,7 @@
 
 ## Current state
 
-- Phase 6 is complete on
+- Phase 6 and the documentation-only Phase 6.5 gate are complete on
   `feature/socrates-zero-canonical-observability-v1`.
 - Starting point was exact Phase 5.5 HEAD
   `9cddbd9efbfc1d5448025be1d11430d2ca2b256f`.
@@ -12,6 +12,9 @@
   scientific pairs, leakage/purity/provenance hardening, full verification, ADR,
   and dedicated report are complete.
 - Hypothesis status: `SUPPORTED`.
+- Phase 6.5 decision: `VALUE V1 IMPLEMENTATION EARNED`.
+- No Value code, SearchState/projection, Policy, search, CED, Hybrid, benchmark,
+  provider, learned component, RL, or production path changed.
 
 ## Audit decision
 
@@ -36,11 +39,17 @@ three further v0 opacity/omission separations.
 - `docs/ADR_SOCRATES_ZERO_SEARCH_BOUNDARY.md`
 - this branch documentation folder
 
+Phase 6.5 adds only `docs/SOCRATES_ZERO_VALUE_V1_DECISION_GATE.md`, this branch
+checkpoint, and the Phase 6.5 ADR decision section.
+
 Frozen v0 components, CED, Hybrid, Phase 5 cases/results/artifact, and default
 runtime have zero diff from `9cddbd9`.
 
 ## Verification
 
+- Phase 6.5 observability `17 passed`; Phase 5 evaluation integrity `37 passed`;
+- Phase 6.5 artifact SHA/blob equality and `git diff --check`: passed;
+- Phase 6.5 core/code changes and live/provider calls: `0 / 0`;
 - v1-specific `17`; v0 projection `11`; v0 contracts `19`;
 - Policy `13`; Value `21`; Greedy `27`; BestOfN `24`; PUCT `53`;
 - Phase 5 evaluation `37`; SocratesZero `256`; H8 + SocratesZero `267`;
@@ -61,6 +70,7 @@ protected pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Stop. Do not implement Value v1 on this branch. The next safe milestone, only
-if separately authorized, is a Value v1 Decision Gate using a new evaluation
-version without benchmark leakage.
+Stop. Do not implement Value v1 on this branch. If separately authorized, create
+`feature/socrates-zero-heuristic-value-v1`, freeze the new development/holdout
+case set before estimator code, and run the pre-registered one-factor Value
+experiment. Learned Value and RL remain blocked.

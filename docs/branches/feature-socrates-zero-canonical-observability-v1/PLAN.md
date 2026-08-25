@@ -37,3 +37,22 @@ all `tests_dialogues`; repository-wide tests; artifact SHA/blob equality; and
 All gates pass. The observability hypothesis is `SUPPORTED`. Stop before Value
 v1; the next authorized activity, if separately requested, is a Value v1
 Decision Gate on a new evaluation version.
+
+## Phase 6.5 Value v1 decision gate
+
+1. [done] Audit every new v1 field for authority, timing, direction, derivation,
+   double-counting, reward hacking, and leakage.
+2. [done] Build the Evidence/Verification/Lifecycle -> ClaimAssessment
+   derivation graph and select one highest-authority representative.
+3. [done] Audit every VerificationResult, SupportState, lifecycle transition,
+   Phase 6 alias, and Phase 5 value-uninformative case.
+4. [done] Freeze a penalty-only rule shape, precedence, constants, terminal
+   firewall, audit requirements, and authority firewall without implementation.
+5. [done] Pre-register a new 18-development/27-holdout pairwise evaluation,
+   primary Value metric, secondary BestOfN test, and falsification thresholds.
+6. [done] Run required observability/evaluation/artifact/diff gates and
+   complete the durable documentation checkpoint.
+
+Decision: `VALUE V1 IMPLEMENTATION EARNED`. Exactly one next branch is
+`feature/socrates-zero-heuristic-value-v1`. No estimator implementation belongs
+to Phase 6.5.

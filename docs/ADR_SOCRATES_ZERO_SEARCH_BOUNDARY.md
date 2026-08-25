@@ -482,8 +482,65 @@ and grants no Value, Policy, search, successor, provider, learning, release, or
 production authority. The complete matrix, digest audit, pair evidence,
 limitations and verification record are in
 `docs/SOCRATES_ZERO_CANONICAL_OBSERVABILITY_V1.md`. The hypothesis is
-**SUPPORTED**. Work stops at a separate **Value v1 Decision Gate**; no Value v1
-exists on this branch.
+**SUPPORTED**. Phase 6 stopped before Value; the separately authorized Phase
+6.5 decision is recorded below.
+
+## Phase 6.5 Value v1 decision gate
+
+Phase 6.5 audits whether observable v1 fields are rewardable. Its decision is:
+
+```text
+VALUE V1 IMPLEMENTATION EARNED
+```
+
+This earns one deterministic experiment only. Evidence, verification results,
+objection lifecycle, and contradiction lifecycle are upstream inputs or
+provenance already aggregated by `HybridEpistemicState.assess_claim()`. They
+must not receive independent Value components. The sole newly exposed safe
+directional family is the active governing `ClaimAssessment.support_state`.
+
+The approved estimator shape is penalty-only, neutral base `0.0`, range
+`[-1,+1]`, and semantic ID `heuristic-value-estimator/v1`. `SUPPORTED` removes
+a readiness deficit but earns no positive bonus. Across active claims exactly
+one worst state may contribute: `FALSIFIED`,
+`EXTERNAL_EVIDENCE_REQUIRED`, `UNRESOLVED`, or `UNSUPPORTED`. Record and claim
+counts do not multiply the contribution. A single state-level Socratic
+remainder penalty may remain after subtracting typed objection IDs from the v0
+conflated set.
+
+Rejected and dismissed lifecycle states are equal to their no-record baseline
+for Value. They only remove an open-state penalty. Candidate contradictions are
+neutral. Direct `VERIFIED`/`FALSIFIED` rewards are forbidden because result
+meaning depends on whether the record targets a claim, objection, or
+contradiction and whether it can create support. Evidence/source/method/receipt
+typing remains structural and auditable, never ordinal. This prevents evidence,
+verification, objection, contradiction, closure, and claim-splitting farming.
+
+A terminal firewall suppresses every v1 claim/lifecycle component and preserves
+only frozen v0-compatible terminal semantics. This prevents SupportState from
+becoming a final-answer shortcut and avoids double-counting blocked release
+with the claim state that caused it. Value reads one immutable current snapshot
+only and cannot call Hybrid, inspect later records, release, reward, or labels.
+
+The sealed Phase 5 value-uninformative cases remain uninformative: their action
+utilities are future-only evaluator labels, not missing Hybrid semantics.
+SearchState v1 may not solve them by inventing support fields. Phase 5 remains
+compatibility history and is disqualified as the sole promotion benchmark.
+
+The implementation branch must be
+`feature/socrates-zero-heuristic-value-v1`. Before estimator code, it must
+freeze `socrateszero-value-v1-eval-case-set/v0` with 18 development and 27
+holdout canonical state pairs over nine balanced adversarial categories. The
+primary gate is nonterminal holdout pairwise Value ranking; only after it passes
+may matched BestOfN/v0 run with UniformPolicyPrior/v0, N=4, depth one, and
+budget four. Policy, strategy, SearchState/projection, successor semantics, CED,
+Hybrid, and all Phase 5 artifacts remain frozen.
+
+The full field inventory, derivation graph, precedence, exact initial rule caps,
+reward-hacking analysis, temporal/terminal firewalls, evaluation protocol,
+success thresholds and falsification rules are recorded in
+`docs/SOCRATES_ZERO_VALUE_V1_DECISION_GATE.md`. Learned Value and RL remain not
+earned.
 
 ## Known gaps and deferred work
 
@@ -502,8 +559,9 @@ exists on this branch.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
 - SearchState v1 exposes useful governing distinctions, but no Value version
-  consumes it yet. Whether a transparent Value v1 improves a new leakage-safe
-  evaluation remains a separate unanswered question.
+  consumes it yet. Phase 6.5 earned a transparent Value v1 implementation
+  experiment, but whether it improves the new leakage-safe holdout remains an
+  unanswered and explicitly falsifiable question.
 - No canonical CED action executor or `SuccessorStateEvaluator` implementation
   exists; Best-of-N and PUCT are composable only with an injected experimental
   evaluator.
