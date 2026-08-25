@@ -33,6 +33,9 @@
 - The unlocked secondary search case set is frozen before execution: 7 ordered
   quartets plus 4 guardrail quartets, each with exactly four canonical
   successors and four real Constitution actions.
+- The secondary one-factor adapters, exact threshold classifier, resource and
+  guardrail counters, immutable artifact contract, replay checks, overwrite
+  refusal, and runner are implemented; no BestOfN result exists yet.
 
 ## Worktree
 
@@ -41,5 +44,5 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit and replay-lock the authoritative primary artifact, then run the now
-unlocked one-factor UniformPolicy/BestOfN secondary test.
+Commit the pre-run secondary harness, then execute it once and preserve/replay
+lock its result regardless of outcome.
