@@ -19,7 +19,15 @@
 - Development result: Value v0 ordered `1/5` (`20%`) and required ties `12/13`;
   Value v1 ordered `5/5` (`100%`) and required ties `13/13` (`100%`). Value v1
   has zero directional errors, ordered ties, ranking loss, or hard-safety counts.
-- No `/v1` holdout result exists yet.
+- The repaired `/v1` primary holdout is authoritative and passed. Value v0
+  ordered accuracy is `2/7` (`28.57%`); Value v1 is `7/7` (`100%`), a
+  `+71.43pp` delta. The same exact result holds on the nonterminal ordered
+  subset. Value v1 required ties are `20/20`, with zero directional errors,
+  ordered ties, ranking loss, and all hard-safety counters.
+- Primary artifact ID is
+  `szvaluev1artifact_803646dbfff5a0449309bf4690ddcc8b6e374fe80ab5826d5fc56c749dc27e49`;
+  SHA-256 is
+  `d8faecb7b3f134036afaa67a2fc84acc53e23a2e44a57971a45eefe4fdbaf8ca`.
 - The primary artifact contract, exact threshold classifier, rule/split locks,
   replay checks, overwrite refusal, and one-shot holdout runner are frozen.
 
@@ -30,5 +38,5 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit the authoritative runner contracts, then execute the repaired `/v1`
-holdout exactly once and preserve its artifact regardless of outcome.
+Commit and replay-lock the authoritative primary artifact, then run the now
+unlocked one-factor UniformPolicy/BestOfN secondary test.

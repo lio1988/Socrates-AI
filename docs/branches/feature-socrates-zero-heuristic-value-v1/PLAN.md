@@ -16,9 +16,9 @@ chronologically frozen canonical holdout and no architecture expansion.
 4. [done] Implement `heuristic-value-estimator/v1` without changing v0.
 5. [done] Run development validation without semantic tuning.
 6. [done] Freeze the authoritative holdout runner after focused gates pass.
-7. [pending] Execute the first holdout once, persist its immutable artifact,
+7. [done] Execute the first holdout once, persist its immutable artifact,
    replay it, and classify the primary gate.
-8. [locked] Run the matched BestOfN secondary gate only if primary passes.
+8. [in progress] Run the matched BestOfN secondary gate; primary passed.
 9. [pending] Run the full required regression matrix and finalize docs/ADR.
 
 ## Stop conditions
