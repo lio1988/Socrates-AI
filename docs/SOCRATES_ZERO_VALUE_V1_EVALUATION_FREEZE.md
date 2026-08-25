@@ -104,3 +104,29 @@ detect contract implementation bugs, but cannot tune the frozen semantics.
 After the first valid holdout result, any change to a case, split, category,
 label, metric, threshold, rule family, coefficient, or support ordering requires
 new semantic IDs and a fresh holdout. The original artifact must be preserved.
+
+## Secondary BestOfN freeze
+
+The primary gate passed and unlocked a separately frozen secondary case set:
+
+```text
+case-set: socrateszero-value-v1-bestofn-case-set/v0
+harness:  socrateszero-value-v1-bestofn-harness/v0
+ordered quartets: 7
+guardrail quartets: 4
+```
+
+Semantic digest and canonical JSON SHA-256:
+
+```text
+szvaluev1bestofncases_22a0659a07be21d83c17d566c6fe5e3fe66c6fea6830b79a2535495b0090d667
+e18aa8ff8ac371fd5857dbc7b7c47058eac223bf76194acbef7c685252ed5f53
+```
+
+Each root is built from canonical sources and exposes exactly four actions from
+`CEDSearchConstitution/v0`. Each successor starts from a real canonical v1
+projection; only navigation metadata needed by the frozen BestOfN contract is
+adapted. Ordered cases use the seven already-frozen primary ordered holdout
+pairs plus two canonically worse controls. Four separate guardrails cover
+closure, duplicate-derived signals, equivalence, and count inflation. No
+BestOfN result existed when this secondary case set was committed.

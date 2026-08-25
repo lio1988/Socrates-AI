@@ -30,6 +30,9 @@
   `d8faecb7b3f134036afaa67a2fc84acc53e23a2e44a57971a45eefe4fdbaf8ca`.
 - The primary artifact contract, exact threshold classifier, rule/split locks,
   replay checks, overwrite refusal, and one-shot holdout runner are frozen.
+- The unlocked secondary search case set is frozen before execution: 7 ordered
+  quartets plus 4 guardrail quartets, each with exactly four canonical
+  successors and four real Constitution actions.
 
 ## Worktree
 
