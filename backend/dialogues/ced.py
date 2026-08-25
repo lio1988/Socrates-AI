@@ -250,6 +250,23 @@ class CanonicalTaskSpec:
     role: AgentRole
     task_kind: TaskKind
 
+
+@dataclass(frozen=True)
+class CanonicalRegistryResponseApplication:
+    """Outcome of applying one registry response through canonical CED rules.
+
+    This is observability over the existing mutation path, not a second
+    acceptance policy.  ``canonical_rejection_reason`` is populated only when a
+    provider-OK Socratic response is vetoed by CED's content/injection firewall;
+    provider/parser failures remain distinguishable through ``provider_status``.
+    """
+
+    provider_status: ProviderStatus
+    provider_ok: bool
+    accepted_move_id: Optional[str]
+    canonical_rejection_reason: Optional[str]
+    dispatch_recorded: bool
+
 # Deliberation phases driven through the provider registry in Phase 8C (the
 # RATIFICATION verdict still runs through the council's own evaluator).
 #: The group that repeats while CED permits another Socratic follow-up. The
@@ -1224,6 +1241,52 @@ class CEDOrchestrator:
             for slot, (agent_id, role) in enumerate(sorted(assignment.items()))
         )
 
+    def _prepare_registry_phase(
+        self,
+        state: SessionState,
+        phase: DialogPhase,
+    ) -> Tuple[CanonicalTaskSpec, ...]:
+        """Apply the canonical phase cursor and role-assignment prelude.
+
+        Production registry execution and isolated recorded-observation replay
+        share this exact CED-owned sequence.  The helper acquires no provider
+        observation and does not weaken ``canonical_registry_task_specs`` into
+        a caller-supplied scheduling surface.
+        """
+        state.advance_phase(phase)
+        task_specs = self.canonical_registry_task_specs(state, phase)
+        assignment = {spec.agent_id: spec.role for spec in task_specs}
+        self._apply_phase_roles(state, phase, assignment)
+        return task_specs
+
+    def _build_registry_phase_task(
+        self,
+        state: SessionState,
+        phase: DialogPhase,
+        spec: CanonicalTaskSpec,
+        attempt: int = 0,
+    ) -> AgentTask:
+        """Build the exact task consumed by canonical registry execution."""
+        schema: Dict[str, Any] = {
+            "_role": spec.role.value,
+            "_question": state.question,
+        }
+        if phase == DialogPhase.SYNTHESIS:
+            schema["_sections"] = True
+        return AgentTask(
+            session_id=state.session_id,
+            agent_id=spec.agent_id,
+            role=spec.role,
+            phase=phase,
+            question=state.question,
+            context=self._registry_phase_context(state, phase, spec.agent_id),
+            output_schema=schema,
+            round_number=state.round_number,
+            task_kind=spec.task_kind,
+            slot_index=spec.slot_index,
+            attempt_index=attempt,
+        )
+
     def _healthy_adapters(self) -> List["LLMProviderAdapter"]:
         """Phase 16 self-healing: quarantined seats (chronic, evidence-gated
         failures per SeatHealthTracker) are actually EXCLUDED from deliberation —
@@ -1346,6 +1409,135 @@ class CEDOrchestrator:
                 return offset
         return None
 
+    def _apply_registry_response(
+        self,
+        state: SessionState,
+        phase: DialogPhase,
+        task: AgentTask,
+        resp: ProviderResponse,
+        dispatch: List[Dict[str, Any]],
+    ) -> CanonicalRegistryResponseApplication:
+        """Apply one observed response through the existing canonical CED path.
+
+        The mutation order intentionally matches the former ``_absorb`` closure:
+        Socratic veto and task-log recording, dispatch audit, move identity and
+        public append, then accepted/failed task-log recording.
+        """
+        if (resp.ok and resp.parsed_move is not None
+                and task.task_kind is TaskKind.SOCRATIC_QUESTION):
+            verdict = self._screen_socratic_move(state, task, resp)
+            if verdict is not None:
+                # Answer injection. The question is refused before it can
+                # anchor anyone; the phase continues without it.
+                self._record_task_log(
+                    state,
+                    task,
+                    None,
+                    provider_id=resp.provider_id,
+                    provider_status=resp.status,
+                )
+                return CanonicalRegistryResponseApplication(
+                    provider_status=resp.status,
+                    provider_ok=True,
+                    accepted_move_id=None,
+                    canonical_rejection_reason=verdict,
+                    dispatch_recorded=False,
+                )
+
+        # Who actually served which slot. Recorded from the dispatch itself
+        # rather than reconstructed from moves afterwards, so a rerouted retry
+        # is visible as a reroute.
+        served = next(
+            (
+                adapter
+                for adapter in self.registry.all_adapters()
+                if adapter.provider_id == resp.provider_id
+            ),
+            None,
+        )
+        dispatch.append({
+            "slot_index": task.slot_index,
+            "logical_agent_id": task.agent_id,
+            "assigned_role": task.role.value,
+            "provider_id": resp.provider_id,
+            "model_id": getattr(
+                served,
+                "model",
+                getattr(served, "model_id", None),
+            ),
+            "attempt_index": task.attempt_index,
+            "retry": task.attempt_index > 0,
+            "ok": resp.ok,
+        })
+        if resp.ok:
+            move = resp.parsed_move
+            # Deterministic identity — independent of which provider/when.
+            move.move_id = self._deterministic_move_id(
+                state,
+                task.agent_id,
+                phase,
+                task.role,
+                task.task_kind,
+                task.slot_index,
+                task.attempt_index,
+            )
+            move.task_kind = task.task_kind
+            move.slot_index = task.slot_index
+            move.attempt_index = task.attempt_index
+            move.provider_id = resp.provider_id  # producer (no-self-scoring)
+            state.moves.append(move)
+            self._record_task_log(
+                state,
+                task,
+                move.move_id,
+                provider_id=resp.provider_id,
+                provider_status=resp.status,
+            )
+            return CanonicalRegistryResponseApplication(
+                provider_status=resp.status,
+                provider_ok=True,
+                accepted_move_id=move.move_id,
+                canonical_rejection_reason=None,
+                dispatch_recorded=True,
+            )
+
+        # Failed provider -> task trace only, NO fabricated move.
+        self._record_task_log(
+            state,
+            task,
+            None,
+            provider_id=resp.provider_id,
+            provider_status=resp.status,
+        )
+        return CanonicalRegistryResponseApplication(
+            provider_status=resp.status,
+            provider_ok=False,
+            accepted_move_id=None,
+            canonical_rejection_reason=None,
+            dispatch_recorded=True,
+        )
+
+    def _finalize_registry_phase(
+        self,
+        state: SessionState,
+        phase: DialogPhase,
+        responses: List[ProviderResponse],
+        dispatch: List[Dict[str, Any]],
+        effective_quorum: int,
+    ) -> CouncilRoundResult:
+        """Finalize one registry phase through the canonical mutation order."""
+        self._phase_dispatch.setdefault(state.session_id, []).append({
+            "phase": phase.value,
+            "slots": dispatch,
+        })
+        self._harvest_commitments(state, phase)
+        result = self.registry.finalize_round(
+            responses,
+            quorum=effective_quorum,
+        )
+        state.registry_rounds.append(result)
+        return result
+
     async def _run_registry_phase(
         self, state: SessionState, phase: DialogPhase,
         timeout_seconds: Optional[float],
@@ -1355,31 +1547,18 @@ class CEDOrchestrator:
         deterministically-assigned agent/role, validated into moves, with
         per-phase quorum. Move ids come from task identity (NOT completion order).
         """
-        state.advance_phase(phase)
-        task_specs = self.canonical_registry_task_specs(state, phase)
-        assignment = {spec.agent_id: spec.role for spec in task_specs}
-        self._apply_phase_roles(state, phase, assignment)
+        task_specs = self._prepare_registry_phase(state, phase)
         items = [(spec.agent_id, spec.role) for spec in task_specs]
         adapters = self._ranked_adapters(state)   # Phase 21: analytics-informed routing
-        want_sections = (phase == DialogPhase.SYNTHESIS)
-
-        def _build_task(agent_id: str, role: AgentRole, slot: int,
-                        attempt: int = 0) -> AgentTask:
-            schema: Dict[str, Any] = {"_role": role.value, "_question": state.question}
-            if want_sections:
-                schema["_sections"] = True
-            return AgentTask(
-                session_id=state.session_id, agent_id=agent_id, role=role, phase=phase,
-                question=state.question,
-                context=self._registry_phase_context(state, phase, agent_id),
-                output_schema=schema, round_number=state.round_number,
-                task_kind=task_specs[slot].task_kind,
-                slot_index=slot, attempt_index=attempt,
-            )
 
         async def _one(slot: int, agent_id: str, role: AgentRole,
                        attempt: int = 0, offset: int = 0):
-            task = _build_task(agent_id, role, slot, attempt)
+            task = self._build_registry_phase_task(
+                state,
+                phase,
+                task_specs[slot],
+                attempt,
+            )
             agent_state = state.agent_states.get(
                 agent_id, AgentState(agent_id=agent_id, primary_role=role, assigned_role=role))
             adapter = self._adapter_for_agent(state, agent_id, failover_offset=offset)
@@ -1393,51 +1572,13 @@ class CEDOrchestrator:
             out: List[ProviderResponse] = []
             for task, resp in pairs:
                 out.append(resp)
-                if (resp.ok and resp.parsed_move is not None
-                        and task.task_kind is TaskKind.SOCRATIC_QUESTION):
-                    verdict = self._screen_socratic_move(state, task, resp)
-                    if verdict is not None:
-                        # Answer injection. The question is refused before it can
-                        # anchor anyone; the phase continues without it.
-                        self._record_task_log(state, task, None,
-                                              provider_id=resp.provider_id,
-                                              provider_status=resp.status)
-                        continue
-                # Who actually served which slot. Recorded from the dispatch
-                # itself rather than reconstructed from moves afterwards, so a
-                # rerouted retry is visible as a reroute.
-                served = next((a for a in self.registry.all_adapters()
-                               if a.provider_id == resp.provider_id), None)
-                dispatch.append({
-                    "slot_index": task.slot_index,
-                    "logical_agent_id": task.agent_id,
-                    "assigned_role": task.role.value,
-                    "provider_id": resp.provider_id,
-                    "model_id": getattr(served, "model",
-                                        getattr(served, "model_id", None)),
-                    "attempt_index": task.attempt_index,
-                    "retry": task.attempt_index > 0,
-                    "ok": resp.ok,
-                })
-                if resp.ok:
-                    move = resp.parsed_move
-                    # Deterministic identity — independent of which provider/when.
-                    move.move_id = self._deterministic_move_id(
-                        state, task.agent_id, phase, task.role,
-                        task.task_kind, task.slot_index, task.attempt_index)
-                    move.task_kind = task.task_kind
-                    move.slot_index = task.slot_index
-                    move.attempt_index = task.attempt_index
-                    move.provider_id = resp.provider_id   # producer (no-self-scoring)
-                    state.moves.append(move)
-                    self._record_task_log(state, task, move.move_id,
-                                          provider_id=resp.provider_id,
-                                          provider_status=resp.status)
-                else:
-                    # Failed provider → task trace only, NO fabricated move.
-                    self._record_task_log(state, task, None,
-                                          provider_id=resp.provider_id,
-                                          provider_status=resp.status)
+                self._apply_registry_response(
+                    state,
+                    phase,
+                    task,
+                    resp,
+                    dispatch,
+                )
             return out
 
         # Two waves, one await between them. Socrates asks last so the critiques
@@ -1543,13 +1684,13 @@ class CEDOrchestrator:
             })
             responses = merged
 
-        self._phase_dispatch.setdefault(state.session_id, []).append({
-            "phase": phase.value, "slots": dispatch,
-        })
-        self._harvest_commitments(state, phase)
-        result = self.registry.finalize_round(responses, quorum=effective_quorum)
-        state.registry_rounds.append(result)
-        return result
+        return self._finalize_registry_phase(
+            state,
+            phase,
+            responses,
+            dispatch,
+            effective_quorum,
+        )
 
     async def run_registry_session(
         self,
