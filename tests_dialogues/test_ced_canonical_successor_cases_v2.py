@@ -55,6 +55,7 @@ from backend.dialogues.ced_canonical_successor_cases_v2 import (
     ProbeDesignContract,
     ProbeInvariantVector,
     ProbeLiteralMutation,
+    frozen_corpus_v2_canonical_sha256,
 )
 from backend.dialogues.ced_canonical_successor_contracts import (
     SuccessorUnavailableReason,
@@ -136,6 +137,156 @@ _EXPECTED_REASONS = (
     SuccessorUnavailableReason.ILLEGAL_ACTION,
     SuccessorUnavailableReason.INVALID_OBSERVATION_IDENTITY,
 )
+
+_EXPECTED_DIAGNOSTIC_MISMATCH_FIELDS = {
+    "p8v2-o01-invalid-root-registration": ((), ()),
+    "p8v2-o02-illegal-action-capability": (("required_capabilities",), ()),
+    "p8v2-o03-missing-observation": ((), ()),
+    "p8v2-o04-invalid-observation-schema": ((), ()),
+    "p8v2-o05-tampered-raw-digest": (("raw_output_digest",), ()),
+    "p8v2-o06-wrong-task-agent": (
+        ("agent_id", "task_semantic_digest"),
+        (
+            "source_capsule_id",
+            "source_configuration_digest",
+            "source_execution_id",
+        ),
+    ),
+    "p8v2-o07-wrong-root-question": (
+        ("request_semantic_digest", "source_session_semantic_id"),
+        ("source_capsule_id", "source_execution_id", "task_semantic_digest"),
+    ),
+    "p8v2-o08-wrong-exact-model": (
+        ("actual_model_id", "configured_model_id"),
+        (
+            "model_config_digest",
+            "source_capsule_id",
+            "source_configuration_digest",
+            "source_execution_id",
+            "task_model_config_digest",
+        ),
+    ),
+    "p8v2-o09-wrong-runtime-timeout": (
+        ("source_configuration_digest",),
+        ("source_capsule_id", "source_execution_id"),
+    ),
+    "p8v2-o10-future-label": (("reward",), ()),
+    "p8v2-o11-budget-exhausted": (("max_nodes",), ()),
+    "p8v2-p01-unsupported-family-vs-legality": (
+        ("action_family",),
+        ("not_in_legal_set",),
+    ),
+    "p8v2-p02-provider-roster-context": (
+        ("context_digest", "request_semantic_digest"),
+        (
+            "model_config_digest",
+            "provider_id",
+            "source_capsule_id",
+            "source_configuration_digest",
+            "source_execution_id",
+            "task_model_config_digest",
+            "task_semantic_digest",
+        ),
+    ),
+    "p8v2-p03-root-plus-provider": (
+        (
+            "context_digest",
+            "request_semantic_digest",
+            "source_session_semantic_id",
+        ),
+        (
+            "model_config_digest",
+            "provider_id",
+            "source_capsule_id",
+            "source_configuration_digest",
+            "source_execution_id",
+            "task_model_config_digest",
+            "task_semantic_digest",
+        ),
+    ),
+    "p8v2-p04-task-plus-model": (
+        ("agent_id", "task_semantic_digest"),
+        (
+            "actual_model_id",
+            "configured_model_id",
+            "model_config_digest",
+            "source_capsule_id",
+            "source_configuration_digest",
+            "source_execution_id",
+            "task_model_config_digest",
+        ),
+    ),
+    "p8v2-p05-context-plus-tampered-digest": (
+        ("raw_output_digest",),
+        (
+            "request_semantic_digest",
+            "source_capsule_id",
+            "source_execution_id",
+            "source_session_semantic_id",
+            "task_semantic_digest",
+        ),
+    ),
+    "p8v2-p06-illegal-plus-incompatible-observation": (
+        ("required_capabilities",),
+        (
+            "action_id",
+            "request_semantic_digest",
+            "source_capsule_id",
+            "source_execution_id",
+            "source_session_semantic_id",
+            "task_semantic_digest",
+        ),
+    ),
+    "p8v2-p07-caller-rebinding-vs-manifest": (
+        ("manifest_exact_observation",),
+        (
+            "actual_model_id",
+            "agent_id",
+            "configured_model_id",
+            "model_config_digest",
+            "provider_id",
+            "request_semantic_digest",
+            "source_capsule_id",
+            "source_execution_id",
+            "source_session_semantic_id",
+            "task_model_config_digest",
+            "task_semantic_digest",
+        ),
+    ),
+}
+
+_EXPECTED_PROBE_FINGERPRINTS = {
+    "p8v2-o01-invalid-root-registration": "29155a104236c5d5f3d11ff5d404d70cddab37efe1e2b677263a7299b37537fe",
+    "p8v2-o02-illegal-action-capability": "7cb275980a51adfb09bb48c6a7fa4766320e5bbd03e48bc17a2b69464a4bad1b",
+    "p8v2-o03-missing-observation": "22e9cc7c34f693f96871a03dd48f5f789bf09c26f9f367a2aa92395d77c3bec5",
+    "p8v2-o04-invalid-observation-schema": "54711ac1efec9408d696e122ef79c1310aaf30b5b002494a80e123e4d1d8964f",
+    "p8v2-o05-tampered-raw-digest": "93500fa5d1f8d76a6fb824590bf0dd557b6c54ace6d12e33fc0b34894b97e5f4",
+    "p8v2-o06-wrong-task-agent": "dafc8c0cae120f7f8353ef566e2c9060fd348d7f5b9a9bbcd967e9b1df940e20",
+    "p8v2-o07-wrong-root-question": "644fbb6c3be82720215fdfcd9d36141d8368fd5e0db30705d2c612a588a28e27",
+    "p8v2-o08-wrong-exact-model": "d3af214134abef2320af1fa696c0386734cd6c9f252144585f04de438b683a14",
+    "p8v2-o09-wrong-runtime-timeout": "aac76d506841fc44f35f86db37ec45ba11580cb15be0c5ab4b78f85448fd8329",
+    "p8v2-o10-future-label": "93b3ea24355502e2596e0b182f272f0f028019e4f77dac88f001ae94020eef40",
+    "p8v2-o11-budget-exhausted": "ceb7d64e3ca54797c2de737dba457066a15004b388481db32612cfb02e584a0d",
+    "p8v2-p01-unsupported-family-vs-legality": "42464f2e5227bdbafc617f45168bdbf681952ff017443bec9ac6912c1ee68374",
+    "p8v2-p02-provider-roster-context": "4392d052bf43a69593185af7482bc59d9fc45083c4b954e930cae1348d16f3e3",
+    "p8v2-p03-root-plus-provider": "694b55219d1576f480c056deb5ec534a174d790c8a48ca510b19b60691d68fe7",
+    "p8v2-p04-task-plus-model": "1c3ab60b4407bdb551f257f8b01e49bd506abb4a6342f04153b7cb00e7487811",
+    "p8v2-p05-context-plus-tampered-digest": "0029393aa355cc3b25684058c9dcaa736cca2d5b9cbdd106be212008e7342b53",
+    "p8v2-p06-illegal-plus-incompatible-observation": "457382922082d3d9c26a3fb116870bdaa1d297a394c75d2b4c9214c6233798b5",
+    "p8v2-p07-caller-rebinding-vs-manifest": "d5c2e08b898cde4ab040d91e4b837b5454789b24615b74265a4bbea48270e71f",
+}
+
+_EXPECTED_CONTENT_IDS = {
+    "validation_order_id": "cedvalidationorder_2bbd60972e07a9afdc3ca6f2dd344cd891f39dab6f9edb4e92c4ba0552203a54",
+    "taxonomy_id": "cedfailuretaxonomy_73bef28686e43b201cafb33fcc536d19a863bd0773592db8aa6867b5a1189cf7",
+    "precedence_id": "cedfailureprecedence_4d75632cc9dac55daf59a87142dbd918e6c6573e48afec32f2225db10eaf7d7f",
+    "diagnostics_id": "cedcompatdiagnostics_b577167b4199464b250328b58dbc248194076a3f1a9370f8cf28022d56ebd44f",
+    "probe_design_id": "cedprobedesign_fd7d21658acea185d164ccb32c726b498c0f7a3aa476b4c1698c82a1847f9e2f",
+    "probe_design_fingerprint": "fd7d21658acea185d164ccb32c726b498c0f7a3aa476b4c1698c82a1847f9e2f",
+    "case_set_id": "cedparitycasesetv2_3706cb242dd60070acec46d00def5389c62fb90f869d98d932649fe023dc1233",
+    "corpus_id": "cedparitycorpusv2_9d7d8563b931f1206c2e685c51d62dfa66b7a5ae66a40254fb63477f9c15524d",
+    "corpus_sha256": "9d7d8563b931f1206c2e685c51d62dfa66b7a5ae66a40254fb63477f9c15524d",
+}
 
 _EXPECTED_LITERAL_MUTATIONS = {
     "p8v2-o01-invalid-root-registration": (
@@ -456,6 +607,9 @@ def test_probe_membership_counts_human_ids_and_fingerprints_are_exact() -> None:
     assert corpus.human_probe_ids == case_set.human_probe_ids
     assert corpus.probe_fingerprints == case_set.probe_fingerprints
     assert len(set(case_set.probe_fingerprints)) == 18
+    assert {
+        probe.probe_id: probe.probe_fingerprint for probe in probes
+    } == _EXPECTED_PROBE_FINGERPRINTS
     assert all(
         probe.probe_fingerprint != probe.probe_id
         and len(probe.probe_fingerprint or "") == 64
@@ -467,6 +621,13 @@ def test_probe_guards_reasons_literals_and_unreachable_checks_are_exact() -> Non
     probes = FROZEN_CANONICAL_SUCCESSOR_PROBES_V2
     assert tuple(probe.expected_guard_id for probe in probes) == _EXPECTED_GUARDS
     assert tuple(probe.expected_primary_reason for probe in probes) == _EXPECTED_REASONS
+    assert {
+        probe.probe_id: (
+            probe.expected_primary_mismatch_fields,
+            probe.advisory_or_dominated_mismatch_fields,
+        )
+        for probe in probes
+    } == _EXPECTED_DIAGNOSTIC_MISMATCH_FIELDS
     assert set(_EXPECTED_LITERAL_MUTATIONS) == {probe.probe_id for probe in probes}
     for probe in probes:
         assert _mutation_values(probe) == _EXPECTED_LITERAL_MUTATIONS[probe.probe_id]
@@ -542,7 +703,7 @@ def test_exact_fifteen_field_invariant_vectors_lock_critical_dependencies() -> N
         "p8v2-p04-task-plus-model": "DDDIPPPPPPIDDPP",
         "p8v2-p05-context-plus-tampered-digest": "IDDDPPPIPPPPDPP",
         "p8v2-p06-illegal-plus-incompatible-observation": "IDNDPPIPPPPPDPP",
-        "p8v2-p07-caller-rebinding-vs-manifest": "IIIIPPPIPIIPIPP",
+        "p8v2-p07-caller-rebinding-vs-manifest": "IIIIPPPIPIIDIPP",
     }
     assert {probe.probe_id for probe in FROZEN_CANONICAL_SUCCESSOR_PROBES_V2} \
         == set(expected)
@@ -726,6 +887,19 @@ def test_derived_semantic_ids_round_trip_and_tampering_is_refused() -> None:
     assert design.probe_design_id.startswith("cedprobedesign_")
     assert case_set.case_set_id.startswith("cedparitycasesetv2_")
     assert corpus.corpus_id.startswith("cedparitycorpusv2_")
+    assert {
+        "validation_order_id": validation_order.validation_order_id,
+        "taxonomy_id": taxonomy.taxonomy_id,
+        "precedence_id": precedence.precedence_id,
+        "diagnostics_id": diagnostics.diagnostics_id,
+        "probe_design_id": design.probe_design_id,
+        "probe_design_fingerprint": design.probe_design_fingerprint,
+        "case_set_id": case_set.case_set_id,
+        "corpus_id": corpus.corpus_id,
+        "corpus_sha256": frozen_corpus_v2_canonical_sha256(),
+    } == _EXPECTED_CONTENT_IDS
+    assert corpus.corpus_id.removeprefix("cedparitycorpusv2_") \
+        == frozen_corpus_v2_canonical_sha256()
 
     probe_payload = FROZEN_CANONICAL_SUCCESSOR_PROBES_V2[0].model_dump(mode="json")
     probe_payload["probe_fingerprint"] = "0" * 64
