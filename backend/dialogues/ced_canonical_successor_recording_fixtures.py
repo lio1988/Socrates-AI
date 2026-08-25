@@ -7,7 +7,7 @@ them exactly as it dispatches any other registered adapter.
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Awaitable, Callable, Optional, Tuple
 
 from .agent import SocraticAgent
 from .ced import CEDOrchestrator
@@ -24,6 +24,8 @@ CANONICAL_RECORDING_PROVIDER_MODELS = (
     ("phase8-recorded-seat-1", "phase8-recorded-model/1"),
 )
 
+CanonicalRawObservationProducer = Callable[[AgentTask, AgentState], Awaitable[str]]
+
 
 class CanonicalSuccessorRecordingProvider(ScriptedMockProvider):
     """Committed fake adapter that emits one configured raw observation."""
@@ -34,9 +36,11 @@ class CanonicalSuccessorRecordingProvider(ScriptedMockProvider):
         *,
         model_id: str,
         recorded_raw_text: str,
+        raw_observation_producer: Optional[CanonicalRawObservationProducer] = None,
     ) -> None:
         super().__init__(provider_id, model_id=model_id)
         self.recorded_raw_text = recorded_raw_text
+        self.raw_observation_producer = raw_observation_producer
         self.generate_calls = 0
 
     async def generate_agent_move(self, task, agent_state):
@@ -50,6 +54,8 @@ class CanonicalSuccessorRecordingProvider(ScriptedMockProvider):
     ) -> str:
         if task.task_kind is not TaskKind.SOCRATIC_QUESTION:
             return await super()._produce_raw_text(task, agent_state)
+        if self.raw_observation_producer is not None:
+            return await self.raw_observation_producer(task, agent_state)
         return self.recorded_raw_text
 
 
@@ -58,6 +64,7 @@ def build_canonical_recording_root(
     question: str,
     raw_text: str,
     session_id: str,
+    raw_observation_producer: Optional[CanonicalRawObservationProducer] = None,
 ) -> Tuple[
     CEDOrchestrator,
     SessionState,
@@ -72,6 +79,7 @@ def build_canonical_recording_root(
             provider_id,
             model_id=model_id,
             recorded_raw_text=raw_text,
+            raw_observation_producer=raw_observation_producer,
         )
         for provider_id, model_id in CANONICAL_RECORDING_PROVIDER_MODELS
     )
@@ -90,6 +98,7 @@ def build_canonical_recording_root(
 __all__ = [
     "CANONICAL_RECORDING_AGENT_IDS",
     "CANONICAL_RECORDING_PROVIDER_MODELS",
+    "CanonicalRawObservationProducer",
     "CanonicalSuccessorRecordingProvider",
     "build_canonical_recording_root",
 ]

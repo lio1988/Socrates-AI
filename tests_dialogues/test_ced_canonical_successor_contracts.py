@@ -64,6 +64,7 @@ def _budget(**updates: int) -> SearchBudget:
 
 def _task(**updates: Any) -> CanonicalTaskIdentity:
     values = {
+        "source_session_semantic_id": "cedsourcesession_contract-test",
         "phase": DialogPhase.OPENING,
         "round_number": 0,
         "slot_index": 0,
@@ -170,20 +171,15 @@ def _observation(
     pending = pending or _pending()
     task = pending.canonical_task
     values = {
+        "capture_receipt_id": "cedcapture_contract-test",
+        "source_capsule_id": pending.source_capsule_id,
+        "source_execution_id": pending.source_capsule.source_execution_id,
+        "source_configuration_digest": pending.source_capsule.configuration_digest,
         "capture_id": None,
         "source_task_id": None,
         "recorded_response_id": None,
-        "recorded_request_digest": None,
         "action_id": pending.selected_action.action_id,
-        "phase": task.phase,
-        "round_number": task.round_number,
-        "slot_index": task.slot_index,
-        "attempt_index": task.attempt_index,
-        "agent_id": task.agent_id,
-        "role": task.role,
-        "task_kind": task.task_kind,
-        "task_semantic_digest": task.task_semantic_digest,
-        "request_semantic_digest": task.request_semantic_digest,
+        "task_identity": task,
         "provider_id": pending.expected_provider_id,
         "configured_model_id": pending.expected_model_id,
         "actual_model_id": pending.expected_model_id,
@@ -386,7 +382,6 @@ def test_observation_identity_excludes_unavailable_or_volatile_audit_ids() -> No
         capture_id="capture-new",
         source_task_id="task-random-new",
         recorded_response_id="response-random-new",
-        recorded_request_digest="a" * 64,
     )
     changed_raw = _replace(
         observation,
@@ -452,13 +447,33 @@ def test_observation_compatibility_uses_semantics_not_random_audit_ids() -> None
     wrong_task = _replace(
         observation,
         observation_id=None,
-        task_semantic_digest="a" * 64,
+        task_identity=_replace(
+            observation.task_identity,
+            task_identity_id=None,
+            task_semantic_digest="a" * 64,
+        ),
     )
     with pytest.raises(RecordedObservationCompatibilityError) as task_error:
         validate_recorded_observation_compatibility(pending, wrong_task)
     assert (
         task_error.value.reason
         is SuccessorUnavailableReason.OBSERVATION_TASK_MISMATCH
+    )
+
+    wrong_request = _replace(
+        observation,
+        observation_id=None,
+        task_identity=_replace(
+            observation.task_identity,
+            task_identity_id=None,
+            request_semantic_digest="b" * 64,
+        ),
+    )
+    with pytest.raises(RecordedObservationCompatibilityError) as request_error:
+        validate_recorded_observation_compatibility(pending, wrong_request)
+    assert (
+        request_error.value.reason
+        is SuccessorUnavailableReason.ROOT_CONTEXT_MISMATCH
     )
 
     wrong_provider = _replace(
@@ -471,6 +486,37 @@ def test_observation_compatibility_uses_semantics_not_random_audit_ids() -> None
     assert (
         provider_error.value.reason
         is SuccessorUnavailableReason.OBSERVATION_PROVIDER_MISMATCH
+    )
+
+    wrong_model = _replace(
+        observation,
+        observation_id=None,
+        configured_model_id="different-model",
+        actual_model_id="different-model",
+    )
+    with pytest.raises(RecordedObservationCompatibilityError) as model_error:
+        validate_recorded_observation_compatibility(pending, wrong_model)
+    assert (
+        model_error.value.reason
+        is SuccessorUnavailableReason.OBSERVATION_MODEL_MISMATCH
+    )
+
+    other_config = "c" * 64
+    wrong_config = _replace(
+        observation,
+        observation_id=None,
+        model_config_digest=other_config,
+        task_identity=_replace(
+            observation.task_identity,
+            task_identity_id=None,
+            model_config_digest=other_config,
+        ),
+    )
+    with pytest.raises(RecordedObservationCompatibilityError) as config_error:
+        validate_recorded_observation_compatibility(pending, wrong_config)
+    assert (
+        config_error.value.reason
+        is SuccessorUnavailableReason.OBSERVATION_CONFIG_MISMATCH
     )
 
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .models import (
@@ -251,22 +252,47 @@ class CanonicalTaskSpec:
     task_kind: TaskKind
 
 
+class CanonicalRegistryApplicationOutcome(str, Enum):
+    """CED-owned category for one canonical response application."""
+
+    ACCEPTED = "accepted"
+    CANONICAL_REJECTION = "canonical_rejection"
+
+
 @dataclass(frozen=True)
 class CanonicalRegistryResponseApplication:
     """Outcome of applying one registry response through canonical CED rules.
 
     This is observability over the existing mutation path, not a second
-    acceptance policy.  ``canonical_rejection_reason`` is populated only when a
-    provider-OK Socratic response is vetoed by CED's content/injection firewall;
-    provider/parser failures remain distinguishable through ``provider_status``.
+    acceptance policy. ``canonical_rejection_reason`` carries the detailed
+    Socratic veto when one exists; ``canonical_rejection_kind`` explicitly
+    classifies every CED rejection, including parser/schema/transport failures.
     """
 
+    outcome: CanonicalRegistryApplicationOutcome
     provider_status: ProviderStatus
     provider_ok: bool
     accepted_move_id: Optional[str]
     canonical_rejection_reason: Optional[str]
     canonical_rejection_kind: Optional[str]
     dispatch_recorded: bool
+
+    def __post_init__(self) -> None:
+        if self.outcome is CanonicalRegistryApplicationOutcome.ACCEPTED:
+            if (
+                self.accepted_move_id is None
+                or self.canonical_rejection_kind is not None
+            ):
+                raise ValueError(
+                    "accepted canonical application requires a move ID and no rejection"
+                )
+        elif (
+            self.accepted_move_id is not None
+            or self.canonical_rejection_kind is None
+        ):
+            raise ValueError(
+                "canonical rejection requires a rejection kind and no move ID"
+            )
 
 # Deliberation phases driven through the provider registry in Phase 8C (the
 # RATIFICATION verdict still runs through the council's own evaluator).
@@ -1456,6 +1482,9 @@ class CEDOrchestrator:
                     else "socratic_content_rejected"
                 )
                 return CanonicalRegistryResponseApplication(
+                    outcome=(
+                        CanonicalRegistryApplicationOutcome.CANONICAL_REJECTION
+                    ),
                     provider_status=resp.status,
                     provider_ok=True,
                     accepted_move_id=None,
@@ -1514,6 +1543,7 @@ class CEDOrchestrator:
                 provider_status=resp.status,
             )
             return CanonicalRegistryResponseApplication(
+                outcome=CanonicalRegistryApplicationOutcome.ACCEPTED,
                 provider_status=resp.status,
                 provider_ok=True,
                 accepted_move_id=move.move_id,
@@ -1530,12 +1560,19 @@ class CEDOrchestrator:
             provider_id=resp.provider_id,
             provider_status=resp.status,
         )
+        if resp.status is ProviderStatus.INVALID_JSON:
+            rejection_kind = "parser_rejected"
+        elif resp.status is ProviderStatus.SCHEMA_ERROR:
+            rejection_kind = "schema_rejected"
+        else:
+            rejection_kind = "transport_rejected"
         return CanonicalRegistryResponseApplication(
+            outcome=CanonicalRegistryApplicationOutcome.CANONICAL_REJECTION,
             provider_status=resp.status,
             provider_ok=False,
             accepted_move_id=None,
             canonical_rejection_reason=None,
-            canonical_rejection_kind=None,
+            canonical_rejection_kind=rejection_kind,
             dispatch_recorded=True,
         )
 

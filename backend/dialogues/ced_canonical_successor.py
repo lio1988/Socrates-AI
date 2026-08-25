@@ -18,7 +18,12 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 from pydantic import BaseModel, ValidationError
 
 from .agent import SocraticAgent
-from .ced import CEDOrchestrator, CanonicalTaskSpec
+from .ced import (
+    CEDOrchestrator,
+    CanonicalRegistryApplicationOutcome,
+    CanonicalRegistryResponseApplication,
+    CanonicalTaskSpec,
+)
 from .ced_canonical_successor_contracts import (
     CANONICAL_SUCCESSOR_ENV_ID,
     FORBIDDEN_RECORDED_OBSERVATION_FIELDS,
@@ -42,6 +47,9 @@ from .ced_canonical_successor_contracts import (
     SideLedgerDigest,
     SuccessorUnavailableReason,
     validate_recorded_observation_compatibility,
+)
+from .ced_canonical_successor_manifest import (
+    verify_authoritative_recorded_observation,
 )
 from .ced_search_projection_v1 import project_search_state_v1
 from .models import (
@@ -779,6 +787,72 @@ def canonical_transition_semantic_snapshot(
     return payload, projection
 
 
+def canonical_capsule_semantic_snapshot(
+    capsule: CanonicalBranchCapsule,
+) -> Tuple[Dict[str, object], object]:
+    """Rebuild a capsule's read-only canonical semantic parity snapshot.
+
+    This performs no provider dispatch and makes no transition decision.  It is
+    the evaluator-facing inverse of capsule capture: a fresh branch-local CED is
+    rehydrated, the already-frozen canonical task coordinates are restored, and
+    the existing semantic projection is required to reproduce the capsule's
+    own identities exactly.
+    """
+
+    try:
+        validated = CanonicalBranchCapsule.model_validate_json(
+            capsule.model_dump_json()
+        )
+    except (AttributeError, ValidationError) as exc:
+        raise CanonicalSuccessorUnavailable(
+            SuccessorUnavailableReason.INVALID_ROOT,
+            "capsule identity or schema is invalid",
+        ) from exc
+    ced, state = _rehydrate(validated)
+    task = validated.canonical_task
+    spec = CanonicalTaskSpec(
+        phase=task.phase,
+        round_number=task.round_number,
+        slot_index=task.slot_index,
+        agent_id=task.agent_id,
+        role=task.role,
+        task_kind=task.task_kind,
+    )
+    depth = 0 if validated.parent_branch_id is None else 1
+    semantic, projected = canonical_transition_semantic_snapshot(
+        ced,
+        state,
+        task=spec,
+        budget=validated.budget,
+        budget_usage=validated.budget_usage,
+        depth=depth,
+    )
+    if (
+        _digest(semantic) != validated.normalized_semantic_digest
+        or projected.state_id != validated.search_state_v1_id
+    ):
+        raise CanonicalSuccessorUnavailable(
+            SuccessorUnavailableReason.INVALID_ROOT,
+            "capsule semantic snapshot does not reproduce its frozen identity",
+        )
+    return semantic, projected
+
+
+def canonical_transition_outcome(
+    application: CanonicalRegistryResponseApplication,
+) -> Tuple[CanonicalTransitionStatus, Optional[CanonicalRejectionReason]]:
+    """Project a CED-owned application outcome into the transition contract."""
+
+    if application.outcome is CanonicalRegistryApplicationOutcome.ACCEPTED:
+        return CanonicalTransitionStatus.APPLIED_ACCEPTED, None
+    if application.canonical_rejection_kind is None:
+        raise ValueError("CED canonical rejection omitted its rejection kind")
+    return (
+        CanonicalTransitionStatus.APPLIED_CANONICAL_REJECTION,
+        CanonicalRejectionReason(application.canonical_rejection_kind),
+    )
+
+
 def canonical_task_semantic_identity(
     task: AgentTask,
     *,
@@ -1311,6 +1385,12 @@ class CanonicalSuccessorEnvironmentV0:
                 SuccessorUnavailableReason.FUTURE_LABEL_FORBIDDEN,
                 validated,
             )
+        if not verify_authoritative_recorded_observation(validated):
+            return self._unavailable_result(
+                pending,
+                SuccessorUnavailableReason.INVALID_OBSERVATION_IDENTITY,
+                None,
+            )
         try:
             validate_recorded_observation_compatibility(pending, validated)
         except RecordedObservationCompatibilityError as exc:
@@ -1385,21 +1465,7 @@ class CanonicalSuccessorEnvironmentV0:
                 usage=pending.reserved_usage,
             )
 
-        if application.accepted_move_id is not None:
-            status = CanonicalTransitionStatus.APPLIED_ACCEPTED
-            rejection = None
-        else:
-            status = CanonicalTransitionStatus.APPLIED_CANONICAL_REJECTION
-            if application.canonical_rejection_kind is not None:
-                rejection = CanonicalRejectionReason(
-                    application.canonical_rejection_kind
-                )
-            elif application.provider_status is ProviderStatus.INVALID_JSON:
-                rejection = CanonicalRejectionReason.PARSER_REJECTED
-            elif application.provider_status is ProviderStatus.SCHEMA_ERROR:
-                rejection = CanonicalRejectionReason.SCHEMA_REJECTED
-            else:
-                rejection = CanonicalRejectionReason.TRANSPORT_REJECTED
+        status, rejection = canonical_transition_outcome(application)
 
         after = pending.budget_before.plus(pending.reserved_usage.budget_delta)
         semantic, projected = canonical_transition_semantic_snapshot(
@@ -1475,7 +1541,9 @@ __all__ = [
     "CANONICAL_SUCCESSOR_PARITY_DEFINITION_ID",
     "CanonicalSuccessorEnvironmentV0",
     "CanonicalSuccessorUnavailable",
+    "canonical_capsule_semantic_snapshot",
     "canonical_runtime_fingerprint",
     "canonical_task_semantic_identity",
     "canonical_transition_semantic_snapshot",
+    "canonical_transition_outcome",
 ]

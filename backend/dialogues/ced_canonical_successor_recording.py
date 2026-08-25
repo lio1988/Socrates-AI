@@ -22,6 +22,7 @@ from .ced import (
 from .ced_canonical_successor import (
     CanonicalSuccessorEnvironmentV0,
     canonical_runtime_fingerprint,
+    canonical_task_semantic_identity,
 )
 from .ced_canonical_successor_contracts import (
     CanonicalBranchCapsule,
@@ -209,6 +210,14 @@ async def capture_canonical_opening_observation(
     actual_model_id = ced.registry.authoritative_model_id(response.provider_id)
     if actual_model_id is None or actual_model_id != active_binding.model_id:
         raise ValueError("observed provider lacks the exact captured model identity")
+    observed_task_identity = canonical_task_semantic_identity(
+        task,
+        model_config_digest=active_binding.model_config_digest,
+    )
+    if observed_task_identity != capsule.canonical_task:
+        raise ValueError(
+            "observed canonical task differs from the captured semantic identity"
+        )
 
     transport = _transport_identity(response)
     raw_digest = _raw_output_digest(response, transport)
