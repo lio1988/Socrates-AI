@@ -15,7 +15,7 @@ chronologically frozen canonical holdout and no architecture expansion.
    malformed-input tests.
 4. [done] Implement `heuristic-value-estimator/v1` without changing v0.
 5. [done] Run development validation without semantic tuning.
-6. [in progress] Freeze the authoritative holdout runner after focused gates pass.
+6. [done] Freeze the authoritative holdout runner after focused gates pass.
 7. [pending] Execute the first holdout once, persist its immutable artifact,
    replay it, and classify the primary gate.
 8. [locked] Run the matched BestOfN secondary gate only if primary passes.

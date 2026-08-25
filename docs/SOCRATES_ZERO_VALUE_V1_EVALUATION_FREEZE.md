@@ -35,6 +35,13 @@ Canonical case-set JSON SHA-256:
 22122913601c9fc39265fbdc44a3f3cec02030333c7317e971db42fb3a436afd
 ```
 
+Frozen rule semantic ID and development/holdout split hash:
+
+```text
+szvaluev1rules_3d6d50dbb1a70a3d7d7d70c7b12835bc3f9a39cbcde74838022fc4ad3c6a1826
+f32a61ae9fd5ba1ca43d67f59f7adc455302947cfa89c12de59ad06f82bf3d3b
+```
+
 ## Frozen categories
 
 Exactly two development and three holdout pairs exist in each category:
@@ -80,6 +87,13 @@ All of these gates are conjunctive:
 
 The secondary BestOfN threshold is frozen at `0.10`, but the secondary test is
 locked unless every primary gate passes.
+
+The one-shot primary runner is
+`scripts/run_socrates_zero_value_v1_evaluation.py`. It builds development and
+holdout runs, classifies every conjunctive gate, performs an independent
+semantic and byte replay in memory, and refuses to overwrite a different
+artifact. Its frozen destination is
+`docs/branches/feature-socrates-zero-heuristic-value-v1/artifacts/socrateszero_value_v1_primary_v0.json`.
 
 ## Chronology and invalidation
 

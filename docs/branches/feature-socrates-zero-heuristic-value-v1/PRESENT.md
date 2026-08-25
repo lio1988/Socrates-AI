@@ -20,6 +20,8 @@
   Value v1 ordered `5/5` (`100%`) and required ties `13/13` (`100%`). Value v1
   has zero directional errors, ordered ties, ranking loss, or hard-safety counts.
 - No `/v1` holdout result exists yet.
+- The primary artifact contract, exact threshold classifier, rule/split locks,
+  replay checks, overwrite refusal, and one-shot holdout runner are frozen.
 
 ## Worktree
 
@@ -28,5 +30,5 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit the development-tested harness, then freeze a one-shot authoritative
-holdout runner and its artifact contract before first execution.
+Commit the authoritative runner contracts, then execute the repaired `/v1`
+holdout exactly once and preserve its artifact regardless of outcome.

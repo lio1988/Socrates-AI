@@ -16,6 +16,7 @@ from .ced_search_observability_v1 import (
     SEARCH_STATE_V1_SCHEMA_VERSION,
 )
 from .hybrid_epistemic import SupportState
+from .socrates_zero.contracts import stable_contract_id
 
 
 HEURISTIC_VALUE_ESTIMATOR_V1_VERSION = "heuristic-value-estimator/v1"
@@ -44,6 +45,23 @@ SUPPORT_STATE_REASON_V1: Mapping[SupportState, Optional[str]] = MappingProxyType
         SupportState.UNSUPPORTED: "active_claim_unsupported",
         SupportState.SUPPORTED: None,
     }
+)
+
+VALUE_V1_RULE_SEMANTIC_ID = stable_contract_id(
+    "szvaluev1rules",
+    {
+        "estimator_id": HEURISTIC_VALUE_ESTIMATOR_V1_VERSION,
+        "base": VALUE_V1_BASE,
+        "minimum": VALUE_V1_MIN,
+        "maximum": VALUE_V1_MAX,
+        "rules": dict(HEURISTIC_VALUE_RULES_V1),
+        "support_state_reasons": {
+            state.value: reason for state, reason in SUPPORT_STATE_REASON_V1.items()
+        },
+        "selection": "one-worst-active-claim-by-most-negative-contribution",
+        "supported": "neutral-no-bonus",
+        "terminal": "terminal-firewall",
+    },
 )
 
 
@@ -140,6 +158,7 @@ __all__ = [
     "VALUE_V1_BASE",
     "VALUE_V1_MAX",
     "VALUE_V1_MIN",
+    "VALUE_V1_RULE_SEMANTIC_ID",
     "ValueV1Audit",
     "ValueV1Component",
 ]
