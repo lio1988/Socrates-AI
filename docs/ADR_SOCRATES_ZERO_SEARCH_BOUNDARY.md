@@ -1,7 +1,8 @@
 # ADR: SocratesZero Search Boundary v0
 
 Status: accepted through deterministic model-free Policy, Value, one-ply
-strategy foundations, and bounded one-real-ply PUCT on
+strategy foundations, bounded one-real-ply PUCT, and frozen offline Phase 5
+search-kernel evaluation on
 `feature/socrates-zero-search-v0`
 
 Baseline: commit `277ca2ec130ce120dba9c4d894a3c58138b25528`
@@ -337,6 +338,47 @@ same engine and produce separately auditable behavior. No shadow or production
 wiring, Gumbel, progressive widening, MuZero, RL, neural, CUDA, or parallel tree
 mutation is introduced.
 
+## Phase 5 frozen evaluation boundary and decision
+
+Phase 5 adds evaluation infrastructure only. The immutable harness
+`socrateszero-search-kernel-eval-harness/v0` evaluates the frozen strategies on
+the balanced 20-case `socrateszero-search-kernel-case-set/v0` under precommitted
+successor-observation budgets 1, 2, 4, and 8. It imports no CED orchestrator,
+provider, tool, learner, neural runtime, or production executor.
+
+Ground truth remains an evaluator-side numeric ordering in `[-1,+1]`. The
+strategy receives only a fresh root, hard-legal actions, label-free successor
+observation blueprints, frozen Policy/Value, Constitution, generator, and
+budget. Case names, categories, outcomes, optima, and even the case identity
+derived from them are absent. The harness independently counts successor,
+Policy, and Value evaluations and derives node/expansion deltas from receipts;
+the deterministic successor also enforces its own monotone aggregate call
+count. Failures and missing cases remain in explicit denominators.
+
+The primary controlled comparison holds Heuristic Policy and Heuristic Value
+fixed at a maximum four successor observations. Greedy selects 9/20 optima with
+total regret 11.55 and zero successors. BestOfN selects 15/20 with regret 4.80
+and 62 actual successors. PUCT selects 15/20 with regret 4.55 and 80 actual
+successors. BestOfN and PUCT agree in outcome on 18 cases and each wins one of
+the two selective-budget cases. This is a Pareto tradeoff, not a global PUCT
+win: BestOfN achieves the same correctness with less compute, while PUCT has
+0.25 less total regret.
+
+PUCT quality is non-monotone across the frozen depth-one sweep: budgets 1, 2,
+4, and 8 select 9, 12, 15, and 12 optima respectively. Budget eight consumes
+160 observations but matches budget two's quality at 40. The result is retained
+without tuning. Heuristic Value materially improves both search strategies in
+this suite; Heuristic Policy under Neutral Value is one case worse than Uniform
+Policy. These findings support neither learned components nor production
+promotion.
+
+The artifact is explicitly scoped `SEARCH_KERNEL_EVALUATION`. It cannot support
+an end-to-end claim that SocratesZero improves CED dialogue. The two existing
+trace candidates lack observed counterfactuals and remain explicitly missing;
+none are guessed. A later live/replay shadow or deeper successor milestone
+requires a separate ADR and approval. Phase 5 creates no Phase 6, RL, learned
+Policy/Value, self-play, provider spending, or runtime action authority.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
@@ -348,8 +390,9 @@ mutation is introduced.
 - Canonical task-spec equivalence currently covers registry deliberation from
   Opening through Synthesis; council ratification remains a separate canonical
   provider path.
-- The current evaluation families are heterogeneous; matched-compute
-  SocratesZero benchmark episodes do not yet exist.
+- A matched-compute deterministic search-kernel evaluation now exists, but it
+  is a small handcrafted one-ply fixture suite, not a stochastic or end-to-end
+  Socrates dialogue benchmark.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
 - No canonical CED action executor or `SuccessorStateEvaluator` implementation
@@ -367,10 +410,12 @@ mutation is introduced.
 The branch now has the equivalent of an immutable board, hard legal moves, an
 explicit handcrafted baseline player, versioned advisory Policy and Value,
 deterministic Greedy and budgeted one-ply Best-of-N, plus bounded serial PUCT
-that can rationally overturn Policy from real observed leaf Value. It is still
+that can rationally overturn Policy from real observed leaf Value. Frozen
+Phase 5 evidence shows when current one-ply search helps and also shows that
+BestOfN can match PUCT correctness with less compute. It is still
 runtime-inert and gives Policy, Value, successor evaluators, and search no
 execution or epistemic authority. The cost is intentional: this milestone makes
-no comparative quality claim, has no canonical or recursively safe environment
+no end-to-end quality claim, has no canonical or recursively safe environment
 transition, cannot recognize positive verified progress until the state
 contract exposes it safely, and keeps its estimates weak, transparent, bounded,
 auditable, and unexecuted.

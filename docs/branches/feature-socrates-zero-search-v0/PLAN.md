@@ -79,6 +79,25 @@ preserving byte-for-byte default CED behavior.
    terminal handling, estimator interchangeability, and no fake depth.
 10. [done] Run focused, dialogue-wide, and repository-wide acceptance gates.
 
+## Frozen matched-compute evaluation
+
+1. [done] Audit honestly measurable resource counters; define no universal
+   compute score.
+2. [done] Version and commit successor budgets 1/2/4/8 before results.
+3. [done] Version and commit 20 balanced deterministic cases before results.
+4. [done] Remove all direct and label-derived ground-truth side channels before
+   comparative execution.
+5. [done] Implement the immutable offline harness, exact metric/status schemas,
+   receipt links, and independently checked resource accounting.
+6. [done] Prove adversarial ground-truth isolation, budget rejection, state and
+   order isolation, exact regret, denominators, and deterministic replay.
+7. [done] Commit the deterministic runner, then execute the frozen 11×20 matrix
+   with zero live API calls.
+8. [done] Commit and replay-lock the machine-readable benchmark artifact.
+9. [done] Record methodology, exact results, limitations, and durable
+   Phase 5 checkpoint; run all required regression suites.
+10. [stop] Do not begin Phase 6, RL, live shadow, or production wiring.
+
 ## Validation gates
 
 - deterministic identity and strict-schema tests pass;
@@ -101,9 +120,11 @@ preserving byte-for-byte default CED behavior.
 6. [done] Deterministic Greedy strategy baseline.
 7. [done] Budgeted one-ply Best-of-N with injected successors.
 8. [done] Bounded serial one-real-ply PUCT with path-local duplicate states.
-9. [next] Phase 5 shadow-only matched-compute evaluation harness.
-10. Learned priors/value only after sufficient governed experience.
-11. True RL/self-play only after search and evaluation evidence justify it.
+9. [done] Phase 5 offline matched-compute search-kernel evaluation harness.
+10. [decision required] Separately review deeper safe successor semantics,
+    read-only real shadow evidence, or simplification around BestOfN.
+11. Learned priors/value only after sufficient governed experience.
+12. True RL/self-play only after search and evaluation evidence justify it.
 
 ## Stop conditions
 

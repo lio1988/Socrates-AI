@@ -62,8 +62,26 @@
   - lower-prior observed Value can overturn misleading Policy with sufficient
     budget, while tiny budget remains Policy-biased;
   - no PUCT result has production authority or live dialogue wiring.
-- Current implementation checkpoint: `c7e45b9` (`feat: add bounded
-  deterministic PUCT strategy`).
+- Phase 5 frozen matched-compute evaluation is implemented and executed:
+  - budgets 1/2/4/8 and a balanced 20-case, ten-category case set were
+    versioned and committed before any comparative result;
+  - the strategy-facing surface excludes direct and label-derived ground truth,
+    and adversarial probing/overuse tests fail closed;
+  - the immutable 11×20 run is fully offline, deterministic, replay-stable, and
+    records exact separate resource vectors with zero provider/tool/token/cost;
+  - matched at cap four, Greedy is `9/20` with regret `11.55` and zero
+    successors, BestOfN is `15/20` with regret `4.80` and 62 successors, and
+    PUCT is `15/20` with regret `4.55` and 80 successors;
+  - BestOfN and PUCT tie on 18/20 cases and each wins one selective-budget
+    case, so neither is a global winner;
+  - PUCT budget eight regresses to `12/20` at 160 observations and is preserved
+    without tuning;
+  - both inspected traces remain explicitly `MISSING_COUNTERFACTUAL`, with zero
+    honest replay cases;
+  - evidence is explicitly search-kernel-only and grants no end-to-end or
+    production claim.
+- Current Phase 5 result checkpoint: `17be287` (`data: record frozen Phase 5
+  benchmark`); replay lock: `84f5072`.
 
 ## Unchanged state
 
@@ -420,5 +438,71 @@ KNOWN ISSUES:
 - the 23 warnings remain pre-existing Pydantic `.dict()` deprecations and
   duplicate FastAPI operation IDs.
 
-NEXT: Phase 5 shadow matched-compute evaluation harness comparing fixed
+HISTORICAL NEXT: Phase 5 matched-compute evaluation harness comparing fixed
 rotation, Greedy, Best-of-N, and PUCT. Do not start RL.
+
+## Frozen matched-compute evaluation milestone
+
+DONE: implemented and executed the offline
+`socrateszero-search-kernel-eval-harness/v0` against
+`socrateszero-search-kernel-case-set/v0`. The suite freezes two cases in each
+of ten categories, matches BestOfN-4 and PUCT-4 on the same root/actions/
+Policy/Value/successor environment, and separately reports actual successor,
+Policy, Value, node, and expansion usage. Ground truth remains evaluator-only;
+state/order isolation and deterministic semantic replay are enforced.
+
+RESULT:
+
+- Greedy + Heuristic Policy/Value: `9/20`, total regret `11.55`, 0 successor
+  observations;
+- BestOfN-4 + Heuristic Policy/Value: `15/20`, regret `4.80`, 62 observations;
+- PUCT-4 + Heuristic Policy/Value: `15/20`, regret `4.55`, 80 observations;
+- paired BestOfN/PUCT: 18 ties, one higher-outcome case each;
+- failures/not-evaluable in deterministic matrix: `0/0` for every run;
+- real trace replay: `0` evaluable, `2` missing counterfactual;
+- live API/provider/tool calls: `0`.
+
+ABLATIONS:
+
+- Uniform+Neutral beats Heuristic+Neutral by one case for Greedy and PUCT-4;
+- Heuristic Value raises BestOfN and PUCT-4 from `9/20` to `15/20` with
+  Heuristic Policy fixed;
+- PUCT budgets 1/2/4/8 produce `9/12/15/12` correct at
+  `20/40/80/160` observations, so more depth-one compute is not monotone.
+
+ARTIFACT:
+
+- `docs/branches/feature-socrates-zero-search-v0/artifacts/`
+  `socrateszero_search_kernel_benchmark_v0.json`;
+- ID `szevalartifact_dc795fdef6b64e56b808b990fedd764def7c6e1858d178d29c26aa3280ede710`;
+- normalized SHA-256
+  `21aa870a790f80186c0cd2b66878fa0d6344399fdf9e5386e399c7032569886c`;
+- second execution: byte-identical.
+
+TESTS:
+
+- evaluation-specific: `37 passed`;
+- PUCT / BestOfN / Greedy: `53 / 24 / 27 passed`;
+- Policy / Value: `13 / 21 passed`;
+- contracts plus Greedy/BestOfN/PUCT: `123 passed`;
+- full SocratesZero: `239 passed`;
+- Hybrid H8 plus SocratesZero: `250 passed`;
+- focused CED/Socratic: `142 passed`;
+- full `tests_dialogues`: `2305 passed, 1 skipped`;
+- repository-wide: `2612 passed, 1 skipped, 23 pre-existing warnings`;
+- live API calls: `0`.
+
+KNOWN LIMITATIONS:
+
+- 20 authored deterministic fixtures are exact diagnostics, not population
+  evidence;
+- PUCT remains one real ply and the fixture successor is not a canonical CED
+  action executor;
+- current heuristic Value is penalty-only and cannot distinguish cases whose
+  SearchState exposes no canonical positive outcome signal;
+- the result establishes no end-to-end CED/Socrates improvement, live latency,
+  factuality, or production cost claim.
+
+NEXT: STOP Phase 5. A separate architectural decision may investigate safe
+deeper successor semantics, approved real shadow counterfactual collection, or
+simplification around BestOfN. Do not begin RL or production wiring.

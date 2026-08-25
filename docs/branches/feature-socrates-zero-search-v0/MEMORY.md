@@ -109,6 +109,42 @@
   branch-locally and in aggregate. Exceptions invalidate the entire v0 search.
 - A terminal PUCT root is neither expanded nor observed and returns no
   fabricated Stop selection. No PUCT output is wired into production CED.
+- Phase 5 is frozen as `socrateszero-search-kernel-eval-harness/v0` over
+  `socrateszero-search-kernel-case-set/v0`: 20 deterministic cases, exactly two
+  in each of ten precommitted categories, and budgets
+  `matched-successor-budget/v0/{1,2,4,8}`.
+- Strategy-facing fixtures contain no ground truth, outcome, optimum,
+  case/category label, or label-derived case ID. Two such label leaks were
+  found and separately fixed before the first comparative run; no result was
+  generated against either defective surface.
+- The fixture successor independently checks monotone aggregate usage. Harness
+  accounting does not trust the strategy receipt, and adversarial overuse is a
+  visible failure. Every valid observation costs one node and one expansion;
+  provider/tool/token/cost/time counters are exactly zero.
+- Frozen matched heuristic-Policy/heuristic-Value result at cap four: Greedy
+  `9/20`, regret `11.55`, zero successors; BestOfN `15/20`, regret `4.80`, 62
+  successors; PUCT `15/20`, regret `4.55`, 80 successors. BestOfN and PUCT tie
+  on 18 cases and each wins one selective-budget case.
+- Frozen PUCT sweep `(budget, correct, regret, successors)` is
+  `(1,9,11.55,20)`, `(2,12,7.75,40)`, `(4,15,4.55,80)`, and
+  `(8,12,7.75,160)`. Budget eight is deliberately preserved as worse than
+  budget four; there was no post-result tuning.
+- Under Neutral Value, Uniform Policy scores `10/20` while Heuristic Policy
+  scores `9/20` for both Greedy and PUCT-4. With Heuristic Policy fixed,
+  Heuristic Value raises BestOfN and PUCT from `9/20` to `15/20`, while Greedy
+  remains unchanged because its decision is Policy-only.
+- The immutable artifact ID is
+  `szevalartifact_dc795fdef6b64e56b808b990fedd764def7c6e1858d178d29c26aa3280ede710`.
+  Re-execution is byte-identical after newline normalization.
+- Both inspected saved traces lack honest alternative-action outcomes:
+  evaluable replay cases `0`, explicit missing counterfactuals `2`.
+- Phase 5 evidence is search-kernel-only. It establishes no end-to-end CED or
+  Socrates dialogue improvement and grants no production authority.
+- Completed verification: evaluation `37`; PUCT `53`; BestOfN `24`; Greedy
+  `27`; Policy `13`; Value `21`; contracts/strategies `123`; SocratesZero
+  `239`; Hybrid H8 + SocratesZero `250`; focused CED/Socratic `142`;
+  `tests_dialogues` `2305 passed, 1 skipped`; repository-wide `2612 passed,
+  1 skipped, 23 pre-existing warnings`.
 
 ## Protected local state
 

@@ -6,7 +6,8 @@ Build SocratesZero as a governed, optional search layer around canonical CED,
 starting from runtime-inert contracts, a read-only board-state projection, hard
 legal moves, the unchanged fixed-rotation baseline, and deterministic advisory
 Policy/Value plus Greedy, one-ply Best-of-N, and bounded one-real-ply PUCT
-strategy baselines.
+strategy baselines. Phase 5 adds a frozen offline matched-compute evaluation of
+those strategies; it adds no runtime control.
 
 ## Success criterion
 
@@ -23,6 +24,8 @@ model-free neutral/heuristic ValueEstimator implementations, and durable
 checkpoints. It now also contains deterministic Greedy and budgeted Best-of-N
 selectors, the injected experimental successor-state contract, and bounded
 serial `puct-strategy/v0` with a rich deterministic companion audit receipt.
+It also contains the frozen Phase 5 harness, balanced deterministic cases,
+fairness/isolation tests, runner, machine-readable result, and methodology.
 
 ## Non-goals
 
