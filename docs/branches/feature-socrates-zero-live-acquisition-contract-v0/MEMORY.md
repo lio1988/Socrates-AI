@@ -47,9 +47,48 @@
   `006fe843d91ec588a22de0d587c6f3e86c8e4c942446955d8ca308e49ca90062`,
   `3fa71e71327b344b93846bbff9debd9475bd141911a994d4caf362599f974be8`,
   `10540703f9bfa7cbd9d8910de4181e76d126de7374bfb533791b7fe2a285310c`.
-- Focused pre-result gate: `213 passed, 1 skipped`; the skip is the prewritten
+- Focused pre-result gate: `213 passed, 1 skipped`; the skip was the prewritten
   artifact-only verification test awaiting publication.
-- Authoritative aggregate/replay/publishers invoked: `0 / 0 / 0`.
+- Pre-result freeze:
+  `e1779a7738c5cddc1e5b6d6024b84583ea72628d`.
+
+## Durable result evidence
+
+- Exactly one authoritative aggregate produced `SUPPORTED`.
+- Artifact commit:
+  `70e07363aeedc205e5f13695918f735b8c5a15ea`.
+- Artifact ID:
+  `acqartifactv0_fb7fc0b8f19607cf74cb549992a62ea94638228e8c5c9fedab65f445272c2d11`.
+- Artifact SHA-256:
+  `2b22b0284b3feb3f79ab722e74b1e91d87024e6b0e9f6cb5337c70d32b468255`.
+- Aggregate receipt:
+  `szacqaggregate_3be4d9bbc35ee13a7f6c2ba4e562e9d18ce5c89574fd759a348d6b869cf677aa`.
+- Metrics ID:
+  `acqmetricsv0_856f1af3f93217edfcf8acb1b4ac17cf757e9d0bda6f931571f63b97da440d08`.
+- Exactly one reverse-order replay was published in
+  `15e3b819b1625d71786419a0efdf8082ca29e462`.
+- Replay execution ID:
+  `acqreplayexecutionv0_08125a577c16aa3324f395c46461651e50ce5f1df38627edf3401dbaf1b96f8f`;
+  canonical SHA-256:
+  `7f55030edf62b98f65122b5e43a010e32730dcaec6b179739a65f7fe9ec4ed4b`;
+  trace SHA-256:
+  `1ab6fb09f74e1314027cf9499aaa36cead4f7bacb5b6fd3fe0566cf5b687db38`.
+- Replay lock ID:
+  `acqreplaylockv0_af196a855a1cefd1220a0a61b159ac75d1b8928b112704c48d7e30b686080e0a`;
+  canonical SHA-256:
+  `335dec0cc1a1e7bc9f5d78368cacbf1d253b754ba276f0e894082737538c859c`.
+- Semantic equality, artifact-ID equality and byte identity: all `true`.
+- Artifact-only gate: `1 passed`.
+- Complete acquisition gate: `214 passed`.
+- `tests_dialogues`: `2797 passed, 1 skipped`.
+- `tests_ced`: `34 passed, 14 warnings`.
+- `tests`: `261 passed, 9 warnings`.
+- Repository-wide: `3104 passed, 1 skipped, 23 warnings`.
+- Final warnings: 21 existing Pydantic `.dict()` deprecations and two
+  existing duplicate FastAPI operation-ID warnings.
+- `git diff --check`: clean.
+- Next decision: **Phase 8.5B — External Provider Pilot Authorization Gate**.
+- Production authority: none. No live call is authorized.
 
 ## Frozen repository evidence
 

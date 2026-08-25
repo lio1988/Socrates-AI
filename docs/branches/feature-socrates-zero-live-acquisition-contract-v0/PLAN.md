@@ -1,6 +1,6 @@
 # External Observation Acquisition Contract v0 plan
 
-## Current phase: PRE-RESULT FREEZE
+## Current phase: COMPLETE — SUPPORTED
 
 ## Success criterion
 
@@ -26,12 +26,17 @@ extension, learning, RL, production wiring or protected-file changes.
 4. [done] Implement network/credential/application tripwires and isolation.
 5. [done] Freeze cases, mutation vectors, guard order and thresholds.
 6. [done] Pass focused pre-result tests.
-7. [in progress] Commit the pre-result freeze.
-8. [pending] Run exactly one authoritative aggregate and preserve its artifact.
-9. [pending] Run one reverse replay and persist execution evidence plus replay
-   lock only on pass.
-10. [pending] Run full regression gates and complete documentation.
-11. [pending] Commit the durable checkpoint with a clean tracked worktree.
+7. [done] Commit the pre-result freeze at
+   `e1779a7738c5cddc1e5b6d6024b84583ea72628d`.
+8. [done] Run exactly one authoritative aggregate; preserve the `SUPPORTED`
+   artifact in `70e07363aeedc205e5f13695918f735b8c5a15ea`.
+9. [done] Run exactly one reverse replay; recompute the byte-identical artifact
+   and persist distinct execution evidence plus its lock in
+   `15e3b819b1625d71786419a0efdf8082ca29e462`.
+10. [done] Pass the artifact-only, acquisition, dialogue, CED, general and
+    repository-wide regression gates; complete final documentation.
+11. [done] Create the durable supported checkpoint with a clean tracked
+    worktree and only the two protected untracked files.
 
 ## Stop conditions
 
@@ -39,3 +44,8 @@ Stop on any external invocation, credential access, canonical application,
 protected-file change, frozen-hash mismatch, post-freeze semantic change,
 mutation, uncounted canned invocation, false-zero usage or first-artifact
 falsification.
+
+## Next decision
+
+Stop without a live call. Any external execution requires a separate
+**Phase 8.5B — External Provider Pilot Authorization Gate**.

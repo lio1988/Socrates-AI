@@ -1,15 +1,27 @@
 # SocratesZero External Observation Acquisition Contract v0
 
-## Pre-result status
+## Final status
 
-The contract and experiment are **PRE-RESULT FROZEN**. The authoritative
-aggregate and reverse replay have not been executed at this checkpoint.
-Focused tests may execute individual canned cases; they do not publish or
-score an authoritative aggregate.
+The frozen contract and experiment are **COMPLETE — SUPPORTED**. The sole
+authoritative canned aggregate and the sole reverse-order replay have been
+executed under the active acquisition boundary tripwire. No live, network,
+provider, model, tool or canonical-application call occurred.
 
-The final focused pre-result gate is `213 passed, 1 skipped`. The skipped test
-is the prewritten artifact-only verifier, which cannot run until the sole
-authoritative artifact exists.
+Scientific chronology is preserved by:
+
+- pre-result freeze commit:
+  `e1779a7738c5cddc1e5b6d6024b84583ea72628d`;
+- authoritative artifact commit:
+  `70e07363aeedc205e5f13695918f735b8c5a15ea`;
+- reverse replay evidence commit:
+  `15e3b819b1625d71786419a0efdf8082ca29e462`.
+
+The historical pre-result gate was `213 passed, 1 skipped`; the skip was the
+prewritten artifact-only verifier awaiting publication. After publication that
+verifier passed, and the complete acquisition gate was `214 passed`. The final
+repository-wide gate was `3104 passed, 1 skipped, 23 warnings`; the skip is the
+unchanged council-rescue scenario, while the warnings are 21 existing Pydantic
+`.dict()` deprecations and two existing duplicate FastAPI operation-ID warnings.
 
 This phase implements only external observation acquisition. Its output is an
 opaque `UNADMITTED / NON_CANONICAL / NON_GOVERNING / NOT_APPLIED` envelope.
@@ -34,8 +46,17 @@ It never invokes canonical admission or
 | Failure taxonomy | `szacqfailuretaxonomy_90d0911e3c9726483dd7aeaf4cdd35dfac071cdc40eb9e9e5c4cdbe102f4ea86` |
 
 Transport attempts, observations, attempt receipts, isolation receipts and
-retention receipts are content-addressed per attempt. Aggregate, metrics and
-artifact IDs are intentionally not asserted before the authoritative run.
+retention receipts are content-addressed per attempt. The authoritative result
+is bound by:
+
+- aggregate receipt:
+  `szacqaggregate_3be4d9bbc35ee13a7f6c2ba4e562e9d18ce5c89574fd759a348d6b869cf677aa`;
+- metrics:
+  `acqmetricsv0_856f1af3f93217edfcf8acb1b4ac17cf757e9d0bda6f931571f63b97da440d08`;
+- artifact:
+  `acqartifactv0_fb7fc0b8f19607cf74cb549992a62ea94638228e8c5c9fedab65f445272c2d11`;
+- artifact SHA-256:
+  `2b22b0284b3feb3f79ab722e74b1e91d87024e6b0e9f6cb5337c70d32b468255`.
 
 ## Frozen experiment
 
@@ -176,26 +197,46 @@ external code.
 
 ## Authoritative publication and replay
 
-After the freeze commit is reported, exactly one authoritative aggregate may
-write:
+Exactly one authoritative aggregate wrote:
 
 `docs/branches/feature-socrates-zero-live-acquisition-contract-v0/artifacts/socrateszero_external_observation_acquisition_v0.json`
 
-If it is `SUPPORTED`, exactly one reverse-order replay may write both:
+It produced `SUPPORTED` with 56 exact case results, 58 attempt receipts,
+58 isolation receipts, 58 retention receipts, 32 counted canned invocations,
+eight acquired raw canned observations and zero accepted violations. Its
+forbidden tripwire counters are all zero.
+
+Exactly one reverse-order replay then wrote:
 
 - `docs/branches/feature-socrates-zero-live-acquisition-contract-v0/artifacts/socrateszero_external_observation_acquisition_replay_execution_v0.json`;
 - `docs/branches/feature-socrates-zero-live-acquisition-contract-v0/artifacts/socrateszero_external_observation_acquisition_replay_lock_v0.json`.
 
+The replay execution ID is
+`acqreplayexecutionv0_08125a577c16aa3324f395c46461651e50ce5f1df38627edf3401dbaf1b96f8f`,
+its canonical file SHA-256 is
+`7f55030edf62b98f65122b5e43a010e32730dcaec6b179739a65f7fe9ec4ed4b`,
+and its execution-trace SHA-256 is
+`1ab6fb09f74e1314027cf9499aaa36cead4f7bacb5b6fd3fe0566cf5b687db38`.
+The replay lock ID is
+`acqreplaylockv0_af196a855a1cefd1220a0a61b159ac75d1b8928b112704c48d7e30b686080e0a`
+and its canonical file SHA-256 is
+`335dec0cc1a1e7bc9f5d78368cacbf1d253b754ba276f0e894082737538c859c`.
+Semantic equality, artifact-ID equality and byte identity are all true.
+
 The replay execution file contains no embedded raw-bearing artifact. The lock
 binds its canonical SHA-256, and the offline verifier requires all three files
-to recompute artifact IDs, hashes, order and receipt crosslinks. This preserves
-evidence of the performed reverse run, but—without an external nonce or trusted
-execution service—does not cryptographically prove process independence. The
-independence claim is procedural and is satisfied only by the single recorded
-post-freeze replay execution.
+to recompute artifact IDs, hashes, order and receipt crosslinks. This proves
+canonical cross-file coherence and records the performed reverse run, but—
+without an external nonce or trusted execution service—does not
+cryptographically prove process occurrence or independence. The independence
+claim remains procedural.
 
 ## Scope boundary
 
 No external call, provider SDK, model, tool, credential access, CED application,
 Search, Value ranking, action selection, Experience Store, learning, RL,
 production integration or action-family extension belongs to this phase.
+
+No production authority is granted. The next decision is
+**Phase 8.5B — External Provider Pilot Authorization Gate**; this phase stops
+without making a live call.
