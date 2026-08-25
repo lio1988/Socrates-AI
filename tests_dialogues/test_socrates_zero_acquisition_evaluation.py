@@ -9,7 +9,9 @@ scoped write-once primitive test under pytest's temporary directory.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -30,10 +32,16 @@ from backend.dialogues.socrates_zero.acquisition_cases import (
 )
 from backend.dialogues.socrates_zero.acquisition_contracts import (
     ACQUISITION_GUARD_ORDER,
+    AcquisitionAggregateReceipt,
     AcquisitionAttemptOutcome,
+    AcquisitionAttemptReceipt,
+    AcquisitionFailureStageCount,
+    AcquisitionGuardStage,
     AcquisitionGuardState,
     AcquisitionPrimaryResult,
+    AcquisitionResourceQuantity,
     ResourceKnowledgeState,
+    recompute_acquisition_aggregate_metrics_v0,
 )
 from backend.dialogues.socrates_zero.contracts import (
     ContractValidationError,
@@ -113,7 +121,7 @@ _EXPECTED_PROBE_ROWS = (
     ("acqv0-o23-fallback-activated", ("envelope.fallback_used",), "A07_FALLBACK_ACTIVATION", "FALLBACK_ACTIVATED"),
     ("acqv0-o24-retry-activated", ("envelope.retry_count",), "A08_RETRY_ACTIVATION", "RETRY_ACTIVATED"),
     ("acqv0-o25-tool-activated", ("envelope.tool_calls",), "A09_TOOL_ACTIVATION", "TOOL_ACTIVATED"),
-    ("acqv0-o26-missing-raw", ("envelope.raw_response_base64",), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
+    ("acqv0-o26-missing-raw", ("envelope.raw_response_presence",), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
     ("acqv0-o27-raw-digest-mismatch", ("envelope.raw_response_sha256",), "A11_RESPONSE_DIGEST_INTEGRITY", "INVALID_RESPONSE_DIGEST"),
     ("acqv0-o28-usage-incomplete", ("envelope.new_usage_completeness",), "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE"),
     ("acqv0-o29-false-zero-usage", ("envelope.usage.tokens.knowledge",), "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE"),
@@ -125,17 +133,23 @@ _EXPECTED_PROBE_ROWS = (
     ("acqv0-o35-final-receipt-identity-mismatch", ("attempt_recorder.final_receipt_integrity",), "A16_FINAL_RECEIPT_INTEGRITY", "RECEIPT_MISMATCH"),
     ("acqv0-o36-future-label-envelope", ("envelope.expected_canonical_acceptance",), "A02_TRANSPORT_COMPLETION", "TRANSPORT_ERROR"),
     ("acqv0-o37-missing-actual-model", ("envelope.actual_model_id",), "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH"),
+    ("acqv0-o38-fallback-known-adverse", ("capability.fallback",), "P09_FALLBACK_DISABLED", "FALLBACK_CONTROL_UNPROVEN"),
+    ("acqv0-o39-retry-known-adverse", ("capability.retry",), "P10_RETRY_DISABLED", "RETRY_CONTROL_UNPROVEN"),
+    ("acqv0-o40-sdk-hidden-retry-known-adverse", ("capability.sdk_internal_retry",), "P11_SDK_INTERNAL_RETRY_DISABLED", "SDK_INTERNAL_RETRY_CONTROL_UNPROVEN"),
+    ("acqv0-o41-termination-known-adverse", ("capability.worker_termination",), "P13_TIMEOUT_WORKER_TERMINATION", "TIMEOUT_CANCELLATION_UNPROVEN"),
+    ("acqv0-o42-isolation-precondition-failed", ("isolation_probe.preconditions_met",), "P17_ISOLATION_PRECONDITIONS", "ISOLATION_PRECONDITION_FAILED"),
+    ("acqv0-o43-valid-capability-snapshot-detached", ("capability.snapshot_binding",), "P03_CAPABILITY_SNAPSHOT_INTEGRITY", "INVALID_CAPABILITY_SNAPSHOT"),
     ("acqv0-p01-invalid-request-plus-unknown-capability", ("request.schema_version", "capability.actual_provider_identity_verification"), "P01_REQUEST_INTEGRITY", "INVALID_ACQUISITION_REQUEST"),
     ("acqv0-p02-unknown-capability-plus-budget-gap", ("capability.actual_provider_identity_verification", "budget.max_canned_transport_invocations"), "P04_REQUIRED_CONTROL_COMPLETENESS", "REQUIRED_CONTROL_UNKNOWN"),
     ("acqv0-p03-prompt-entropy-plus-fallback-policy", ("capability.fallback", "renderer.entropy_source"), "P09_FALLBACK_DISABLED", "FALLBACK_CONTROL_UNPROVEN"),
     ("acqv0-p04-actual-model-plus-fallback-activation", ("envelope.actual_model_id", "envelope.fallback_used"), "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH"),
-    ("acqv0-p05-missing-raw-plus-usage-incomplete", ("envelope.raw_response_base64", "envelope.new_usage_completeness"), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
+    ("acqv0-p05-missing-raw-plus-usage-incomplete", ("envelope.raw_response_presence", "envelope.new_usage_completeness"), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
     ("acqv0-p06-network-plus-credential-policy", ("capability.external_network", "capability.credential_access"), "P06_EXTERNAL_NETWORK_PROHIBITION", "EXTERNAL_NETWORK_FORBIDDEN"),
     ("acqv0-p07-timeout-plus-worker-nontermination", ("envelope.transport_status", "envelope.worker_terminated"), "A02_TRANSPORT_COMPLETION", "TRANSPORT_TIMEOUT"),
 )
 
 _EXPECTED_PROBE_DESIGN_SHA256 = (
-    "49c0d0cca2c06dc01087ba667eb1c4e71d9173c04b2b26292b8ba3169a880e73"
+    "b1ad75b0c39e26c32130559008badf39c1d11f65363f9430e4b523a3da255722"
 )
 
 _THRESHOLD_TO_METRIC_FIELDS = (
@@ -143,6 +157,7 @@ _THRESHOLD_TO_METRIC_FIELDS = (
     ("positive_cases_total", "positive_cases_total"),
     ("required_positive_complete_case_results", "positive_complete_case_results"),
     ("required_positive_attempt_receipts", "positive_attempt_receipts"),
+    ("required_positive_attempt_receipts", "acquired_raw_observations"),
     ("orthogonal_probes_total", "orthogonal_probes_total"),
     ("required_orthogonal_exact_primary_results", "orthogonal_exact_primary_results"),
     ("precedence_probes_total", "precedence_probes_total"),
@@ -152,12 +167,24 @@ _THRESHOLD_TO_METRIC_FIELDS = (
     ("maximum_mismatch_or_failure_count", "mismatch_or_failure_count"),
     ("required_invalid_probe_constructions", "invalid_probe_constructions"),
     ("required_semantic_identity_collisions", "semantic_identity_collisions"),
+    ("required_semantic_identity_collisions", "accepted_provider_identity_mismatches"),
+    ("required_semantic_identity_collisions", "accepted_model_identity_mismatches"),
+    ("required_semantic_identity_collisions", "accepted_configuration_identity_mismatches"),
     ("required_prompt_byte_mismatches", "accepted_prompt_byte_mismatches"),
     ("required_external_network_attempts", "external_network_attempts"),
     ("required_credential_access_attempts", "credential_access_attempts"),
+    ("required_credential_access_attempts", "credential_material_retained"),
     ("required_live_provider_calls", "live_provider_calls"),
     ("required_model_executions", "model_executions"),
     ("required_tool_calls", "tool_calls"),
+    (
+        "required_incomplete_attempt_receipts",
+        "raw_aggregate_incomplete_usage_receipts",
+    ),
+    (
+        "required_uncounted_canned_invocations",
+        "unexpected_uncounted_canned_invocation_failures",
+    ),
     ("required_uncounted_canned_invocations", "accepted_uncounted_canned_invocations"),
     ("required_successful_retry_activations", "accepted_successful_retry_activations"),
     ("required_successful_fallback_activations", "accepted_successful_fallback_activations"),
@@ -167,8 +194,30 @@ _THRESHOLD_TO_METRIC_FIELDS = (
     ("required_production_mutations", "accepted_production_mutations"),
     ("required_accepted_missing_raw_observations", "accepted_missing_raw_observations"),
     ("required_accepted_false_zero_usage", "accepted_false_zero_usage"),
+    (
+        "required_incomplete_attempt_receipts",
+        "unexpected_incomplete_reported_usage_receipts",
+    ),
+    (
+        "required_incomplete_attempt_receipts",
+        "unknown_execution_usage_quantities",
+    ),
+    (
+        "required_uncounted_canned_invocations",
+        "canned_invocation_tripwire_mismatches",
+    ),
+    (
+        "required_uncounted_canned_invocations",
+        "forbidden_execution_counter_mismatches",
+    ),
+    (
+        "required_uncounted_canned_invocations",
+        "declared_accounting_outcome_mismatches",
+    ),
     ("required_incomplete_attempt_receipts", "accepted_incomplete_attempt_receipts"),
     ("required_retention_violations", "accepted_retention_violations"),
+    ("required_retention_violations", "retention_crosslink_mismatches"),
+    ("required_retention_violations", "sensitive_material_violations"),
     ("required_receipt_mismatches", "accepted_receipt_mismatches"),
     ("required_future_label_violations", "accepted_future_label_violations"),
     ("required_canonical_application_invocations", "canonical_application_invocations"),
@@ -197,7 +246,7 @@ def test_exact_frozen_fixture_ids_bytes_and_resource_knowledge() -> None:
     visible = request.provider_visible_request
 
     assert fixtures.fixture_set_id == (
-        "acqfixturesv0_6571aefb7415a637d64e27ed9a372c1cc4ebc6abc7b19bf0931748549b123f59"
+        "acqfixturesv0_06f9f406e084085ddb26d2f14d9d856fd73050df9ff46514ce7f718d0af74736"
     )
     assert fixtures.capability_snapshot.capability_snapshot_id == (
         "szacqcap_d36f538978eae2158aaf94afa71fe09a211f33cf0acaa7c33d9d6dd6b62c9656"
@@ -218,7 +267,7 @@ def test_exact_frozen_fixture_ids_bytes_and_resource_knowledge() -> None:
         "szacqvisible_ea8c396387199ef8911a21c013f4ea7cc92fb502afdb92a3a695eb8b3a9b4bab"
     )
     assert fixtures.retention_policy.retention_policy_id == (
-        "szacqretentionpolicy_88e70a6baa9c5a51267e02a6a676650381fee2e54602cc14ff20f61d6e419c59"
+        "szacqretentionpolicy_89285ce39c2c1cc0e587742f75ff1410274fd2637e86bcf327ab435fd448a4fd"
     )
     assert FROZEN_PROVIDER_VISIBLE_REQUEST_BYTES_V0 == _EXPECTED_VISIBLE_BYTES
     assert visible.canonical_request_json.encode("utf-8") == _EXPECTED_VISIBLE_BYTES
@@ -303,11 +352,48 @@ def test_frozen_core_blob_lock_is_recomputed_from_sealed_phase8_v2_artifact() ->
     assert evidence.recomputed_embedded_fingerprint == (
         evidence.actual_embedded_fingerprint
     )
+    assert evidence.actual_top_level_lock_id_present is True
+    assert evidence.actual_top_level_lock_id_format_valid is True
+    assert evidence.actual_embedded_lock_id_present is True
+    assert evidence.actual_embedded_lock_id_format_valid is True
+    assert evidence.actual_embedded_fingerprint_present is True
+    assert evidence.actual_embedded_fingerprint_format_valid is True
     _canonical_roundtrip(evidence)
     tampered = evidence.model_dump(mode="json")
     tampered["actual_embedded_lock_id"] = "cedcorebloblockv2_tampered"
-    with pytest.raises(Exception, match="match flag differs"):
+    with pytest.raises(Exception):
         type(evidence).model_validate(tampered)
+
+
+def test_invalid_core_lock_strings_are_projected_without_secret_retention(
+    tmp_path: Path,
+) -> None:
+    secret = "sk-live-core-lock-secret-must-never-be-retained"
+    source_relative = Path(evaluation._FROZEN_CORE_BLOB_LOCK_SOURCE_PATH_V2)
+    source = _repository_root() / source_relative
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["core_lock_id"] = secret
+    payload["core_lock"]["lock_id"] = secret
+    payload["core_lock"]["fingerprint"] = secret
+    destination = tmp_path / source_relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    evidence = evaluation.verify_frozen_core_blob_lock_v0(tmp_path)
+    assert evidence.matches is False
+    assert evidence.actual_top_level_lock_id is None
+    assert evidence.actual_top_level_lock_id_present is True
+    assert evidence.actual_top_level_lock_id_format_valid is False
+    assert evidence.actual_embedded_lock_id is None
+    assert evidence.actual_embedded_lock_id_present is True
+    assert evidence.actual_embedded_lock_id_format_valid is False
+    assert evidence.actual_embedded_fingerprint is None
+    assert evidence.actual_embedded_fingerprint_present is True
+    assert evidence.actual_embedded_fingerprint_format_valid is False
+    assert secret not in evidence.model_dump_json()
 
 
 def test_exact_probe_mutation_failure_and_trace_design_lock() -> None:
@@ -344,6 +430,34 @@ def test_exact_probe_mutation_failure_and_trace_design_lock() -> None:
     assert hashlib.sha256(canonical_json(exact_payload).encode("utf-8")).hexdigest() == (
         _EXPECTED_PROBE_DESIGN_SHA256
     )
+
+
+def test_every_pre_result_case_identity_is_frozen_before_aggregate() -> None:
+    fixtures = evaluation.build_frozen_acquisition_fixtures_v0()
+    results = []
+    for case in FROZEN_ACQUISITION_POSITIVE_CASES_V0:
+        result, _executions = asyncio.run(
+            evaluation._evaluate_positive_case(case, fixtures)
+        )
+        results.append(result)
+    for probe in (
+        FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+        + FROZEN_ACQUISITION_PRECEDENCE_PROBES_V0
+    ):
+        result, _executions = asyncio.run(
+            evaluation._evaluate_probe(probe, fixtures)
+        )
+        results.append(result)
+
+    evaluation._validate_case_results_against_frozen_v0(results)
+    assert len(results) == 56
+    assert sum(item.construction_evidence is not None for item in results) == 50
+    tampered = list(results)
+    tampered[0] = tampered[0].model_copy(
+        update={"case_result_id": "acqcaseresultv0_" + "f" * 64}
+    )
+    with pytest.raises(ContractValidationError, match="identity lock changed"):
+        evaluation._validate_case_results_against_frozen_v0(tampered)
 
 
 @pytest.mark.parametrize(
@@ -510,19 +624,21 @@ def test_one_attempt_local_metrics_and_all_synthetic_threshold_gates() -> None:
     assert len(executions) == 1
 
     local_aggregate = evaluation._build_aggregate_receipt_v0(executions)
+    retentions = tuple(item.result.retention_receipt for item in executions)
     historical = evaluation.verify_frozen_historical_hashes_v0(_repository_root())
     core_blob_lock = evaluation.verify_frozen_core_blob_lock_v0(_repository_root())
     local_metrics = evaluation._calculate_evaluation_metrics_v0(
         (result,),
         local_aggregate,
+        retentions,
         historical,
         core_blob_lock,
     )
     assert local_aggregate.aggregate_receipt_id == (
-        "szacqaggregate_c056e560753eaf919c752c2dbc76c9449ba7c494d3267ddc437c9dc885553388"
+        "szacqaggregate_b5217f826ccd3166eb0463f3b6b9e7fe9431acefbeef2801c39a76d6b40169de"
     )
     assert local_metrics.metrics_id == (
-        "acqmetricsv0_c693cdf57fff8b4b4756324f66f46928fb77849d7e3bba1e8cf9ea993e69b1db"
+        "acqmetricsv0_9ea4f156fd92a4441227cae4fca17899ddfcd8a31f7528f8c4daf6b441298186"
     )
     assert (
         local_metrics.cases_total,
@@ -531,26 +647,80 @@ def test_one_attempt_local_metrics_and_all_synthetic_threshold_gates() -> None:
         local_metrics.positive_attempt_receipts,
         local_metrics.attempt_receipts_total,
         local_metrics.observed_canned_transport_invocations,
+        local_metrics.acquired_raw_observations,
         local_metrics.mismatch_or_failure_count,
-    ) == (1, 1, 1, 1, 1, 1, 7)
+    ) == (1, 1, 1, 1, 1, 1, 1, 8)
+    assert (
+        local_metrics.accepted_provider_identity_mismatches,
+        local_metrics.accepted_model_identity_mismatches,
+        local_metrics.accepted_configuration_identity_mismatches,
+        local_metrics.retention_crosslink_mismatches,
+        local_metrics.credential_material_retained,
+        local_metrics.sensitive_material_violations,
+    ) == (0, 0, 0, 0, 0, 0)
+    assert (
+        local_metrics.raw_aggregate_uncounted_canned_invocations
+        == AcquisitionResourceQuantity.known(0)
+    )
+    assert (
+        local_metrics.raw_aggregate_incomplete_usage_receipts,
+        local_metrics.expected_uncounted_canned_invocation_failures,
+        local_metrics.raw_uncounted_canned_invocation_failures,
+        local_metrics.unexpected_uncounted_canned_invocation_failures,
+        local_metrics.expected_incomplete_reported_usage_receipts,
+        local_metrics.raw_incomplete_reported_usage_receipts,
+        local_metrics.unexpected_incomplete_reported_usage_receipts,
+        local_metrics.unknown_execution_usage_quantities,
+        local_metrics.canned_invocation_tripwire_mismatches,
+        local_metrics.forbidden_execution_counter_mismatches,
+        local_metrics.declared_accounting_outcome_mismatches,
+    ) == (0,) * 11
     assert not evaluation.supports_acquisition_metrics_v0(local_metrics)
 
+    thresholds = FROZEN_ACQUISITION_THRESHOLDS_V0
     supported_payload = local_metrics.model_dump(
         mode="python", exclude={"metrics_id"}
     )
     supported_payload.update(
         {
-            "cases_total": 50,
-            "positive_cases_total": 6,
-            "positive_complete_case_results": 6,
-            "positive_attempt_receipts": 8,
-            "orthogonal_probes_total": 37,
-            "orthogonal_exact_primary_results": 37,
-            "precedence_probes_total": 7,
-            "precedence_exact_primary_results": 7,
-            "attempt_receipts_total": 52,
-            "observed_canned_transport_invocations": 32,
-            "mismatch_or_failure_count": 0,
+            "cases_total": thresholds.cases_total,
+            "positive_cases_total": thresholds.positive_cases_total,
+            "positive_complete_case_results": (
+                thresholds.required_positive_complete_case_results
+            ),
+            "positive_attempt_receipts": thresholds.required_positive_attempt_receipts,
+            "acquired_raw_observations": thresholds.required_positive_attempt_receipts,
+            "orthogonal_probes_total": thresholds.orthogonal_probes_total,
+            "orthogonal_exact_primary_results": (
+                thresholds.required_orthogonal_exact_primary_results
+            ),
+            "precedence_probes_total": thresholds.precedence_probes_total,
+            "precedence_exact_primary_results": (
+                thresholds.required_precedence_exact_primary_results
+            ),
+            "attempt_receipts_total": thresholds.required_attempt_receipts_total,
+            "observed_canned_transport_invocations": (
+                thresholds.required_canned_transport_invocations
+            ),
+            "injected_uncounted_canned_invocations": (
+                evaluation._FROZEN_INJECTED_UNCOUNTED_INVOCATIONS_V0
+            ),
+            "expected_uncounted_canned_invocation_failures": (
+                evaluation._FROZEN_EXPECTED_UNCOUNTED_FAILURE_RECEIPTS_V0
+            ),
+            "raw_uncounted_canned_invocation_failures": (
+                evaluation._FROZEN_EXPECTED_UNCOUNTED_FAILURE_RECEIPTS_V0
+            ),
+            "injected_incomplete_usage_conditions": (
+                evaluation._FROZEN_INJECTED_INCOMPLETE_USAGE_CONDITIONS_V0
+            ),
+            "expected_incomplete_reported_usage_receipts": (
+                evaluation._FROZEN_EXPECTED_INCOMPLETE_REPORTED_USAGE_RECEIPTS_V0
+            ),
+            "raw_incomplete_reported_usage_receipts": (
+                evaluation._FROZEN_EXPECTED_INCOMPLETE_REPORTED_USAGE_RECEIPTS_V0
+            ),
+            "mismatch_or_failure_count": thresholds.maximum_mismatch_or_failure_count,
         }
     )
     supported = evaluation.AcquisitionEvaluationMetricsV0(**supported_payload)
@@ -574,6 +744,28 @@ def test_one_attempt_local_metrics_and_all_synthetic_threshold_gates() -> None:
         **provider_sdk_payload
     )
     assert not evaluation.supports_acquisition_metrics_v0(provider_sdk_violation)
+
+    unknown_aggregate_payload = supported.model_dump(
+        mode="python", exclude={"metrics_id"}
+    )
+    unknown_aggregate_payload["raw_aggregate_uncounted_canned_invocations"] = (
+        AcquisitionResourceQuantity.unknown()
+    )
+    unknown_aggregate = evaluation.AcquisitionEvaluationMetricsV0(
+        **unknown_aggregate_payload
+    )
+    assert not evaluation.supports_acquisition_metrics_v0(unknown_aggregate)
+
+    uncounted_aggregate_payload = supported.model_dump(
+        mode="python", exclude={"metrics_id"}
+    )
+    uncounted_aggregate_payload["raw_aggregate_uncounted_canned_invocations"] = (
+        AcquisitionResourceQuantity.known(1)
+    )
+    uncounted_aggregate = evaluation.AcquisitionEvaluationMetricsV0(
+        **uncounted_aggregate_payload
+    )
+    assert not evaluation.supports_acquisition_metrics_v0(uncounted_aggregate)
     _canonical_roundtrip(local_aggregate)
     _canonical_roundtrip(local_metrics)
     _canonical_roundtrip(supported)
@@ -645,6 +837,366 @@ def test_local_case_to_aggregate_cross_link_tampering_is_rejected() -> None:
             (result,), aggregate, (), retentions
         )
 
+    raw_length = aggregate.attempt_receipts[0].computed_raw_response_length or 0
+    byte_tampered_retention = retentions[0].model_copy(
+        update={
+            "raw_response_base64": base64.b64encode(b"x" * raw_length).decode(
+                "ascii"
+            )
+        }
+    )
+    with pytest.raises(ContractValidationError, match="retention response evidence"):
+        evaluation._validate_case_result_receipt_links_v0(
+            (result,), aggregate, isolations, (byte_tampered_retention,)
+        )
+
+    length_tampered_retention = retentions[0].model_copy(
+        update={"raw_response_length": raw_length + 1}
+    )
+    with pytest.raises(ContractValidationError, match="retention response evidence"):
+        evaluation._validate_case_result_receipt_links_v0(
+            (result,), aggregate, isolations, (length_tampered_retention,)
+        )
+
+
+def test_local_aggregate_failure_stages_are_recomputed_and_tamper_evident() -> None:
+    fixtures = evaluation.build_frozen_acquisition_fixtures_v0()
+    probes = {
+        probe.probe_id: probe
+        for probe in FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+    }
+    executions = []
+    for probe_id in (
+        "acqv0-o01-invalid-request",
+        "acqv0-o04-non-canned-transport",
+        "acqv0-o20-actual-provider-mismatch",
+    ):
+        _, probe_executions = asyncio.run(
+            evaluation._evaluate_probe(probes[probe_id], fixtures)
+        )
+        executions.extend(probe_executions)
+
+    aggregate = evaluation._build_aggregate_receipt_v0(executions)
+    assert aggregate.metrics.failures_by_stage == (
+        AcquisitionFailureStageCount(
+            stage=AcquisitionGuardStage.PRE_DISPATCH,
+            count=2,
+        ),
+        AcquisitionFailureStageCount(
+            stage=AcquisitionGuardStage.POST_DISPATCH,
+            count=1,
+        ),
+    )
+    assert aggregate.metrics == recompute_acquisition_aggregate_metrics_v0(
+        aggregate.attempt_receipts,
+        aggregate.observed_counters,
+    )
+
+    metrics_payload = aggregate.metrics.model_dump(mode="python")
+    metrics_payload["failures_by_stage"] = (
+        AcquisitionFailureStageCount(
+            stage=AcquisitionGuardStage.PRE_DISPATCH,
+            count=1,
+        ),
+        AcquisitionFailureStageCount(
+            stage=AcquisitionGuardStage.POST_DISPATCH,
+            count=2,
+        ),
+    )
+    tampered_metrics = type(aggregate.metrics).model_validate(metrics_payload)
+    aggregate_payload = aggregate.model_dump(mode="python")
+    aggregate_payload.update(
+        aggregate_receipt_id=None,
+        aggregate_receipt_hash=None,
+        metrics=tampered_metrics,
+    )
+    with pytest.raises(Exception, match="metrics do not match"):
+        AcquisitionAggregateReceipt.model_validate(aggregate_payload)
+
+
+def test_usage_totals_are_strict_known_and_acquired_only() -> None:
+    fixtures = evaluation.build_frozen_acquisition_fixtures_v0()
+    _, positive_executions = asyncio.run(
+        evaluation._evaluate_positive_case(
+            FROZEN_ACQUISITION_POSITIVE_CASES_V0[0],
+            fixtures,
+        )
+    )
+    incomplete_probe = next(
+        probe
+        for probe in FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+        if probe.probe_id == "acqv0-o28-usage-incomplete"
+    )
+    _, failed_executions = asyncio.run(
+        evaluation._evaluate_probe(incomplete_probe, fixtures)
+    )
+    receipts = tuple(
+        item.result.attempt_receipt
+        for item in positive_executions + failed_executions
+    )
+    assert evaluation._strict_known_acquired_usage_total_v0(
+        receipts,
+        "new_tokens",
+    ) == 0
+
+    acquired = positive_executions[0].result.attempt_receipt
+    incomplete_usage = acquired.execution_usage.model_copy(
+        update={"new_tokens": AcquisitionResourceQuantity.unknown()}
+    )
+    invalid_acquired = acquired.model_copy(
+        update={"execution_usage": incomplete_usage}
+    )
+    with pytest.raises(ContractValidationError, match="acquired usage must be KNOWN"):
+        evaluation._strict_known_acquired_usage_total_v0(
+            (invalid_acquired,),
+            "new_tokens",
+        )
+
+
+def test_deliberate_accounting_adversaries_are_raw_expected_not_unexpected() -> None:
+    fixtures = evaluation.build_frozen_acquisition_fixtures_v0()
+    selected_ids = {
+        "acqv0-o17-uncounted-canned-invocation",
+        "acqv0-o28-usage-incomplete",
+        "acqv0-o29-false-zero-usage",
+        "acqv0-p05-missing-raw-plus-usage-incomplete",
+    }
+    selected = tuple(
+        probe
+        for probe in (
+            FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+            + FROZEN_ACQUISITION_PRECEDENCE_PROBES_V0
+        )
+        if probe.probe_id in selected_ids
+    )
+    evaluated = tuple(
+        asyncio.run(evaluation._evaluate_probe(probe, fixtures))
+        for probe in selected
+    )
+    results = tuple(item[0] for item in evaluated)
+    executions = tuple(
+        execution for _, case_executions in evaluated for execution in case_executions
+    )
+    aggregate = evaluation._build_aggregate_receipt_v0(executions)
+    isolations = tuple(item.result.isolation_receipt for item in executions)
+    retentions = tuple(item.result.retention_receipt for item in executions)
+    evaluation._validate_case_result_receipt_links_v0(
+        results,
+        aggregate,
+        isolations,
+        retentions,
+    )
+    uncounted_index = next(
+        index
+        for index, item in enumerate(results)
+        if item.case_id == "acqv0-o17-uncounted-canned-invocation"
+    )
+    uncounted_result = results[uncounted_index]
+    uncounted_execution = executions[uncounted_index]
+    uncounted_row = uncounted_result.attempt_evidence[0]
+    declared_tripwire = uncounted_row.tripwire_counters.model_copy(
+        update={"canned_transport_invocations": 0}
+    )
+    declared_result = uncounted_result.model_copy(
+        update={
+            "attempt_evidence": (
+                uncounted_row.model_copy(
+                    update={"tripwire_counters": declared_tripwire}
+                ),
+            )
+        }
+    )
+    declared_aggregate = evaluation._build_aggregate_receipt_v0(
+        (uncounted_execution,)
+    ).model_copy(update={"observed_counters": declared_tripwire})
+    with pytest.raises(ContractValidationError, match="detached from receipt"):
+        evaluation._validate_case_result_receipt_links_v0(
+            (declared_result,),
+            declared_aggregate,
+            (uncounted_execution.result.isolation_receipt,),
+            (uncounted_execution.result.retention_receipt,),
+        )
+    metrics = evaluation._calculate_evaluation_metrics_v0(
+        results,
+        aggregate,
+        retentions,
+        evaluation.verify_frozen_historical_hashes_v0(_repository_root()),
+        evaluation.verify_frozen_core_blob_lock_v0(_repository_root()),
+    )
+
+    assert metrics.raw_aggregate_uncounted_canned_invocations == (
+        AcquisitionResourceQuantity.known(0)
+    )
+    assert metrics.raw_aggregate_incomplete_usage_receipts == 0
+    assert (
+        metrics.injected_uncounted_canned_invocations,
+        metrics.expected_uncounted_canned_invocation_failures,
+        metrics.raw_uncounted_canned_invocation_failures,
+        metrics.unexpected_uncounted_canned_invocation_failures,
+    ) == (1, 1, 1, 0)
+    assert (
+        metrics.injected_incomplete_usage_conditions,
+        metrics.expected_incomplete_reported_usage_receipts,
+        metrics.raw_incomplete_reported_usage_receipts,
+        metrics.unexpected_incomplete_reported_usage_receipts,
+    ) == (3, 3, 3, 0)
+    assert (
+        metrics.unknown_execution_usage_quantities,
+        metrics.canned_invocation_tripwire_mismatches,
+        metrics.forbidden_execution_counter_mismatches,
+        metrics.declared_accounting_outcome_mismatches,
+    ) == (0, 0, 0, 0)
+
+
+def test_failed_receipt_accounting_tampering_is_independently_detected() -> None:
+    fixtures = evaluation.build_frozen_acquisition_fixtures_v0()
+    probe = FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0[0]
+    result, executions = asyncio.run(evaluation._evaluate_probe(probe, fixtures))
+    assert len(executions) == 1
+    aggregate = evaluation._build_aggregate_receipt_v0(executions)
+    receipt = aggregate.attempt_receipts[0]
+    usage = receipt.execution_usage.model_copy(
+        update={
+            "canned_transport_invocations": AcquisitionResourceQuantity.known(1),
+            "external_network_attempts": AcquisitionResourceQuantity.known(1),
+            "new_tokens": AcquisitionResourceQuantity.unknown(),
+        }
+    )
+    tampered_receipt = receipt.model_copy(update={"execution_usage": usage})
+    tampered_aggregate = aggregate.model_copy(
+        update={"attempt_receipts": (tampered_receipt,)}
+    )
+    accounting = evaluation._strict_aggregate_accounting_v0(
+        (result,), tampered_aggregate
+    )
+    assert accounting.unknown_execution_usage_quantities == 1
+    assert accounting.canned_invocation_tripwire_mismatches == 1
+    assert accounting.forbidden_execution_counter_mismatches == 1
+
+    with pytest.raises(ContractValidationError, match="invocation usage differs"):
+        evaluation._validate_case_result_receipt_links_v0(
+            (result,),
+            tampered_aggregate,
+            (executions[0].result.isolation_receipt,),
+            (executions[0].result.retention_receipt,),
+        )
+
+    forbidden_usage = receipt.execution_usage.model_copy(
+        update={
+            "external_network_attempts": AcquisitionResourceQuantity.known(1)
+        }
+    )
+    forbidden_receipt = receipt.model_copy(
+        update={"execution_usage": forbidden_usage}
+    )
+    forbidden_aggregate = aggregate.model_copy(
+        update={"attempt_receipts": (forbidden_receipt,)}
+    )
+    with pytest.raises(ContractValidationError, match="forbidden execution counter"):
+        evaluation._validate_case_result_receipt_links_v0(
+            (result,),
+            forbidden_aggregate,
+            (executions[0].result.isolation_receipt,),
+            (executions[0].result.retention_receipt,),
+        )
+
+    unknown_usage = receipt.execution_usage.model_copy(
+        update={
+            "canned_transport_invocations": AcquisitionResourceQuantity.unknown()
+        }
+    )
+    unknown_receipt = receipt.model_copy(update={"execution_usage": unknown_usage})
+    unknown_aggregate = aggregate.model_copy(
+        update={"attempt_receipts": (unknown_receipt,)}
+    )
+    with pytest.raises(ContractValidationError, match="must be KNOWN"):
+        evaluation._validate_case_result_receipt_links_v0(
+            (result,),
+            unknown_aggregate,
+            (executions[0].result.isolation_receipt,),
+            (executions[0].result.retention_receipt,),
+        )
+
+
+def test_undeclared_incomplete_reported_usage_is_rejected() -> None:
+    fixtures = evaluation.build_frozen_acquisition_fixtures_v0()
+    ordinary_probe = next(
+        item
+        for item in FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+        if item.probe_id == "acqv0-o20-actual-provider-mismatch"
+    )
+    incomplete_probe = next(
+        item
+        for item in FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+        if item.probe_id == "acqv0-o28-usage-incomplete"
+    )
+    ordinary_result, ordinary_executions = asyncio.run(
+        evaluation._evaluate_probe(ordinary_probe, fixtures)
+    )
+    _, incomplete_executions = asyncio.run(
+        evaluation._evaluate_probe(incomplete_probe, fixtures)
+    )
+    ordinary = ordinary_executions[0]
+    incomplete_json = (
+        incomplete_executions[0].result.attempt_receipt.reported_execution_usage_json
+    )
+    tampered_receipt = ordinary.result.attempt_receipt.model_copy(
+        update={"reported_execution_usage_json": incomplete_json}
+    )
+    aggregate = evaluation._build_aggregate_receipt_v0(ordinary_executions).model_copy(
+        update={"attempt_receipts": (tampered_receipt,)}
+    )
+    with pytest.raises(ContractValidationError, match="lacks an exact declaration"):
+        evaluation._validate_case_result_receipt_links_v0(
+            (ordinary_result,),
+            aggregate,
+            (ordinary.result.isolation_receipt,),
+            (ordinary.result.retention_receipt,),
+        )
+
+
+@pytest.mark.parametrize(
+    ("probe_id", "tamper"),
+    (
+        (
+            "acqv0-o17-uncounted-canned-invocation",
+            {"diagnostic_mismatches": ()},
+        ),
+        (
+            "acqv0-o18-transport-timeout-worker-terminated",
+            {"transport_status": "DELIVERED"},
+        ),
+        (
+            "acqv0-o19-worker-not-terminated-after-completion",
+            {"diagnostic_mismatches": ()},
+        ),
+        (
+            "acqv0-o35-final-receipt-identity-mismatch",
+            {"diagnostic_mismatches": ()},
+        ),
+    ),
+)
+def test_failed_post_dispatch_receipts_reject_evidence_tampering(
+    probe_id: str,
+    tamper: dict[str, object],
+) -> None:
+    fixtures = evaluation.build_frozen_acquisition_fixtures_v0()
+    probe = next(
+        item
+        for item in FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+        if item.probe_id == probe_id
+    )
+    _, executions = asyncio.run(evaluation._evaluate_probe(probe, fixtures))
+    receipt = executions[0].result.attempt_receipt
+    payload = receipt.model_dump(mode="python")
+    payload.update(receipt_id=None, receipt_hash=None, **tamper)
+
+    with pytest.raises(
+        Exception,
+        match="failed receipt primary guard contradicts serialized evidence",
+    ):
+        AcquisitionAttemptReceipt.model_validate(payload)
+
 
 def test_synthetic_replay_lock_serializer_is_canonical() -> None:
     replay_case_ids = (
@@ -679,6 +1231,7 @@ def test_synthetic_replay_lock_serializer_is_canonical() -> None:
         authoritative_artifact_id="synthetic-acquisition-artifact-v0",
         replay_artifact_id="synthetic-acquisition-artifact-v0",
         replay_execution_id="synthetic-reverse-execution-v0",
+        replay_execution_sha256="b" * 64,
         replay_execution_trace_sha256=hashlib.sha256(
             canonical_json(trace_payload).encode("utf-8")
         ).hexdigest(),
@@ -711,6 +1264,84 @@ def test_same_object_cannot_fake_independent_replay_lock() -> None:
             synthetic_artifact,
             synthetic_artifact,
         )
+
+
+def test_published_acquisition_evidence_is_artifact_only_and_privacy_bounded() -> None:
+    artifact_directory = (
+        _repository_root()
+        / "docs"
+        / "branches"
+        / "feature-socrates-zero-live-acquisition-contract-v0"
+        / "artifacts"
+    )
+    artifact_path = artifact_directory / evaluation.ACQUISITION_ARTIFACT_FILENAME_V0
+    execution_path = (
+        artifact_directory / evaluation.ACQUISITION_REPLAY_EXECUTION_FILENAME_V0
+    )
+    lock_path = artifact_directory / evaluation.ACQUISITION_REPLAY_LOCK_FILENAME_V0
+    if not artifact_path.is_file():
+        pytest.skip("authoritative acquisition artifact has not been published")
+
+    artifact_rendered = artifact_path.read_text(encoding="utf-8")
+    artifact = evaluation.replay_acquisition_experiment_artifact_v0(
+        artifact_rendered
+    )
+    if artifact.hypothesis_status == "FALSIFIED":
+        assert not execution_path.exists()
+        assert not lock_path.exists()
+        return
+
+    execution_rendered = execution_path.read_text(encoding="utf-8")
+    lock_rendered = lock_path.read_text(encoding="utf-8")
+    authoritative, execution, replay_lock = (
+        evaluation.verify_acquisition_replay_evidence_v0(
+            artifact_rendered,
+            execution_rendered,
+            lock_rendered,
+        )
+    )
+    assert authoritative == artifact
+    assert execution.replay_artifact_id == artifact.artifact_id
+    assert replay_lock.byte_identity is True
+
+    artifact_payload = json.loads(artifact_rendered)
+    raw_paths = []
+
+    def visit(value, path=()):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = path + (key,)
+                if key == "raw_response_base64":
+                    raw_paths.append(child_path)
+                visit(child, child_path)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, path + (str(index),))
+
+    visit(artifact_payload)
+    assert raw_paths
+    assert all(
+        path[:2] == ("aggregate_receipt", "attempt_receipts")
+        or path[0] == "retention_receipts"
+        for path in raw_paths
+    )
+    for result in artifact.case_results:
+        if result.construction_evidence is None:
+            continue
+        assert "raw_response_base64" not in (
+            result.construction_evidence.baseline.directive_json
+        )
+        assert "raw_response_base64" not in (
+            result.construction_evidence.probe.directive_json
+        )
+
+    frozen_prompt = FROZEN_PROVIDER_VISIBLE_REQUEST_BYTES_V0.decode("utf-8")
+    assert frozen_prompt not in artifact_rendered
+    for rendered in (artifact_rendered, execution_rendered, lock_rendered):
+        assert "sk-live-provider-secret-must-never-be-retained" not in rendered
+        assert '"authorization"' not in rendered.lower()
+    assert "raw_response_base64" not in execution_rendered
+    assert "raw_response_base64" not in lock_rendered
 
 
 def test_write_once_primitive_is_confined_to_tmp_path(tmp_path: Path) -> None:

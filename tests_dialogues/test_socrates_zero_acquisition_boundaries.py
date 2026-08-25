@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import http.client
+import io
 import os
 import socket
 import urllib.request
@@ -44,6 +45,11 @@ ACQUISITION_SOURCES = (
     / "backend"
     / "dialogues"
     / "socrates_zero"
+    / "acquisition_isolation_evidence.py",
+    REPOSITORY_ROOT
+    / "backend"
+    / "dialogues"
+    / "socrates_zero"
     / "acquisition_cases.py",
     REPOSITORY_ROOT
     / "backend"
@@ -61,6 +67,7 @@ FORBIDDEN_IMPORT_ROOTS = frozenset(
     {
         "anthropic",
         "aiohttp",
+        "datetime",
         "google",
         "http",
         "httpx",
@@ -73,6 +80,7 @@ FORBIDDEN_IMPORT_ROOTS = frozenset(
         "socket",
         "ssl",
         "subprocess",
+        "time",
         "urllib",
         "uuid",
     }
@@ -287,10 +295,18 @@ def test_reusable_tripwire_records_and_aborts_every_forbidden_category() -> None
             AcquisitionBoundaryViolation
         )
 
+    def forbidden_udp_send() -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+            udp_socket.sendto(b"forbidden", ("127.0.0.1", 9))
+
     actions = (
         (
             "external_network_attempts",
             lambda: socket.getaddrinfo("forbidden.invalid", 443),
+        ),
+        (
+            "external_network_attempts",
+            forbidden_udp_send,
         ),
         (
             "credential_access_attempts",
@@ -329,6 +345,63 @@ def test_reusable_tripwire_records_and_aborts_every_forbidden_category() -> None
         assert getattr(snapshot, category) == 1
         assert len(snapshot.hits) == 1
         assert snapshot.hits[0].category == category
+
+
+def _assert_single_credential_tripwire_abort(action) -> None:
+    tripwire = AcquisitionBoundaryTripwireV0()
+    with pytest.raises(AcquisitionBoundaryViolation):
+        with tripwire:
+            action()
+    snapshot = tripwire.snapshot()
+    assert snapshot.total_forbidden_attempts == 1
+    assert snapshot.credential_access_attempts == 1
+    assert len(snapshot.hits) == 1
+    assert snapshot.hits[0].category == "credential_access_attempts"
+
+
+@pytest.mark.parametrize(
+    "key",
+    (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "HF_TOKEN",
+        "HUGGINGFACEHUB_API_TOKEN",
+        "NPM_TOKEN",
+    ),
+)
+def test_credential_tripwire_rejects_common_secret_environment_keys(
+    key: str,
+) -> None:
+    _assert_single_credential_tripwire_abort(lambda: os.getenv(key))
+
+
+@pytest.mark.parametrize(
+    "action",
+    (
+        pytest.param(lambda: os.environ.copy(), id="copy"),
+        pytest.param(lambda: os.environ.items(), id="items"),
+        pytest.param(lambda: os.environ.values(), id="values"),
+    ),
+)
+def test_credential_tripwire_rejects_bulk_environment_reads(action) -> None:
+    _assert_single_credential_tripwire_abort(action)
+
+
+@pytest.mark.parametrize(
+    "action",
+    (
+        pytest.param(lambda: io.open(".netrc", "rb"), id="io-open-netrc"),
+        pytest.param(
+            lambda: os.open("credentials.json", os.O_RDONLY),
+            id="os-open-credentials",
+        ),
+    ),
+)
+def test_credential_tripwire_rejects_low_level_credential_file_reads(action) -> None:
+    _assert_single_credential_tripwire_abort(action)
 
 
 def test_artifact_zero_counters_are_cross_checked_against_live_instrumentation() -> None:

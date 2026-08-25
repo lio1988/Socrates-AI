@@ -14,6 +14,7 @@ import builtins
 import contextvars
 import http.client
 import importlib
+import io
 import os
 import socket
 import subprocess
@@ -82,10 +83,22 @@ _SECRET_ENV_MARKERS = (
 _SECRET_ENV_EXACT = frozenset(
     {
         "ANTHROPIC_API_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SECURITY_TOKEN",
+        "AWS_SESSION_TOKEN",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
         "GOOGLE_API_KEY",
+        "HF_TOKEN",
+        "HUGGINGFACEHUB_API_TOKEN",
+        "HUGGING_FACE_HUB_TOKEN",
+        "KUBECONFIG",
         "NVIDIA_API_KEY",
+        "NPM_TOKEN",
         "OPENAI_API_KEY",
         "OPENROUTER_API_KEY",
+        "PYPI_API_TOKEN",
     }
 )
 _CREDENTIAL_PATH_MARKERS = frozenset(
@@ -99,6 +112,7 @@ _CREDENTIAL_PATH_MARKERS = frozenset(
         "credentials",
         "credentials.json",
         "keyring",
+        ".netrc",
         "netrc",
         "secrets",
         "secrets.json",
@@ -109,7 +123,11 @@ _CREDENTIAL_PATH_MARKERS = frozenset(
 
 def _is_secret_environment_key(key: object) -> bool:
     text = str(key).upper()
-    return text in _SECRET_ENV_EXACT or any(marker in text for marker in _SECRET_ENV_MARKERS)
+    return (
+        text in _SECRET_ENV_EXACT
+        or text.endswith(("_PASSWORD", "_SECRET", "_TOKEN"))
+        or any(marker in text for marker in _SECRET_ENV_MARKERS)
+    )
 
 
 def _is_credential_path(value: object) -> bool:
@@ -240,6 +258,7 @@ class AcquisitionBoundaryTripwireV0:
             (socket, "create_connection", "socket.create_connection"),
             (socket, "getaddrinfo", "socket.getaddrinfo"),
             (socket.socket, "connect_ex", "socket.socket.connect_ex"),
+            (socket.socket, "sendto", "socket.socket.sendto"),
             (urllib.request, "urlopen", "urllib.request.urlopen"),
             (urllib.request.OpenerDirector, "open", "urllib.request.OpenerDirector.open"),
             (http.client.HTTPConnection, "connect", "http.client.HTTPConnection.connect"),
@@ -282,6 +301,8 @@ class AcquisitionBoundaryTripwireV0:
         original_environment_get = type(os.environ).get
         original_environment_getitem = type(os.environ).__getitem__
         original_open = builtins.open
+        original_io_open = io.open
+        original_os_open = os.open
         original_path_open = Path.open
         original_path_read_bytes = Path.read_bytes
         original_path_read_text = Path.read_text
@@ -301,10 +322,23 @@ class AcquisitionBoundaryTripwireV0:
                 self._abort("credential_access_attempts", f"os.environ.__getitem__:{key}")
             return original_environment_getitem(environment, key)
 
+        def environment_bulk_read(*_args: object, **_kwargs: object) -> object:
+            self._abort("credential_access_attempts", "os.environ.bulk_read")
+
         def guarded_open(file: object, *args: object, **kwargs: object):
             if _is_credential_path(file):
                 self._abort("credential_access_attempts", f"open:{file}")
             return original_open(file, *args, **kwargs)
+
+        def guarded_io_open(file: object, *args: object, **kwargs: object):
+            if _is_credential_path(file):
+                self._abort("credential_access_attempts", f"io.open:{file}")
+            return original_io_open(file, *args, **kwargs)
+
+        def guarded_os_open(file: object, *args: object, **kwargs: object):
+            if _is_credential_path(file):
+                self._abort("credential_access_attempts", f"os.open:{file}")
+            return original_os_open(file, *args, **kwargs)
 
         def guarded_path_open(path: Path, *args: object, **kwargs: object):
             if _is_credential_path(path):
@@ -324,7 +358,12 @@ class AcquisitionBoundaryTripwireV0:
         self._patch(os, "getenv", getenv)
         self._patch(type(os.environ), "get", environment_get)
         self._patch(type(os.environ), "__getitem__", environment_getitem)
+        self._patch(type(os.environ), "copy", environment_bulk_read)
+        self._patch(type(os.environ), "items", environment_bulk_read)
+        self._patch(type(os.environ), "values", environment_bulk_read)
         self._patch(builtins, "open", guarded_open)
+        self._patch(io, "open", guarded_io_open)
+        self._patch(os, "open", guarded_os_open)
         self._patch(Path, "open", guarded_path_open)
         self._patch(Path, "read_bytes", guarded_read_bytes)
         self._patch(Path, "read_text", guarded_read_text)

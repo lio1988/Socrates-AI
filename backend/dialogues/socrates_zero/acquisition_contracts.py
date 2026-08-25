@@ -79,15 +79,13 @@ ACQUISITION_VALIDATION_ORDER_SCHEMA_VERSION = (
 ACQUISITION_FAILURE_TAXONOMY_SCHEMA_VERSION = (
     "socrateszero-acquisition-failure-taxonomy/v0"
 )
-ACQUISITION_EXPERIMENT_ARTIFACT_SCHEMA_VERSION = (
-    "socrateszero-acquisition-artifact/v0"
-)
 
 CANNED_TRANSPORT_ID = "socrateszero-canned-transport/v0"
 SUPPORTED_ACTION_FAMILY = "ced-opening-socratic-question/v0"
 FIRST_ACQUISITION_GUARD_WINS = "FIRST_ACQUISITION_GUARD_WINS"
 
 _HEX64_PATTERN = r"^[0-9a-f]{64}$"
+_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 def _nonblank(value: str) -> str:
@@ -225,6 +223,9 @@ class AcquisitionAttemptOutcome(str, Enum):
 class AcquisitionFailureCode(str, Enum):
     INVALID_ACQUISITION_REQUEST = "INVALID_ACQUISITION_REQUEST"
     INVALID_SEMANTIC_IDENTITY = "INVALID_SEMANTIC_IDENTITY"
+    # Defense-only in v0: the three validated identity families have disjoint
+    # literal prefixes, so this label is structurally unreachable after the
+    # preceding round-trip checks. It remains reserved for future ID schemes.
     IDENTITY_COLLISION = "IDENTITY_COLLISION"
     INVALID_CAPABILITY_SNAPSHOT = "INVALID_CAPABILITY_SNAPSHOT"
     REQUIRED_CONTROL_UNKNOWN = "REQUIRED_CONTROL_UNKNOWN"
@@ -1162,6 +1163,7 @@ class AcquisitionRetentionPolicy(_FrozenAcquisitionContract):
     required_redaction_status: Literal[
         AcquisitionRedactionStatus.NOT_REQUIRED
     ] = AcquisitionRedactionStatus.NOT_REQUIRED
+    non_sensitive_raw_response_sha256_allowlist: Tuple[str, ...] = ()
     artifact_inclusion_policy: AcquisitionArtifactInclusionPolicy
 
     _nonblank_fields = field_validator(
@@ -1172,6 +1174,24 @@ class AcquisitionRetentionPolicy(_FrozenAcquisitionContract):
 
     @model_validator(mode="after")
     def identify(self) -> "AcquisitionRetentionPolicy":
+        allowlist = tuple(sorted(set(self.non_sensitive_raw_response_sha256_allowlist)))
+        if len(allowlist) != len(self.non_sensitive_raw_response_sha256_allowlist):
+            raise ContractValidationError(
+                "non-sensitive raw-response allowlist contains duplicates"
+            )
+        if any(
+            len(digest) != 64
+            or any(character not in _HEX_DIGITS for character in digest)
+            for digest in allowlist
+        ):
+            raise ContractValidationError(
+                "non-sensitive raw-response allowlist requires lowercase SHA-256"
+            )
+        object.__setattr__(
+            self,
+            "non_sensitive_raw_response_sha256_allowlist",
+            allowlist,
+        )
         expected = stable_contract_id("szacqretentionpolicy", self.identity_payload())
         if self.retention_policy_id is not None and self.retention_policy_id != expected:
             raise ContractValidationError("retention_policy_id does not match")
@@ -1248,11 +1268,31 @@ class AcquisitionRetentionReceipt(_FrozenAcquisitionContract):
 
         raw_present = self.raw_response_base64 is not None
         ref_present = self.content_addressed_response_reference is not None
-        if self.policy.response_retention_mode is ResponseRetentionMode.RAW_BYTES_BASE64:
-            if not raw_present or ref_present:
-                violations.append("raw_response_retention_shape")
-        elif raw_present or not ref_present:
-            violations.append("content_addressed_retention_shape")
+        no_response_evidence = all(
+            item is None
+            for item in (
+                self.raw_response_digest,
+                self.raw_response_length,
+                self.raw_response_base64,
+                self.content_addressed_response_reference,
+            )
+        )
+        if not no_response_evidence:
+            if self.raw_response_digest is None or self.raw_response_length is None:
+                violations.append("raw_response_reference_metadata")
+            if (
+                self.raw_response_digest
+                not in self.policy.non_sensitive_raw_response_sha256_allowlist
+            ):
+                violations.append("raw_response_non_sensitive_attestation")
+            if (
+                self.policy.response_retention_mode
+                is ResponseRetentionMode.RAW_BYTES_BASE64
+            ):
+                if not raw_present or ref_present:
+                    violations.append("raw_response_retention_shape")
+            elif raw_present or not ref_present:
+                violations.append("content_addressed_retention_shape")
 
         if raw_present:
             raw = _decode_canonical_base64(
@@ -1263,9 +1303,6 @@ class AcquisitionRetentionReceipt(_FrozenAcquisitionContract):
                 violations.append("raw_response_digest")
             if self.raw_response_length != len(raw):
                 violations.append("raw_response_length")
-        elif self.raw_response_digest is None or self.raw_response_length is None:
-            violations.append("raw_response_reference_metadata")
-
         computed = tuple(sorted(set(violations)))
         supplied = tuple(sorted(set(self.violations)))
         if supplied and supplied != computed:
@@ -1622,6 +1659,8 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
     attempt_ordinal: int = Field(ge=0, strict=True)
     provider_visible_request_digest: str = Field(pattern=_HEX64_PATTERN)
     provider_visible_request_length: int = Field(ge=0, strict=True)
+    actual_provider_visible_request_digest: str = Field(pattern=_HEX64_PATTERN)
+    actual_provider_visible_request_length: int = Field(ge=0, strict=True)
     canned_transport_id: str
     requested_binding: AcquisitionProviderModelBinding
     actual_provider_id: Optional[str] = None
@@ -1704,6 +1743,11 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
         if tuple(item.guard_id for item in self.guard_evaluations) != ACQUISITION_GUARD_ORDER:
             raise ContractValidationError("attempt receipt guard coverage/order differs")
 
+        diagnostics = _canonical_strings(
+            self.diagnostic_mismatches,
+            "diagnostic_mismatches",
+        )
+        object.__setattr__(self, "diagnostic_mismatches", diagnostics)
         failed = tuple(
             item for item in self.guard_evaluations
             if item.state is AcquisitionGuardState.FAILED
@@ -1724,6 +1768,18 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
         if self.actual_binding != complete_actual_binding:
             raise ContractValidationError(
                 "attempt receipt complete binding differs from partial actual evidence"
+            )
+        derived_prompt_byte_mismatch = any(
+            (
+                self.actual_provider_visible_request_digest
+                != self.provider_visible_request_digest,
+                self.actual_provider_visible_request_length
+                != self.provider_visible_request_length,
+            )
+        )
+        if self.prompt_byte_mismatch is not derived_prompt_byte_mismatch:
+            raise ContractValidationError(
+                "attempt receipt prompt mismatch differs from rendered-byte evidence"
             )
         reported_execution_usage: Optional[AcquisitionExecutionUsage] = None
         if self.reported_execution_usage_json is not None:
@@ -1835,6 +1891,48 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
                 or self.primary_result.failure_code is not primary.failure_code
             ):
                 raise ContractValidationError("primary result differs from first failed guard")
+            if (
+                primary.guard_id.value.startswith("A")
+                and not self.diagnostic_mismatches
+            ):
+                raise ContractValidationError(
+                    "failed receipt primary guard contradicts serialized evidence"
+                )
+            if primary.guard_id.value.startswith("P"):
+                postdispatch_fields = (
+                    self.actual_provider_id,
+                    self.actual_model_id,
+                    self.actual_configuration_digest,
+                    self.actual_binding,
+                    self.transport_status,
+                    self.reported_raw_response_digest,
+                    self.computed_raw_response_digest,
+                    self.reported_raw_response_length,
+                    self.computed_raw_response_length,
+                    self.raw_response_base64,
+                    self.fallback_used,
+                    self.explicit_retry_count,
+                    self.adapter_retry_count,
+                    self.sdk_internal_retry_count,
+                    self.hidden_transport_retry_count,
+                    self.tool_calls,
+                    self.reported_execution_usage_json,
+                    self.resource_receipt_integrity,
+                    self.unadmitted_observation_id,
+                )
+                if any(item is not None for item in postdispatch_fields):
+                    raise ContractValidationError(
+                        "pre-dispatch failure contains fabricated post-dispatch evidence"
+                    )
+                if any(
+                    getattr(self.execution_usage, name).knowledge
+                    is not ResourceKnowledgeState.KNOWN
+                    or getattr(self.execution_usage, name).value != 0
+                    for name in self.execution_usage._MEASURE_FIELDS
+                ):
+                    raise ContractValidationError(
+                        "pre-dispatch failure usage must be complete known zero"
+                    )
             raw_bytes = (
                 _decode_canonical_base64(
                     self.raw_response_base64, "raw_response_base64"
@@ -1855,6 +1953,48 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
                 != self.computed_raw_response_length
             )
             derived_postdispatch_failures = {
+                AcquisitionGuardId.A01_CANNED_INVOCATION_COUNT: (
+                    "canned_invocation_count" in self.diagnostic_mismatches
+                ),
+                AcquisitionGuardId.A02_TRANSPORT_COMPLETION: (
+                    (
+                        primary.failure_code
+                        is AcquisitionFailureCode.TRANSPORT_TIMEOUT
+                        and (
+                            self.transport_status
+                            in (None, AcquisitionTransportStatus.TIMEOUT)
+                            and any(
+                                item == "transport_timeout"
+                                or item == "transport_status:TIMEOUT"
+                                for item in self.diagnostic_mismatches
+                            )
+                        )
+                    )
+                    or (
+                        primary.failure_code
+                        is AcquisitionFailureCode.TRANSPORT_ERROR
+                        and (
+                            self.transport_status
+                            not in (
+                                AcquisitionTransportStatus.DELIVERED,
+                                AcquisitionTransportStatus.TIMEOUT,
+                            )
+                            and any(
+                                item == "transport_error_or_forbidden_future_label"
+                                or (
+                                    item.startswith("transport_status:")
+                                    and item != "transport_status:TIMEOUT"
+                                )
+                                for item in self.diagnostic_mismatches
+                            )
+                        )
+                    )
+                ),
+                AcquisitionGuardId.A03_TIMEOUT_WORKER_TERMINATION: (
+                    self.transport_status is AcquisitionTransportStatus.DELIVERED
+                    and "timeout_worker_termination"
+                    in self.diagnostic_mismatches
+                ),
                 AcquisitionGuardId.A04_ACTUAL_PROVIDER_IDENTITY: (
                     self.actual_provider_id is None
                     or self.actual_provider_id != self.requested_binding.provider_id
@@ -1913,6 +2053,35 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
                 AcquisitionGuardId.A15_RETENTION_PRIVACY_INTEGRITY: (
                     not self.retention_policy_compliant
                 ),
+                AcquisitionGuardId.A16_FINAL_RECEIPT_INTEGRITY: (
+                    "final_receipt_link_integrity"
+                    in self.diagnostic_mismatches
+                    and self.transport_status
+                    is AcquisitionTransportStatus.DELIVERED
+                    and complete_actual_binding == self.requested_binding
+                    and not raw_integrity_invalid
+                    and self.fallback_used is False
+                    and (
+                        self.explicit_retry_count,
+                        self.adapter_retry_count,
+                        self.sdk_internal_retry_count,
+                        self.hidden_transport_retry_count,
+                    )
+                    == (0, 0, 0, 0)
+                    and self.tool_calls == 0
+                    and reported_execution_usage is not None
+                    and reported_execution_usage.complete
+                    and reported_execution_usage == self.execution_usage
+                    and self.resource_receipt_integrity is True
+                    and not any(
+                        (
+                            self.source_mutations,
+                            self.sibling_mutations,
+                            self.production_mutations,
+                        )
+                    )
+                    and self.retention_policy_compliant
+                ),
             }
             if (
                 primary.guard_id in derived_postdispatch_failures
@@ -1926,11 +2095,6 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
                     "failed acquisition cannot publish an unadmitted observation"
                 )
 
-        diagnostics = _canonical_strings(
-            self.diagnostic_mismatches,
-            "diagnostic_mismatches",
-        )
-        object.__setattr__(self, "diagnostic_mismatches", diagnostics)
         payload = self.identity_payload()
         digest = _semantic_digest(payload)
         expected_id = f"szacqattemptreceipt_{digest}"
@@ -1962,6 +2126,11 @@ class AcquisitionFailureCount(_FrozenAcquisitionContract):
     count: int = Field(ge=1, strict=True)
 
 
+class AcquisitionFailureStageCount(_FrozenAcquisitionContract):
+    stage: AcquisitionGuardStage
+    count: int = Field(ge=1, strict=True)
+
+
 class AcquisitionAggregateMetrics(_FrozenAcquisitionContract):
     attempts_total: int = Field(ge=0, strict=True)
     acquired_attempts: int = Field(ge=0, strict=True)
@@ -1985,6 +2154,7 @@ class AcquisitionAggregateMetrics(_FrozenAcquisitionContract):
     retention_violations: int = Field(ge=0, strict=True)
     receipt_mismatches: int = Field(ge=0, strict=True)
     failures_by_code: Tuple[AcquisitionFailureCount, ...]
+    failures_by_stage: Tuple[AcquisitionFailureStageCount, ...]
 
     @model_validator(mode="after")
     def canonicalize(self) -> "AcquisitionAggregateMetrics":
@@ -1993,9 +2163,31 @@ class AcquisitionAggregateMetrics(_FrozenAcquisitionContract):
         )
         if len({item.failure_code for item in failures}) != len(failures):
             raise ContractValidationError("aggregate failure codes must be unique")
+        stage_positions = {
+            stage: index
+            for index, stage in enumerate(
+                (
+                    AcquisitionGuardStage.PRE_DISPATCH,
+                    AcquisitionGuardStage.POST_DISPATCH,
+                )
+            )
+        }
+        stages = tuple(
+            sorted(
+                self.failures_by_stage,
+                key=lambda item: stage_positions[item.stage],
+            )
+        )
+        if len({item.stage for item in stages}) != len(stages):
+            raise ContractValidationError("aggregate failure stages must be unique")
         if self.acquired_attempts + self.failed_closed_attempts != self.attempts_total:
             raise ContractValidationError("aggregate attempt totals do not add up")
+        if sum(item.count for item in failures) != self.failed_closed_attempts:
+            raise ContractValidationError("aggregate failure-code totals do not add up")
+        if sum(item.count for item in stages) != self.failed_closed_attempts:
+            raise ContractValidationError("aggregate failure-stage totals do not add up")
         object.__setattr__(self, "failures_by_code", failures)
+        object.__setattr__(self, "failures_by_stage", stages)
         return self
 
 
@@ -2028,7 +2220,7 @@ def _receipt_has_identity_mismatch(receipt: AcquisitionAttemptReceipt) -> bool:
     )
 
 
-def _aggregate_metrics(
+def recompute_acquisition_aggregate_metrics_v0(
     receipts: Tuple[AcquisitionAttemptReceipt, ...],
     counters: AcquisitionTripwireCounters,
 ) -> AcquisitionAggregateMetrics:
@@ -2039,7 +2231,13 @@ def _aggregate_metrics(
         item.knowledge is ResourceKnowledgeState.KNOWN
         for item in invocation_quantities
     ):
-        receipt_total = sum(item.value or 0 for item in invocation_quantities)
+        receipt_total = 0
+        for item in invocation_quantities:
+            if item.value is None:
+                raise ContractValidationError(
+                    "KNOWN canned invocation quantity cannot omit its value"
+                )
+            receipt_total += item.value
         receipt_invocations = AcquisitionResourceQuantity.known(receipt_total)
         uncounted = AcquisitionResourceQuantity.known(
             abs(counters.canned_transport_invocations - receipt_total)
@@ -2049,10 +2247,22 @@ def _aggregate_metrics(
         uncounted = AcquisitionResourceQuantity.unknown()
 
     failure_counts: Dict[AcquisitionFailureCode, int] = {}
+    failure_stage_counts: Dict[AcquisitionGuardStage, int] = {}
+    guard_stages = {
+        item.guard_id: item.stage
+        for item in FROZEN_ACQUISITION_VALIDATION_ORDER.steps
+    }
     for receipt in receipts:
         code = receipt.primary_result.failure_code
         if code is not None:
             failure_counts[code] = failure_counts.get(code, 0) + 1
+            guard_id = receipt.primary_result.primary_guard_id
+            if guard_id is None:
+                raise ContractValidationError(
+                    "failed receipt cannot omit its primary guard"
+                )
+            stage = guard_stages[guard_id]
+            failure_stage_counts[stage] = failure_stage_counts.get(stage, 0) + 1
     failures_by_code = tuple(
         AcquisitionFailureCount(failure_code=code, count=count)
         for code, count in failure_counts.items()
@@ -2096,6 +2306,10 @@ def _aggregate_metrics(
             AcquisitionFailureCode.RECEIPT_MISMATCH, 0
         ),
         failures_by_code=failures_by_code,
+        failures_by_stage=tuple(
+            AcquisitionFailureStageCount(stage=stage, count=count)
+            for stage, count in failure_stage_counts.items()
+        ),
     )
 
 
@@ -2124,7 +2338,10 @@ class AcquisitionAggregateReceipt(_FrozenAcquisitionContract):
             raise ContractValidationError("aggregate receipt IDs must be unique")
         if len({item.transport_attempt_id for item in receipts}) != len(receipts):
             raise ContractValidationError("aggregate transport attempts must be unique")
-        expected_metrics = _aggregate_metrics(receipts, self.observed_counters)
+        expected_metrics = recompute_acquisition_aggregate_metrics_v0(
+            receipts,
+            self.observed_counters,
+        )
         if self.metrics != expected_metrics:
             raise ContractValidationError("aggregate metrics do not match receipts")
         object.__setattr__(self, "attempt_receipts", receipts)
@@ -2152,77 +2369,6 @@ class AcquisitionAggregateReceipt(_FrozenAcquisitionContract):
         )
 
 
-class AcquisitionExperimentArtifact(_FrozenAcquisitionContract):
-    schema_version: Literal[
-        ACQUISITION_EXPERIMENT_ARTIFACT_SCHEMA_VERSION
-    ] = ACQUISITION_EXPERIMENT_ARTIFACT_SCHEMA_VERSION
-    artifact_id: Optional[str] = None
-    acquisition_contract_id: Literal[ACQUISITION_CONTRACT_ID] = ACQUISITION_CONTRACT_ID
-    validation_order_id: str
-    failure_taxonomy_id: str
-    capability_snapshot_ids: Tuple[str, ...]
-    control_policy_ids: Tuple[str, ...]
-    semantic_request_ids: Tuple[str, ...]
-    transport_attempt_ids: Tuple[str, ...]
-    case_set_id: str
-    harness_id: str
-    metrics_id: str
-    thresholds_id: str
-    aggregate_receipt: AcquisitionAggregateReceipt
-    attempt_receipt_ids: Tuple[str, ...]
-    isolation_receipt_ids: Tuple[str, ...]
-    retention_receipt_ids: Tuple[str, ...]
-    provider_visible_prompt_digests: Tuple[str, ...]
-    historical_hashes: Tuple[str, ...]
-    hypothesis_status: Literal["SUPPORTED", "FALSIFIED"]
-    production_authority: Literal["none"] = "none"
-
-    _nonblank_fields = field_validator(
-        "validation_order_id",
-        "failure_taxonomy_id",
-        "case_set_id",
-        "harness_id",
-        "metrics_id",
-        "thresholds_id",
-    )(_nonblank)
-
-    @model_validator(mode="after")
-    def canonicalize_and_identify(self) -> "AcquisitionExperimentArtifact":
-        if self.validation_order_id != (
-            FROZEN_ACQUISITION_VALIDATION_ORDER.validation_order_id
-        ) or self.failure_taxonomy_id != (
-            FROZEN_ACQUISITION_FAILURE_TAXONOMY.failure_taxonomy_id
-        ):
-            raise ContractValidationError("artifact methodology identity changed")
-        for name in (
-            "capability_snapshot_ids",
-            "control_policy_ids",
-            "semantic_request_ids",
-            "transport_attempt_ids",
-            "attempt_receipt_ids",
-            "isolation_receipt_ids",
-            "retention_receipt_ids",
-            "provider_visible_prompt_digests",
-            "historical_hashes",
-        ):
-            object.__setattr__(self, name, _canonical_strings(getattr(self, name), name))
-        aggregate_ids = tuple(
-            item.receipt_id or "" for item in self.aggregate_receipt.attempt_receipts
-        )
-        if tuple(sorted(aggregate_ids)) != self.attempt_receipt_ids:
-            raise ContractValidationError(
-                "artifact attempt receipt IDs differ from aggregate receipt"
-            )
-        expected = stable_contract_id(
-            "szacqartifact",
-            self.model_dump(mode="json", exclude={"artifact_id"}),
-        )
-        if self.artifact_id is not None and self.artifact_id != expected:
-            raise ContractValidationError("artifact_id does not match")
-        object.__setattr__(self, "artifact_id", expected)
-        return self
-
-
 __all__ = [
     "ACQUISITION_AGGREGATE_RECEIPT_SCHEMA_VERSION",
     "ACQUISITION_ATTEMPT_RECEIPT_SCHEMA_VERSION",
@@ -2230,7 +2376,6 @@ __all__ = [
     "ACQUISITION_CONTRACT_ID",
     "ACQUISITION_CONTROL_POLICY_SCHEMA_VERSION",
     "ACQUISITION_EXECUTION_USAGE_SCHEMA_VERSION",
-    "ACQUISITION_EXPERIMENT_ARTIFACT_SCHEMA_VERSION",
     "ACQUISITION_FAILURE_TAXONOMY_SCHEMA_VERSION",
     "ACQUISITION_GUARD_ORDER",
     "ACQUISITION_HISTORICAL_USAGE_SCHEMA_VERSION",
@@ -2266,9 +2411,9 @@ __all__ = [
     "AcquisitionControlState",
     "AcquisitionDataClassification",
     "AcquisitionExecutionUsage",
-    "AcquisitionExperimentArtifact",
     "AcquisitionFailureCode",
     "AcquisitionFailureCount",
+    "AcquisitionFailureStageCount",
     "AcquisitionFailureTaxonomy",
     "AcquisitionFailureTaxonomyEntry",
     "AcquisitionGuardEvaluation",
@@ -2301,4 +2446,5 @@ __all__ = [
     "ResourceKnowledgeState",
     "ResponseRetentionMode",
     "UnadmittedAcquiredObservation",
+    "recompute_acquisition_aggregate_metrics_v0",
 ]

@@ -56,6 +56,12 @@ from .acquisition_cases import (
     MutationState,
     frozen_acquisition_case_set_sha256_v0,
 )
+from .acquisition_isolation_evidence import (
+    FROZEN_ACQUISITION_ISOLATION_EVIDENCE_MODES_V0,
+    FROZEN_ACQUISITION_ISOLATION_PAYLOADS_JSON_V0,
+    FROZEN_ACQUISITION_ISOLATION_RUNTIME_DIGESTS_V0,
+    FROZEN_ACQUISITION_ISOLATION_SUBJECT_IDS_V0,
+)
 from .acquisition_contracts import (
     ACQUISITION_CONTRACT_ID,
     ACQUISITION_GUARD_ORDER,
@@ -74,9 +80,9 @@ from .acquisition_contracts import (
     AcquisitionControlPolicy,
     AcquisitionControlRequirement,
     AcquisitionControlState,
+    AcquisitionDataClassification,
     AcquisitionExecutionUsage,
     AcquisitionFailureCode,
-    AcquisitionFailureCount,
     AcquisitionGuardId,
     AcquisitionGuardEvaluation,
     AcquisitionGuardState,
@@ -101,6 +107,8 @@ from .acquisition_contracts import (
     PromptRetentionMode,
     ResourceKnowledgeState,
     ResponseRetentionMode,
+    UnadmittedAcquiredObservation,
+    recompute_acquisition_aggregate_metrics_v0,
 )
 from .contracts import ContractValidationError, canonical_json, stable_contract_id
 
@@ -109,6 +117,15 @@ ACQUISITION_CASE_RESULT_SCHEMA_V0 = "socrateszero-acquisition-case-result/v0"
 ACQUISITION_METRICS_SCHEMA_V0 = "socrateszero-acquisition-metrics/v0"
 ACQUISITION_ARTIFACT_SCHEMA_V0 = "socrateszero-acquisition-artifact/v0"
 ACQUISITION_REPLAY_LOCK_SCHEMA_V0 = "socrateszero-acquisition-replay-lock/v0"
+ACQUISITION_ARTIFACT_FILENAME_V0 = (
+    "socrateszero_external_observation_acquisition_v0.json"
+)
+ACQUISITION_REPLAY_EXECUTION_FILENAME_V0 = (
+    "socrateszero_external_observation_acquisition_replay_execution_v0.json"
+)
+ACQUISITION_REPLAY_LOCK_FILENAME_V0 = (
+    "socrateszero_external_observation_acquisition_replay_lock_v0.json"
+)
 ACQUISITION_HISTORICAL_HASH_SCHEMA_V0 = (
     "socrateszero-acquisition-historical-hash/v0"
 )
@@ -141,6 +158,7 @@ ACQUISITION_PROVIDER_VISIBLE_RENDERING_VERSION_V0 = (
 )
 
 _HEX64 = r"^[0-9a-f]{64}$"
+_CORE_BLOB_LOCK_ID_PATTERN_V2 = r"^cedcorebloblockv2_[0-9a-f]{64}$"
 _ACTION_ID = (
     "szaction_e2f2e183f281d8741db89061d679f535042fc35ff9e25dcfb313a7796e232421"
 )
@@ -164,11 +182,79 @@ _RETENTION_CLASSIFICATION = "non-sensitive-canned-research-v0"
 _RETENTION_REASON = "deterministic acquisition replay"
 _RETENTION_ACCESS_POLICY_ID = "socrateszero-canned-fixture-access/v0"
 _BASELINE_BRANCH_PREFIX = "acqv0-branch"
-_FINGERPRINT_DIGESTS = {
-    "source": hashlib.sha256(b"acquisition-source-v0").hexdigest(),
-    "sibling": hashlib.sha256(b"acquisition-sibling-v0").hexdigest(),
-    "production": hashlib.sha256(b"acquisition-production-v0").hexdigest(),
-}
+_UNCOUNTED_INVOCATION_MUTATION_PATH_V0 = (
+    "attempt_recorder.canned_transport_invocations"
+)
+_INCOMPLETE_USAGE_MUTATION_PATHS_V0 = frozenset(
+    {
+        "envelope.new_usage_completeness",
+        "envelope.usage.tokens.knowledge",
+    }
+)
+_FORBIDDEN_EXECUTION_COUNTER_FIELDS_V0: Tuple[str, ...] = (
+    "external_network_attempts",
+    "credential_access_attempts",
+    "live_provider_calls",
+    "provider_sdk_calls",
+    "model_executions",
+    "tool_calls",
+)
+_FROZEN_ACQUISITION_PROBES_V0 = (
+    FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0
+    + FROZEN_ACQUISITION_PRECEDENCE_PROBES_V0
+)
+_FROZEN_INJECTED_UNCOUNTED_INVOCATIONS_V0 = sum(
+    mutation.path == _UNCOUNTED_INVOCATION_MUTATION_PATH_V0
+    for probe in _FROZEN_ACQUISITION_PROBES_V0
+    for mutation in probe.literal_mutations
+)
+_FROZEN_EXPECTED_UNCOUNTED_FAILURE_RECEIPTS_V0 = sum(
+    probe.expected_attempt_receipts
+    for probe in _FROZEN_ACQUISITION_PROBES_V0
+    if (
+        probe.expected_primary_failure
+        is AcquisitionFailureCode.UNCOUNTED_CANNED_INVOCATION
+        and any(
+            mutation.path == _UNCOUNTED_INVOCATION_MUTATION_PATH_V0
+            for mutation in probe.literal_mutations
+        )
+    )
+)
+_FROZEN_INJECTED_INCOMPLETE_USAGE_CONDITIONS_V0 = sum(
+    mutation.path in _INCOMPLETE_USAGE_MUTATION_PATHS_V0
+    for probe in _FROZEN_ACQUISITION_PROBES_V0
+    for mutation in probe.literal_mutations
+)
+_FROZEN_EXPECTED_INCOMPLETE_REPORTED_USAGE_RECEIPTS_V0 = sum(
+    probe.expected_attempt_receipts
+    for probe in _FROZEN_ACQUISITION_PROBES_V0
+    if any(
+        mutation.path in _INCOMPLETE_USAGE_MUTATION_PATHS_V0
+        for mutation in probe.literal_mutations
+    )
+)
+_FROZEN_NON_SENSITIVE_RAW_RESPONSE_SHA256_ALLOWLIST_V0 = tuple(
+    sorted(
+        {
+            FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0,
+            hashlib.sha256(FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0).hexdigest(),
+            hashlib.sha256(b'{"kind":"canned"}').hexdigest(),
+            hashlib.sha256(b"\x00private-response-a\xff").hexdigest(),
+            hashlib.sha256(b"\x00private-response-b\xfe").hexdigest(),
+        }
+    )
+)
+FROZEN_PROBE_CONSTRUCTION_EVIDENCE_LOCK_SHA256_V0 = (
+    "006fe843d91ec588a22de0d587c6f3e86c8e4c942446955d8ca308e49ca90062"
+)
+FROZEN_CASE_ATTEMPT_RECEIPT_LOCK_SHA256_V0 = (
+    "3fa71e71327b344b93846bbff9debd9475bd141911a994d4caf362599f974be8"
+)
+FROZEN_CASE_RESULT_LOCK_SHA256_V0 = (
+    "10540703f9bfa7cbd9d8910de4181e76d126de7374bfb533791b7fe2a285310c"
+)
+_FINGERPRINT_DIGESTS = dict(FROZEN_ACQUISITION_ISOLATION_RUNTIME_DIGESTS_V0)
+_FINGERPRINT_SUBJECT_IDS = dict(FROZEN_ACQUISITION_ISOLATION_SUBJECT_IDS_V0)
 
 _HISTORICAL_ARTIFACT_LOCKS: Tuple[Tuple[str, str, str], ...] = (
     (
@@ -229,6 +315,12 @@ def _nonblank(value: str) -> str:
     return value
 
 
+def _optional_nonblank(value: Optional[str]) -> Optional[str]:
+    if value is not None:
+        _nonblank(value)
+    return value
+
+
 def _canonical_strings(values: Tuple[str, ...], field_name: str) -> Tuple[str, ...]:
     if any(not value.strip() for value in values):
         raise ContractValidationError(f"{field_name} contains a blank value")
@@ -268,6 +360,24 @@ class AcquisitionCaseAttemptEvidenceV0(_FrozenEvaluationContract):
     capability_snapshot_id: str
     control_policy_id: str
     provider_visible_prompt_digest: str = Field(pattern=_HEX64)
+    provider_visible_prompt_length: int = Field(ge=0, strict=True)
+    actual_provider_visible_prompt_digest: str = Field(pattern=_HEX64)
+    actual_provider_visible_prompt_length: int = Field(ge=0, strict=True)
+    transport_record_ordinal: Optional[int] = Field(default=None, ge=1, strict=True)
+    transport_record_attempt_id: Optional[str] = None
+    transport_record_prompt_digest: Optional[str] = Field(
+        default=None, pattern=_HEX64
+    )
+    transport_record_prompt_length: Optional[int] = Field(
+        default=None, ge=0, strict=True
+    )
+    transport_record_outcome: Optional[_runtime.CannedInvocationOutcome] = None
+    transport_record_cancellation_acknowledged: Optional[bool] = None
+    transport_record_worker_terminated: Optional[bool] = None
+    transport_record_cancellation_requests: Optional[int] = Field(
+        default=None, ge=0, strict=True
+    )
+    transport_record_forced_cleanup: Optional[bool] = None
     isolation_receipt_id: str
     retention_receipt_id: str
     primary_result: AcquisitionPrimaryResult
@@ -284,11 +394,75 @@ class AcquisitionCaseAttemptEvidenceV0(_FrozenEvaluationContract):
         "isolation_receipt_id",
         "retention_receipt_id",
     )(_nonblank)
+    _optional_record_nonblank = field_validator(
+        "transport_record_attempt_id",
+    )(_optional_nonblank)
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> "AcquisitionCaseAttemptEvidenceV0":
         if tuple(item.guard_id for item in self.guard_evaluations) != ACQUISITION_GUARD_ORDER:
             raise ContractValidationError("attempt evidence guard order changed")
+        record_values = (
+            self.transport_record_ordinal,
+            self.transport_record_attempt_id,
+            self.transport_record_prompt_digest,
+            self.transport_record_prompt_length,
+            self.transport_record_outcome,
+            self.transport_record_cancellation_acknowledged,
+            self.transport_record_worker_terminated,
+            self.transport_record_cancellation_requests,
+            self.transport_record_forced_cleanup,
+        )
+        record_expected = self.tripwire_counters.canned_transport_invocations == 1
+        if record_expected != all(item is not None for item in record_values):
+            raise ContractValidationError(
+                "attempt evidence transport-record presence differs from tripwire"
+            )
+        if record_expected and any(
+            (
+                self.transport_record_ordinal != 1,
+                self.transport_record_attempt_id != self.transport_attempt_id,
+                self.transport_record_prompt_digest
+                != self.actual_provider_visible_prompt_digest,
+                self.transport_record_prompt_length
+                != self.actual_provider_visible_prompt_length,
+            )
+        ):
+            raise ContractValidationError(
+                "attempt evidence transport record differs from rendered request"
+            )
+        if record_expected:
+            cancellation_expected = self.transport_record_outcome in {
+                _runtime.CannedInvocationOutcome.CANCELLED,
+                _runtime.CannedInvocationOutcome.FORCED_CLEANUP,
+            }
+            if any(
+                (
+                    self.transport_record_worker_terminated is not True,
+                    self.transport_record_cancellation_acknowledged
+                    is not cancellation_expected,
+                    self.transport_record_forced_cleanup
+                    is not (
+                        self.transport_record_outcome
+                        is _runtime.CannedInvocationOutcome.FORCED_CLEANUP
+                    ),
+                    (
+                        self.transport_record_cancellation_requests or 0
+                    )
+                    != (
+                        2
+                        if self.transport_record_outcome
+                        is _runtime.CannedInvocationOutcome.FORCED_CLEANUP
+                        else 1
+                        if self.transport_record_outcome
+                        is _runtime.CannedInvocationOutcome.CANCELLED
+                        else 0
+                    ),
+                )
+            ):
+                raise ContractValidationError(
+                    "attempt evidence cancellation record is inconsistent"
+                )
         payload = self.model_dump(mode="json", exclude={"attempt_evidence_id"})
         expected_id = stable_contract_id("acqattemptevidencev0", payload)
         if (
@@ -312,12 +486,14 @@ class AcquisitionConstructionStateV0(_FrozenEvaluationContract):
     control_policy_id: str
     control_policy_json: str
     semantic_request_id: str
-    semantic_request_json: str
+    semantic_request_identity_payload_json: str
     semantic_request_contract_valid: bool
     transport_capability_snapshot_id: str
     implementation_profiles: Tuple[str, ...]
     directive_json: str
     isolation_runtime_digests: Tuple[Tuple[str, str], ...]
+    isolation_evidence_modes: Tuple[Tuple[str, str], ...]
+    isolation_preconditions_met: bool = Field(strict=True)
     future_label_candidate_rejected: bool = False
 
     _nonblank_fields = field_validator(
@@ -332,10 +508,51 @@ class AcquisitionConstructionStateV0(_FrozenEvaluationContract):
         for name in (
             "capability_snapshot_json",
             "control_policy_json",
-            "semantic_request_json",
+            "semantic_request_identity_payload_json",
             "directive_json",
         ):
             _canonical_json_string(getattr(self, name), name)
+        directive_payload = json.loads(self.directive_json)
+        expected_directive_keys = {
+            "envelope",
+            "raise_transport_error",
+            "wait_for_cancellation",
+            "resist_initial_cancellation",
+            "completion_integrity",
+            "resource_integrity",
+            "retention_integrity",
+            "final_receipt_integrity",
+        }
+        if (
+            not isinstance(directive_payload, dict)
+            or set(directive_payload) != expected_directive_keys
+            or any(
+                not isinstance(directive_payload[name], bool)
+                for name in expected_directive_keys - {"envelope"}
+            )
+        ):
+            raise ContractValidationError(
+                "construction directive evidence projection changed"
+            )
+        envelope_payload = directive_payload["envelope"]
+        if envelope_payload is not None:
+            expected_envelope_keys = (
+                set(CannedTransportEnvelope.model_fields)
+                - {"raw_response_base64"}
+            ) | {"raw_response_presence"}
+            if (
+                not isinstance(envelope_payload, dict)
+                or set(envelope_payload) != expected_envelope_keys
+                or envelope_payload["raw_response_presence"]
+                not in {"PRESENT", "ABSENT"}
+            ):
+                raise ContractValidationError(
+                    "construction envelope evidence projection changed"
+                )
+        if "raw_response_base64" in self.directive_json:
+            raise ContractValidationError(
+                "construction evidence contains forbidden raw response bytes"
+            )
         capability = AcquisitionCapabilitySnapshot.model_validate_json(
             self.capability_snapshot_json
         )
@@ -343,23 +560,108 @@ class AcquisitionConstructionStateV0(_FrozenEvaluationContract):
         if (
             capability.capability_snapshot_id != self.capability_snapshot_id
             or policy.control_policy_id != self.control_policy_id
-            or self.transport_capability_snapshot_id != self.capability_snapshot_id
         ):
             raise ContractValidationError("construction state object identity mismatch")
-        request_valid = True
-        try:
-            request = AcquisitionSemanticRequest.model_validate_json(
-                self.semantic_request_json
+        request_payload = json.loads(self.semantic_request_identity_payload_json)
+        if not isinstance(request_payload, dict):
+            raise ContractValidationError(
+                "construction request identity payload must be an object"
             )
-        except ValidationError:
+        expected_request_keys = {
+            "schema_version",
+            "acquisition_contract_id",
+            "source_capsule_id",
+            "source_execution_id",
+            "root_state_v1_id",
+            "pending_transition_id",
+            "canonical_task_identity_id",
+            "supported_action_family",
+            "action_id",
+            "action_kind",
+            "complete_legal_action_ids",
+            "requested_binding",
+            "capability_snapshot_id",
+            "control_policy_id",
+            "request_configuration",
+            "provider_visible_request_id",
+            "provider_visible_sha256",
+            "provider_visible_byte_length",
+        }
+        if set(request_payload) != expected_request_keys:
+            raise ContractValidationError(
+                "construction request identity projection changed"
+            )
+        if (
+            request_payload["capability_snapshot_id"]
+            != self.capability_snapshot_id
+            or request_payload["control_policy_id"] != self.control_policy_id
+        ):
+            raise ContractValidationError("construction request links changed")
+        request_valid = False
+        try:
+            requested_binding = AcquisitionProviderModelBinding.model_validate(
+                request_payload["requested_binding"]
+            )
+            configuration = AcquisitionRequestConfiguration.model_validate(
+                request_payload["request_configuration"]
+            )
+            legal_action_ids = tuple(request_payload["complete_legal_action_ids"])
+            visible_identity_payload = {
+                "schema_version": PROVIDER_VISIBLE_REQUEST_SCHEMA_VERSION,
+                "rendering_version": (
+                    ACQUISITION_PROVIDER_VISIBLE_RENDERING_VERSION_V0
+                ),
+                "byte_length": request_payload["provider_visible_byte_length"],
+                "sha256": request_payload["provider_visible_sha256"],
+            }
+            expected_visible_id = stable_contract_id(
+                "szacqvisible",
+                visible_identity_payload,
+            )
+            request_valid = all(
+                (
+                    request_payload["schema_version"]
+                    == ACQUISITION_SEMANTIC_REQUEST_SCHEMA_VERSION,
+                    request_payload["acquisition_contract_id"]
+                    == ACQUISITION_CONTRACT_ID,
+                    all(
+                        isinstance(request_payload[name], str)
+                        and bool(request_payload[name].strip())
+                        for name in (
+                            "source_capsule_id",
+                            "source_execution_id",
+                            "root_state_v1_id",
+                            "pending_transition_id",
+                            "canonical_task_identity_id",
+                            "action_id",
+                        )
+                    ),
+                    request_payload["supported_action_family"]
+                    == "ced-opening-socratic-question/v0",
+                    request_payload["action_kind"]
+                    == "ask_socratic_question",
+                    legal_action_ids == tuple(sorted(set(legal_action_ids))),
+                    request_payload["action_id"] in legal_action_ids,
+                    requested_binding.configuration_digest
+                    == configuration.configuration_digest,
+                    request_payload["provider_visible_request_id"]
+                    == expected_visible_id,
+                    isinstance(request_payload["provider_visible_byte_length"], int),
+                    request_payload["provider_visible_byte_length"] >= 0,
+                    isinstance(request_payload["provider_visible_sha256"], str),
+                    len(request_payload["provider_visible_sha256"]) == 64,
+                    all(
+                        character in "0123456789abcdef"
+                        for character in request_payload[
+                            "provider_visible_sha256"
+                        ]
+                    ),
+                    stable_contract_id("szacqrequest", request_payload)
+                    == self.semantic_request_id,
+                )
+            )
+        except (KeyError, TypeError, ValidationError, ContractValidationError):
             request_valid = False
-        else:
-            if (
-                request.semantic_request_id != self.semantic_request_id
-                or request.capability_snapshot_id != self.capability_snapshot_id
-                or request.control_policy_id != self.control_policy_id
-            ):
-                raise ContractValidationError("construction request links changed")
         if self.semantic_request_contract_valid is not request_valid:
             raise ContractValidationError("construction request-valid flag changed")
         profiles = _canonical_strings(
@@ -375,8 +677,14 @@ class AcquisitionConstructionStateV0(_FrozenEvaluationContract):
             for scope, digest in digests
         ):
             raise ContractValidationError("construction isolation digest changed")
+        modes = tuple(sorted(self.isolation_evidence_modes))
+        if modes != tuple(sorted(FROZEN_ACQUISITION_ISOLATION_EVIDENCE_MODES_V0)):
+            raise ContractValidationError(
+                "construction isolation evidence modes changed"
+            )
         object.__setattr__(self, "implementation_profiles", profiles)
         object.__setattr__(self, "isolation_runtime_digests", digests)
+        object.__setattr__(self, "isolation_evidence_modes", modes)
         payload = self.model_dump(mode="json", exclude={"construction_state_id"})
         expected_id = stable_contract_id("acqconstructionstatev0", payload)
         if (
@@ -788,10 +1096,22 @@ class AcquisitionCoreBlobLockEvidenceV0(_FrozenEvaluationContract):
         "cedcorebloblockv2_"
         "2cfc46afcf7afca20b4eb537d626296e11c8b85e885f5caa78d7322e0eb0a957"
     ] = _FROZEN_CORE_BLOB_LOCK_ID_V2
-    actual_top_level_lock_id: Optional[str] = None
-    actual_embedded_lock_id: Optional[str] = None
+    actual_top_level_lock_id: Optional[str] = Field(
+        default=None, pattern=_CORE_BLOB_LOCK_ID_PATTERN_V2
+    )
+    actual_top_level_lock_id_present: bool = Field(strict=True)
+    actual_top_level_lock_id_format_valid: bool = Field(strict=True)
+    actual_embedded_lock_id: Optional[str] = Field(
+        default=None, pattern=_CORE_BLOB_LOCK_ID_PATTERN_V2
+    )
+    actual_embedded_lock_id_present: bool = Field(strict=True)
+    actual_embedded_lock_id_format_valid: bool = Field(strict=True)
     actual_embedded_fingerprint: Optional[str] = Field(default=None, pattern=_HEX64)
-    recomputed_embedded_lock_id: Optional[str] = None
+    actual_embedded_fingerprint_present: bool = Field(strict=True)
+    actual_embedded_fingerprint_format_valid: bool = Field(strict=True)
+    recomputed_embedded_lock_id: Optional[str] = Field(
+        default=None, pattern=_CORE_BLOB_LOCK_ID_PATTERN_V2
+    )
     recomputed_embedded_fingerprint: Optional[str] = Field(
         default=None, pattern=_HEX64
     )
@@ -810,6 +1130,34 @@ class AcquisitionCoreBlobLockEvidenceV0(_FrozenEvaluationContract):
 
     @model_validator(mode="after")
     def validate_match(self) -> "AcquisitionCoreBlobLockEvidenceV0":
+        for label, value, present, format_valid in (
+            (
+                "top_level_lock_id",
+                self.actual_top_level_lock_id,
+                self.actual_top_level_lock_id_present,
+                self.actual_top_level_lock_id_format_valid,
+            ),
+            (
+                "embedded_lock_id",
+                self.actual_embedded_lock_id,
+                self.actual_embedded_lock_id_present,
+                self.actual_embedded_lock_id_format_valid,
+            ),
+            (
+                "embedded_fingerprint",
+                self.actual_embedded_fingerprint,
+                self.actual_embedded_fingerprint_present,
+                self.actual_embedded_fingerprint_format_valid,
+            ),
+        ):
+            if format_valid is not (value is not None):
+                raise ContractValidationError(
+                    f"core blob-lock {label} format verdict differs"
+                )
+            if not present and format_valid:
+                raise ContractValidationError(
+                    f"core blob-lock {label} presence verdict differs"
+                )
         expected_fingerprint = self.expected_lock_id.removeprefix(
             "cedcorebloblockv2_"
         )
@@ -861,6 +1209,7 @@ class AcquisitionEvaluationMetricsV0(_FrozenEvaluationContract):
     positive_cases_total: int = Field(ge=0, strict=True)
     positive_complete_case_results: int = Field(ge=0, strict=True)
     positive_attempt_receipts: int = Field(ge=0, strict=True)
+    acquired_raw_observations: int = Field(ge=0, strict=True)
     orthogonal_probes_total: int = Field(ge=0, strict=True)
     orthogonal_exact_primary_results: int = Field(ge=0, strict=True)
     precedence_probes_total: int = Field(ge=0, strict=True)
@@ -869,6 +1218,9 @@ class AcquisitionEvaluationMetricsV0(_FrozenEvaluationContract):
     observed_canned_transport_invocations: int = Field(ge=0, strict=True)
     invalid_probe_constructions: int = Field(ge=0, strict=True)
     semantic_identity_collisions: int = Field(ge=0, strict=True)
+    accepted_provider_identity_mismatches: int = Field(ge=0, strict=True)
+    accepted_model_identity_mismatches: int = Field(ge=0, strict=True)
+    accepted_configuration_identity_mismatches: int = Field(ge=0, strict=True)
     accepted_prompt_byte_mismatches: int = Field(ge=0, strict=True)
     external_network_attempts: int = Field(ge=0, strict=True)
     credential_access_attempts: int = Field(ge=0, strict=True)
@@ -878,6 +1230,13 @@ class AcquisitionEvaluationMetricsV0(_FrozenEvaluationContract):
     tool_calls: int = Field(ge=0, strict=True)
     canonical_application_invocations: int = Field(ge=0, strict=True)
     injected_uncounted_canned_invocations: int = Field(ge=0, strict=True)
+    raw_aggregate_uncounted_canned_invocations: AcquisitionResourceQuantity
+    raw_aggregate_incomplete_usage_receipts: int = Field(ge=0, strict=True)
+    expected_uncounted_canned_invocation_failures: int = Field(ge=0, strict=True)
+    raw_uncounted_canned_invocation_failures: int = Field(ge=0, strict=True)
+    unexpected_uncounted_canned_invocation_failures: int = Field(
+        ge=0, strict=True
+    )
     accepted_uncounted_canned_invocations: int = Field(ge=0, strict=True)
     accepted_successful_retry_activations: int = Field(ge=0, strict=True)
     accepted_successful_fallback_activations: int = Field(ge=0, strict=True)
@@ -893,9 +1252,21 @@ class AcquisitionEvaluationMetricsV0(_FrozenEvaluationContract):
     injected_false_zero_usage_conditions: int = Field(ge=0, strict=True)
     accepted_false_zero_usage: int = Field(ge=0, strict=True)
     injected_incomplete_usage_conditions: int = Field(ge=0, strict=True)
+    expected_incomplete_reported_usage_receipts: int = Field(ge=0, strict=True)
+    raw_incomplete_reported_usage_receipts: int = Field(ge=0, strict=True)
+    unexpected_incomplete_reported_usage_receipts: int = Field(
+        ge=0, strict=True
+    )
+    unknown_execution_usage_quantities: int = Field(ge=0, strict=True)
+    canned_invocation_tripwire_mismatches: int = Field(ge=0, strict=True)
+    forbidden_execution_counter_mismatches: int = Field(ge=0, strict=True)
+    declared_accounting_outcome_mismatches: int = Field(ge=0, strict=True)
     accepted_incomplete_attempt_receipts: int = Field(ge=0, strict=True)
     injected_retention_conditions: int = Field(ge=0, strict=True)
     accepted_retention_violations: int = Field(ge=0, strict=True)
+    retention_crosslink_mismatches: int = Field(ge=0, strict=True)
+    credential_material_retained: int = Field(ge=0, strict=True)
+    sensitive_material_violations: int = Field(ge=0, strict=True)
     injected_receipt_mismatch_conditions: int = Field(ge=0, strict=True)
     accepted_receipt_mismatches: int = Field(ge=0, strict=True)
     injected_future_label_conditions: int = Field(ge=0, strict=True)
@@ -989,6 +1360,19 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
     thresholds_id: str
     thresholds: AcquisitionThresholdsV0
     fixture_set_id: str
+    retention_policy_id: str
+    probe_construction_evidence_lock_sha256: str = Field(
+        default=FROZEN_PROBE_CONSTRUCTION_EVIDENCE_LOCK_SHA256_V0,
+        pattern=_HEX64,
+    )
+    case_attempt_receipt_lock_sha256: str = Field(
+        default=FROZEN_CASE_ATTEMPT_RECEIPT_LOCK_SHA256_V0,
+        pattern=_HEX64,
+    )
+    case_result_lock_sha256: str = Field(
+        default=FROZEN_CASE_RESULT_LOCK_SHA256_V0,
+        pattern=_HEX64,
+    )
     capability_snapshot_ids: Tuple[str, ...]
     control_policy_ids: Tuple[str, ...]
     semantic_request_ids: Tuple[str, ...]
@@ -999,6 +1383,10 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
     aggregate_receipt: AcquisitionAggregateReceipt
     attempt_receipt_ids: Tuple[str, ...]
     isolation_receipts: Tuple[AcquisitionIsolationReceipt, ...]
+    isolation_evidence_modes: Tuple[Tuple[str, str], ...]
+    isolation_subject_ids: Tuple[Tuple[str, str], ...]
+    isolation_evidence_payloads_json: Tuple[Tuple[str, str], ...]
+    isolation_runtime_digests: Tuple[Tuple[str, str], ...]
     retention_receipts: Tuple[AcquisitionRetentionReceipt, ...]
     provider_visible_prompt_digests: Tuple[str, ...]
     historical_hashes: Tuple[AcquisitionHistoricalHashEvidenceV0, ...]
@@ -1013,6 +1401,7 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
         "case_set_id",
         "thresholds_id",
         "fixture_set_id",
+        "retention_policy_id",
         "metrics_id",
     )(_nonblank)
 
@@ -1036,6 +1425,25 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
         object.__setattr__(self, "isolation_receipts", isolations)
         object.__setattr__(self, "retention_receipts", retentions)
         object.__setattr__(self, "historical_hashes", histories)
+        frozen_fixtures = build_frozen_acquisition_fixtures_v0()
+        if (
+            self.isolation_evidence_modes
+            != FROZEN_ACQUISITION_ISOLATION_EVIDENCE_MODES_V0
+            or self.isolation_subject_ids
+            != FROZEN_ACQUISITION_ISOLATION_SUBJECT_IDS_V0
+            or self.isolation_evidence_payloads_json
+            != FROZEN_ACQUISITION_ISOLATION_PAYLOADS_JSON_V0
+            or self.isolation_runtime_digests
+            != FROZEN_ACQUISITION_ISOLATION_RUNTIME_DIGESTS_V0
+        ):
+            raise ContractValidationError(
+                "artifact isolation evidence declaration changed"
+            )
+        for scope, payload_json in self.isolation_evidence_payloads_json:
+            _canonical_json_string(
+                payload_json,
+                f"isolation_evidence_payloads_json[{scope}]",
+            )
         for name in (
             "capability_snapshot_ids",
             "control_policy_ids",
@@ -1058,8 +1466,15 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
             or self.case_set_sha256 != frozen_acquisition_case_set_sha256_v0()
             or self.thresholds != FROZEN_ACQUISITION_THRESHOLDS_V0
             or self.thresholds_id != self.thresholds.thresholds_id
-            or self.fixture_set_id
-            != build_frozen_acquisition_fixtures_v0().fixture_set_id
+            or self.fixture_set_id != frozen_fixtures.fixture_set_id
+            or self.retention_policy_id
+            != frozen_fixtures.retention_policy.retention_policy_id
+            or self.probe_construction_evidence_lock_sha256
+            != FROZEN_PROBE_CONSTRUCTION_EVIDENCE_LOCK_SHA256_V0
+            or self.case_attempt_receipt_lock_sha256
+            != FROZEN_CASE_ATTEMPT_RECEIPT_LOCK_SHA256_V0
+            or self.case_result_lock_sha256
+            != FROZEN_CASE_RESULT_LOCK_SHA256_V0
             or self.metrics_id != self.metrics.metrics_id
             or self.tripwire_counters != self.aggregate_receipt.observed_counters
             or self.aggregate_receipt.experiment_id != self.experiment_id
@@ -1075,7 +1490,10 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
                 + FROZEN_ACQUISITION_PRECEDENCE_PROBES_V0
             )
         }
-        if len(results) != 50 or {item.case_id for item in results} != expected_case_ids:
+        if (
+            len(results) != FROZEN_ACQUISITION_THRESHOLDS_V0.cases_total
+            or {item.case_id for item in results} != expected_case_ids
+        ):
             raise ContractValidationError("artifact case membership changed")
         _validate_case_results_against_frozen_v0(results)
         aggregate_receipt_ids = tuple(
@@ -1095,6 +1513,34 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
             retentions,
         )
         receipts = self.aggregate_receipt.attempt_receipts
+        if any(
+            retention.policy != frozen_fixtures.retention_policy
+            or retention.retention_policy_id != self.retention_policy_id
+            for retention in retentions
+        ):
+            raise ContractValidationError(
+                "artifact retention policy differs from frozen policy"
+            )
+        allowlist = set(
+            frozen_fixtures.retention_policy
+            .non_sensitive_raw_response_sha256_allowlist
+        )
+        for receipt in receipts:
+            if receipt.raw_response_base64 is None:
+                continue
+            raw = base64.b64decode(receipt.raw_response_base64, validate=True)
+            if hashlib.sha256(raw).hexdigest() not in allowlist:
+                raise ContractValidationError(
+                    "artifact attempt receipt retained unallowlisted raw bytes"
+                )
+        for retention in retentions:
+            if retention.raw_response_base64 is None:
+                continue
+            raw = base64.b64decode(retention.raw_response_base64, validate=True)
+            if hashlib.sha256(raw).hexdigest() not in allowlist:
+                raise ContractValidationError(
+                    "artifact retention receipt retained unallowlisted raw bytes"
+                )
         isolation_ids = tuple(sorted(item.isolation_receipt_id or "" for item in isolations))
         retention_ids = tuple(sorted(item.retention_receipt_id or "" for item in retentions))
         if (
@@ -1117,6 +1563,7 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
         expected_metrics = _calculate_evaluation_metrics_v0(
             results,
             self.aggregate_receipt,
+            retentions,
             histories,
             self.core_blob_lock,
         )
@@ -1134,7 +1581,7 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
 
 
 class AcquisitionReplayExecutionV0(_FrozenEvaluationContract):
-    """Reverse-order run provenance kept outside byte-identical semantic artifact."""
+    """Canonical reverse-run evidence without duplicating the raw-bearing artifact."""
 
     schema_version: Literal[
         ACQUISITION_REPLAY_EXECUTION_SCHEMA_V0
@@ -1142,7 +1589,12 @@ class AcquisitionReplayExecutionV0(_FrozenEvaluationContract):
     replay_execution_id: Optional[str] = None
     source_authoritative_artifact_id: str
     source_authoritative_sha256: str = Field(pattern=_HEX64)
-    artifact: AcquisitionExperimentArtifactV0
+    replay_artifact_id: str
+    replay_artifact_sha256: str = Field(pattern=_HEX64)
+    replay_aggregate_receipt_id: str
+    replay_metrics_id: str
+    replay_attempt_receipt_ids: Tuple[str, ...]
+    replay_tripwire_counters: AcquisitionTripwireCounters
     positive_order: Tuple[str, ...]
     orthogonal_order: Tuple[str, ...]
     precedence_order: Tuple[str, ...]
@@ -1153,17 +1605,17 @@ class AcquisitionReplayExecutionV0(_FrozenEvaluationContract):
     execution_role: Literal["REVERSE_REPLAY"] = "REVERSE_REPLAY"
 
     _authoritative_id_nonblank = field_validator(
-        "source_authoritative_artifact_id"
+        "source_authoritative_artifact_id",
+        "replay_artifact_id",
+        "replay_aggregate_receipt_id",
+        "replay_metrics_id",
     )(_nonblank)
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> "AcquisitionReplayExecutionV0":
-        if self.artifact.hypothesis_status != "SUPPORTED":
-            raise ContractValidationError("replay execution requires a SUPPORTED artifact")
-        artifact_sha = acquisition_experiment_artifact_sha256_v0(self.artifact)
         if (
-            self.artifact.artifact_id != self.source_authoritative_artifact_id
-            or artifact_sha != self.source_authoritative_sha256
+            self.replay_artifact_id != self.source_authoritative_artifact_id
+            or self.replay_artifact_sha256 != self.source_authoritative_sha256
         ):
             raise ContractValidationError("replay artifact differs from authoritative source")
         if (
@@ -1177,25 +1629,49 @@ class AcquisitionReplayExecutionV0(_FrozenEvaluationContract):
         )
         if self.ordered_case_ids != expected_case_ids:
             raise ContractValidationError("replay ordered case evidence changed")
-        results = {item.case_id: item for item in self.artifact.case_results}
-        expected_result_ids = tuple(
-            results[case_id].case_result_id or "" for case_id in expected_case_ids
-        )
-        expected_attempt_ids = tuple(
-            attempt.transport_attempt_id
-            for case_id in expected_case_ids
-            for attempt in sorted(
-                results[case_id].attempt_evidence,
-                key=lambda item: item.attempt_ordinal,
-            )
+        if (
+            len(self.ordered_case_result_ids) != len(expected_case_ids)
+            or len(set(self.ordered_case_result_ids))
+            != len(self.ordered_case_result_ids)
+            or len(self.ordered_transport_attempt_ids)
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.required_attempt_receipts_total
+            or len(set(self.ordered_transport_attempt_ids))
+            != len(self.ordered_transport_attempt_ids)
+            or len(self.replay_attempt_receipt_ids)
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.required_attempt_receipts_total
+            or len(set(self.replay_attempt_receipt_ids))
+            != len(self.replay_attempt_receipt_ids)
+        ):
+            raise ContractValidationError("replay execution trace membership changed")
+        object.__setattr__(
+            self,
+            "replay_attempt_receipt_ids",
+            tuple(sorted(self.replay_attempt_receipt_ids)),
         )
         if (
-            self.ordered_case_result_ids != expected_result_ids
-            or self.ordered_transport_attempt_ids != expected_attempt_ids
+            self.replay_tripwire_counters.canned_transport_invocations
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.required_canned_transport_invocations
+            or any(
+                getattr(self.replay_tripwire_counters, name)
+                for name in AcquisitionTripwireCounters.model_fields
+                if name != "canned_transport_invocations"
+            )
         ):
-            raise ContractValidationError("replay execution trace is not artifact-linked")
+            raise ContractValidationError(
+                "replay execution tripwire counters are not frozen and hermetic"
+            )
         trace_payload = {
             "execution_role": self.execution_role,
+            "source_authoritative_artifact_id": self.source_authoritative_artifact_id,
+            "source_authoritative_sha256": self.source_authoritative_sha256,
+            "replay_artifact_id": self.replay_artifact_id,
+            "replay_artifact_sha256": self.replay_artifact_sha256,
+            "replay_aggregate_receipt_id": self.replay_aggregate_receipt_id,
+            "replay_metrics_id": self.replay_metrics_id,
+            "replay_attempt_receipt_ids": list(self.replay_attempt_receipt_ids),
+            "replay_tripwire_counters": self.replay_tripwire_counters.model_dump(
+                mode="json"
+            ),
             "positive_order": list(self.positive_order),
             "orthogonal_order": list(self.orthogonal_order),
             "precedence_order": list(self.precedence_order),
@@ -1225,6 +1701,7 @@ class AcquisitionReplayLockV0(_FrozenEvaluationContract):
     authoritative_artifact_id: str
     replay_artifact_id: str
     replay_execution_id: str
+    replay_execution_sha256: str = Field(pattern=_HEX64)
     replay_execution_trace_sha256: str = Field(pattern=_HEX64)
     authoritative_sha256: str = Field(pattern=_HEX64)
     replay_sha256: str = Field(pattern=_HEX64)
@@ -1240,6 +1717,9 @@ class AcquisitionReplayLockV0(_FrozenEvaluationContract):
     semantic_equality: Literal[True] = True
     artifact_id_equality: Literal[True] = True
     byte_identity: Literal[True] = True
+    verification_scope: Literal[
+        "REQUIRES_AUTHORITATIVE_ARTIFACT_AND_REPLAY_EXECUTION"
+    ] = "REQUIRES_AUTHORITATIVE_ARTIFACT_AND_REPLAY_EXECUTION"
 
     _nonblank_fields = field_validator(
         "authoritative_artifact_id", "replay_artifact_id", "replay_execution_id"
@@ -1276,22 +1756,6 @@ class AcquisitionReplayLockV0(_FrozenEvaluationContract):
             != len(self.replay_ordered_transport_attempt_ids)
         ):
             raise ContractValidationError("independent acquisition replay did not lock")
-        trace_payload = {
-            "execution_role": "REVERSE_REPLAY",
-            "positive_order": list(self.replay_positive_order),
-            "orthogonal_order": list(self.replay_orthogonal_order),
-            "precedence_order": list(self.replay_precedence_order),
-            "ordered_case_ids": list(self.replay_ordered_case_ids),
-            "ordered_case_result_ids": list(self.replay_ordered_case_result_ids),
-            "ordered_transport_attempt_ids": list(
-                self.replay_ordered_transport_attempt_ids
-            ),
-        }
-        expected_trace_sha = hashlib.sha256(
-            canonical_json(trace_payload).encode("utf-8")
-        ).hexdigest()
-        if self.replay_execution_trace_sha256 != expected_trace_sha:
-            raise ContractValidationError("replay-lock execution trace changed")
         payload = self.model_dump(mode="json", exclude={"replay_lock_id"})
         expected_id = stable_contract_id("acqreplaylockv0", payload)
         if self.replay_lock_id is not None and self.replay_lock_id != expected_id:
@@ -1305,6 +1769,7 @@ _BASELINE_MUTATION_VALUES: Mapping[str, object] = {
     "request.semantic_request_id": (
         "szacqrequest_b005c6c56dd4eeff795c7dd2427218ee01c28cba7cf6ea932a0d7b9a064c4ee1"
     ),
+    "capability.snapshot_binding": "MATCHED",
     "capability.actual_provider_identity_verification": "PROVEN_SUPPORTED",
     "capability.transport_mode": "CANNED_ONLY",
     "capability.external_network": "PROVEN_DISABLED",
@@ -1330,9 +1795,7 @@ _BASELINE_MUTATION_VALUES: Mapping[str, object] = {
     "envelope.fallback_used": False,
     "envelope.retry_count": 0,
     "envelope.tool_calls": 0,
-    "envelope.raw_response_base64": base64.b64encode(
-        FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0
-    ).decode("ascii"),
+    "envelope.raw_response_presence": "PRESENT",
     "envelope.raw_response_sha256": FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0,
     "envelope.new_usage_completeness": "COMPLETE",
     "envelope.usage.tokens.knowledge": "KNOWN",
@@ -1340,6 +1803,7 @@ _BASELINE_MUTATION_VALUES: Mapping[str, object] = {
     "isolation_probe.source.runtime_digest": _FINGERPRINT_DIGESTS["source"],
     "isolation_probe.sibling.runtime_digest": _FINGERPRINT_DIGESTS["sibling"],
     "isolation_probe.production.runtime_digest": _FINGERPRINT_DIGESTS["production"],
+    "isolation_probe.preconditions_met": True,
     "retention_receipt.artifact_inclusion": "INCLUDE_RAW_NON_SENSITIVE_RESPONSE",
     "attempt_recorder.final_receipt_integrity": True,
     "envelope.expected_canonical_acceptance": None,
@@ -1352,6 +1816,10 @@ _MUTATION_IMPACTS: Mapping[str, Mapping[str, MutationState]] = {
     "request.schema_version": {"request_integrity": MutationState.INTENTIONALLY_CHANGED},
     "request.semantic_request_id": {
         "semantic_request_identity": MutationState.INTENTIONALLY_CHANGED
+    },
+    "capability.snapshot_binding": {
+        "semantic_request_identity": MutationState.DEPENDENTLY_CHANGED,
+        "capability_controls": MutationState.INTENTIONALLY_CHANGED,
     },
     "capability.actual_provider_identity_verification": {
         "semantic_request_identity": MutationState.DEPENDENTLY_CHANGED,
@@ -1439,7 +1907,7 @@ _MUTATION_IMPACTS: Mapping[str, Mapping[str, MutationState]] = {
     "envelope.fallback_used": {"fallback": MutationState.INTENTIONALLY_CHANGED},
     "envelope.retry_count": {"retry": MutationState.INTENTIONALLY_CHANGED},
     "envelope.tool_calls": {"tools": MutationState.INTENTIONALLY_CHANGED},
-    "envelope.raw_response_base64": {
+    "envelope.raw_response_presence": {
         "response_presence": MutationState.INTENTIONALLY_CHANGED,
         "response_digest": MutationState.NOT_APPLICABLE,
     },
@@ -1464,6 +1932,9 @@ _MUTATION_IMPACTS: Mapping[str, Mapping[str, MutationState]] = {
         "branch_isolation": MutationState.INTENTIONALLY_CHANGED
     },
     "isolation_probe.production.runtime_digest": {
+        "branch_isolation": MutationState.INTENTIONALLY_CHANGED
+    },
+    "isolation_probe.preconditions_met": {
         "branch_isolation": MutationState.INTENTIONALLY_CHANGED
     },
     "retention_receipt.artifact_inclusion": {
@@ -1624,6 +2095,9 @@ def build_frozen_acquisition_fixtures_v0() -> AcquisitionFixtureSetV0:
         retention_classification=_RETENTION_CLASSIFICATION,
         retention_reason=_RETENTION_REASON,
         access_policy_id=_RETENTION_ACCESS_POLICY_ID,
+        non_sensitive_raw_response_sha256_allowlist=(
+            _FROZEN_NON_SENSITIVE_RAW_RESPONSE_SHA256_ALLOWLIST_V0
+        ),
         artifact_inclusion_policy=(
             AcquisitionArtifactInclusionPolicy.INCLUDE_RAW_NON_SENSITIVE_RESPONSE
         ),
@@ -1664,6 +2138,25 @@ def verify_frozen_historical_hashes_v0(
     return tuple(evidence)
 
 
+def _project_core_blob_lock_id_v2(value: object) -> Optional[str]:
+    if type(value) is not str or not value.startswith("cedcorebloblockv2_"):
+        return None
+    fingerprint = value.removeprefix("cedcorebloblockv2_")
+    if len(fingerprint) != 64 or any(
+        character not in "0123456789abcdef" for character in fingerprint
+    ):
+        return None
+    return value
+
+
+def _project_hex64_v0(value: object) -> Optional[str]:
+    if type(value) is not str or len(value) != 64:
+        return None
+    if any(character not in "0123456789abcdef" for character in value):
+        return None
+    return value
+
+
 def verify_frozen_core_blob_lock_v0(
     repository_root: Optional[Path | str] = None,
 ) -> AcquisitionCoreBlobLockEvidenceV0:
@@ -1677,8 +2170,14 @@ def verify_frozen_core_blob_lock_v0(
     path = root / Path(_FROZEN_CORE_BLOB_LOCK_SOURCE_PATH_V2)
     actual_artifact_sha256: Optional[str] = None
     top_level_lock_id: Optional[str] = None
+    top_level_lock_id_present = False
+    top_level_lock_id_format_valid = False
     embedded_lock_id: Optional[str] = None
+    embedded_lock_id_present = False
+    embedded_lock_id_format_valid = False
     embedded_fingerprint: Optional[str] = None
+    embedded_fingerprint_present = False
+    embedded_fingerprint_format_valid = False
     recomputed_lock_id: Optional[str] = None
     recomputed_fingerprint: Optional[str] = None
     if path.is_file():
@@ -1686,12 +2185,25 @@ def verify_frozen_core_blob_lock_v0(
         actual_artifact_sha256 = hashlib.sha256(raw).hexdigest()
         try:
             artifact = json.loads(raw)
-            embedded = artifact["core_lock"]
-            if not isinstance(artifact, Mapping) or not isinstance(embedded, Mapping):
+            if not isinstance(artifact, Mapping):
                 raise TypeError("core lock artifact shape changed")
-            top_level_lock_id = artifact.get("core_lock_id")
-            embedded_lock_id = embedded.get("lock_id")
-            embedded_fingerprint = embedded.get("fingerprint")
+            embedded = artifact["core_lock"]
+            if not isinstance(embedded, Mapping):
+                raise TypeError("core lock artifact shape changed")
+            raw_top_level_lock_id = artifact.get("core_lock_id")
+            top_level_lock_id_present = raw_top_level_lock_id is not None
+            top_level_lock_id = _project_core_blob_lock_id_v2(
+                raw_top_level_lock_id
+            )
+            top_level_lock_id_format_valid = top_level_lock_id is not None
+            raw_embedded_lock_id = embedded.get("lock_id")
+            embedded_lock_id_present = raw_embedded_lock_id is not None
+            embedded_lock_id = _project_core_blob_lock_id_v2(raw_embedded_lock_id)
+            embedded_lock_id_format_valid = embedded_lock_id is not None
+            raw_embedded_fingerprint = embedded.get("fingerprint")
+            embedded_fingerprint_present = raw_embedded_fingerprint is not None
+            embedded_fingerprint = _project_hex64_v0(raw_embedded_fingerprint)
+            embedded_fingerprint_format_valid = embedded_fingerprint is not None
             identity_payload = {
                 key: value
                 for key, value in embedded.items()
@@ -1721,8 +2233,14 @@ def verify_frozen_core_blob_lock_v0(
     return AcquisitionCoreBlobLockEvidenceV0(
         source_artifact_actual_sha256=actual_artifact_sha256,
         actual_top_level_lock_id=top_level_lock_id,
+        actual_top_level_lock_id_present=top_level_lock_id_present,
+        actual_top_level_lock_id_format_valid=top_level_lock_id_format_valid,
         actual_embedded_lock_id=embedded_lock_id,
+        actual_embedded_lock_id_present=embedded_lock_id_present,
+        actual_embedded_lock_id_format_valid=embedded_lock_id_format_valid,
         actual_embedded_fingerprint=embedded_fingerprint,
+        actual_embedded_fingerprint_present=embedded_fingerprint_present,
+        actual_embedded_fingerprint_format_valid=embedded_fingerprint_format_valid,
         recomputed_embedded_lock_id=recomputed_lock_id,
         recomputed_embedded_fingerprint=recomputed_fingerprint,
         matches=matches,
@@ -1744,16 +2262,23 @@ class _ExecutedAttempt:
     directive: _runtime.CannedTransportDirective
     transport: _runtime.CannedAcquisitionTransport
     isolation_runtime_digests: Tuple[Tuple[str, str], ...]
+    isolation_preconditions_met: bool
     future_label_candidate_rejected: bool
     historical_usage: AcquisitionHistoricalUsage
     result: _runtime.AcquisitionRunResult
 
 
 class _ScriptedIsolationProbe:
-    def __init__(self, runtime_digests: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        runtime_digests: Mapping[str, str],
+        *,
+        preconditions_met: bool = True,
+    ) -> None:
         self._runtime_digests = dict(runtime_digests)
         if set(self._runtime_digests) != {"source", "sibling", "production"}:
             raise ContractValidationError("isolation runtime digest coverage changed")
+        self._preconditions_met = preconditions_met
         self._calls = 0
 
     def __call__(self) -> _runtime.AcquisitionIsolationSnapshot:
@@ -1767,15 +2292,16 @@ class _ScriptedIsolationProbe:
 
         return _runtime.AcquisitionIsolationSnapshot(
             source=_runtime.IsolationSubjectSnapshot(
-                _SOURCE_CAPSULE_ID, digest("source")
+                _FINGERPRINT_SUBJECT_IDS["source"], digest("source")
             ),
             sibling=_runtime.IsolationSubjectSnapshot(
-                "socrateszero-acquisition-sibling-control/v0", digest("sibling")
+                _FINGERPRINT_SUBJECT_IDS["sibling"], digest("sibling")
             ),
             production=_runtime.IsolationSubjectSnapshot(
-                "socrateszero-acquisition-production-control/v0",
+                _FINGERPRINT_SUBJECT_IDS["production"],
                 digest("production"),
             ),
+            preconditions_met=self._preconditions_met,
         )
 
 
@@ -1861,13 +2387,25 @@ def _profiles_for_probe(
                 else _runtime.CannedImplementationProfile.FALLBACK_DISABLE_UNPROVEN
             )
         elif path == "capability.retry":
-            profile = _runtime.CannedImplementationProfile.RETRY_CONTROL_UNKNOWN
+            profile = (
+                _runtime.CannedImplementationProfile.RETRY_CONTROL_UNKNOWN
+                if after == "UNKNOWN"
+                else _runtime.CannedImplementationProfile.RETRY_DISABLE_UNPROVEN
+            )
         elif path == "capability.sdk_internal_retry":
-            profile = _runtime.CannedImplementationProfile.SDK_RETRY_CONTROL_UNKNOWN
+            profile = (
+                _runtime.CannedImplementationProfile.SDK_RETRY_CONTROL_UNKNOWN
+                if after == "UNKNOWN"
+                else _runtime.CannedImplementationProfile.SDK_RETRY_DISABLE_UNPROVEN
+            )
         elif path == "capability.tools":
             profile = _runtime.CannedImplementationProfile.TOOLS_DISABLE_UNPROVEN
         elif path == "capability.worker_termination":
-            profile = _runtime.CannedImplementationProfile.TERMINATION_CONTROL_UNKNOWN
+            profile = (
+                _runtime.CannedImplementationProfile.TERMINATION_CONTROL_UNKNOWN
+                if after == "UNKNOWN"
+                else _runtime.CannedImplementationProfile.TERMINATION_UNPROVEN
+            )
         elif path == "capability.cost_reporting":
             profile = _runtime.CannedImplementationProfile.ACCOUNTING_UNPROVEN
         elif path == "budget.max_canned_transport_invocations":
@@ -1995,8 +2533,13 @@ def _envelope_and_directive(
             )
         if _has_mutation(probe, "envelope.tool_calls"):
             tool_calls = int(_mutation_after(probe, "envelope.tool_calls"))
-        if _has_mutation(probe, "envelope.raw_response_base64"):
-            raw_base64 = _mutation_after(probe, "envelope.raw_response_base64")
+        if _has_mutation(probe, "envelope.raw_response_presence"):
+            raw_presence = _mutation_after(probe, "envelope.raw_response_presence")
+            if raw_presence != "ABSENT":
+                raise ContractValidationError(
+                    "raw-response presence mutation requires ABSENT"
+                )
+            raw_base64 = None
             reported_digest = None
             reported_length = None
         if _has_mutation(probe, "envelope.raw_response_sha256"):
@@ -2057,7 +2600,7 @@ def _envelope_and_directive(
         else:
             raise ContractValidationError("future-label envelope was unexpectedly accepted")
         directive = _runtime.CannedTransportDirective(
-            failure_code=AcquisitionFailureCode.TRANSPORT_ERROR
+            raise_transport_error=True
         )
     else:
         directive = _runtime.CannedTransportDirective(
@@ -2109,10 +2652,18 @@ async def _execute_attempt(
         else _profiles_for_probe(probe)
         or (_runtime.CannedImplementationProfile.SAFE,)
     )
+    detached_capability_probe = bool(
+        probe is not None
+        and _has_mutation(probe, "capability.snapshot_binding")
+    )
     capability = _runtime.build_canned_capability_snapshot(
         ACQUISITION_PROVIDER_ID_V0,
         ACQUISITION_ADAPTER_ID_V0,
-        ACQUISITION_ADAPTER_VERSION_V0,
+        (
+            f"{ACQUISITION_ADAPTER_VERSION_V0}-detached-probe"
+            if detached_capability_probe
+            else ACQUISITION_ADAPTER_VERSION_V0
+        ),
         _adapter_revision_digest(),
         ACQUISITION_MODEL_ID_V0,
         seed_status=AcquisitionSeedStatus.UNSUPPORTED,
@@ -2145,15 +2696,29 @@ async def _execute_attempt(
         seed_status=AcquisitionSeedStatus.UNSUPPORTED,
         implementation_profile=profiles,
     )
-    if transport.capabilities != capability:
+    if (
+        not detached_capability_probe
+        and transport.capabilities != capability
+    ) or (
+        detached_capability_probe
+        and transport.capabilities == capability
+    ):
         raise ContractValidationError("transport capability construction diverged")
     isolation_runtime_digests = dict(_FINGERPRINT_DIGESTS)
+    isolation_preconditions_met = True
     if probe is not None:
         for scope in ("source", "sibling", "production"):
             path = f"isolation_probe.{scope}.runtime_digest"
             if _has_mutation(probe, path):
                 isolation_runtime_digests[scope] = str(_mutation_after(probe, path))
-    isolation_probe = _ScriptedIsolationProbe(isolation_runtime_digests)
+        if _has_mutation(probe, "isolation_probe.preconditions_met"):
+            isolation_preconditions_met = bool(
+                _mutation_after(probe, "isolation_probe.preconditions_met")
+            )
+    isolation_probe = _ScriptedIsolationProbe(
+        isolation_runtime_digests,
+        preconditions_met=isolation_preconditions_met,
+    )
     result = await _runtime.acquire_canned_observation(
         request,
         attempt,
@@ -2178,6 +2743,7 @@ async def _execute_attempt(
         directive=directive,
         transport=transport,
         isolation_runtime_digests=tuple(sorted(isolation_runtime_digests.items())),
+        isolation_preconditions_met=isolation_preconditions_met,
         future_label_candidate_rejected=future_label_candidate_rejected,
         historical_usage=historical_usage,
         result=result,
@@ -2194,16 +2760,23 @@ def _contract_roundtrip(value: BaseModel) -> bool:
 def _directive_payload(
     directive: _runtime.CannedTransportDirective,
 ) -> Mapping[str, object]:
+    envelope_payload: Optional[Mapping[str, object]] = None
+    if directive.envelope is not None:
+        # Construction evidence must prove the exact canned controls without
+        # duplicating opaque response material into evaluator metadata.
+        envelope_payload = directive.envelope.model_dump(
+            mode="json", exclude={"raw_response_base64"}
+        )
+        envelope_payload["raw_response_presence"] = (
+            "PRESENT"
+            if directive.envelope.raw_response_base64 is not None
+            else "ABSENT"
+        )
     return {
-        "envelope": (
-            directive.envelope.model_dump(mode="json")
-            if directive.envelope is not None
-            else None
-        ),
-        "failure_code": (
-            directive.failure_code.value if directive.failure_code is not None else None
-        ),
+        "envelope": envelope_payload,
+        "raise_transport_error": directive.raise_transport_error,
         "wait_for_cancellation": directive.wait_for_cancellation,
+        "resist_initial_cancellation": directive.resist_initial_cancellation,
         "completion_integrity": directive.completion_integrity,
         "resource_integrity": directive.resource_integrity,
         "retention_integrity": directive.retention_integrity,
@@ -2223,6 +2796,7 @@ def _construction_state_v0(
         transport = execution.baseline_transport
         directive = execution.baseline_directive
         isolation_digests = tuple(sorted(_FINGERPRINT_DIGESTS.items()))
+        isolation_preconditions_met = True
         future_label_rejected = False
     else:
         capability = execution.capability_snapshot
@@ -2231,6 +2805,7 @@ def _construction_state_v0(
         transport = execution.transport
         directive = execution.directive
         isolation_digests = execution.isolation_runtime_digests
+        isolation_preconditions_met = execution.isolation_preconditions_met
         future_label_rejected = execution.future_label_candidate_rejected
     return AcquisitionConstructionStateV0(
         capability_snapshot_id=capability.capability_snapshot_id or "",
@@ -2238,7 +2813,9 @@ def _construction_state_v0(
         control_policy_id=policy.control_policy_id or "",
         control_policy_json=canonical_json(policy.model_dump(mode="json")),
         semantic_request_id=request.semantic_request_id or "",
-        semantic_request_json=canonical_json(request.model_dump(mode="json")),
+        semantic_request_identity_payload_json=canonical_json(
+            request.identity_payload()
+        ),
         semantic_request_contract_valid=_contract_roundtrip(request),
         transport_capability_snapshot_id=(
             transport.capabilities.capability_snapshot_id or ""
@@ -2248,6 +2825,10 @@ def _construction_state_v0(
         ),
         directive_json=canonical_json(_directive_payload(directive)),
         isolation_runtime_digests=isolation_digests,
+        isolation_evidence_modes=(
+            FROZEN_ACQUISITION_ISOLATION_EVIDENCE_MODES_V0
+        ),
+        isolation_preconditions_met=isolation_preconditions_met,
         future_label_candidate_rejected=future_label_rejected,
     )
 
@@ -2301,6 +2882,19 @@ def _observed_mutation_value_v0(
             "semantic_request.semantic_request_id",
             request.semantic_request_id,
         )
+    if path == "capability.snapshot_binding":
+        value = (
+            "MATCHED"
+            if capability.capability_snapshot_id
+            == transport.capabilities.capability_snapshot_id
+            else "DETACHED_VALID_SNAPSHOT"
+        )
+        return value, "runtime.capability_snapshot_binding", {
+            "runtime_capability_snapshot_id": capability.capability_snapshot_id,
+            "transport_capability_snapshot_id": (
+                transport.capabilities.capability_snapshot_id
+            ),
+        }
     if path in _CONTROL_PATHS:
         value = _control_value(capability, _CONTROL_PATHS[path])
         return value, "capability_snapshot.controls", value
@@ -2325,6 +2919,9 @@ def _observed_mutation_value_v0(
         )
         value = digests[scope]
         return value, f"isolation_probe.{scope}", value
+    if path == "isolation_probe.preconditions_met":
+        value = True if baseline else execution.isolation_preconditions_met
+        return value, "isolation_probe.preconditions_met", value
     if path == "attempt_recorder.final_receipt_integrity":
         value = directive.final_receipt_integrity
         return value, "canned_transport_directive.final_receipt_integrity", value
@@ -2367,8 +2964,9 @@ def _observed_mutation_value_v0(
         return value, "canned_transport_envelope.explicit_retry_count", value
     if path == "envelope.tool_calls":
         return envelope.tool_calls, "canned_transport_envelope.tool_calls", envelope.tool_calls
-    if path == "envelope.raw_response_base64":
-        return envelope.raw_response_base64, "canned_transport_envelope.raw_response_base64", envelope.raw_response_base64
+    if path == "envelope.raw_response_presence":
+        value = "PRESENT" if envelope.raw_response_base64 is not None else "ABSENT"
+        return value, "canned_transport_envelope.raw_response_presence", value
     if path == "envelope.raw_response_sha256":
         value = envelope.reported_raw_response_digest
         return value, "canned_transport_envelope.reported_raw_response_digest", value
@@ -2399,7 +2997,7 @@ def _observed_construction_state_value_v0(
     state: AcquisitionConstructionStateV0,
     path: str,
 ) -> Tuple[object, str, object]:
-    request_payload = json.loads(state.semantic_request_json)
+    request_payload = json.loads(state.semantic_request_identity_payload_json)
     capability = AcquisitionCapabilitySnapshot.model_validate_json(
         state.capability_snapshot_json
     )
@@ -2410,8 +3008,21 @@ def _observed_construction_state_value_v0(
         value = request_payload["schema_version"]
         return value, "semantic_request.schema_version", value
     if path == "request.semantic_request_id":
-        value = request_payload["semantic_request_id"]
+        value = state.semantic_request_id
         return value, "semantic_request.semantic_request_id", value
+    if path == "capability.snapshot_binding":
+        value = (
+            "MATCHED"
+            if state.capability_snapshot_id
+            == state.transport_capability_snapshot_id
+            else "DETACHED_VALID_SNAPSHOT"
+        )
+        return value, "runtime.capability_snapshot_binding", {
+            "runtime_capability_snapshot_id": state.capability_snapshot_id,
+            "transport_capability_snapshot_id": (
+                state.transport_capability_snapshot_id
+            ),
+        }
     if path in _CONTROL_PATHS:
         value = _control_value(capability, _CONTROL_PATHS[path])
         return value, "capability_snapshot.controls", value
@@ -2436,6 +3047,9 @@ def _observed_construction_state_value_v0(
         scope = path.split(".")[1]
         value = dict(state.isolation_runtime_digests)[scope]
         return value, f"isolation_probe.{scope}", value
+    if path == "isolation_probe.preconditions_met":
+        value = state.isolation_preconditions_met
+        return value, "isolation_probe.preconditions_met", value
     if path == "attempt_recorder.final_receipt_integrity":
         value = directive["final_receipt_integrity"]
         return value, "canned_transport_directive.final_receipt_integrity", value
@@ -2475,9 +3089,9 @@ def _observed_construction_state_value_v0(
     if path == "envelope.tool_calls":
         value = envelope["tool_calls"]
         return value, "canned_transport_envelope.tool_calls", value
-    if path == "envelope.raw_response_base64":
-        value = envelope["raw_response_base64"]
-        return value, "canned_transport_envelope.raw_response_base64", value
+    if path == "envelope.raw_response_presence":
+        value = envelope["raw_response_presence"]
+        return value, "canned_transport_envelope.raw_response_presence", value
     if path == "envelope.raw_response_sha256":
         value = envelope["reported_raw_response_digest"]
         return value, "canned_transport_envelope.reported_raw_response_digest", value
@@ -2591,8 +3205,19 @@ def _build_probe_construction_evidence_v0(
         errors.append("semantic_request_identity:dependent_change_missing")
     if expected_semantic_relation is MutationState.PRESERVED and semantic_changed:
         errors.append("semantic_request_identity:unexpected_change")
-    if execution.transport.capabilities != execution.capability_snapshot:
+    declared_snapshot_detachment = _has_mutation(
+        probe, "capability.snapshot_binding"
+    )
+    if (
+        execution.transport.capabilities != execution.capability_snapshot
+        and not declared_snapshot_detachment
+    ):
         errors.append("capability_snapshot:transport_divergence")
+    if (
+        execution.transport.capabilities == execution.capability_snapshot
+        and declared_snapshot_detachment
+    ):
+        errors.append("capability_snapshot:declared_detachment_missing")
     if execution.request.capability_snapshot_id != execution.capability_snapshot.capability_snapshot_id:
         errors.append("capability_snapshot:request_link_divergence")
     if execution.request.control_policy_id != execution.policy.control_policy_id:
@@ -2695,11 +3320,42 @@ def _positive_assertions_valid(
 ) -> bool:
     results = tuple(item.result for item in executions)
     receipts = tuple(item.attempt_receipt for item in results)
+    expected_raw = (
+        FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0
+        if case.case_id == "acqv0-s02-content-opaque-invalid-json"
+        else FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0
+    )
+    expected_historical_usage = (
+        fixtures.unknown_historical_usage
+        if case.case_id == "acqv0-s06-historical-usage-unknown"
+        else fixtures.known_historical_usage
+    )
     common = all(
         all(
             (
             result.outcome is AcquisitionAttemptOutcome.ACQUIRED,
             result.observation is not None,
+            receipt.capability_snapshot_id
+            == fixtures.capability_snapshot.capability_snapshot_id,
+            receipt.control_policy_id == fixtures.control_policy.control_policy_id,
+            receipt.semantic_request_id == fixtures.semantic_request.semantic_request_id,
+            receipt.requested_binding == fixtures.semantic_request.requested_binding,
+            receipt.historical_usage == expected_historical_usage,
+            result.retention_receipt.policy == fixtures.retention_policy,
+            receipt.actual_provider_visible_request_digest
+            == hashlib.sha256(result.provider_visible_body).hexdigest(),
+            receipt.actual_provider_visible_request_length
+            == len(result.provider_visible_body),
+            receipt.actual_provider_visible_request_digest
+            == fixtures.semantic_request.provider_visible_request.sha256,
+            receipt.actual_provider_visible_request_length
+            == fixtures.semantic_request.provider_visible_request.byte_length,
+            base64.b64decode(receipt.raw_response_base64 or "", validate=True)
+            == expected_raw,
+            base64.b64decode(
+                result.retention_receipt.raw_response_base64 or "", validate=True
+            )
+            == expected_raw,
             result.tripwire_counters.external_network_attempts == 0,
             result.tripwire_counters.credential_access_attempts == 0,
             result.tripwire_counters.live_provider_calls == 0,
@@ -2709,7 +3365,7 @@ def _positive_assertions_valid(
             result.tripwire_counters.canonical_application_calls == 0,
             )
         )
-        for result in results
+        for result, receipt in zip(results, receipts)
     )
     if not common:
         return False
@@ -2792,6 +3448,58 @@ def _case_result_common_values(
             capability_snapshot_id=receipt.capability_snapshot_id,
             control_policy_id=receipt.control_policy_id,
             provider_visible_prompt_digest=receipt.provider_visible_request_digest,
+            provider_visible_prompt_length=receipt.provider_visible_request_length,
+            actual_provider_visible_prompt_digest=(
+                receipt.actual_provider_visible_request_digest
+            ),
+            actual_provider_visible_prompt_length=(
+                receipt.actual_provider_visible_request_length
+            ),
+            transport_record_ordinal=(
+                execution.result.transport_record.ordinal
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_attempt_id=(
+                execution.result.transport_record.transport_attempt_id
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_prompt_digest=(
+                execution.result.transport_record.provider_visible_sha256
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_prompt_length=(
+                execution.result.transport_record.provider_visible_length
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_outcome=(
+                execution.result.transport_record.outcome
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_cancellation_acknowledged=(
+                execution.result.transport_record.cancellation_acknowledged
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_worker_terminated=(
+                execution.result.transport_record.worker_terminated
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_cancellation_requests=(
+                execution.result.transport_record.cancellation_requests
+                if execution.result.transport_record is not None
+                else None
+            ),
+            transport_record_forced_cleanup=(
+                execution.result.transport_record.forced_cleanup
+                if execution.result.transport_record is not None
+                else None
+            ),
             isolation_receipt_id=receipt.isolation_receipt_id,
             retention_receipt_id=receipt.retention_receipt_id,
             primary_result=receipt.primary_result,
@@ -3023,6 +3731,51 @@ def _validate_case_results_against_frozen_v0(
             )
         ):
             raise ContractValidationError("probe result differs from frozen case")
+    ordered_results = tuple(sorted(results, key=lambda item: item.case_id))
+    construction_lock_payload = [
+        {
+            "case_id": result.case_id,
+            "construction_evidence_id": (
+                result.construction_evidence.construction_evidence_id
+            ),
+        }
+        for result in ordered_results
+        if result.construction_evidence is not None
+    ]
+    receipt_lock_payload = [
+        {
+            "case_id": result.case_id,
+            "attempt_receipt_ids": list(result.attempt_receipt_ids),
+        }
+        for result in ordered_results
+    ]
+    result_lock_payload = [
+        {
+            "case_id": result.case_id,
+            "case_result_id": result.case_result_id,
+        }
+        for result in ordered_results
+    ]
+    actual_locks = (
+        hashlib.sha256(
+            canonical_json(construction_lock_payload).encode("utf-8")
+        ).hexdigest(),
+        hashlib.sha256(
+            canonical_json(receipt_lock_payload).encode("utf-8")
+        ).hexdigest(),
+        hashlib.sha256(
+            canonical_json(result_lock_payload).encode("utf-8")
+        ).hexdigest(),
+    )
+    expected_locks = (
+        FROZEN_PROBE_CONSTRUCTION_EVIDENCE_LOCK_SHA256_V0,
+        FROZEN_CASE_ATTEMPT_RECEIPT_LOCK_SHA256_V0,
+        FROZEN_CASE_RESULT_LOCK_SHA256_V0,
+    )
+    if actual_locks != expected_locks:
+        raise ContractValidationError(
+            "case construction, receipt, or result identity lock changed"
+        )
 
 
 def _positive_receipt_assertions_valid_v0(
@@ -3032,10 +3785,39 @@ def _positive_receipt_assertions_valid_v0(
     fixtures: AcquisitionFixtureSetV0,
     rows: Sequence[AcquisitionCaseAttemptEvidenceV0],
 ) -> bool:
-    common = all(
+    expected_raw = (
+        FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0
+        if case_id == "acqv0-s02-content-opaque-invalid-json"
+        else FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0
+    )
+    expected_historical_usage = (
+        fixtures.unknown_historical_usage
+        if case_id == "acqv0-s06-historical-usage-unknown"
+        else fixtures.known_historical_usage
+    )
+    common = (
+        len(receipts) == len(retentions) == len(rows)
+        and all(
         receipt.primary_result.outcome is AcquisitionAttemptOutcome.ACQUIRED
         and receipt.unadmitted_observation_id is not None
         and receipt.execution_usage.complete
+        and receipt.capability_snapshot_id
+        == fixtures.capability_snapshot.capability_snapshot_id
+        and receipt.control_policy_id == fixtures.control_policy.control_policy_id
+        and receipt.semantic_request_id == fixtures.semantic_request.semantic_request_id
+        and receipt.requested_binding == fixtures.semantic_request.requested_binding
+        and receipt.historical_usage == expected_historical_usage
+        and retention.policy == fixtures.retention_policy
+        and retention.retention_policy_id
+        == fixtures.retention_policy.retention_policy_id
+        and receipt.actual_provider_visible_request_digest
+        == fixtures.semantic_request.provider_visible_request.sha256
+        and receipt.actual_provider_visible_request_length
+        == fixtures.semantic_request.provider_visible_request.byte_length
+        and base64.b64decode(receipt.raw_response_base64 or "", validate=True)
+        == expected_raw
+        and base64.b64decode(retention.raw_response_base64 or "", validate=True)
+        == expected_raw
         and row.tripwire_counters.external_network_attempts == 0
         and row.tripwire_counters.credential_access_attempts == 0
         and row.tripwire_counters.live_provider_calls == 0
@@ -3043,7 +3825,8 @@ def _positive_receipt_assertions_valid_v0(
         and row.tripwire_counters.model_executions == 0
         and row.tripwire_counters.tool_calls == 0
         and row.tripwire_counters.canonical_application_calls == 0
-        for receipt, row in zip(receipts, rows)
+        for receipt, retention, row in zip(receipts, retentions, rows)
+        )
     )
     if not common:
         return False
@@ -3118,6 +3901,173 @@ def _positive_receipt_assertions_valid_v0(
     return False
 
 
+def _decode_optional_canonical_base64_v0(
+    value: Optional[str],
+) -> Tuple[bool, Optional[bytes]]:
+    if value is None:
+        return True, None
+    try:
+        payload = base64.b64decode(value.encode("ascii"), validate=True)
+    except Exception:
+        return False, None
+    return base64.b64encode(payload).decode("ascii") == value, payload
+
+
+def _retention_response_crosslink_matches_v0(
+    receipt: AcquisitionAttemptReceipt,
+    retention: AcquisitionRetentionReceipt,
+) -> bool:
+    attempt_valid, attempt_raw = _decode_optional_canonical_base64_v0(
+        receipt.raw_response_base64
+    )
+    retention_valid, retained_raw = _decode_optional_canonical_base64_v0(
+        retention.raw_response_base64
+    )
+    if not attempt_valid or not retention_valid:
+        return False
+    if attempt_raw is None:
+        no_attempt_response = all(
+            item is None
+            for item in (
+                receipt.reported_raw_response_digest,
+                receipt.computed_raw_response_digest,
+                receipt.reported_raw_response_length,
+                receipt.computed_raw_response_length,
+            )
+        )
+        if no_attempt_response:
+            return all(
+                item is None
+                for item in (
+                    retention.raw_response_digest,
+                    retention.raw_response_length,
+                    retention.raw_response_base64,
+                    retention.content_addressed_response_reference,
+                )
+            )
+        # A non-allowlisted response is deliberately reduced to digest/length
+        # evidence in both receipts.  It must be rejected by retention policy
+        # and must never acquire a raw or content-addressed artifact payload.
+        return all(
+            (
+                receipt.reported_raw_response_digest
+                == receipt.computed_raw_response_digest,
+                receipt.reported_raw_response_length
+                == receipt.computed_raw_response_length,
+                retention.raw_response_digest
+                == receipt.computed_raw_response_digest,
+                retention.raw_response_length
+                == receipt.computed_raw_response_length,
+                retention.raw_response_base64 is None,
+                retention.content_addressed_response_reference is None,
+                retention.policy_compliant is False,
+                receipt.computed_raw_response_digest
+                not in retention.policy.non_sensitive_raw_response_sha256_allowlist,
+            )
+        )
+
+    digest = hashlib.sha256(attempt_raw).hexdigest()
+    if any(
+        (
+            receipt.computed_raw_response_digest != digest,
+            receipt.computed_raw_response_length != len(attempt_raw),
+            retention.raw_response_digest != digest,
+            retention.raw_response_length != len(attempt_raw),
+        )
+    ):
+        return False
+    if retention.raw_response_base64 is not None:
+        return retained_raw == attempt_raw
+    return retention.content_addressed_response_reference == f"szacqraw_{digest}"
+
+
+def _retention_prompt_crosslink_matches_v0(
+    receipt: AcquisitionAttemptReceipt,
+    retention: AcquisitionRetentionReceipt,
+) -> bool:
+    visible_identity_payload = {
+        "schema_version": PROVIDER_VISIBLE_REQUEST_SCHEMA_VERSION,
+        "rendering_version": ACQUISITION_PROVIDER_VISIBLE_RENDERING_VERSION_V0,
+        "byte_length": receipt.provider_visible_request_length,
+        "sha256": receipt.provider_visible_request_digest,
+    }
+    expected_reference = stable_contract_id(
+        "szacqvisible",
+        visible_identity_payload,
+    )
+    return all(
+        (
+            retention.provider_visible_prompt_digest
+            == receipt.provider_visible_request_digest,
+            retention.provider_visible_prompt_length
+            == receipt.provider_visible_request_length,
+            retention.provider_visible_prompt_reference == expected_reference,
+            retention.provider_visible_prompt_raw_retained is False,
+        )
+    )
+
+
+def _retention_crosslink_mismatch_count_v0(
+    receipts: Sequence[AcquisitionAttemptReceipt],
+    retention_receipts: Sequence[AcquisitionRetentionReceipt],
+) -> int:
+    retention_by_id: Dict[str, AcquisitionRetentionReceipt] = {}
+    mismatches = 0
+    for retention in retention_receipts:
+        retention_id = retention.retention_receipt_id or ""
+        if not retention_id or retention_id in retention_by_id:
+            mismatches += 1
+            continue
+        retention_by_id[retention_id] = retention
+
+    used_retention_ids = set()
+    for receipt in receipts:
+        retention = retention_by_id.get(receipt.retention_receipt_id)
+        if retention is None:
+            mismatches += 1
+            continue
+        used_retention_ids.add(receipt.retention_receipt_id)
+        if any(
+            (
+                retention.semantic_request_id != receipt.semantic_request_id,
+                retention.transport_attempt_id != receipt.transport_attempt_id,
+                retention.provider_visible_prompt_digest
+                != receipt.provider_visible_request_digest,
+                retention.provider_visible_prompt_length
+                != receipt.provider_visible_request_length,
+                not _retention_prompt_crosslink_matches_v0(receipt, retention),
+                not _retention_response_crosslink_matches_v0(receipt, retention),
+            )
+        ):
+            mismatches += 1
+    mismatches += len(set(retention_by_id) - used_retention_ids)
+    return mismatches
+
+
+def _reported_usage_is_incomplete_v0(
+    receipt: AcquisitionAttemptReceipt,
+) -> bool:
+    """Read the untrusted envelope usage without collapsing UNKNOWN to zero."""
+
+    if receipt.reported_execution_usage_json is None:
+        usage_guard = next(
+            item
+            for item in receipt.guard_evaluations
+            if item.guard_id is AcquisitionGuardId.A12_USAGE_COMPLETENESS
+        )
+        return usage_guard.state in (
+            AcquisitionGuardState.PASSED,
+            AcquisitionGuardState.FAILED,
+        )
+    try:
+        usage = AcquisitionExecutionUsage.model_validate_json(
+            receipt.reported_execution_usage_json
+        )
+    except Exception:
+        return True
+    return not usage.complete
+
+
 def _validate_case_result_receipt_links_v0(
     results: Sequence[AcquisitionCaseResultV0],
     aggregate: AcquisitionAggregateReceipt,
@@ -3155,13 +4105,93 @@ def _validate_case_result_receipt_links_v0(
     used_retention_ids = set()
     frozen_fixtures = build_frozen_acquisition_fixtures_v0()
     all_attempt_rows = []
+
+    def isolation_fingerprint_digest(
+        subject_id: str,
+        runtime_digest: str,
+    ) -> str:
+        return hashlib.sha256(
+            canonical_json(
+                {
+                    "runtime_digest": runtime_digest,
+                    "subject_id": subject_id,
+                }
+            ).encode("utf-8")
+        ).hexdigest()
+
     for result in results:
+        construction_evidence = result.construction_evidence
+        if result.case_class is AcquisitionCaseClass.POSITIVE:
+            if construction_evidence is not None:
+                raise ContractValidationError(
+                    "positive case cannot carry evaluator construction labels"
+                )
+            after_isolation_runtime_digests = dict(_FINGERPRINT_DIGESTS)
+            expected_request_payload = (
+                frozen_fixtures.semantic_request.identity_payload()
+            )
+        else:
+            if construction_evidence is None:
+                raise ContractValidationError(
+                    "probe construction evidence is missing"
+                )
+            if (
+                construction_evidence.baseline.isolation_runtime_digests
+                != tuple(sorted(FROZEN_ACQUISITION_ISOLATION_RUNTIME_DIGESTS_V0))
+            ):
+                raise ContractValidationError(
+                    "probe baseline isolation declaration changed"
+                )
+            after_isolation_runtime_digests = dict(
+                construction_evidence.probe.isolation_runtime_digests
+            )
+            expected_request_payload = json.loads(
+                construction_evidence.probe.semantic_request_identity_payload_json
+            )
         rows = tuple(sorted(result.attempt_evidence, key=lambda item: item.attempt_ordinal))
         linked_receipts = tuple(receipt_by_id[row.attempt_receipt_id] for row in rows)
         complete = True
         for row, receipt in zip(rows, linked_receipts):
             expected_branch = (
                 f"{_BASELINE_BRANCH_PREFIX}/{result.case_id}/{row.attempt_ordinal}"
+            )
+            expected_transport_attempt_id = stable_contract_id(
+                "szacqattempt",
+                {
+                    "schema_version": ACQUISITION_TRANSPORT_ATTEMPT_SCHEMA_VERSION,
+                    "semantic_request_id": receipt.semantic_request_id,
+                    "experiment_id": ACQUISITION_EXPERIMENT_ID_V0,
+                    "branch_id": expected_branch,
+                    "attempt_ordinal": row.attempt_ordinal,
+                    "canned_transport_id": CANNED_TRANSPORT_ID,
+                },
+            )
+            expected_provider_visible_body = FROZEN_PROVIDER_VISIBLE_REQUEST_BYTES_V0
+            if _result_has_path(result, "renderer.entropy_source"):
+                entropy_payload = json.loads(
+                    FROZEN_PROVIDER_VISIBLE_REQUEST_BYTES_V0.decode("utf-8")
+                )
+                entropy_payload["branch_id"] = expected_branch
+                expected_provider_visible_body = canonical_json(entropy_payload).encode(
+                    "utf-8"
+                )
+            expected_actual_prompt_digest = hashlib.sha256(
+                expected_provider_visible_body
+            ).hexdigest()
+            expected_actual_prompt_length = len(expected_provider_visible_body)
+            expected_record_outcome = (
+                None
+                if row.tripwire_counters.canned_transport_invocations == 0
+                else _runtime.CannedInvocationOutcome.RAISED
+                if _result_has_path(
+                    result, "envelope.expected_canonical_acceptance"
+                )
+                else _runtime.CannedInvocationOutcome.RETURNED
+            )
+            expected_historical_usage = (
+                frozen_fixtures.unknown_historical_usage
+                if result.case_id == "acqv0-s06-historical-usage-unknown"
+                else frozen_fixtures.known_historical_usage
             )
             if any(
                 (
@@ -3170,14 +4200,41 @@ def _validate_case_result_receipt_links_v0(
                     receipt.branch_id != row.branch_id,
                     receipt.branch_id != expected_branch,
                     receipt.attempt_ordinal != row.attempt_ordinal,
+                    receipt.transport_attempt_id != expected_transport_attempt_id,
+                    receipt.canned_transport_id != CANNED_TRANSPORT_ID,
                     receipt.capability_snapshot_id != row.capability_snapshot_id,
                     receipt.control_policy_id != row.control_policy_id,
                     receipt.provider_visible_request_digest
                     != row.provider_visible_prompt_digest,
+                    receipt.provider_visible_request_length
+                    != row.provider_visible_prompt_length,
+                    receipt.actual_provider_visible_request_digest
+                    != row.actual_provider_visible_prompt_digest,
+                    receipt.actual_provider_visible_request_length
+                    != row.actual_provider_visible_prompt_length,
+                    receipt.actual_provider_visible_request_digest
+                    != expected_actual_prompt_digest,
+                    receipt.actual_provider_visible_request_length
+                    != expected_actual_prompt_length,
+                    row.transport_record_outcome is not expected_record_outcome,
+                    receipt.historical_usage != expected_historical_usage,
                     receipt.isolation_receipt_id != row.isolation_receipt_id,
                     receipt.retention_receipt_id != row.retention_receipt_id,
                     receipt.primary_result != row.primary_result,
                     receipt.guard_evaluations != row.guard_evaluations,
+                    receipt.requested_binding.identity_payload()
+                    != expected_request_payload["requested_binding"],
+                    receipt.provider_visible_request_digest
+                    != expected_request_payload["provider_visible_sha256"],
+                    receipt.provider_visible_request_length
+                    != expected_request_payload["provider_visible_byte_length"],
+                    receipt.prompt_byte_mismatch
+                    is not (
+                        receipt.actual_provider_visible_request_digest
+                        != receipt.provider_visible_request_digest
+                        or receipt.actual_provider_visible_request_length
+                        != receipt.provider_visible_request_length
+                    ),
                 )
             ):
                 raise ContractValidationError("case attempt evidence detached from receipt")
@@ -3195,6 +4252,8 @@ def _validate_case_result_receipt_links_v0(
                     retention.transport_attempt_id != receipt.transport_attempt_id,
                     retention.provider_visible_prompt_digest
                     != receipt.provider_visible_request_digest,
+                    retention.provider_visible_prompt_length
+                    != receipt.provider_visible_request_length,
                     retention.retention_policy_id != retention.policy.retention_policy_id,
                     receipt.retention_policy_compliant != retention.policy_compliant,
                     receipt.source_mutations != isolation.source_mutations,
@@ -3203,6 +4262,113 @@ def _validate_case_result_receipt_links_v0(
                 )
             ):
                 raise ContractValidationError("case side receipt detached from attempt")
+            if not _retention_response_crosslink_matches_v0(receipt, retention):
+                raise ContractValidationError(
+                    "case retention response evidence differs from attempt receipt"
+                )
+            if not _retention_prompt_crosslink_matches_v0(receipt, retention):
+                raise ContractValidationError(
+                    "case retention prompt evidence differs from attempt receipt"
+                )
+            mutation_paths = frozenset(
+                mutation.path for mutation in result.literal_mutations
+            )
+            invocation_quantity = receipt.execution_usage.canned_transport_invocations
+            if (
+                invocation_quantity.knowledge is not ResourceKnowledgeState.KNOWN
+                or invocation_quantity.value is None
+            ):
+                raise ContractValidationError(
+                    "receipt invocation usage must be KNOWN"
+                )
+            if (
+                invocation_quantity.value
+                != row.tripwire_counters.canned_transport_invocations
+                and _UNCOUNTED_INVOCATION_MUTATION_PATH_V0 not in mutation_paths
+            ):
+                raise ContractValidationError(
+                    "receipt invocation usage differs from tripwire without declaration"
+                )
+            for field_name in _FORBIDDEN_EXECUTION_COUNTER_FIELDS_V0:
+                quantity = getattr(receipt.execution_usage, field_name)
+                if (
+                    quantity.knowledge is not ResourceKnowledgeState.KNOWN
+                    or quantity.value is None
+                    or quantity.value != getattr(row.tripwire_counters, field_name)
+                ):
+                    raise ContractValidationError(
+                        "receipt forbidden execution counter differs from tripwire"
+                    )
+            if (
+                _reported_usage_is_incomplete_v0(receipt)
+                and mutation_paths.isdisjoint(_INCOMPLETE_USAGE_MUTATION_PATHS_V0)
+            ):
+                raise ContractValidationError(
+                    "incomplete reported usage lacks an exact declaration"
+                )
+            if receipt.primary_result.outcome is AcquisitionAttemptOutcome.ACQUIRED:
+                if receipt.semantic_request_id != stable_contract_id(
+                    "szacqrequest",
+                    expected_request_payload,
+                ):
+                    raise ContractValidationError(
+                        "acquired semantic request identity is not payload-bound"
+                    )
+                if (
+                    receipt.actual_binding is None
+                    or receipt.computed_raw_response_digest is None
+                    or receipt.computed_raw_response_length is None
+                ):
+                    raise ContractValidationError(
+                        "acquired receipt cannot reconstruct its observation"
+                    )
+                reconstructed_observation = UnadmittedAcquiredObservation(
+                    semantic_request_id=receipt.semantic_request_id,
+                    transport_attempt_id=receipt.transport_attempt_id,
+                    requested_binding=receipt.requested_binding,
+                    actual_binding=receipt.actual_binding,
+                    raw_response_digest=receipt.computed_raw_response_digest,
+                    raw_response_length=receipt.computed_raw_response_length,
+                    raw_response_reference=(
+                        f"szacqraw_{receipt.computed_raw_response_digest}"
+                    ),
+                    execution_usage_id=receipt.execution_usage.execution_usage_id
+                    or "",
+                    historical_usage_id=receipt.historical_usage.historical_usage_id
+                    or "",
+                    isolation_receipt_id=receipt.isolation_receipt_id,
+                    retention_receipt_id=receipt.retention_receipt_id,
+                )
+                if (
+                    receipt.unadmitted_observation_id
+                    != reconstructed_observation.unadmitted_observation_id
+                ):
+                    raise ContractValidationError(
+                        "unadmitted observation identity is not receipt-bound"
+                    )
+            isolation_fingerprints = {
+                item.scope.value.lower(): item
+                for item in isolation.fingerprints
+            }
+            for scope in ("source", "sibling", "production"):
+                fingerprint = isolation_fingerprints[scope]
+                subject_id = _FINGERPRINT_SUBJECT_IDS[scope]
+                expected_before = isolation_fingerprint_digest(
+                    subject_id,
+                    _FINGERPRINT_DIGESTS[scope],
+                )
+                expected_after = isolation_fingerprint_digest(
+                    subject_id,
+                    after_isolation_runtime_digests[scope],
+                )
+                if (
+                    fingerprint.subject_id != subject_id
+                    or fingerprint.before_digest != expected_before
+                    or fingerprint.after_digest != expected_after
+                ):
+                    raise ContractValidationError(
+                        "isolation receipt fingerprint is not evidence-bound"
+                    )
             complete = complete and all(
                 (
                     _contract_roundtrip(receipt),
@@ -3235,9 +4401,9 @@ def _validate_case_result_receipt_links_v0(
             if result.fixture_construction_valid is not expected_fixture_valid:
                 raise ContractValidationError("positive fixture-valid flag changed")
         else:
-            evidence = result.construction_evidence
-            if evidence is None:
-                raise ContractValidationError("probe construction evidence is missing")
+            evidence = construction_evidence
+            if evidence is None:  # narrowed above
+                raise AssertionError("unreachable missing construction evidence")
             if any(
                 (
                     evidence.baseline.capability_snapshot_id
@@ -3270,106 +4436,11 @@ def _validate_case_result_receipt_links_v0(
         raise ContractValidationError("case tripwire evidence differs from aggregate")
 
 
-_IDENTITY_FAILURES = frozenset(
-    {
-        AcquisitionFailureCode.INVALID_SEMANTIC_IDENTITY,
-        AcquisitionFailureCode.IDENTITY_COLLISION,
-        AcquisitionFailureCode.ACTUAL_PROVIDER_MISMATCH,
-        AcquisitionFailureCode.ACTUAL_MODEL_MISMATCH,
-        AcquisitionFailureCode.ACTUAL_CONFIGURATION_MISMATCH,
-    }
-)
-
-
-def _receipt_has_identity_mismatch_v0(
-    receipt: AcquisitionAttemptReceipt,
-) -> bool:
-    return any(
-        (
-            receipt.actual_provider_id is not None
-            and receipt.actual_provider_id != receipt.requested_binding.provider_id,
-            receipt.actual_model_id is not None
-            and receipt.actual_model_id != receipt.requested_binding.model_id,
-            receipt.actual_configuration_digest is not None
-            and receipt.actual_configuration_digest
-            != receipt.requested_binding.configuration_digest,
-            receipt.reported_raw_response_digest is not None
-            and receipt.computed_raw_response_digest is not None
-            and receipt.reported_raw_response_digest
-            != receipt.computed_raw_response_digest,
-        )
-    )
-
-
 def _aggregate_metrics_v0(
     receipts: Tuple[AcquisitionAttemptReceipt, ...],
     counters: AcquisitionTripwireCounters,
 ) -> AcquisitionAggregateMetrics:
-    quantities = tuple(
-        receipt.execution_usage.canned_transport_invocations for receipt in receipts
-    )
-    if all(
-        quantity.knowledge is ResourceKnowledgeState.KNOWN
-        for quantity in quantities
-    ):
-        receipt_total = sum(quantity.value or 0 for quantity in quantities)
-        receipt_invocations = AcquisitionResourceQuantity.known(receipt_total)
-        uncounted = AcquisitionResourceQuantity.known(
-            abs(counters.canned_transport_invocations - receipt_total)
-        )
-    else:
-        receipt_invocations = AcquisitionResourceQuantity.unknown()
-        uncounted = AcquisitionResourceQuantity.unknown()
-    failure_counts: Dict[AcquisitionFailureCode, int] = {}
-    for receipt in receipts:
-        code = receipt.primary_result.failure_code
-        if code is not None:
-            failure_counts[code] = failure_counts.get(code, 0) + 1
-    return AcquisitionAggregateMetrics(
-        attempts_total=len(receipts),
-        acquired_attempts=sum(
-            receipt.primary_result.outcome is AcquisitionAttemptOutcome.ACQUIRED
-            for receipt in receipts
-        ),
-        failed_closed_attempts=sum(
-            receipt.primary_result.outcome is AcquisitionAttemptOutcome.FAILED_CLOSED
-            for receipt in receipts
-        ),
-        receipt_canned_transport_invocations=receipt_invocations,
-        observed_canned_transport_invocations=counters.canned_transport_invocations,
-        uncounted_canned_invocations=uncounted,
-        external_network_attempts=counters.external_network_attempts,
-        credential_access_attempts=counters.credential_access_attempts,
-        live_provider_calls=counters.live_provider_calls,
-        provider_sdk_calls=counters.provider_sdk_calls,
-        model_executions=counters.model_executions,
-        tool_calls=counters.tool_calls,
-        canonical_application_calls=counters.canonical_application_calls,
-        incomplete_usage_receipts=sum(
-            not receipt.execution_usage.complete for receipt in receipts
-        ),
-        identity_mismatches=sum(
-            receipt.primary_result.failure_code in _IDENTITY_FAILURES
-            or _receipt_has_identity_mismatch_v0(receipt)
-            for receipt in receipts
-        ),
-        prompt_byte_mismatches=sum(
-            receipt.prompt_byte_mismatch for receipt in receipts
-        ),
-        source_mutations=sum(receipt.source_mutations for receipt in receipts),
-        sibling_mutations=sum(receipt.sibling_mutations for receipt in receipts),
-        production_mutations=sum(receipt.production_mutations for receipt in receipts),
-        retention_violations=sum(
-            not receipt.retention_policy_compliant for receipt in receipts
-        ),
-        receipt_mismatches=failure_counts.get(
-            AcquisitionFailureCode.RECEIPT_MISMATCH, 0
-        ),
-        failures_by_code=tuple(
-            AcquisitionFailureCount(failure_code=code, count=count)
-            for code, count in failure_counts.items()
-        ),
-    )
+    return recompute_acquisition_aggregate_metrics_v0(receipts, counters)
 
 
 def _sum_tripwire_counters(
@@ -3410,28 +4481,167 @@ def _result_acquired(result: AcquisitionCaseResultV0) -> bool:
     )
 
 
-def _known_usage_total(
+def _strict_known_acquired_usage_total_v0(
     receipts: Sequence[AcquisitionAttemptReceipt],
     field_name: str,
 ) -> int:
-    values = []
+    total = 0
     for receipt in receipts:
+        if receipt.primary_result.outcome is not AcquisitionAttemptOutcome.ACQUIRED:
+            continue
         quantity = getattr(receipt.execution_usage, field_name)
-        if quantity.knowledge is not ResourceKnowledgeState.KNOWN:
-            return 0
-        values.append(quantity.value or 0)
-    return sum(values)
+        if (
+            quantity.knowledge is not ResourceKnowledgeState.KNOWN
+            or quantity.value is None
+        ):
+            raise ContractValidationError(
+                f"acquired usage must be KNOWN for {field_name}"
+            )
+        total += quantity.value
+    return total
+
+
+@dataclass(frozen=True)
+class _StrictAggregateAccountingV0:
+    raw_aggregate_uncounted_canned_invocations: AcquisitionResourceQuantity
+    raw_aggregate_incomplete_usage_receipts: int
+    expected_uncounted_canned_invocation_failures: int
+    raw_uncounted_canned_invocation_failures: int
+    unexpected_uncounted_canned_invocation_failures: int
+    expected_incomplete_reported_usage_receipts: int
+    raw_incomplete_reported_usage_receipts: int
+    unexpected_incomplete_reported_usage_receipts: int
+    unknown_execution_usage_quantities: int
+    canned_invocation_tripwire_mismatches: int
+    forbidden_execution_counter_mismatches: int
+    declared_accounting_outcome_mismatches: int
+
+
+def _strict_aggregate_accounting_v0(
+    results: Sequence[AcquisitionCaseResultV0],
+    aggregate: AcquisitionAggregateReceipt,
+) -> _StrictAggregateAccountingV0:
+    """Independently reconcile each immutable receipt to evaluator tripwires."""
+
+    receipt_by_id = {
+        receipt.receipt_id or "": receipt for receipt in aggregate.attempt_receipts
+    }
+    expected_uncounted = 0
+    raw_uncounted = 0
+    unexpected_uncounted = 0
+    expected_incomplete = 0
+    raw_incomplete = 0
+    unexpected_incomplete = 0
+    unknown_quantities = 0
+    canned_mismatches = 0
+    forbidden_mismatches = 0
+    declared_outcome_mismatches = 0
+
+    for result in results:
+        mutation_paths = frozenset(
+            mutation.path for mutation in result.literal_mutations
+        )
+        declared_uncounted = (
+            _UNCOUNTED_INVOCATION_MUTATION_PATH_V0 in mutation_paths
+        )
+        declared_incomplete = not mutation_paths.isdisjoint(
+            _INCOMPLETE_USAGE_MUTATION_PATHS_V0
+        )
+        expects_uncounted_failure = (
+            declared_uncounted
+            and result.expected_failure_code
+            is AcquisitionFailureCode.UNCOUNTED_CANNED_INVOCATION
+        )
+
+        for row in result.attempt_evidence:
+            expected_uncounted += int(expects_uncounted_failure)
+            expected_incomplete += int(declared_incomplete)
+            receipt = receipt_by_id.get(row.attempt_receipt_id)
+            if receipt is None:
+                declared_outcome_mismatches += int(
+                    expects_uncounted_failure or declared_incomplete
+                )
+                continue
+
+            usage = receipt.execution_usage
+            for field_name in AcquisitionExecutionUsage._MEASURE_FIELDS:
+                quantity = getattr(usage, field_name)
+                unknown_quantities += int(
+                    quantity.knowledge is not ResourceKnowledgeState.KNOWN
+                    or quantity.value is None
+                )
+
+            invocation_quantity = usage.canned_transport_invocations
+            if (
+                invocation_quantity.knowledge is ResourceKnowledgeState.KNOWN
+                and invocation_quantity.value is not None
+                and invocation_quantity.value
+                != row.tripwire_counters.canned_transport_invocations
+                and not declared_uncounted
+            ):
+                canned_mismatches += 1
+
+            for field_name in _FORBIDDEN_EXECUTION_COUNTER_FIELDS_V0:
+                quantity = getattr(usage, field_name)
+                if (
+                    quantity.knowledge is ResourceKnowledgeState.KNOWN
+                    and quantity.value is not None
+                    and quantity.value != getattr(row.tripwire_counters, field_name)
+                ):
+                    forbidden_mismatches += 1
+
+            has_uncounted_failure = (
+                receipt.primary_result.failure_code
+                is AcquisitionFailureCode.UNCOUNTED_CANNED_INVOCATION
+            )
+            raw_uncounted += int(has_uncounted_failure)
+            unexpected_uncounted += int(
+                has_uncounted_failure and not expects_uncounted_failure
+            )
+            declared_outcome_mismatches += int(
+                has_uncounted_failure is not expects_uncounted_failure
+            )
+
+            has_incomplete_reported_usage = _reported_usage_is_incomplete_v0(receipt)
+            raw_incomplete += int(has_incomplete_reported_usage)
+            unexpected_incomplete += int(
+                has_incomplete_reported_usage and not declared_incomplete
+            )
+            declared_outcome_mismatches += int(
+                has_incomplete_reported_usage is not declared_incomplete
+            )
+
+    return _StrictAggregateAccountingV0(
+        raw_aggregate_uncounted_canned_invocations=(
+            aggregate.metrics.uncounted_canned_invocations
+        ),
+        raw_aggregate_incomplete_usage_receipts=(
+            aggregate.metrics.incomplete_usage_receipts
+        ),
+        expected_uncounted_canned_invocation_failures=expected_uncounted,
+        raw_uncounted_canned_invocation_failures=raw_uncounted,
+        unexpected_uncounted_canned_invocation_failures=unexpected_uncounted,
+        expected_incomplete_reported_usage_receipts=expected_incomplete,
+        raw_incomplete_reported_usage_receipts=raw_incomplete,
+        unexpected_incomplete_reported_usage_receipts=unexpected_incomplete,
+        unknown_execution_usage_quantities=unknown_quantities,
+        canned_invocation_tripwire_mismatches=canned_mismatches,
+        forbidden_execution_counter_mismatches=forbidden_mismatches,
+        declared_accounting_outcome_mismatches=declared_outcome_mismatches,
+    )
 
 
 def _calculate_evaluation_metrics_v0(
     case_results: Sequence[AcquisitionCaseResultV0],
     aggregate: AcquisitionAggregateReceipt,
+    retention_receipts: Sequence[AcquisitionRetentionReceipt],
     historical_hashes: Sequence[AcquisitionHistoricalHashEvidenceV0],
     core_blob_lock: AcquisitionCoreBlobLockEvidenceV0,
 ) -> AcquisitionEvaluationMetricsV0:
     results = tuple(case_results)
     historical_hashes = _validate_historical_hash_membership_v0(historical_hashes)
     receipts = aggregate.attempt_receipts
+    strict_accounting = _strict_aggregate_accounting_v0(results, aggregate)
     positives = tuple(
         item for item in results if item.case_class is AcquisitionCaseClass.POSITIVE
     )
@@ -3445,6 +4655,59 @@ def _calculate_evaluation_metrics_v0(
         item
         for item in receipts
         if item.primary_result.outcome is AcquisitionAttemptOutcome.ACQUIRED
+    )
+    retentions = tuple(retention_receipts)
+    acquired_raw_observations = sum(
+        all(
+            (
+                item.raw_response_base64 is not None,
+                item.computed_raw_response_digest is not None,
+                item.computed_raw_response_length is not None,
+            )
+        )
+        for item in acquired_receipts
+    )
+    accepted_provider_identity_mismatches = sum(
+        item.actual_provider_id != item.requested_binding.provider_id
+        for item in acquired_receipts
+    )
+    accepted_model_identity_mismatches = sum(
+        item.actual_model_id != item.requested_binding.model_id
+        for item in acquired_receipts
+    )
+    accepted_configuration_identity_mismatches = sum(
+        item.actual_configuration_digest
+        != item.requested_binding.configuration_digest
+        for item in acquired_receipts
+    )
+    retention_crosslink_mismatches = _retention_crosslink_mismatch_count_v0(
+        receipts,
+        retentions,
+    )
+    credential_material_retained = sum(
+        item.credentials_retained for item in retentions
+    )
+    sensitive_material_violations = sum(
+        any(
+            (
+                item.data_classification
+                is not AcquisitionDataClassification.NON_SENSITIVE_CANNED,
+                item.credentials_inspected,
+                item.credentials_retained,
+                item.personal_private_data_present,
+                bool(
+                    {
+                        "raw_response_non_sensitive_attestation",
+                        "data_classification",
+                        "credentials_inspected",
+                        "credentials_retained",
+                        "personal_private_data_present",
+                    }
+                    & set(item.violations)
+                ),
+            )
+        )
+        for item in retentions
     )
     path_counts: Dict[str, int] = {}
     accepted_path_counts: Dict[str, int] = {}
@@ -3472,9 +4735,39 @@ def _calculate_evaluation_metrics_v0(
     accepted_retention = sum(
         not item.retention_policy_compliant for item in acquired_receipts
     )
-    semantic_collisions = sum(
-        item.primary_result.failure_code is AcquisitionFailureCode.IDENTITY_COLLISION
-        for item in receipts
+    semantic_payloads_by_id: Dict[str, set[str]] = {}
+    semantic_identity_mismatches = 0
+    frozen_semantic_payload_json = canonical_json(
+        build_frozen_acquisition_fixtures_v0().semantic_request.identity_payload()
+    )
+    for result in results:
+        if not _result_acquired(result):
+            continue
+        if result.case_class is AcquisitionCaseClass.POSITIVE:
+            payload_json = frozen_semantic_payload_json
+        else:
+            if result.construction_evidence is None:
+                semantic_identity_mismatches += 1
+                continue
+            payload_json = (
+                result.construction_evidence.probe
+                .semantic_request_identity_payload_json
+            )
+        payload = json.loads(payload_json)
+        expected_id = stable_contract_id("szacqrequest", payload)
+        for row in result.attempt_evidence:
+            if row.primary_result.outcome is not AcquisitionAttemptOutcome.ACQUIRED:
+                continue
+            semantic_payloads_by_id.setdefault(
+                row.semantic_request_id,
+                set(),
+            ).add(payload_json)
+            semantic_identity_mismatches += int(
+                row.semantic_request_id != expected_id
+            )
+    semantic_collisions = semantic_identity_mismatches + sum(
+        max(0, len(payloads) - 1)
+        for payloads in semantic_payloads_by_id.values()
     )
     successful_retry = sum(
         sum(
@@ -3518,6 +4811,7 @@ def _calculate_evaluation_metrics_v0(
         "positive_attempt_receipts": sum(
             len(item.attempt_receipt_ids) for item in positives
         ),
+        "acquired_raw_observations": acquired_raw_observations,
         "orthogonal_probes_total": len(orthogonal),
         "orthogonal_exact_primary_results": sum(item.case_passed for item in orthogonal),
         "precedence_probes_total": len(precedence),
@@ -3528,6 +4822,13 @@ def _calculate_evaluation_metrics_v0(
         ),
         "invalid_probe_constructions": invalid_probe_constructions,
         "semantic_identity_collisions": semantic_collisions,
+        "accepted_provider_identity_mismatches": (
+            accepted_provider_identity_mismatches
+        ),
+        "accepted_model_identity_mismatches": accepted_model_identity_mismatches,
+        "accepted_configuration_identity_mismatches": (
+            accepted_configuration_identity_mismatches
+        ),
         "accepted_prompt_byte_mismatches": sum(
             item.prompt_byte_mismatch for item in acquired_receipts
         ),
@@ -3541,7 +4842,22 @@ def _calculate_evaluation_metrics_v0(
             aggregate.observed_counters.canonical_application_calls
         ),
         "injected_uncounted_canned_invocations": path_counts.get(
-            "attempt_recorder.canned_transport_invocations", 0
+            _UNCOUNTED_INVOCATION_MUTATION_PATH_V0, 0
+        ),
+        "raw_aggregate_uncounted_canned_invocations": (
+            strict_accounting.raw_aggregate_uncounted_canned_invocations
+        ),
+        "raw_aggregate_incomplete_usage_receipts": (
+            strict_accounting.raw_aggregate_incomplete_usage_receipts
+        ),
+        "expected_uncounted_canned_invocation_failures": (
+            strict_accounting.expected_uncounted_canned_invocation_failures
+        ),
+        "raw_uncounted_canned_invocation_failures": (
+            strict_accounting.raw_uncounted_canned_invocation_failures
+        ),
+        "unexpected_uncounted_canned_invocation_failures": (
+            strict_accounting.unexpected_uncounted_canned_invocation_failures
         ),
         "accepted_uncounted_canned_invocations": accepted_uncounted,
         "accepted_successful_retry_activations": successful_retry,
@@ -3554,7 +4870,7 @@ def _calculate_evaluation_metrics_v0(
         "accepted_sibling_mutations": accepted_sibling,
         "accepted_production_mutations": accepted_production,
         "injected_missing_raw_conditions": path_counts.get(
-            "envelope.raw_response_base64", 0
+            "envelope.raw_response_presence", 0
         ),
         "accepted_missing_raw_observations": accepted_missing,
         "injected_false_zero_usage_conditions": path_counts.get(
@@ -3565,11 +4881,35 @@ def _calculate_evaluation_metrics_v0(
             path_counts.get("envelope.new_usage_completeness", 0)
             + path_counts.get("envelope.usage.tokens.knowledge", 0)
         ),
+        "expected_incomplete_reported_usage_receipts": (
+            strict_accounting.expected_incomplete_reported_usage_receipts
+        ),
+        "raw_incomplete_reported_usage_receipts": (
+            strict_accounting.raw_incomplete_reported_usage_receipts
+        ),
+        "unexpected_incomplete_reported_usage_receipts": (
+            strict_accounting.unexpected_incomplete_reported_usage_receipts
+        ),
+        "unknown_execution_usage_quantities": (
+            strict_accounting.unknown_execution_usage_quantities
+        ),
+        "canned_invocation_tripwire_mismatches": (
+            strict_accounting.canned_invocation_tripwire_mismatches
+        ),
+        "forbidden_execution_counter_mismatches": (
+            strict_accounting.forbidden_execution_counter_mismatches
+        ),
+        "declared_accounting_outcome_mismatches": (
+            strict_accounting.declared_accounting_outcome_mismatches
+        ),
         "accepted_incomplete_attempt_receipts": accepted_incomplete,
         "injected_retention_conditions": path_counts.get(
             "retention_receipt.artifact_inclusion", 0
         ),
         "accepted_retention_violations": accepted_retention,
+        "retention_crosslink_mismatches": retention_crosslink_mismatches,
+        "credential_material_retained": credential_material_retained,
+        "sensitive_material_violations": sensitive_material_violations,
         "injected_receipt_mismatch_conditions": path_counts.get(
             "attempt_recorder.final_receipt_integrity", 0
         ),
@@ -3578,9 +4918,11 @@ def _calculate_evaluation_metrics_v0(
             "envelope.expected_canonical_acceptance", 0
         ),
         "accepted_future_label_violations": accepted_future_labels,
-        "new_tokens": _known_usage_total(receipts, "new_tokens"),
-        "new_cost_microusd": _known_usage_total(receipts, "new_cost_microusd"),
-        "external_provider_wall_time_ms": _known_usage_total(
+        "new_tokens": _strict_known_acquired_usage_total_v0(receipts, "new_tokens"),
+        "new_cost_microusd": _strict_known_acquired_usage_total_v0(
+            receipts, "new_cost_microusd"
+        ),
+        "external_provider_wall_time_ms": _strict_known_acquired_usage_total_v0(
             receipts, "external_provider_wall_time_ms"
         ),
         "historical_lock_mismatches": historical_mismatches,
@@ -3594,6 +4936,9 @@ def _calculate_evaluation_metrics_v0(
         for name in (
             "invalid_probe_constructions",
             "semantic_identity_collisions",
+            "accepted_provider_identity_mismatches",
+            "accepted_model_identity_mismatches",
+            "accepted_configuration_identity_mismatches",
             "accepted_prompt_byte_mismatches",
             "external_network_attempts",
             "credential_access_attempts",
@@ -3602,6 +4947,8 @@ def _calculate_evaluation_metrics_v0(
             "model_executions",
             "tool_calls",
             "canonical_application_invocations",
+            "raw_aggregate_incomplete_usage_receipts",
+            "unexpected_uncounted_canned_invocation_failures",
             "accepted_uncounted_canned_invocations",
             "accepted_successful_retry_activations",
             "accepted_successful_fallback_activations",
@@ -3611,8 +4958,16 @@ def _calculate_evaluation_metrics_v0(
             "accepted_production_mutations",
             "accepted_missing_raw_observations",
             "accepted_false_zero_usage",
+            "unexpected_incomplete_reported_usage_receipts",
+            "unknown_execution_usage_quantities",
+            "canned_invocation_tripwire_mismatches",
+            "forbidden_execution_counter_mismatches",
+            "declared_accounting_outcome_mismatches",
             "accepted_incomplete_attempt_receipts",
             "accepted_retention_violations",
+            "retention_crosslink_mismatches",
+            "credential_material_retained",
+            "sensitive_material_violations",
             "accepted_receipt_mismatches",
             "accepted_future_label_violations",
             "new_tokens",
@@ -3622,14 +4977,30 @@ def _calculate_evaluation_metrics_v0(
     )
     mismatch_or_failure_count += sum(
         (
-            preliminary["cases_total"] != 50,
-            preliminary["positive_cases_total"] != 6,
-            preliminary["positive_attempt_receipts"] != 8,
-            preliminary["orthogonal_probes_total"] != 37,
-            preliminary["precedence_probes_total"] != 7,
-            preliminary["attempt_receipts_total"] != 52,
-            preliminary["observed_canned_transport_invocations"] != 32,
+            preliminary["cases_total"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.cases_total,
+            preliminary["positive_cases_total"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.positive_cases_total,
+            preliminary["positive_attempt_receipts"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.required_positive_attempt_receipts,
+            preliminary["acquired_raw_observations"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.required_positive_attempt_receipts,
+            preliminary["orthogonal_probes_total"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.orthogonal_probes_total,
+            preliminary["precedence_probes_total"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.precedence_probes_total,
+            preliminary["attempt_receipts_total"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.required_attempt_receipts_total,
+            preliminary["observed_canned_transport_invocations"]
+            != FROZEN_ACQUISITION_THRESHOLDS_V0.required_canned_transport_invocations,
         )
+    )
+    aggregate_uncounted = strict_accounting.raw_aggregate_uncounted_canned_invocations
+    mismatch_or_failure_count += (
+        aggregate_uncounted.value
+        if aggregate_uncounted.knowledge is ResourceKnowledgeState.KNOWN
+        and aggregate_uncounted.value is not None
+        else 1
     )
     return AcquisitionEvaluationMetricsV0(
         **preliminary,
@@ -3651,6 +5022,8 @@ def supports_acquisition_metrics_v0(
             == thresholds.required_positive_complete_case_results,
             metrics.positive_attempt_receipts
             == thresholds.required_positive_attempt_receipts,
+            metrics.acquired_raw_observations
+            == thresholds.required_positive_attempt_receipts,
             metrics.orthogonal_probes_total == thresholds.orthogonal_probes_total,
             metrics.orthogonal_exact_primary_results
             == thresholds.required_orthogonal_exact_primary_results,
@@ -3667,16 +5040,38 @@ def supports_acquisition_metrics_v0(
             == thresholds.required_invalid_probe_constructions,
             metrics.semantic_identity_collisions
             == thresholds.required_semantic_identity_collisions,
+            metrics.accepted_provider_identity_mismatches
+            == thresholds.required_semantic_identity_collisions,
+            metrics.accepted_model_identity_mismatches
+            == thresholds.required_semantic_identity_collisions,
+            metrics.accepted_configuration_identity_mismatches
+            == thresholds.required_semantic_identity_collisions,
             metrics.accepted_prompt_byte_mismatches
             == thresholds.required_prompt_byte_mismatches,
             metrics.external_network_attempts
             == thresholds.required_external_network_attempts,
             metrics.credential_access_attempts
             == thresholds.required_credential_access_attempts,
+            metrics.credential_material_retained
+            == thresholds.required_credential_access_attempts,
             metrics.live_provider_calls == thresholds.required_live_provider_calls,
             metrics.provider_sdk_calls == 0,
             metrics.model_executions == thresholds.required_model_executions,
             metrics.tool_calls == thresholds.required_tool_calls,
+            metrics.raw_aggregate_uncounted_canned_invocations.knowledge
+            is ResourceKnowledgeState.KNOWN,
+            metrics.raw_aggregate_uncounted_canned_invocations.value
+            == thresholds.required_uncounted_canned_invocations,
+            metrics.raw_aggregate_incomplete_usage_receipts
+            == thresholds.required_incomplete_attempt_receipts,
+            metrics.injected_uncounted_canned_invocations
+            == _FROZEN_INJECTED_UNCOUNTED_INVOCATIONS_V0,
+            metrics.expected_uncounted_canned_invocation_failures
+            == _FROZEN_EXPECTED_UNCOUNTED_FAILURE_RECEIPTS_V0,
+            metrics.raw_uncounted_canned_invocation_failures
+            == metrics.expected_uncounted_canned_invocation_failures,
+            metrics.unexpected_uncounted_canned_invocation_failures
+            == thresholds.required_uncounted_canned_invocations,
             metrics.accepted_uncounted_canned_invocations
             == thresholds.required_uncounted_canned_invocations,
             metrics.accepted_successful_retry_activations
@@ -3693,9 +5088,27 @@ def supports_acquisition_metrics_v0(
             == thresholds.required_accepted_missing_raw_observations,
             metrics.accepted_false_zero_usage
             == thresholds.required_accepted_false_zero_usage,
+            metrics.injected_incomplete_usage_conditions
+            == _FROZEN_INJECTED_INCOMPLETE_USAGE_CONDITIONS_V0,
+            metrics.expected_incomplete_reported_usage_receipts
+            == _FROZEN_EXPECTED_INCOMPLETE_REPORTED_USAGE_RECEIPTS_V0,
+            metrics.raw_incomplete_reported_usage_receipts
+            == metrics.expected_incomplete_reported_usage_receipts,
+            metrics.unexpected_incomplete_reported_usage_receipts
+            == thresholds.required_incomplete_attempt_receipts,
+            metrics.unknown_execution_usage_quantities
+            == thresholds.required_incomplete_attempt_receipts,
+            metrics.canned_invocation_tripwire_mismatches
+            == thresholds.required_uncounted_canned_invocations,
+            metrics.forbidden_execution_counter_mismatches == 0,
+            metrics.declared_accounting_outcome_mismatches == 0,
             metrics.accepted_incomplete_attempt_receipts
             == thresholds.required_incomplete_attempt_receipts,
             metrics.accepted_retention_violations
+            == thresholds.required_retention_violations,
+            metrics.retention_crosslink_mismatches
+            == thresholds.required_retention_violations,
+            metrics.sensitive_material_violations
             == thresholds.required_retention_violations,
             metrics.accepted_receipt_mismatches
             == thresholds.required_receipt_mismatches,
@@ -3795,11 +5208,15 @@ async def _build_acquisition_experiment_artifact_in_order_v0(
         executions.extend(case_executions)
 
     aggregate = _build_aggregate_receipt_v0(executions)
+    retention_receipts = tuple(
+        item.result.retention_receipt for item in executions
+    )
     historical_hashes = verify_frozen_historical_hashes_v0(repository_root)
     core_blob_lock = verify_frozen_core_blob_lock_v0(repository_root)
     metrics = _calculate_evaluation_metrics_v0(
         case_results,
         aggregate,
+        retention_receipts,
         historical_hashes,
         core_blob_lock,
     )
@@ -3817,6 +5234,7 @@ async def _build_acquisition_experiment_artifact_in_order_v0(
         thresholds_id=FROZEN_ACQUISITION_THRESHOLDS_V0.thresholds_id or "",
         thresholds=FROZEN_ACQUISITION_THRESHOLDS_V0,
         fixture_set_id=fixtures.fixture_set_id or "",
+        retention_policy_id=fixtures.retention_policy.retention_policy_id or "",
         capability_snapshot_ids=tuple(
             sorted({item.capability_snapshot_id for item in receipts})
         ),
@@ -3837,9 +5255,17 @@ async def _build_acquisition_experiment_artifact_in_order_v0(
         isolation_receipts=tuple(
             item.result.isolation_receipt for item in executions
         ),
-        retention_receipts=tuple(
-            item.result.retention_receipt for item in executions
+        isolation_evidence_modes=(
+            FROZEN_ACQUISITION_ISOLATION_EVIDENCE_MODES_V0
         ),
+        isolation_subject_ids=FROZEN_ACQUISITION_ISOLATION_SUBJECT_IDS_V0,
+        isolation_evidence_payloads_json=(
+            FROZEN_ACQUISITION_ISOLATION_PAYLOADS_JSON_V0
+        ),
+        isolation_runtime_digests=(
+            FROZEN_ACQUISITION_ISOLATION_RUNTIME_DIGESTS_V0
+        ),
+        retention_receipts=retention_receipts,
         provider_visible_prompt_digests=tuple(
             sorted({item.provider_visible_request_digest for item in receipts})
         ),
@@ -3925,7 +5351,18 @@ async def build_acquisition_replay_artifact_v0_async(
         source_authoritative_sha256=hashlib.sha256(
             rendered.encode("utf-8")
         ).hexdigest(),
-        artifact=replay_artifact,
+        replay_artifact_id=replay_artifact.artifact_id or "",
+        replay_artifact_sha256=hashlib.sha256(
+            render_acquisition_experiment_artifact_v0(replay_artifact).encode(
+                "utf-8"
+            )
+        ).hexdigest(),
+        replay_aggregate_receipt_id=(
+            replay_artifact.aggregate_receipt.aggregate_receipt_id or ""
+        ),
+        replay_metrics_id=replay_artifact.metrics_id,
+        replay_attempt_receipt_ids=replay_artifact.attempt_receipt_ids,
+        replay_tripwire_counters=replay_artifact.tripwire_counters,
         positive_order=FROZEN_REPLAY_POSITIVE_CASE_ORDER_V0,
         orthogonal_order=FROZEN_REPLAY_ORTHOGONAL_PROBE_ORDER_V0,
         precedence_order=FROZEN_REPLAY_PRECEDENCE_PROBE_ORDER_V0,
@@ -3943,7 +5380,7 @@ async def build_acquisition_replay_artifact_v0_async(
         ),
     )
     assert_acquisition_artifact_tripwires_v0(
-        execution.artifact.tripwire_counters
+        execution.replay_tripwire_counters
     )
     return execution
 
@@ -4016,6 +5453,60 @@ def acquisition_replay_execution_sha256_v0(
     ).hexdigest()
 
 
+def _verify_replay_execution_against_artifact_v0(
+    authoritative: AcquisitionExperimentArtifactV0,
+    replay_execution: AcquisitionReplayExecutionV0,
+) -> None:
+    """Bind persisted reverse-order evidence to every authoritative identity."""
+
+    authoritative_rendered = render_acquisition_experiment_artifact_v0(authoritative)
+    authoritative_sha256 = hashlib.sha256(
+        authoritative_rendered.encode("utf-8")
+    ).hexdigest()
+    ordered_case_ids = (
+        FROZEN_REPLAY_POSITIVE_CASE_ORDER_V0
+        + FROZEN_REPLAY_ORTHOGONAL_PROBE_ORDER_V0
+        + FROZEN_REPLAY_PRECEDENCE_PROBE_ORDER_V0
+    )
+    results = {item.case_id: item for item in authoritative.case_results}
+    expected_case_result_ids = tuple(
+        results[case_id].case_result_id or "" for case_id in ordered_case_ids
+    )
+    expected_transport_attempt_ids = tuple(
+        attempt.transport_attempt_id
+        for case_id in ordered_case_ids
+        for attempt in sorted(
+            results[case_id].attempt_evidence,
+            key=lambda item: item.attempt_ordinal,
+        )
+    )
+    if any(
+        (
+            authoritative.hypothesis_status != "SUPPORTED",
+            replay_execution.source_authoritative_artifact_id
+            != authoritative.artifact_id,
+            replay_execution.source_authoritative_sha256 != authoritative_sha256,
+            replay_execution.replay_artifact_id != authoritative.artifact_id,
+            replay_execution.replay_artifact_sha256 != authoritative_sha256,
+            replay_execution.replay_aggregate_receipt_id
+            != authoritative.aggregate_receipt.aggregate_receipt_id,
+            replay_execution.replay_metrics_id != authoritative.metrics_id,
+            replay_execution.replay_attempt_receipt_ids
+            != authoritative.attempt_receipt_ids,
+            replay_execution.replay_tripwire_counters
+            != authoritative.tripwire_counters,
+            replay_execution.ordered_case_ids != ordered_case_ids,
+            replay_execution.ordered_case_result_ids
+            != expected_case_result_ids,
+            replay_execution.ordered_transport_attempt_ids
+            != expected_transport_attempt_ids,
+        )
+    ):
+        raise ContractValidationError(
+            "replay execution evidence is detached from authoritative artifact"
+        )
+
+
 def create_acquisition_replay_lock_v0(
     authoritative: AcquisitionExperimentArtifactV0,
     replay: AcquisitionReplayExecutionV0,
@@ -4028,45 +5519,48 @@ def create_acquisition_replay_lock_v0(
             "replay lock requires an artifact and reverse-execution evidence"
         )
     assert_acquisition_artifact_tripwires_v0(authoritative.tripwire_counters)
-    assert_acquisition_artifact_tripwires_v0(replay.artifact.tripwire_counters)
+    assert_acquisition_artifact_tripwires_v0(replay.replay_tripwire_counters)
     authoritative_rendered = render_acquisition_experiment_artifact_v0(authoritative)
     replay_serialized = render_acquisition_replay_execution_v0(replay)
     replay_validated_execution = replay_acquisition_replay_execution_v0(
         replay_serialized
     )
-    replay_rendered = render_acquisition_experiment_artifact_v0(
-        replay_validated_execution.artifact
-    )
     authoritative_validated = replay_acquisition_experiment_artifact_v0(
         authoritative_rendered
     )
-    replay_validated = replay_acquisition_experiment_artifact_v0(replay_rendered)
     if (
         authoritative_validated.hypothesis_status != "SUPPORTED"
-        or replay_validated.hypothesis_status != "SUPPORTED"
+        or replay_validated_execution.source_authoritative_artifact_id
+        != authoritative_validated.artifact_id
+        or replay_validated_execution.source_authoritative_sha256
+        != hashlib.sha256(authoritative_rendered.encode("utf-8")).hexdigest()
+        or replay_validated_execution.replay_artifact_id
+        != authoritative_validated.artifact_id
+        or replay_validated_execution.replay_artifact_sha256
+        != hashlib.sha256(authoritative_rendered.encode("utf-8")).hexdigest()
     ):
-        raise ContractValidationError("replay lock requires two SUPPORTED artifacts")
-    semantic_equality = (
-        authoritative_validated.model_dump(mode="json")
-        == replay_validated.model_dump(mode="json")
+        raise ContractValidationError(
+            "replay lock requires authoritative-linked SUPPORTED evidence"
+        )
+    _verify_replay_execution_against_artifact_v0(
+        authoritative_validated,
+        replay_validated_execution,
     )
-    artifact_id_equality = (
-        authoritative_validated.artifact_id == replay_validated.artifact_id
-    )
-    byte_identity = authoritative_rendered == replay_rendered
-    if not all((semantic_equality, artifact_id_equality, byte_identity)):
-        raise ContractValidationError("independent reverse replay did not lock")
+    authoritative_sha256 = hashlib.sha256(
+        authoritative_rendered.encode("utf-8")
+    ).hexdigest()
     return AcquisitionReplayLockV0(
         authoritative_artifact_id=authoritative_validated.artifact_id or "",
-        replay_artifact_id=replay_validated.artifact_id or "",
+        replay_artifact_id=replay_validated_execution.replay_artifact_id,
         replay_execution_id=replay_validated_execution.replay_execution_id or "",
+        replay_execution_sha256=hashlib.sha256(
+            replay_serialized.encode("utf-8")
+        ).hexdigest(),
         replay_execution_trace_sha256=(
             replay_validated_execution.execution_trace_sha256 or ""
         ),
-        authoritative_sha256=hashlib.sha256(
-            authoritative_rendered.encode("utf-8")
-        ).hexdigest(),
-        replay_sha256=hashlib.sha256(replay_rendered.encode("utf-8")).hexdigest(),
+        authoritative_sha256=authoritative_sha256,
+        replay_sha256=replay_validated_execution.replay_artifact_sha256,
         authoritative_positive_order=FROZEN_POSITIVE_CASE_ORDER_V0,
         authoritative_orthogonal_order=FROZEN_ORTHOGONAL_PROBE_ORDER_V0,
         authoritative_precedence_order=FROZEN_PRECEDENCE_PROBE_ORDER_V0,
@@ -4096,6 +5590,61 @@ def replay_acquisition_replay_lock_v0(rendered: str) -> AcquisitionReplayLockV0:
     if canonical != rendered:
         raise ContractValidationError("acquisition replay-lock bytes are not canonical")
     return replay_lock
+
+
+def verify_acquisition_replay_evidence_v0(
+    authoritative_rendered: str,
+    replay_execution_rendered: str,
+    replay_lock_rendered: str,
+) -> Tuple[
+    AcquisitionExperimentArtifactV0,
+    AcquisitionReplayExecutionV0,
+    AcquisitionReplayLockV0,
+]:
+    """Verify the three persisted canonical files and all cross-file hashes."""
+
+    authoritative = replay_acquisition_experiment_artifact_v0(
+        authoritative_rendered
+    )
+    replay_execution = replay_acquisition_replay_execution_v0(
+        replay_execution_rendered
+    )
+    replay_lock = replay_acquisition_replay_lock_v0(replay_lock_rendered)
+    _verify_replay_execution_against_artifact_v0(
+        authoritative,
+        replay_execution,
+    )
+    authoritative_sha256 = hashlib.sha256(
+        authoritative_rendered.encode("utf-8")
+    ).hexdigest()
+    replay_execution_sha256 = hashlib.sha256(
+        replay_execution_rendered.encode("utf-8")
+    ).hexdigest()
+    if any(
+        (
+            replay_lock.authoritative_artifact_id != authoritative.artifact_id,
+            replay_lock.replay_artifact_id
+            != replay_execution.replay_artifact_id,
+            replay_lock.replay_execution_id
+            != replay_execution.replay_execution_id,
+            replay_lock.replay_execution_sha256 != replay_execution_sha256,
+            replay_lock.replay_execution_trace_sha256
+            != replay_execution.execution_trace_sha256,
+            replay_lock.authoritative_sha256 != authoritative_sha256,
+            replay_lock.replay_sha256
+            != replay_execution.replay_artifact_sha256,
+            replay_lock.replay_ordered_case_ids
+            != replay_execution.ordered_case_ids,
+            replay_lock.replay_ordered_case_result_ids
+            != replay_execution.ordered_case_result_ids,
+            replay_lock.replay_ordered_transport_attempt_ids
+            != replay_execution.ordered_transport_attempt_ids,
+        )
+    ):
+        raise ContractValidationError(
+            "persisted replay artifact, execution evidence, and lock differ"
+        )
+    return authoritative, replay_execution, replay_lock
 
 
 def acquisition_replay_lock_sha256_v0(replay_lock: AcquisitionReplayLockV0) -> str:
@@ -4138,20 +5687,38 @@ def publish_acquisition_replay_lock_once_v0(
     destination: Path | str,
     authoritative: AcquisitionExperimentArtifactV0,
     replay: AcquisitionReplayExecutionV0,
+    *,
+    replay_execution_destination: Path | str,
 ) -> str:
     tripwire = active_acquisition_boundary_tripwire_v0()
     tripwire.assert_artifact_counters(authoritative.tripwire_counters)
-    tripwire.assert_artifact_counters(replay.artifact.tripwire_counters)
+    tripwire.assert_artifact_counters(replay.replay_tripwire_counters)
     replay_lock = create_acquisition_replay_lock_v0(authoritative, replay)
-    rendered = render_acquisition_replay_lock_v0(replay_lock)
-    replay_acquisition_replay_lock_v0(rendered)
-    digest = write_once_canonical_bytes_v0(destination, rendered.encode("utf-8"))
+    authoritative_rendered = render_acquisition_experiment_artifact_v0(
+        authoritative
+    )
+    execution_rendered = render_acquisition_replay_execution_v0(replay)
+    lock_rendered = render_acquisition_replay_lock_v0(replay_lock)
+    verify_acquisition_replay_evidence_v0(
+        authoritative_rendered,
+        execution_rendered,
+        lock_rendered,
+    )
+    write_once_canonical_bytes_v0(
+        Path(replay_execution_destination),
+        execution_rendered.encode("utf-8"),
+    )
+    digest = write_once_canonical_bytes_v0(
+        Path(destination),
+        lock_rendered.encode("utf-8"),
+    )
     tripwire.assert_clean()
     return digest
 
 
 __all__ = [
     "ACQUISITION_ARTIFACT_SCHEMA_V0",
+    "ACQUISITION_ARTIFACT_FILENAME_V0",
     "ACQUISITION_ATTEMPT_EVIDENCE_SCHEMA_V0",
     "ACQUISITION_CASE_RESULT_SCHEMA_V0",
     "ACQUISITION_CONSTRUCTION_STATE_SCHEMA_V0",
@@ -4163,7 +5730,9 @@ __all__ = [
     "ACQUISITION_MUTATION_OBSERVATION_SCHEMA_V0",
     "ACQUISITION_PROBE_CONSTRUCTION_SCHEMA_V0",
     "ACQUISITION_REPLAY_EXECUTION_SCHEMA_V0",
+    "ACQUISITION_REPLAY_EXECUTION_FILENAME_V0",
     "ACQUISITION_REPLAY_LOCK_SCHEMA_V0",
+    "ACQUISITION_REPLAY_LOCK_FILENAME_V0",
     "AcquisitionCaseAttemptEvidenceV0",
     "AcquisitionCaseResultV0",
     "AcquisitionConstructionStateV0",
@@ -4182,6 +5751,9 @@ __all__ = [
     "FROZEN_REPLAY_ORTHOGONAL_PROBE_ORDER_V0",
     "FROZEN_REPLAY_POSITIVE_CASE_ORDER_V0",
     "FROZEN_REPLAY_PRECEDENCE_PROBE_ORDER_V0",
+    "FROZEN_PROBE_CONSTRUCTION_EVIDENCE_LOCK_SHA256_V0",
+    "FROZEN_CASE_ATTEMPT_RECEIPT_LOCK_SHA256_V0",
+    "FROZEN_CASE_RESULT_LOCK_SHA256_V0",
     "acquisition_experiment_artifact_sha256_v0",
     "acquisition_replay_execution_sha256_v0",
     "acquisition_replay_lock_sha256_v0",
@@ -4200,6 +5772,7 @@ __all__ = [
     "replay_acquisition_experiment_artifact_v0",
     "replay_acquisition_replay_execution_v0",
     "replay_acquisition_replay_lock_v0",
+    "verify_acquisition_replay_evidence_v0",
     "supports_acquisition_metrics_v0",
     "verify_frozen_historical_hashes_v0",
     "verify_frozen_core_blob_lock_v0",

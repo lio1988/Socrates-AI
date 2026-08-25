@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import json
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from backend.dialogues.socrates_zero.acquisition import (
+    _entropy_in_body,
     AcquisitionIsolationSnapshot,
+    AcquisitionRuntimeError,
     CANNED_TIMEOUT_CLEANUP_GRACE_SECONDS,
     CANNED_TIMEOUT_CLEANUP_ROUNDS,
     CannedAcquisitionTransport,
@@ -20,6 +23,7 @@ from backend.dialogues.socrates_zero.acquisition import (
     IsolationSubjectSnapshot,
     acquire_canned_observation,
     build_canned_capability_snapshot,
+    build_provider_visible_request,
     render_provider_visible_request,
 )
 from backend.dialogues.socrates_zero.acquisition_contracts import (
@@ -29,6 +33,7 @@ from backend.dialogues.socrates_zero.acquisition_contracts import (
     AcquisitionControlPolicy,
     AcquisitionControlName,
     AcquisitionControlState,
+    AcquisitionDataClassification,
     AcquisitionExecutionUsage,
     AcquisitionFailureCode,
     AcquisitionGuardId,
@@ -36,11 +41,13 @@ from backend.dialogues.socrates_zero.acquisition_contracts import (
     AcquisitionProviderModelBinding,
     AcquisitionRequestConfiguration,
     AcquisitionResourceQuantity,
+    AcquisitionRedactionStatus,
     AcquisitionSeedStatus,
     AcquisitionSemanticRequest,
     AcquisitionTransportAttempt,
     AcquisitionTransportStatus,
     AcquisitionTransportMode,
+    AcquisitionArtifactInclusionPolicy,
     CannedTransportEnvelope,
 )
 from backend.dialogues.socrates_zero.acquisition_evaluation import (
@@ -308,6 +315,74 @@ def test_provider_visible_bytes_are_exact_and_transport_identity_is_out_of_band(
         assert canary.encode("utf-8") not in raw
 
 
+@pytest.mark.parametrize(
+    "forbidden_key",
+    (
+        "ExperimentID",
+        "acquisition-attempt-number",
+        "execution.order",
+        "timeStamp",
+        "random-nonce",
+        "requestUUID",
+        "processState",
+        "memory-address",
+        "localFilesystemPath",
+        "SiblingState",
+        "transportAttemptId",
+        "credential_file",
+        "X-API-Key",
+        "AuthorizationHeader",
+        "requestHeaders",
+        "Cookie",
+        "cookies",
+    ),
+)
+def test_nested_out_of_band_key_variants_are_rejected_recursively(
+    forbidden_key: str,
+) -> None:
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": {"safe": [{"details": {forbidden_key: "canary"}}]},
+            }
+        ]
+    }
+    with pytest.raises(AcquisitionRuntimeError, match="out-of-band key"):
+        build_provider_visible_request(body)
+
+
+def test_provider_key_firewall_does_not_reject_benign_semantic_keys() -> None:
+    body = {
+        "messages": [{"role": "user", "content": "reason carefully"}],
+        "message_order": ("system", "user"),
+        "attempted_solution": "candidate",
+        "experiment_hypothesis": "semantic subject matter",
+        "memory_safety_topic": "semantic subject matter",
+        "filesystem_semantics": "semantic subject matter",
+        "heading": "semantic subject matter",
+        "max_tokens": 128,
+    }
+    visible = build_provider_visible_request(body)
+    assert visible.canonical_request_json == json.dumps(
+        body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+def test_prompt_entropy_firewall_keeps_recursive_scalar_canary_scan() -> None:
+    parsed = {
+        "messages": [
+            {"role": "user", "content": {"text": "prefix branch-a suffix"}}
+        ]
+    }
+    assert _entropy_in_body(parsed, ("branch-a", "experiment/v0")) is True
+    assert _entropy_in_body(parsed, ("sibling-b", "experiment/v0")) is False
+
+
 def test_sibling_acquisition_is_order_independent_with_private_transport_state() -> None:
     async def execute_order(order: tuple[str, str]):
         fixture = build_frozen_acquisition_fixtures_v0()
@@ -430,6 +505,34 @@ def test_sibling_acquisition_is_order_independent_with_private_transport_state()
             AcquisitionTransportMode.CANNED_ONLY,
             False,
         ),
+        (
+            CannedImplementationProfile.FALLBACK_DISABLE_UNPROVEN,
+            AcquisitionControlName.FALLBACK,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+            AcquisitionTransportMode.CANNED_ONLY,
+            True,
+        ),
+        (
+            CannedImplementationProfile.RETRY_DISABLE_UNPROVEN,
+            AcquisitionControlName.EXPLICIT_RETRY,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+            AcquisitionTransportMode.CANNED_ONLY,
+            True,
+        ),
+        (
+            CannedImplementationProfile.SDK_RETRY_DISABLE_UNPROVEN,
+            AcquisitionControlName.SDK_INTERNAL_RETRY,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+            AcquisitionTransportMode.CANNED_ONLY,
+            True,
+        ),
+        (
+            CannedImplementationProfile.TERMINATION_UNPROVEN,
+            AcquisitionControlName.TIMEOUT_WORKER_TERMINATION,
+            AcquisitionControlState.PROVEN_UNSUPPORTED,
+            AcquisitionTransportMode.CANNED_ONLY,
+            True,
+        ),
     ),
 )
 def test_negative_profiles_are_visible_in_immutable_capability_evidence(
@@ -479,6 +582,26 @@ def test_negative_profiles_are_visible_in_immutable_capability_evidence(
             CannedImplementationProfile.IDENTITY_VERIFICATION_UNPROVEN,
             AcquisitionGuardId.P08_EXACT_IDENTITY_VERIFICATION,
             AcquisitionFailureCode.EXACT_IDENTITY_VERIFICATION_UNAVAILABLE,
+        ),
+        (
+            CannedImplementationProfile.FALLBACK_DISABLE_UNPROVEN,
+            AcquisitionGuardId.P09_FALLBACK_DISABLED,
+            AcquisitionFailureCode.FALLBACK_CONTROL_UNPROVEN,
+        ),
+        (
+            CannedImplementationProfile.RETRY_DISABLE_UNPROVEN,
+            AcquisitionGuardId.P10_RETRY_DISABLED,
+            AcquisitionFailureCode.RETRY_CONTROL_UNPROVEN,
+        ),
+        (
+            CannedImplementationProfile.SDK_RETRY_DISABLE_UNPROVEN,
+            AcquisitionGuardId.P11_SDK_INTERNAL_RETRY_DISABLED,
+            AcquisitionFailureCode.SDK_INTERNAL_RETRY_CONTROL_UNPROVEN,
+        ),
+        (
+            CannedImplementationProfile.TERMINATION_UNPROVEN,
+            AcquisitionGuardId.P13_TIMEOUT_WORKER_TERMINATION,
+            AcquisitionFailureCode.TIMEOUT_CANCELLATION_UNPROVEN,
         ),
         (
             CannedImplementationProfile.PROMPT_ENTROPY_INJECTION,
@@ -566,6 +689,379 @@ def test_postdispatch_failures_are_counted_and_use_first_guard(
     assert result.attempt_receipt.primary_result.primary_guard_id is guard
     assert result.runtime_counters.canned_transport_invocations == 1
     assert result.observation is None
+
+
+def test_missing_raw_response_does_not_fabricate_empty_retention_evidence() -> None:
+    result = _run(raw_response_bytes=None)
+    assert result.failure_code is AcquisitionFailureCode.MISSING_RAW_OBSERVATION
+    receipt = result.retention_receipt
+    assert receipt.raw_response_digest is None
+    assert receipt.raw_response_length is None
+    assert receipt.raw_response_base64 is None
+    assert receipt.content_addressed_response_reference is None
+    assert receipt.policy_compliant is True
+
+
+def test_unallowlisted_secret_response_fails_closed_without_retaining_bytes() -> None:
+    secret = b"sk-live-provider-secret-must-never-be-retained"
+    result = _run(raw_response_bytes=secret)
+    assert result.failure_code is AcquisitionFailureCode.RETENTION_POLICY_VIOLATION
+    assert result.observation is None
+    assert result.retention_receipt.policy_compliant is False
+    assert "raw_response_non_sensitive_attestation" in (
+        result.retention_receipt.violations
+    )
+    assert result.retention_receipt.raw_response_base64 is None
+    assert result.retention_receipt.content_addressed_response_reference is None
+    assert result.attempt_receipt.raw_response_base64 is None
+    assert result.retention_receipt.data_classification is (
+        AcquisitionDataClassification.UNKNOWN
+    )
+    assert result.retention_receipt.redaction_status is (
+        AcquisitionRedactionStatus.NOT_APPLIED
+    )
+    assert result.retention_receipt.artifact_inclusion is (
+        AcquisitionArtifactInclusionPolicy.EXCLUDE
+    )
+    assert result.retention_receipt.raw_response_digest == hashlib.sha256(secret).hexdigest()
+    serialized = result.attempt_receipt.model_dump_json() + (
+        result.retention_receipt.model_dump_json()
+    )
+    assert secret.decode("ascii") not in serialized
+
+
+@pytest.mark.parametrize("field", ("actual_provider_id", "actual_model_id"))
+def test_untrusted_actual_identity_metadata_is_redacted_from_failed_receipts(
+    field: str,
+) -> None:
+    secret = "sk-live-identity-secret-must-never-be-retained"
+    result = _run(envelope_kwargs={field: secret})
+    expected_guard = (
+        AcquisitionGuardId.A04_ACTUAL_PROVIDER_IDENTITY
+        if field == "actual_provider_id"
+        else AcquisitionGuardId.A05_ACTUAL_MODEL_IDENTITY
+    )
+    assert result.attempt_receipt.primary_result.primary_guard_id is expected_guard
+    assert result.attempt_receipt.actual_binding is None
+    assert result.attempt_receipt.raw_response_base64 is None
+    assert result.retention_receipt.policy_compliant is False
+    assert result.retention_receipt.data_classification is (
+        AcquisitionDataClassification.UNKNOWN
+    )
+    assert result.retention_receipt.personal_private_data_present is True
+    assert result.retention_receipt.artifact_inclusion is (
+        AcquisitionArtifactInclusionPolicy.EXCLUDE
+    )
+    serialized = result.attempt_receipt.model_dump_json() + (
+        result.retention_receipt.model_dump_json()
+    )
+    assert secret not in serialized
+
+
+@pytest.mark.parametrize(
+    ("request_tamper", "expected_guard", "expected_failure"),
+    (
+        (
+            None,
+            AcquisitionGuardId.P03_CAPABILITY_SNAPSHOT_INTEGRITY,
+            AcquisitionFailureCode.INVALID_CAPABILITY_SNAPSHOT,
+        ),
+        (
+            "request",
+            AcquisitionGuardId.P01_REQUEST_INTEGRITY,
+            AcquisitionFailureCode.INVALID_ACQUISITION_REQUEST,
+        ),
+        (
+            "semantic_identity",
+            AcquisitionGuardId.P02_SEMANTIC_IDENTITY_INTEGRITY,
+            AcquisitionFailureCode.INVALID_SEMANTIC_IDENTITY,
+        ),
+    ),
+)
+def test_hostile_transport_is_never_touched_before_its_winning_guard(
+    request_tamper: str | None,
+    expected_guard: AcquisitionGuardId,
+    expected_failure: AcquisitionFailureCode,
+) -> None:
+    touched: list[str] = []
+
+    class HostileTransport(CannedAcquisitionTransport):
+        armed = False
+
+        def __getattribute__(self, name):
+            if type(self).armed:
+                touched.append(name)
+                raise AssertionError(f"hostile transport attribute touched: {name}")
+            return super().__getattribute__(name)
+
+        async def acquire(self, provider_visible_body, attempt):  # pragma: no cover
+            touched.append("acquire")
+            raise AssertionError("hostile acquire must never run")
+
+    fixture = build_frozen_acquisition_fixtures_v0()
+    base_request = fixture.semantic_request
+    provisional = _transport(
+        [
+            _envelope(
+                base_request,
+                _attempt(base_request),
+                fixture.known_historical_usage,
+            )
+        ],
+        base_request,
+    )
+    request = _request_for_capability(
+        base_request,
+        provisional.capabilities.capability_snapshot_id or "",
+    )
+    attempt = _attempt(request)
+    trusted_capability = provisional.capabilities
+    transport = HostileTransport(
+        [_envelope(request, attempt, fixture.known_historical_usage)],
+        provider_id=request.requested_binding.provider_id,
+        adapter_id=trusted_capability.adapter_id,
+        adapter_version=trusted_capability.adapter_version,
+        adapter_revision_digest=trusted_capability.adapter_revision_digest,
+        requested_model_id=request.requested_binding.model_id,
+        seed_status=AcquisitionSeedStatus.UNSUPPORTED,
+    )
+    HostileTransport.armed = True
+    if request_tamper == "request":
+        object.__setattr__(request, "action_id", "not-a-legal-action")
+    elif request_tamper == "semantic_identity":
+        object.__setattr__(request, "semantic_request_id", f"szacqrequest_{'f' * 64}")
+    result = asyncio.run(
+        acquire_canned_observation(
+            request,
+            attempt,
+            fixture.control_policy,
+            fixture.retention_policy,
+            transport,
+            historical_usage=fixture.known_historical_usage,
+            isolation_probe=_isolation_probe(),
+            capability_snapshot=trusted_capability,
+        )
+    )
+    assert result.failure_code is expected_failure
+    assert result.attempt_receipt.primary_result.primary_guard_id is (
+        expected_guard
+    )
+    assert result.tripwire_counters.canned_transport_invocations == 0
+    assert result.transport_record is None
+    assert touched == []
+
+
+def _exact_transport_boundary_inputs():
+    fixture = build_frozen_acquisition_fixtures_v0()
+    base_request = fixture.semantic_request
+    provisional = _transport(
+        [_envelope(base_request, _attempt(base_request), fixture.known_historical_usage)],
+        base_request,
+    )
+    request = _request_for_capability(
+        base_request,
+        provisional.capabilities.capability_snapshot_id or "",
+    )
+    attempt = _attempt(request)
+    transport = _transport(
+        [_envelope(request, attempt, fixture.known_historical_usage)],
+        request,
+    )
+    return fixture, request, attempt, transport
+
+
+def _run_exact_transport_boundary(
+    fixture,
+    request,
+    attempt,
+    transport,
+):
+    return asyncio.run(
+        acquire_canned_observation(
+            request,
+            attempt,
+            fixture.control_policy,
+            fixture.retention_policy,
+            transport,
+            historical_usage=fixture.known_historical_usage,
+            isolation_probe=_isolation_probe(),
+            capability_snapshot=fixture.capability_snapshot,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "poison_target",
+    (
+        "script",
+        "ledger",
+        "acquire_shadow",
+        "script_equal_clone",
+        "ledger_equal_clone",
+        "records_equal_clone",
+        "capabilities_equal_clone",
+        "profiles_equal_clone",
+    ),
+)
+def test_exact_transport_poison_is_rejected_without_executing_poison(
+    poison_target: str,
+) -> None:
+    touched: list[str] = []
+
+    class Poison:
+        def __getattribute__(self, name):
+            touched.append(name)
+            raise AssertionError(f"poison touched: {name}")
+
+        def __call__(self, *args, **kwargs):
+            touched.append("call")
+            raise AssertionError("poison called")
+
+    fixture, request, attempt, transport = _exact_transport_boundary_inputs()
+    if poison_target == "script":
+        object.__setattr__(transport, "_script", (Poison(),))
+    elif poison_target == "ledger":
+        object.__setattr__(transport, "_ledger", Poison())
+    elif poison_target == "acquire_shadow":
+        object.__getattribute__(transport, "__dict__")["acquire"] = Poison()
+    elif poison_target == "script_equal_clone":
+        original = object.__getattribute__(transport, "_script")
+        object.__setattr__(transport, "_script", tuple(list(original)))
+    elif poison_target == "ledger_equal_clone":
+        original = object.__getattribute__(transport, "_ledger")
+        object.__setattr__(transport, "_ledger", type(original)())
+    elif poison_target == "records_equal_clone":
+        original = object.__getattribute__(transport, "_records")
+        object.__setattr__(transport, "_records", list(original))
+    elif poison_target == "capabilities_equal_clone":
+        original = object.__getattribute__(transport, "capabilities")
+        clone = type(original).model_validate(original.model_dump(mode="python"))
+        object.__setattr__(transport, "capabilities", clone)
+    else:
+        original = object.__getattribute__(transport, "implementation_profiles")
+        object.__setattr__(transport, "implementation_profiles", tuple(list(original)))
+
+    result = _run_exact_transport_boundary(fixture, request, attempt, transport)
+    assert result.failure_code is AcquisitionFailureCode.INVALID_CAPABILITY_SNAPSHOT
+    assert result.attempt_receipt.primary_result.primary_guard_id is (
+        AcquisitionGuardId.P03_CAPABILITY_SNAPSHOT_INTEGRITY
+    )
+    assert result.runtime_counters.canned_transport_invocations == 0
+    assert result.transport_record is None
+    assert touched == []
+
+
+def test_poisoned_directive_boolean_is_rejected_without_truth_evaluation() -> None:
+    touched: list[str] = []
+
+    class EvilTruth:
+        def __bool__(self):
+            touched.append("bool")
+            raise AssertionError("poisoned truth value evaluated")
+
+    fixture, request, attempt, transport = _exact_transport_boundary_inputs()
+    directive = object.__getattribute__(transport, "_script")[0]
+    object.__setattr__(directive, "wait_for_cancellation", EvilTruth())
+    result = _run_exact_transport_boundary(fixture, request, attempt, transport)
+    assert result.failure_code is AcquisitionFailureCode.INVALID_CAPABILITY_SNAPSHOT
+    assert result.attempt_receipt.primary_result.primary_guard_id is (
+        AcquisitionGuardId.P03_CAPABILITY_SNAPSHOT_INTEGRITY
+    )
+    assert result.runtime_counters.canned_transport_invocations == 0
+    assert touched == []
+
+
+def test_transport_construction_rejects_regular_post_init_mutation() -> None:
+    _fixture, _request, _attempt_value, transport = _exact_transport_boundary_inputs()
+    with pytest.raises(AttributeError, match="construction is sealed"):
+        transport._script = ()
+
+
+def test_class_worker_monkeypatch_is_rejected_before_dispatch(monkeypatch) -> None:
+    touched: list[str] = []
+    fixture, request, attempt, transport = _exact_transport_boundary_inputs()
+
+    async def hostile_acquire(self, provider_visible_body, attempt):  # pragma: no cover
+        touched.append("acquire")
+        raise AssertionError("monkeypatched acquire must never run")
+
+    monkeypatch.setattr(CannedAcquisitionTransport, "acquire", hostile_acquire)
+    result = _run_exact_transport_boundary(fixture, request, attempt, transport)
+    assert result.failure_code is AcquisitionFailureCode.INVALID_CAPABILITY_SNAPSHOT
+    assert result.attempt_receipt.primary_result.primary_guard_id is (
+        AcquisitionGuardId.P03_CAPABILITY_SNAPSHOT_INTEGRITY
+    )
+    assert result.runtime_counters.canned_transport_invocations == 0
+    assert touched == []
+
+
+def test_ledger_worker_monkeypatch_is_rejected_before_dispatch(monkeypatch) -> None:
+    touched: list[str] = []
+    fixture, request, attempt, transport = _exact_transport_boundary_inputs()
+    ledger = object.__getattribute__(transport, "_ledger")
+
+    def hostile_enter(self):  # pragma: no cover
+        touched.append("enter_transport")
+        raise AssertionError("monkeypatched ledger must never run")
+
+    monkeypatch.setattr(type(ledger), "enter_transport", hostile_enter)
+    result = _run_exact_transport_boundary(fixture, request, attempt, transport)
+    assert result.failure_code is AcquisitionFailureCode.INVALID_CAPABILITY_SNAPSHOT
+    assert result.attempt_receipt.primary_result.primary_guard_id is (
+        AcquisitionGuardId.P03_CAPABILITY_SNAPSHOT_INTEGRITY
+    )
+    assert result.runtime_counters.canned_transport_invocations == 0
+    assert touched == []
+
+
+def test_canned_transport_is_one_shot_and_reuse_fails_at_p03() -> None:
+    fixture, request, attempt, transport = _exact_transport_boundary_inputs()
+    first = _run_exact_transport_boundary(fixture, request, attempt, transport)
+    assert first.outcome is AcquisitionAttemptOutcome.ACQUIRED
+    second = _run_exact_transport_boundary(fixture, request, attempt, transport)
+    assert second.failure_code is AcquisitionFailureCode.INVALID_CAPABILITY_SNAPSHOT
+    assert second.attempt_receipt.primary_result.primary_guard_id is (
+        AcquisitionGuardId.P03_CAPABILITY_SNAPSHOT_INTEGRITY
+    )
+    assert second.runtime_counters.canned_transport_invocations == 0
+    assert second.transport_record is None
+
+
+@pytest.mark.parametrize("hostile_kind", ("directive", "envelope"))
+def test_transport_constructor_rejects_hostile_subtypes_without_touching_them(
+    hostile_kind: str,
+) -> None:
+    touched: list[str] = []
+
+    if hostile_kind == "directive":
+        class Hostile(CannedTransportDirective):
+            def __getattribute__(self, name):
+                touched.append(name)
+                raise AssertionError(f"hostile directive touched: {name}")
+    else:
+        class Hostile(CannedTransportEnvelope):
+            def __getattribute__(self, name):
+                touched.append(name)
+                raise AssertionError(f"hostile envelope touched: {name}")
+
+    hostile = object.__new__(Hostile)
+    fixture = build_frozen_acquisition_fixtures_v0()
+    with pytest.raises(TypeError, match="script entries"):
+        _transport([hostile], fixture.semantic_request)
+    assert touched == []
+
+
+def test_directive_constructor_rejects_poisoned_truth_without_evaluating_it() -> None:
+    touched: list[str] = []
+
+    class EvilTruth:
+        def __bool__(self):
+            touched.append("bool")
+            raise AssertionError("poisoned truth value evaluated")
+
+    with pytest.raises(TypeError, match="exact booleans"):
+        CannedTransportDirective(wait_for_cancellation=EvilTruth())
+    assert touched == []
 
 
 @pytest.mark.parametrize("tamper", ("actual_identity", "raw_digest", "retry", "tool"))

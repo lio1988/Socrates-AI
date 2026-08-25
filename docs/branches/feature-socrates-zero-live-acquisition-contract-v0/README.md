@@ -5,6 +5,12 @@
 Implement the additive External Observation Acquisition Contract v0 as a
 provider-agnostic, canned-only, zero-network safety foundation.
 
+## Current status
+
+**PRE-RESULT FROZEN.** Contracts, cases, expected outcomes, exact construction
+and receipt identity locks, thresholds and artifact/replay schemas are complete.
+The first authoritative aggregate has not run.
+
 ## Success criterion
 
 The branch succeeds only if immutable acquisition contracts, identities,
@@ -26,7 +32,7 @@ all frozen historical hashes unchanged, and every required regression passing.
 - complete new-execution accounting and typed historical usage;
 - immutable isolation and retention receipts;
 - frozen positive, orthogonal and precedence cases;
-- authoritative artifact and replay lock.
+- authoritative artifact, persisted reverse-execution evidence and replay lock.
 
 ## Non-goals
 
@@ -38,3 +44,5 @@ two or production authority.
 Branch context: [MEMORY.md](MEMORY.md) · [PLAN.md](PLAN.md) ·
 [PRESENT.md](PRESENT.md)
 
+Canonical design report:
+[SOCRATES_ZERO_EXTERNAL_OBSERVATION_ACQUISITION_CONTRACT_V0.md](../../SOCRATES_ZERO_EXTERNAL_OBSERVATION_ACQUISITION_CONTRACT_V0.md)

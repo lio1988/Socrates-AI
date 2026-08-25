@@ -1,6 +1,6 @@
 # Current External Observation Acquisition Contract v0 state
 
-## CONTRACT DESIGN IN PROGRESS
+## PRE-RESULT FREEZE READY
 
 | Item | Current state |
 |---|---|
@@ -10,26 +10,37 @@
 | External/live/provider/model/tool calls | `0/0/0/0/0` |
 | Canonical application calls | `0` |
 | Production authority | none |
+| Frozen cases | `56 = 6 positive + 43 orthogonal + 7 precedence` |
+| Frozen attempts / canned invocations | `58 / 32` |
+| Focused pre-result tests | `213 passed, 1 skipped` (future artifact-only verifier) |
+| Authoritative aggregate / replay | `not run / not run` |
 
 ## Completed
 
-- Exact starting checkpoint and protected files verified.
-- Approved branch created.
-- Mandate and scientific chronology frozen.
+- Immutable contracts, semantic/transport identity separation and exact byte
+  rendering.
+- Exact-type/state-sealed one-shot canned runtime, 34 first-guard checks and
+  complete receipts.
+- Network, credential, provider/model/tool and canonical-application tripwires.
+- Source/sibling/production isolation, allowlist-bound privacy, hostile metadata
+  projection and privacy-safe historical lock evidence.
+- `56` cases with exact expected failures and construction/receipt/result locks.
+- Persisted replay-execution schema, replay lock and three-file offline verifier.
 
 ## In progress
 
-- Repository-native acquisition contract and experiment design audit.
-- Required branch documentation.
+- Pre-result freeze commit and required pre-aggregate report.
 
 ## Changed files
 
-Only this branch documentation exists so far.
+Additive acquisition runtime/contracts/evaluator/cases/isolation evidence,
+focused tests and this branch's documentation. Frozen Search, Value, Policy,
+CED, successor-environment and action-family components are unchanged.
 
 ## Remaining work
 
-Implementation, focused tests, pre-result freeze, sole authoritative aggregate,
-artifact, independent replay, full regressions and durable checkpoint.
+Freeze commit, sole authoritative aggregate, write-once artifact, one reverse
+replay on support, full regressions and durable result checkpoint.
 
 ## Worktree protection
 
@@ -38,6 +49,5 @@ artifact, independent replay, full regressions and durable checkpoint.
 
 ## Next safe step
 
-Implement additive immutable contracts and focused unit tests without running an
-authoritative aggregate.
-
+Commit the complete pre-result design, report the freeze hash, then—and only
+then—execute the sole authoritative aggregate under the active tripwire.

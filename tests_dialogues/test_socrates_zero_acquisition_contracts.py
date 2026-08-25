@@ -15,6 +15,7 @@ from backend.dialogues.socrates_zero.acquisition_contracts import (
     FROZEN_ACQUISITION_FAILURE_TAXONOMY,
     FROZEN_ACQUISITION_VALIDATION_ORDER,
     FROZEN_REQUIRED_CONTROL_STATES,
+    AcquisitionArtifactInclusionPolicy,
     AcquisitionBudget,
     AcquisitionCapabilitySnapshot,
     AcquisitionControlEvidence,
@@ -22,8 +23,12 @@ from backend.dialogues.socrates_zero.acquisition_contracts import (
     AcquisitionControlPolicy,
     AcquisitionControlRequirement,
     AcquisitionControlState,
+    AcquisitionDataClassification,
+    AcquisitionRedactionStatus,
     AcquisitionResourceQuantity,
     AcquisitionRequestConfiguration,
+    AcquisitionRetentionPolicy,
+    AcquisitionRetentionReceipt,
     AcquisitionSeedSetting,
     AcquisitionSeedStatus,
     AcquisitionSemanticRequest,
@@ -32,6 +37,7 @@ from backend.dialogues.socrates_zero.acquisition_contracts import (
     CannedTransportEnvelope,
     ProviderVisibleRequestBytes,
     ResourceKnowledgeState,
+    ResponseRetentionMode,
     UnadmittedAcquiredObservation,
 )
 from backend.dialogues.socrates_zero.contracts import canonical_json
@@ -222,6 +228,51 @@ def test_unknown_is_never_numeric_zero_and_seed_unsupported_is_explicit() -> Non
     assert _policy().seed == AcquisitionSeedSetting(
         status=AcquisitionSeedStatus.UNSUPPORTED
     )
+
+
+def test_retention_receipt_preserves_exact_no_response_as_all_none() -> None:
+    request = _request()
+    visible = request.provider_visible_request
+    policy = AcquisitionRetentionPolicy(
+        response_retention_mode=ResponseRetentionMode.RAW_BYTES_BASE64,
+        retention_classification="non-sensitive-canned-research-v0",
+        retention_reason="no response was produced",
+        access_policy_id="socrateszero-canned-fixture-access/v0",
+        artifact_inclusion_policy=(
+            AcquisitionArtifactInclusionPolicy.INCLUDE_RAW_NON_SENSITIVE_RESPONSE
+        ),
+    )
+    receipt = AcquisitionRetentionReceipt(
+        policy=policy,
+        retention_policy_id=policy.retention_policy_id or "",
+        semantic_request_id=request.semantic_request_id or "",
+        transport_attempt_id="szacqattempt_no_response_fixture",
+        provider_visible_prompt_digest=visible.sha256 or "",
+        provider_visible_prompt_length=visible.byte_length or 0,
+        provider_visible_prompt_reference=visible.provider_visible_request_id or "",
+        provider_visible_prompt_raw_retained=False,
+        raw_response_digest=None,
+        raw_response_length=None,
+        raw_response_base64=None,
+        content_addressed_response_reference=None,
+        data_classification=AcquisitionDataClassification.NON_SENSITIVE_CANNED,
+        credentials_inspected=False,
+        credentials_retained=False,
+        personal_private_data_present=False,
+        redaction_status=AcquisitionRedactionStatus.NOT_REQUIRED,
+        artifact_inclusion=(
+            AcquisitionArtifactInclusionPolicy.INCLUDE_RAW_NON_SENSITIVE_RESPONSE
+        ),
+    )
+
+    assert receipt.policy_compliant is True
+    assert receipt.violations == ()
+    assert (
+        receipt.raw_response_digest,
+        receipt.raw_response_length,
+        receipt.raw_response_base64,
+        receipt.content_addressed_response_reference,
+    ) == (None, None, None, None)
 
 
 def test_adverse_capability_and_zero_budget_are_representable_for_audit() -> None:

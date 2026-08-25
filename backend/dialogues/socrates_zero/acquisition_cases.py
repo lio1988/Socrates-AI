@@ -9,7 +9,6 @@ apply an observation, build an aggregate, or publish an artifact.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 from enum import Enum
@@ -27,6 +26,10 @@ from .acquisition_contracts import (
     AcquisitionGuardState,
     FROZEN_ACQUISITION_FAILURE_TAXONOMY,
     FROZEN_ACQUISITION_VALIDATION_ORDER,
+)
+from .acquisition_isolation_evidence import (
+    FROZEN_ACQUISITION_ISOLATION_RUNTIME_DIGESTS_V0,
+    acquisition_isolation_mutation_digest_v0,
 )
 from .contracts import ContractValidationError, canonical_json, stable_contract_id
 
@@ -178,7 +181,7 @@ _GUARD_ROWS: Tuple[
 ] = (
     ("P01_REQUEST_INTEGRITY", "PRE_DISPATCH", "request integrity", ("INVALID_ACQUISITION_REQUEST",), True),
     ("P02_SEMANTIC_IDENTITY_INTEGRITY", "PRE_DISPATCH", "semantic identity integrity", ("INVALID_SEMANTIC_IDENTITY", "IDENTITY_COLLISION"), True),
-    ("P03_CAPABILITY_SNAPSHOT_INTEGRITY", "PRE_DISPATCH", "capability snapshot integrity", ("INVALID_CAPABILITY_SNAPSHOT",), False),
+    ("P03_CAPABILITY_SNAPSHOT_INTEGRITY", "PRE_DISPATCH", "capability snapshot integrity", ("INVALID_CAPABILITY_SNAPSHOT",), True),
     ("P04_REQUIRED_CONTROL_COMPLETENESS", "PRE_DISPATCH", "required-control completeness", ("REQUIRED_CONTROL_UNKNOWN",), True),
     ("P05_CANNED_ONLY_TRANSPORT_MODE", "PRE_DISPATCH", "canned-only transport mode", ("CANNED_ONLY_POLICY_VIOLATION",), True),
     ("P06_EXTERNAL_NETWORK_PROHIBITION", "PRE_DISPATCH", "external-network prohibition", ("EXTERNAL_NETWORK_FORBIDDEN",), True),
@@ -192,7 +195,7 @@ _GUARD_ROWS: Tuple[
     ("P14_RESOURCE_ACCOUNTING", "PRE_DISPATCH", "resource-accounting completeness", ("RESOURCE_ACCOUNTING_INCOMPLETE",), True),
     ("P15_BUDGET_SUFFICIENCY", "PRE_DISPATCH", "budget sufficiency", ("BUDGET_INCOMPLETE",), True),
     ("P16_PROMPT_BYTE_DETERMINISM", "PRE_DISPATCH", "prompt-byte determinism", ("PROMPT_ENTROPY_DETECTED",), True),
-    ("P17_ISOLATION_PRECONDITIONS", "PRE_DISPATCH", "branch/isolation preconditions", ("ISOLATION_PRECONDITION_FAILED",), False),
+    ("P17_ISOLATION_PRECONDITIONS", "PRE_DISPATCH", "branch/isolation preconditions", ("ISOLATION_PRECONDITION_FAILED",), True),
     ("P18_CANNED_TRANSPORT_REGISTRATION", "PRE_DISPATCH", "canned-transport registration", ("CANNED_TRANSPORT_UNREGISTERED",), True),
     ("A01_CANNED_INVOCATION_COUNT", "POST_DISPATCH", "canned invocation count integrity", ("UNCOUNTED_CANNED_INVOCATION",), True),
     ("A02_TRANSPORT_COMPLETION", "POST_DISPATCH", "transport completion", ("TRANSPORT_TIMEOUT", "TRANSPORT_ERROR"), True),
@@ -590,24 +593,21 @@ _BASE_SEMANTIC_ID = (
 _BASE_CONFIG = "c7cbccd7066a0d9c657932ce183f5e18821586fa1a7890f2f14d8efff0987d84"
 _WRONG_CONFIG = "3" * 64
 _BASE_RAW_DIGEST = FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0
-_BASE_SOURCE_ISOLATION_DIGEST = hashlib.sha256(
-    b"acquisition-source-v0"
-).hexdigest()
-_BASE_SIBLING_ISOLATION_DIGEST = hashlib.sha256(
-    b"acquisition-sibling-v0"
-).hexdigest()
-_BASE_PRODUCTION_ISOLATION_DIGEST = hashlib.sha256(
-    b"acquisition-production-v0"
-).hexdigest()
-_MUTATED_SOURCE_ISOLATION_DIGEST = hashlib.sha256(
-    b"source:mutated-sentinel"
-).hexdigest()
-_MUTATED_SIBLING_ISOLATION_DIGEST = hashlib.sha256(
-    b"sibling:mutated-sentinel"
-).hexdigest()
-_MUTATED_PRODUCTION_ISOLATION_DIGEST = hashlib.sha256(
-    b"production:mutated-sentinel"
-).hexdigest()
+_ISOLATION_RUNTIME_DIGESTS = dict(
+    FROZEN_ACQUISITION_ISOLATION_RUNTIME_DIGESTS_V0
+)
+_BASE_SOURCE_ISOLATION_DIGEST = _ISOLATION_RUNTIME_DIGESTS["source"]
+_BASE_SIBLING_ISOLATION_DIGEST = _ISOLATION_RUNTIME_DIGESTS["sibling"]
+_BASE_PRODUCTION_ISOLATION_DIGEST = _ISOLATION_RUNTIME_DIGESTS["production"]
+_MUTATED_SOURCE_ISOLATION_DIGEST = acquisition_isolation_mutation_digest_v0(
+    "source"
+)
+_MUTATED_SIBLING_ISOLATION_DIGEST = acquisition_isolation_mutation_digest_v0(
+    "sibling"
+)
+_MUTATED_PRODUCTION_ISOLATION_DIGEST = acquisition_isolation_mutation_digest_v0(
+    "production"
+)
 
 
 FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0: Tuple[AcquisitionProbeV0, ...] = (
@@ -636,7 +636,7 @@ FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0: Tuple[AcquisitionProbeV0, ...] = (
     _probe("acqv0-o23-fallback-activated", O, "A07_FALLBACK_ACTIVATION", "FALLBACK_ACTIVATED", "Change only fallback-used from false to true.", (_mutation("envelope.fallback_used", False, True),), _vector(fallback=I)),
     _probe("acqv0-o24-retry-activated", O, "A08_RETRY_ACTIVATION", "RETRY_ACTIVATED", "Change only retry count from zero to one.", (_mutation("envelope.retry_count", 0, 1),), _vector(retry=I)),
     _probe("acqv0-o25-tool-activated", O, "A09_TOOL_ACTIVATION", "TOOL_ACTIVATED", "Change only tool-call count from zero to one.", (_mutation("envelope.tool_calls", 0, 1),), _vector(tools=I)),
-    _probe("acqv0-o26-missing-raw", O, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove only the canonical opaque-byte encoding from an otherwise complete envelope.", (_mutation("envelope.raw_response_base64", base64.b64encode(FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0).decode("ascii"), None),), _vector(response_presence=I, response_digest=N)),
+    _probe("acqv0-o26-missing-raw", O, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove only the opaque response from an otherwise complete envelope without placing response bytes in evaluator metadata.", (_mutation("envelope.raw_response_presence", "PRESENT", "ABSENT"),), _vector(response_presence=I, response_digest=N)),
     _probe("acqv0-o27-raw-digest-mismatch", O, "A11_RESPONSE_DIGEST_INTEGRITY", "INVALID_RESPONSE_DIGEST", "Keep raw bytes exact and tamper only the stored digest.", (_mutation("envelope.raw_response_sha256", _BASE_RAW_DIGEST, "f" * 64),), _vector(response_digest=I)),
     _probe("acqv0-o28-usage-incomplete", O, "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE", "Change only new-execution usage completeness to INCOMPLETE.", (_mutation("envelope.new_usage_completeness", "COMPLETE", "INCOMPLETE"),), _vector(usage_completeness=I)),
     _probe("acqv0-o29-false-zero-usage", O, "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE", "Change only source token knowledge from KNOWN to UNKNOWN while the candidate receipt retains numeric zero.", (_mutation("envelope.usage.tokens.knowledge", "KNOWN", "UNKNOWN"),), _vector(usage_completeness=I, receipt_identity=D)),
@@ -648,6 +648,12 @@ FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0: Tuple[AcquisitionProbeV0, ...] = (
     _probe("acqv0-o35-final-receipt-identity-mismatch", O, "A16_FINAL_RECEIPT_INTEGRITY", "RECEIPT_MISMATCH", "Change only the independently recomputed final-receipt integrity verdict.", (_mutation("attempt_recorder.final_receipt_integrity", True, False),), _vector(receipt_identity=I)),
     _probe("acqv0-o36-future-label-envelope", O, "A02_TRANSPORT_COMPLETION", "TRANSPORT_ERROR", "Add a forbidden evaluator/future label to the envelope, never to opaque raw response bytes.", (_mutation("envelope.expected_canonical_acceptance", None, "ACCEPTED"),), _vector(future_label_status=I)),
     _probe("acqv0-o37-missing-actual-model", O, "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH", "Omit only the typed actual exact-model identity while preserving actual provider and configuration evidence.", (_mutation("envelope.actual_model_id", "phase8-recorded-model/1", None),), _vector(model=I)),
+    _probe("acqv0-o38-fallback-known-adverse", O, "P09_FALLBACK_DISABLED", "FALLBACK_CONTROL_UNPROVEN", "Change only fallback control from proven disabled to the known-adverse supported state.", (_mutation("capability.fallback", "PROVEN_DISABLED", "PROVEN_SUPPORTED"),), _vector(semantic_request_identity=D, capability_controls=D, fallback=I)),
+    _probe("acqv0-o39-retry-known-adverse", O, "P10_RETRY_DISABLED", "RETRY_CONTROL_UNPROVEN", "Change only explicit-retry control from proven disabled to the known-adverse supported state.", (_mutation("capability.retry", "PROVEN_DISABLED", "PROVEN_SUPPORTED"),), _vector(semantic_request_identity=D, capability_controls=D, retry=I)),
+    _probe("acqv0-o40-sdk-hidden-retry-known-adverse", O, "P11_SDK_INTERNAL_RETRY_DISABLED", "SDK_INTERNAL_RETRY_CONTROL_UNPROVEN", "Change only SDK-internal retry control from proven disabled to the known-adverse supported state.", (_mutation("capability.sdk_internal_retry", "PROVEN_DISABLED", "PROVEN_SUPPORTED"),), _vector(semantic_request_identity=D, capability_controls=D, sdk_internal_retry=I)),
+    _probe("acqv0-o41-termination-known-adverse", O, "P13_TIMEOUT_WORKER_TERMINATION", "TIMEOUT_CANCELLATION_UNPROVEN", "Change only worker-termination control from proven supported to the known-adverse unsupported state.", (_mutation("capability.worker_termination", "PROVEN_SUPPORTED", "PROVEN_UNSUPPORTED"),), _vector(semantic_request_identity=D, capability_controls=D, worker_termination=I)),
+    _probe("acqv0-o42-isolation-precondition-failed", O, "P17_ISOLATION_PRECONDITIONS", "ISOLATION_PRECONDITION_FAILED", "Change only the test-owned isolation probe precondition verdict before dispatch.", (_mutation("isolation_probe.preconditions_met", True, False),), _vector(branch_isolation=I)),
+    _probe("acqv0-o43-valid-capability-snapshot-detached", O, "P03_CAPABILITY_SNAPSHOT_INTEGRITY", "INVALID_CAPABILITY_SNAPSHOT", "Supply a valid, request-linked capability snapshot that is intentionally distinct from the canned transport's immutable snapshot.", (_mutation("capability.snapshot_binding", "MATCHED", "DETACHED_VALID_SNAPSHOT"),), _vector(semantic_request_identity=D, capability_controls=I)),
 )
 
 
@@ -656,7 +662,7 @@ FROZEN_ACQUISITION_PRECEDENCE_PROBES_V0: Tuple[AcquisitionProbeV0, ...] = (
     _probe("acqv0-p02-unknown-capability-plus-budget-gap", X, "P04_REQUIRED_CONTROL_COMPLETENESS", "REQUIRED_CONTROL_UNKNOWN", "Change one required capability to UNKNOWN and make the budget insufficient; completeness wins.", (_mutation("capability.actual_provider_identity_verification", "PROVEN_SUPPORTED", "UNKNOWN"), _mutation("budget.max_canned_transport_invocations", 1, 0)), _vector(semantic_request_identity=D, capability_controls=I, budget=I)),
     _probe("acqv0-p03-prompt-entropy-plus-fallback-policy", X, "P09_FALLBACK_DISABLED", "FALLBACK_CONTROL_UNPROVEN", "Enable fallback explicitly and inject prompt entropy; fallback guard wins before prompt determinism.", (_mutation("capability.fallback", "PROVEN_DISABLED", "PROVEN_SUPPORTED"), _mutation("renderer.entropy_source", "NONE", "BRANCH_ID")), _vector(semantic_request_identity=D, capability_controls=D, fallback=I, prompt_bytes=I)),
     _probe("acqv0-p04-actual-model-plus-fallback-activation", X, "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH", "Change actual model and activate fallback; exact-model identity wins.", (_mutation("envelope.actual_model_id", "phase8-recorded-model/1", "phase8-recorded-model/1-wrong"), _mutation("envelope.fallback_used", False, True)), _vector(model=I, fallback=I)),
-    _probe("acqv0-p05-missing-raw-plus-usage-incomplete", X, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove the opaque-byte encoding and make usage incomplete; raw presence wins.", (_mutation("envelope.raw_response_base64", base64.b64encode(FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0).decode("ascii"), None), _mutation("envelope.new_usage_completeness", "COMPLETE", "INCOMPLETE")), _vector(response_presence=I, response_digest=N, usage_completeness=I)),
+    _probe("acqv0-p05-missing-raw-plus-usage-incomplete", X, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove the opaque response and make usage incomplete; raw presence wins without placing response bytes in evaluator metadata.", (_mutation("envelope.raw_response_presence", "PRESENT", "ABSENT"), _mutation("envelope.new_usage_completeness", "COMPLETE", "INCOMPLETE")), _vector(response_presence=I, response_digest=N, usage_completeness=I)),
     _probe("acqv0-p06-network-plus-credential-policy", X, "P06_EXTERNAL_NETWORK_PROHIBITION", "EXTERNAL_NETWORK_FORBIDDEN", "Enable external-network and credential-access intent without executing either; network guard wins.", (_mutation("capability.external_network", "PROVEN_DISABLED", "PROVEN_SUPPORTED"), _mutation("capability.credential_access", "PROVEN_DISABLED", "PROVEN_SUPPORTED")), _vector(semantic_request_identity=D, capability_controls=D, external_network=I, credential_access=I)),
     _probe("acqv0-p07-timeout-plus-worker-nontermination", X, "A02_TRANSPORT_COMPLETION", "TRANSPORT_TIMEOUT", "Return timeout status and worker nontermination; transport completion wins.", (_mutation("envelope.transport_status", "DELIVERED", "TIMEOUT"), _mutation("envelope.worker_terminated", True, False)), _vector(timeout=I, worker_termination=I, response_presence=D, response_digest=N)),
 )
@@ -678,15 +684,15 @@ class AcquisitionThresholdsV0(_FrozenCaseContract):
         ACQUISITION_THRESHOLDS_SCHEMA_V0
     ] = ACQUISITION_THRESHOLDS_SCHEMA_V0
     thresholds_id: Optional[str] = None
-    cases_total: Literal[50] = 50
+    cases_total: Literal[56] = 56
     positive_cases_total: Literal[6] = 6
     required_positive_complete_case_results: Literal[6] = 6
     required_positive_attempt_receipts: Literal[8] = 8
-    orthogonal_probes_total: Literal[37] = 37
-    required_orthogonal_exact_primary_results: Literal[37] = 37
+    orthogonal_probes_total: Literal[43] = 43
+    required_orthogonal_exact_primary_results: Literal[43] = 43
     precedence_probes_total: Literal[7] = 7
     required_precedence_exact_primary_results: Literal[7] = 7
-    required_attempt_receipts_total: Literal[52] = 52
+    required_attempt_receipts_total: Literal[58] = 58
     required_canned_transport_invocations: Literal[32] = 32
     maximum_mismatch_or_failure_count: Literal[0] = 0
     required_invalid_probe_constructions: Literal[0] = 0
@@ -739,14 +745,14 @@ class AcquisitionCaseSetV0(_FrozenCaseContract):
     harness_id: Literal[ACQUISITION_HARNESS_ID_V0] = ACQUISITION_HARNESS_ID_V0
     guard_ids: Tuple[AcquisitionGuardId, ...] = Field(min_length=34, max_length=34)
     positive_cases: Tuple[AcquisitionPositiveCaseV0, ...] = Field(min_length=6, max_length=6)
-    orthogonal_probes: Tuple[AcquisitionProbeV0, ...] = Field(min_length=37, max_length=37)
+    orthogonal_probes: Tuple[AcquisitionProbeV0, ...] = Field(min_length=43, max_length=43)
     precedence_probes: Tuple[AcquisitionProbeV0, ...] = Field(min_length=7, max_length=7)
     thresholds_id: str
     positive_case_count: Literal[6] = 6
-    orthogonal_probe_count: Literal[37] = 37
+    orthogonal_probe_count: Literal[43] = 43
     precedence_probe_count: Literal[7] = 7
-    total_case_count: Literal[50] = 50
-    total_attempt_receipts: Literal[52] = 52
+    total_case_count: Literal[56] = 56
+    total_attempt_receipts: Literal[58] = 58
     total_canned_transport_invocations: Literal[32] = 32
 
     @model_validator(mode="after")
@@ -765,7 +771,7 @@ class AcquisitionCaseSetV0(_FrozenCaseContract):
             item.probe_fingerprint
             for item in self.orthogonal_probes + self.precedence_probes
         )
-        if len(set(all_fingerprints)) != 50:
+        if len(set(all_fingerprints)) != 56:
             raise ContractValidationError("all acquisition case fingerprints must be unique")
         attempts = sum(item.attempt_count for item in self.positive_cases) + len(
             self.orthogonal_probes
