@@ -7,6 +7,8 @@
   `ced-search-state-projection/v1`.
 - Estimator ID is `heuristic-value-estimator/v1`; base is `0.0`, bounds are
   `[-1,+1]`, and every numeric component is non-positive.
+- Value-v1 contracts and implementation remain on the trusted CED side so the
+  runtime-inert `socrates_zero` package does not import Hybrid authority.
 - Active assessments are the intersection of v1 governing assessment claim IDs
   and `base_state.active_claims`; one worst state is scored once.
 - Frozen claim deficits are falsified `-0.20`, external-required `-0.12`,

@@ -11,11 +11,11 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping, Optional, Tuple
 
-from ..ced_search_observability_v1 import (
+from .ced_search_observability_v1 import (
     SEARCH_STATE_V1_PROJECTION_VERSION,
     SEARCH_STATE_V1_SCHEMA_VERSION,
 )
-from ..hybrid_epistemic import SupportState
+from .hybrid_epistemic import SupportState
 
 
 HEURISTIC_VALUE_ESTIMATOR_V1_VERSION = "heuristic-value-estimator/v1"
