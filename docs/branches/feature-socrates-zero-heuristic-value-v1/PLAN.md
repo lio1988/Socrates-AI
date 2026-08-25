@@ -18,8 +18,8 @@ chronologically frozen canonical holdout and no architecture expansion.
 6. [done] Freeze the authoritative holdout runner after focused gates pass.
 7. [done] Execute the first holdout once, persist its immutable artifact,
    replay it, and classify the primary gate.
-8. [in progress] Run the matched BestOfN secondary gate; primary passed.
-9. [pending] Run the full required regression matrix and finalize docs/ADR.
+8. [done] Run the matched BestOfN secondary gate; primary passed.
+9. [in progress] Run the full required regression matrix and finalize docs/ADR.
 
 ## Stop conditions
 
