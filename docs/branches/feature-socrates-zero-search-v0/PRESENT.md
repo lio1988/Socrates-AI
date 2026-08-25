@@ -525,3 +525,78 @@ That gate may decide among safe deeper successor semantics, richer canonical
 verification/resolution state, real read-only shadow orchestration, governed
 trajectory/learned-Value preparation, or simplification/deprioritization of
 PUCT. Phase 5 selects none of them.
+
+## Phase 5.5 evidence review and architecture decision gate
+
+DONE: verified the sealed Phase 5 repository/artifact and completed a
+documentation-only causal review. The authoritative JSON remains byte-equal to
+its `17be287` Git blob with SHA-256
+`21aa870a790f80186c0cd2b66878fa0d6344399fdf9e5386e399c7032569886c`.
+No core, benchmark, provider, search, Policy, Value, SearchState, successor,
+CED, training, or production behavior changed.
+
+CORE EVIDENCE:
+
+- Heuristic Policy versus Uniform, under the only two matched Neutral-Value
+  controls: 6 improved, 8 worsened, 6 unchanged, `-1` correct and `+2.30`
+  regret in both Greedy and PUCT. Verdict: `HARMFUL` in the frozen regime.
+- Heuristic Value versus Neutral with Heuristic Policy fixed: BestOfN gains six
+  correct and removes 6.95 regret; PUCT gains six correct and removes 7.00
+  regret. Greedy is unchanged because it is Policy-only. Verdict: `SUPPORTED`.
+- Greedy H/H to BestOfN-4 H/H: `+6` correct, `-6.75` regret, `+62` successors.
+  BestOfN-4 to PUCT-4: `0` correct, `-0.25` regret, `+18` successors. Real
+  successor observation plus Value accounts for almost all measured gain.
+- BestOfN and PUCT are `CO-CHAMPIONS`: BestOfN is the stronger
+  complexity-adjusted experimental anchor, while PUCT keeps a 0.25 regret
+  advantage and remains research-only.
+
+PUCT-8 FORENSIC:
+
+- only `best_of_n_sufficient_02` and the two heuristic-value-informative cases
+  regress from budget four to eight;
+- at budget four each action has one visit, so Q selects the optimum;
+- at budget eight deterministic repeated observations add no information, but
+  high-prior actions receive more visits and visit-count-first root selection
+  chooses them despite worse Q;
+- classification: expected frozen algorithmic behavior plus a depth-one design
+  limitation; no invariant violation or possible bug was found.
+
+ARCHITECTURE VERDICT:
+
+- both value-uninformative fixtures lawfully hide their evaluator-only future
+  utilities, so no Value may recover those exact labels;
+- real Hybrid/CED state nevertheless owns typed verification, claim support,
+  objection/contradiction lifecycle, and evidence semantics that SearchState
+  v0 makes opaque or omits;
+- current Value is both estimator- and information-limited, with canonical
+  observability the prerequisite uncertainty;
+- depth two is not legitimate: no canonical recursive isolated CED action
+  executor exists, and a second reconstructed CED is forbidden;
+- existing shadow infrastructure observes completed production sessions but
+  cannot execute isolated action counterfactuals;
+- RL is `NOT YET EARNED`; learned Value and learned Policy are premature.
+
+PHASE 5.5 STATUS: COMPLETE
+
+REPORT:
+
+- `docs/SOCRATES_ZERO_PHASE5_5_DECISION_GATE.md` contains the full 11-run
+  reconstruction, paired/categorical attribution, PUCT receipts,
+  value-uninformative and SearchState audits, positive-signal inventory,
+  depth-two/real-shadow blocker maps, readiness gates, decision matrix, and
+  falsification contract.
+
+EXACTLY ONE SELECTED NEXT MILESTONE:
+
+- branch: `feature/socrates-zero-canonical-observability-v1`;
+- hypothesis: real CED decision states contain already-authoritative typed
+  epistemic distinctions that v0 aliases, and a separately versioned opt-in v1
+  projection can preserve them without inference or new authority;
+- initial scope: typed projection plus deterministic observability report only;
+- frozen: all Phase 5 components and the v0 projection/default runtime;
+- explicit non-goals: no Value/Policy/search/depth/successor/provider/shadow/
+  learning/RL/production change.
+
+NEXT: implement nothing on this branch unless separately authorized. A future
+observability branch must pass its predeclared success/falsification gate before
+any Value v1 or other roadmap step is considered.

@@ -387,6 +387,38 @@ learned-Value preparation, and (E) simplification/deprioritization of PUCT.
 The observed depth-one horizon and penalty-only leaf signal are diagnostic
 hypotheses, not authorization to change either contract.
 
+## Phase 5.5 evidence gate decision
+
+Phase 5.5 is a documentation-only review of the sealed artifact. The exact
+paired evidence attributes almost all measured gain to successor observation
+plus non-neutral Value: Greedy H/H to BestOfN-4 H/H adds six correct cases and
+reduces regret by 6.75, whereas BestOfN-4 to PUCT-4 adds no correct case and
+reduces regret by only 0.25 at eighteen additional observations. The two legal
+Heuristic-Policy versus Uniform-Policy controls both lose one correct case and
+add 2.30 regret. Heuristic Value, held against Neutral Value, adds six correct
+cases to both BestOfN and PUCT.
+
+The PUCT-8 degradation is not an invariant violation. In the three regressed
+cases, budget four visits all four actions once and root Q selects the optimum.
+Budget eight repeats deterministic one-ply observations; higher-prior actions
+gain more visits, and visit-count-first root selection chooses them despite a
+worse Q. This is expected frozen behavior and a depth-one design limitation,
+not evidence that general adaptive compute is invalid.
+
+The gate selects exactly one next research milestone:
+`feature/socrates-zero-canonical-observability-v1`. Its sole hypothesis is that
+real CED decision states contain already-authoritative typed Hybrid/CED
+epistemic distinctions that `SearchState v0` aliases as opaque digests or
+omits. The milestone may add only an opt-in, separately versioned typed
+projection and an observability report. It freezes v0 Policy, Value, search,
+successor depth, cases, budgets, artifact, CED behavior, and Hybrid authority.
+It adds no estimator, learned component, provider call, shadow branch, action
+executor, or production wiring.
+
+The full evidence reconstruction, observability table, depth-two blocker map,
+readiness gates, decision matrix, falsification criteria, and frozen-component
+list are recorded in `docs/SOCRATES_ZERO_PHASE5_5_DECISION_GATE.md`.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.

@@ -98,6 +98,24 @@ preserving byte-for-byte default CED behavior.
    Phase 5 checkpoint; run all required regression suites.
 10. [stop] Do not begin Phase 6, RL, live shadow, or production wiring.
 
+## Phase 5.5 evidence review and decision gate
+
+1. [done] Verify sealed HEAD, artifact SHA-256, first-commit blob equality,
+   schemas, case balance, and all frozen component identities.
+2. [done] Reconstruct all eleven configurations and exact category metrics from
+   the machine-readable artifact.
+3. [done] Perform paired Policy, Value, successor-observation, and adaptive
+   allocation attribution.
+4. [done] Explain every PUCT-4 to PUCT-8 regression from actual P/N/Q/root
+   selection statistics; find no invariant violation.
+5. [done] Audit both value-uninformative fixtures, every SearchState field,
+   positive lawful signals, depth-two blockers, and real shadow seams.
+6. [done] Gate BestOfN/PUCT status, RL, learned Value, and learned Policy.
+7. [done] Compare seven candidate branches and select exactly one falsifiable
+   next milestone: canonical epistemic observability v1.
+8. [stop] Phase 5.5 implements no selected architecture and changes only
+   analysis/checkpoint documentation.
+
 ## Validation gates
 
 - deterministic identity and strict-schema tests pass;
@@ -121,14 +139,16 @@ preserving byte-for-byte default CED behavior.
 7. [done] Budgeted one-ply Best-of-N with injected successors.
 8. [done] Bounded serial one-real-ply PUCT with path-local duplicate states.
 9. [done] Phase 5 offline matched-compute search-kernel evaluation harness.
-10. [decision gate] Phase 5.5 — Evidence Review / Architecture Decision Gate.
-    Review, without implementation: (A) safe deeper successor semantics,
-    (B) richer canonical verification/resolution state, (C) real read-only
-    shadow orchestration, (D) governed trajectory collection / learned-Value
-    preparation, or (E) simplification/deprioritization of PUCT.
-11. [not selected] Learned priors/value only after sufficient governed
+10. [done] Phase 5.5 — Evidence Review / Architecture Decision Gate.
+    The gate selects richer canonical verification/resolution observability as
+    the sole next uncertainty and implements nothing.
+11. [selected, not started] `feature/socrates-zero-canonical-observability-v1`.
+    Test whether already-authoritative typed Hybrid/CED semantics distinguish
+    real decision states aliased by the v0 projection. Freeze all Phase 5
+    components and add no Value/search/provider behavior in the experiment.
+12. [not selected] Learned priors/value only after sufficient governed
     experience and a separate approval.
-12. [not selected] True RL/self-play only after search and evaluation evidence
+13. [not selected] True RL/self-play only after search and evaluation evidence
     justify it and a separate approval.
 
 ## Stop conditions

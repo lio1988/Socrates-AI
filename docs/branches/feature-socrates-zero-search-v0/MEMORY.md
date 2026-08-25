@@ -140,17 +140,54 @@
   evaluable replay cases `0`, explicit missing counterfactuals `2`.
 - Phase 5 evidence is search-kernel-only. It establishes no end-to-end CED or
   Socrates dialogue improvement and grants no production authority.
+- Phase 5.5 verified the artifact SHA-256 and byte equality with the Git blob
+  first committed by `17be287`, then reconstructed all 11 configurations
+  directly from the machine-readable artifact without rewriting it.
+- The only matched Heuristic-Policy versus Uniform-Policy pairs are Greedy and
+  PUCT-4 under Neutral Value. Both have 6 improved, 8 worsened, and 6 unchanged
+  cases; Heuristic loses one correct case and adds 2.30 regret. Phase 5.5
+  classifies `HeuristicPolicyPrior/v0` as `HARMFUL` in this regime.
+- With Heuristic Policy fixed, Heuristic Value changes Greedy by zero, adds six
+  correct cases and removes 6.95 regret for BestOfN, and adds six correct cases
+  and removes 7.00 regret for PUCT. Value is the strongest demonstrated
+  contributor beyond Policy-only selection.
+- Greedy H/H to BestOfN-4 H/H yields `+6` correct and `-6.75` regret at 62
+  successor observations. BestOfN-4 to PUCT-4 yields `0` correct and `-0.25`
+  regret at 18 additional observations. Most measured gain is successor
+  observation plus Value, not adaptive PUCT allocation.
+- The three PUCT-4 to PUCT-8 regressions are caused by visit-count-first root
+  selection after redundant deterministic one-ply re-observations. Budget four
+  ties all actions at one visit and Q selects the optimum; budget eight gives
+  high-prior actions more visits and selects them despite worse Q. No invariant
+  violation or possible bug was found.
+- Both value-uninformative fixtures expose zero successor contradictions,
+  questions, and terminal differences; all successor Values are exactly zero.
+  Their distinct utilities are evaluator-only future labels and cannot lawfully
+  be recovered from action digests.
+- Real SearchState v0 is nevertheless information-starved: Hybrid owns typed
+  verification results, claim assessments, objection/contradiction lifecycle,
+  and admissible evidence links, while the projection makes most semantics
+  opaque or omits them. The Value ceiling is both estimator- and
+  information-limited, with observability the prior architectural bottleneck.
+- BestOfN and PUCT are Phase 5.5 `CO-CHAMPIONS`: BestOfN is the stronger
+  complexity-adjusted anchor; PUCT has lower regret and remains an unproven,
+  depth/value-limited, cost-disadvantaged research baseline.
+- RL is `NOT YET EARNED`; learned Value and learned Policy are premature. There
+  is no canonical recursive successor executor, real counterfactual trajectory
+  set, governed reward, or trustworthy learned-Policy target.
+- Phase 5.5 selects exactly one next milestone:
+  `feature/socrates-zero-canonical-observability-v1`. It tests whether an
+  opt-in typed v1 projection can separate real governing states aliased by v0.
+  The experiment freezes every Phase 5 component and initially adds no new
+  Value, search, successor, provider, shadow, training, or production behavior.
 - Completed verification: evaluation `37`; PUCT `53`; BestOfN `24`; Greedy
   `27`; Policy `13`; Value `21`; contracts/strategies `123`; SocratesZero
   `239`; Hybrid H8 + SocratesZero `250`; focused CED/Socratic `142`;
   `tests_dialogues` `2305 passed, 1 skipped`; repository-wide `2612 passed,
   1 skipped, 23 pre-existing warnings`.
-- Phase 5 is complete. NEXT is `Phase 5.5 — Evidence Review / Architecture
-  Decision Gate`, not implementation. Candidate hypotheses are a depth-one
-  search-horizon bottleneck and a penalty-only leaf-signal bottleneck. The gate
-  must also consider real read-only shadow evidence, governed trajectory/
-  learned-Value preparation, and simplification/deprioritization of PUCT; this
-  phase selects none.
+- Phase 5.5 is complete as documentation-only analysis. NEXT, if separately
+  authorized, is canonical epistemic observability v1—not depth two, shadow
+  collection, learned Value/Policy, RL, or production wiring.
 
 ## Protected local state
 
