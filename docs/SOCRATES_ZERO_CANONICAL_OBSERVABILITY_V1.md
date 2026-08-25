@@ -1,6 +1,6 @@
 # SocratesZero Canonical Observability v1
 
-Status: Phase 6 implementation checkpoint on
+Status: Phase 6 complete on
 `feature/socrates-zero-canonical-observability-v1`
 
 ## Research hypothesis
@@ -195,18 +195,46 @@ need and pair.
 
 ## Verification status
 
-Current implementation gates:
+Completed implementation gates:
 
 - canonical-observability-specific: `17 passed`;
 - v1 + v0 projection/contracts + Hybrid H3–H9: `75 passed`;
+- projection v0: `11 passed`;
+- SearchState/contracts v0: `19 passed`;
+- Policy: `13 passed`;
+- Value: `21 passed`;
+- Greedy: `27 passed`;
+- BestOfN: `24 passed`;
+- PUCT: `53 passed`;
+- Phase 5 evaluation: `37 passed`;
+- full SocratesZero: `256 passed`;
+- Hybrid H8 plus SocratesZero: `267 passed`;
+- focused CED/Socratic/marker/rotation/identity/retry: `175 passed`;
+- full `tests_dialogues`: `2322 passed, 1 skipped`;
+- directory aggregate (`tests`, `tests_ced`, `tests_dialogues`):
+  `2617 passed, 1 skipped, 23 warnings`;
+- repository-wide root collection: `2629 passed, 1 skipped, 23 warnings`;
+- `git diff --check`: passed;
 - live/provider calls: `0`.
 
-Full required regression counts and the final Phase 5 artifact/blob verification
-are recorded in the branch checkpoint after completion.
+The 23 warnings are the unchanged Pydantic `.dict()` deprecations and duplicate
+FastAPI operation IDs. The sealed Phase 5 artifact remains the exact Git blob
+`0488de8a555658a55312d8b1da8614ab9347743b` present in `17be287`, with
+normalized SHA-256
+`21aa870a790f80186c0cd2b66878fa0d6344399fdf9e5386e399c7032569886c`.
+The frozen v0 contracts/projection, Policy, Value, Greedy, BestOfN, PUCT, CED,
+Hybrid, benchmark, and artifact have zero diff from starting HEAD `9cddbd9`.
 
 ## Decision gate
 
-The hypothesis is supported only if all focused and repository-wide gates pass,
-the Phase 5 artifact remains byte-identical, and v0/default behavior remains
-unchanged. If supported, stop. The next milestone is a separate **Value v1
-Decision Gate**, not an implementation bundled into Phase 6.
+All focused and repository-wide gates pass, the Phase 5 artifact remains
+byte-identical, and v0/default behavior remains unchanged.
+
+```text
+HYPOTHESIS STATUS: SUPPORTED
+```
+
+The experiment found two exact v0 semantic alias classes and three additional
+typed omission/opacity classes, then separated them through existing canonical
+records. Work stops here. The next milestone is a separate **Value v1 Decision
+Gate**, not an implementation bundled into Phase 6.

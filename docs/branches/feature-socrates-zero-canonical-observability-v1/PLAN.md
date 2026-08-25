@@ -8,13 +8,13 @@ current-time canonical epistemic structure hidden or omitted by v0.
 ## Ordered work
 
 1. [done] Verify repository truth and audit candidate upstream authorities.
-2. [in progress] Define separately versioned immutable v1 observation contracts.
-3. [pending] Implement the trusted read-only projection with source validation.
-4. [pending] Prove v0 alias/v1 separation with canonical Hybrid record fixtures.
-5. [pending] Prove no invention, metadata immunity, temporal isolation, purity,
+2. [done] Define separately versioned immutable v1 observation contracts.
+3. [done] Implement the trusted read-only projection with source validation.
+4. [done] Prove v0 alias/v1 separation with canonical Hybrid record fixtures.
+5. [done] Prove no invention, metadata immunity, temporal isolation, purity,
    deterministic identity, provenance, and fail-closed behavior.
-6. [pending] Verify the sealed artifact and all focused/full regression gates.
-7. [pending] Complete the ADR/report and durable branch checkpoint, then stop at
+6. [done] Verify the sealed artifact and all focused/full regression gates.
+7. [done] Complete the ADR/report and durable branch checkpoint, then stop at
    the Value v1 Decision Gate.
 
 ## Non-goals and stop conditions
@@ -31,3 +31,9 @@ Value, Greedy, BestOfN, PUCT, and Phase 5 evaluation regressions; the full
 SocratesZero bundle; Hybrid H8 plus SocratesZero; focused CED/Socratic tests;
 all `tests_dialogues`; repository-wide tests; artifact SHA/blob equality; and
 `git diff --check`, all with exact counts and zero live calls.
+
+## Completion decision
+
+All gates pass. The observability hypothesis is `SUPPORTED`. Stop before Value
+v1; the next authorized activity, if separately requested, is a Value v1
+Decision Gate on a new evaluation version.

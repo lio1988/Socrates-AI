@@ -25,6 +25,23 @@
   provenance-linked, and fail closed on malformed or dangling records.
 - The next step, only if Phase 6 succeeds, is a separate Value v1 Decision Gate.
   This branch must stop before Value v1.
+- The implemented semantic IDs are `socrates.zero.search-state/v1` and
+  `ced-search-state-projection/v1`.
+- The v1 contract and projector remain on the trusted CED side in
+  `ced_search_observability_v1.py` and `ced_search_projection_v1.py`; the
+  runtime-inert search package still imports no Hybrid authority.
+- Included families are typed admissible evidence, verification,
+  `ClaimAssessment`, objection lifecycle, and contradiction lifecycle.
+- Two exact v0 aliases are proven: governing `SUPPORTED` versus `UNSUPPORTED`
+  assessment under identical v0 semantic identity, and absent versus
+  canonically `DISMISSED` contradiction under identical full v0 projection.
+- No canonical question resolution or upstream epistemic abstention exists;
+  neither appears in v1. Revision/commitment lifecycle and provider failure are
+  intentionally outside the minimal epistemic schema.
+- Phase 6 hypothesis status is `SUPPORTED`. No Value v1, Policy/search change,
+  live call, production wiring, or new authority exists.
+- Final full-suite counts are `2322 passed, 1 skipped` for `tests_dialogues` and
+  `2629 passed, 1 skipped, 23 pre-existing warnings` repository-wide.
 
 ## Protected local state
 

@@ -2,12 +2,16 @@
 
 ## Current state
 
-- Branch created from exact Phase 5.5 HEAD
+- Phase 6 is complete on
+  `feature/socrates-zero-canonical-observability-v1`.
+- Starting point was exact Phase 5.5 HEAD
   `9cddbd9efbfc1d5448025be1d11430d2ca2b256f`.
-- Source-of-authority audit completed before editing.
-- v0 contracts/projection, canonical Hybrid records, governing assessments,
-  Socratic inquiry/aporia records, and downstream abstention vocabulary audited.
-- Minimal v1 contracts are the next implementation step.
+- Verification code HEAD is `9d75658`; the final documentation checkpoint is
+  the commit owning this file.
+- Source-of-authority audit, additive v1 contracts, trusted projection,
+  scientific pairs, leakage/purity/provenance hardening, full verification, ADR,
+  and dedicated report are complete.
+- Hypothesis status: `SUPPORTED`.
 
 ## Audit decision
 
@@ -17,12 +21,46 @@ Rejected as unavailable: canonical question open/resolved lifecycle and upstream
 canonical epistemic abstention. Raw prose, scores, consensus, confidence,
 markers, provider routing, ratification, and benchmark outcomes are forbidden.
 
+Two exact aliases are proven: governing `SUPPORTED` versus `UNSUPPORTED` under
+the same v0 semantic identity, and no contradiction versus canonical
+`DISMISSED` contradiction under the same complete v0 projection. Typed
+verification result, required-unverified support, and resolved objections add
+three further v0 opacity/omission separations.
+
+## Changed files
+
+- `backend/dialogues/ced_search_observability_v1.py`
+- `backend/dialogues/ced_search_projection_v1.py`
+- `tests_dialogues/test_socrates_zero_canonical_observability_v1.py`
+- `docs/SOCRATES_ZERO_CANONICAL_OBSERVABILITY_V1.md`
+- `docs/ADR_SOCRATES_ZERO_SEARCH_BOUNDARY.md`
+- this branch documentation folder
+
+Frozen v0 components, CED, Hybrid, Phase 5 cases/results/artifact, and default
+runtime have zero diff from `9cddbd9`.
+
+## Verification
+
+- v1-specific `17`; v0 projection `11`; v0 contracts `19`;
+- Policy `13`; Value `21`; Greedy `27`; BestOfN `24`; PUCT `53`;
+- Phase 5 evaluation `37`; SocratesZero `256`; H8 + SocratesZero `267`;
+- focused CED/Socratic/marker/rotation/identity/retry `175`;
+- `tests_dialogues`: `2322 passed, 1 skipped`;
+- repository-wide: `2629 passed, 1 skipped, 23 pre-existing warnings`;
+- `git diff --check`: passed; live/provider calls: `0`.
+
+Phase 5 artifact normalized SHA-256 remains
+`21aa870a790f80186c0cd2b66878fa0d6344399fdf9e5386e399c7032569886c`;
+the current and `17be287` Git blob is identically
+`0488de8a555658a55312d8b1da8614ab9347743b`.
+
 ## Worktree
 
-Tracked changes currently consist only of this new branch documentation folder.
-The two protected pre-existing untracked files remain untouched.
+All authorized tracked changes are committed by the final checkpoint. The two
+protected pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Implement the immutable additive v1 observation contracts, then their trusted
-projection and focused scientific tests. Do not change v0 or runtime wiring.
+Stop. Do not implement Value v1 on this branch. The next safe milestone, only
+if separately authorized, is a Value v1 Decision Gate using a new evaluation
+version without benchmark leakage.

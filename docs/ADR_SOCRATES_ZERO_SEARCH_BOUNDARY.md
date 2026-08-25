@@ -1,9 +1,9 @@
 # ADR: SocratesZero Search Boundary v0
 
 Status: accepted through deterministic model-free Policy, Value, one-ply
-strategy foundations, bounded one-real-ply PUCT, and frozen offline Phase 5
-search-kernel evaluation on
-`feature/socrates-zero-search-v0`
+strategy foundations, bounded one-real-ply PUCT, frozen offline Phase 5
+search-kernel evaluation, and opt-in canonical observability v1 on
+`feature/socrates-zero-canonical-observability-v1`
 
 Baseline: commit `277ca2ec130ce120dba9c4d894a3c58138b25528`
 
@@ -419,6 +419,72 @@ The full evidence reconstruction, observability table, depth-two blocker map,
 readiness gates, decision matrix, falsification criteria, and frozen-component
 list are recorded in `docs/SOCRATES_ZERO_PHASE5_5_DECISION_GATE.md`.
 
+## Phase 6 canonical observability boundary
+
+Phase 6 proves the selected representation hypothesis without changing an
+estimator or execution path. `SearchStateV1`
+(`socrates.zero.search-state/v1`) is an immutable CED-side envelope around the
+unchanged v0 `SearchState`; `project_search_state_v1()` is explicitly versioned
+`ced-search-state-projection/v1` and must be called directly. Neither is wired
+into default CED or exported from the v0 projection module.
+
+The contract remains on the trusted CED side because it uses the actual Hybrid
+enums. The runtime-inert search package still does not import the governing
+core. The v1 projector invokes the unchanged v0 projector first, revalidates
+the present Hybrid snapshot, asks the authority for `assess_all()`, and copies
+only current typed results. It does not reproduce support, objection, or
+contradiction rules.
+
+The accepted observation families are:
+
+- admissible evidence claim/stance/source-type/receipt links;
+- verification class/method/result and claim/objection/evidence links;
+- governing claim `SupportState`, basis/falsifying/unresolved record IDs, and
+  assembly eligibility;
+- objection state/scope/target provenance and verification link;
+- contradiction state/claim pair and verification link.
+
+Every record-backed view retains its real source record ID. Claim assessments
+have no source record of their own, so v1 creates none; provenance is the real
+claim ID plus the exact record IDs returned by the governing assessment.
+Observation identity contains only typed enums, IDs and relationships. Raw
+prose, scores, consensus, confidence, markers, route/model identity,
+ratification and future outcomes are absent. Existing v0 digests remain inside
+the base snapshot for replay/audit compatibility.
+
+The source audit rejected an explicit resolved-question field: `InquiryState`
+is a process recommendation and `AporiaRecord` is an open remainder, not a
+governing resolution lifecycle. It also rejected upstream epistemic abstention:
+`ABSTAINED` exists only in downstream search vocabulary. Operational provider
+failure, commitment/revision history, ratification, scores and consensus are
+not promoted into the minimal epistemic schema.
+
+Two exact v0 alias classes prove information loss. First, the Hybrid authority
+assesses otherwise identical `VERIFIED` task-internal records differently when
+one is a protocol/deterministic check and one is model-produced; v0 gives them
+the same semantic state ID and exposes no assessment, while v1 preserves
+`SUPPORTED` versus `UNSUPPORTED` directly from `assess_all()`. Second, v0
+projects no-record and canonically `DISMISSED` contradiction states identically,
+while v1 preserves the literal dismissed lifecycle record. Additional tests
+show typed `VERIFIED`/`FALSIFIED`, `SUPPORTED`/
+`EXTERNAL_EVIDENCE_REQUIRED`, and resolved objection distinctions that v0 only
+digests or omits.
+
+The projector is side-effect free, dictionary-order independent, current-time
+only, and fail closed on duplicate/cross-family IDs, dangling provenance,
+misindexed ledger records, and malformed verification records. Opposite future
+verification outcomes do not affect identical prefix projections. Scores,
+markers, confidence, stylistic prose, and changes between non-null provider/
+model identities leave the new typed views unchanged.
+
+Phase 6 is representation evidence only. It makes no strategy-quality claim
+and grants no Value, Policy, search, successor, provider, learning, release, or
+production authority. The complete matrix, digest audit, pair evidence,
+limitations and verification record are in
+`docs/SOCRATES_ZERO_CANONICAL_OBSERVABILITY_V1.md`. The hypothesis is
+**SUPPORTED**. Work stops at a separate **Value v1 Decision Gate**; no Value v1
+exists on this branch.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.
@@ -435,6 +501,9 @@ list are recorded in `docs/SOCRATES_ZERO_PHASE5_5_DECISION_GATE.md`.
   Socrates dialogue benchmark.
 - General external-world verification remains incomplete outside declared
   deterministic checks and supplied evidence.
+- SearchState v1 exposes useful governing distinctions, but no Value version
+  consumes it yet. Whether a transparent Value v1 improves a new leakage-safe
+  evaluation remains a separate unanswered question.
 - No canonical CED action executor or `SuccessorStateEvaluator` implementation
   exists; Best-of-N and PUCT are composable only with an injected experimental
   evaluator.

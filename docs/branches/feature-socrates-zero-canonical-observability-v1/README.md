@@ -21,6 +21,11 @@ documentation. The frozen v0 SearchState remains embedded for compatibility and
 replay identity; the new typed views remain owned semantically by their
 canonical Hybrid records and governing claim assessments.
 
+Phase 6 is complete and the hypothesis is supported. See
+[`docs/SOCRATES_ZERO_CANONICAL_OBSERVABILITY_V1.md`](../../SOCRATES_ZERO_CANONICAL_OBSERVABILITY_V1.md)
+for the authority matrix, exact alias evidence, leakage analysis, limitations,
+and final verification record.
+
 ## Non-goals
 
 No Value, Policy, Greedy, BestOfN, PUCT, successor, benchmark, depth-two,
