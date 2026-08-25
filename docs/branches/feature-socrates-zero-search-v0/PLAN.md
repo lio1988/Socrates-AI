@@ -121,10 +121,15 @@ preserving byte-for-byte default CED behavior.
 7. [done] Budgeted one-ply Best-of-N with injected successors.
 8. [done] Bounded serial one-real-ply PUCT with path-local duplicate states.
 9. [done] Phase 5 offline matched-compute search-kernel evaluation harness.
-10. [decision required] Separately review deeper safe successor semantics,
-    read-only real shadow evidence, or simplification around BestOfN.
-11. Learned priors/value only after sufficient governed experience.
-12. True RL/self-play only after search and evaluation evidence justify it.
+10. [decision gate] Phase 5.5 — Evidence Review / Architecture Decision Gate.
+    Review, without implementation: (A) safe deeper successor semantics,
+    (B) richer canonical verification/resolution state, (C) real read-only
+    shadow orchestration, (D) governed trajectory collection / learned-Value
+    preparation, or (E) simplification/deprioritization of PUCT.
+11. [not selected] Learned priors/value only after sufficient governed
+    experience and a separate approval.
+12. [not selected] True RL/self-play only after search and evaluation evidence
+    justify it and a separate approval.
 
 ## Stop conditions
 

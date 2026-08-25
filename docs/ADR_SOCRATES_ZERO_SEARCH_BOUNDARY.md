@@ -379,6 +379,14 @@ none are guessed. A later live/replay shadow or deeper successor milestone
 requires a separate ADR and approval. Phase 5 creates no Phase 6, RL, learned
 Policy/Value, self-play, provider spending, or runtime action authority.
 
+The next step is explicitly `Phase 5.5 — Evidence Review / Architecture
+Decision Gate`, not implementation. It must weigh: (A) safe deeper successor
+semantics, (B) richer canonical verification/resolution state, (C) real
+read-only shadow orchestration, (D) governed trajectory collection and
+learned-Value preparation, and (E) simplification/deprioritization of PUCT.
+The observed depth-one horizon and penalty-only leaf signal are diagnostic
+hypotheses, not authorization to change either contract.
+
 ## Known gaps and deferred work
 
 - There is no canonical cross-provider token/cost meter yet.

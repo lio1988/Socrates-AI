@@ -145,6 +145,12 @@
   `239`; Hybrid H8 + SocratesZero `250`; focused CED/Socratic `142`;
   `tests_dialogues` `2305 passed, 1 skipped`; repository-wide `2612 passed,
   1 skipped, 23 pre-existing warnings`.
+- Phase 5 is complete. NEXT is `Phase 5.5 — Evidence Review / Architecture
+  Decision Gate`, not implementation. Candidate hypotheses are a depth-one
+  search-horizon bottleneck and a penalty-only leaf-signal bottleneck. The gate
+  must also consider real read-only shadow evidence, governed trajectory/
+  learned-Value preparation, and simplification/deprioritization of PUCT; this
+  phase selects none.
 
 ## Protected local state
 

@@ -204,17 +204,24 @@ the environment is deterministic and one-ply, the successor fixture is not a
 canonical CED executor, and there are no honest trace counterfactuals or live
 calls.
 
-## Recommended next architectural decision
+## NEXT: Phase 5.5 — Evidence Review / Architecture Decision Gate
 
-Do not begin RL from this evidence. The most informative next branch is either:
+Phase 5 selects no implementation. The next gate must review these alternatives
+as competing hypotheses/options:
 
-1. define a separately reviewed, canonical and safe deeper successor semantics
-   to test whether PUCT gains beyond exhaustive one-ply Best-of-N; or
-2. build an explicitly approved read-only live/replay shadow milestone that
-   records real counterfactual observations without production authority.
+1. safe deeper successor semantics, testing the search-horizon bottleneck from
+   current relative depth one;
+2. richer canonical verification/resolution state, testing the leaf-signal
+   bottleneck in the intentionally penalty-only heuristic Value;
+3. explicitly approved real read-only shadow orchestration with observed—not
+   fabricated—counterfactuals;
+4. governed trajectory collection and learned-Value preparation, without
+   presuming that learning or RL is yet justified;
+5. simplification or deprioritization of PUCT if the depth-one evidence does
+   not justify its additional complexity.
 
-If neither can be justified, simplify around BestOfN rather than preserving
-PUCT complexity by default.
+Do not begin Phase 6, RL, deeper search, live calls, or production wiring until
+that separate decision gate chooses and scopes an option.
 
 ## Verification
 
