@@ -259,8 +259,8 @@ def _accepted_receipt(
         status=CanonicalTransitionStatus.APPLIED_ACCEPTED,
         legal_action_validation=LegalActionValidationStatus.PASSED,
         resulting_move_id="move-canonical-opening",
-        source_state_hash=root.source_snapshot_digest,
-        successor_state_hash=successor.source_snapshot_digest,
+        source_state_hash=root.normalized_semantic_digest,
+        successor_state_hash=successor.normalized_semantic_digest,
         successor_state_v1_id=successor.search_state_v1_id,
         canonical_processor_ids=pending.canonical_processor_ids,
         budget=pending.budget,
@@ -494,7 +494,7 @@ def test_applied_accepted_receipt_and_result_link_every_successor_identity() -> 
     assert result.result_id is not None
     with pytest.raises(ValidationError, match="budget_after"):
         _replace(receipt, receipt_id=None, receipt_hash=None, budget_after=BudgetUsage())
-    with pytest.raises(ValidationError, match="receipt exact-state hashes"):
+    with pytest.raises(ValidationError, match="receipt semantic-state hashes"):
         bad_receipt = _replace(
             receipt,
             receipt_id=None,
@@ -529,8 +529,8 @@ def test_canonical_rejection_is_applied_successor_but_has_no_move() -> None:
         status=CanonicalTransitionStatus.APPLIED_CANONICAL_REJECTION,
         legal_action_validation=LegalActionValidationStatus.PASSED,
         canonical_rejection_reason=CanonicalRejectionReason.SCHEMA_REJECTED,
-        source_state_hash=root.source_snapshot_digest,
-        successor_state_hash=successor.source_snapshot_digest,
+        source_state_hash=root.normalized_semantic_digest,
+        successor_state_hash=successor.normalized_semantic_digest,
         successor_state_v1_id=successor.search_state_v1_id,
         canonical_processor_ids=pending.canonical_processor_ids,
         budget=pending.budget,
@@ -571,7 +571,7 @@ def test_successor_unavailable_never_contains_a_successor_or_fabricated_usage() 
         status=CanonicalTransitionStatus.SUCCESSOR_UNAVAILABLE,
         legal_action_validation=LegalActionValidationStatus.PASSED,
         unavailable_reason=SuccessorUnavailableReason.MISSING_OBSERVATION,
-        source_state_hash=root.source_snapshot_digest,
+        source_state_hash=root.normalized_semantic_digest,
         canonical_processor_ids=pending.canonical_processor_ids,
         budget=pending.budget,
         budget_before=pending.budget_before,

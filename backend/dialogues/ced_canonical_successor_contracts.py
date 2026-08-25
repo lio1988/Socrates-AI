@@ -901,7 +901,14 @@ def validate_recorded_observation_compatibility(
 
 
 class CanonicalTransitionReceipt(_FrozenContract):
-    """Deterministic public receipt for one attempted canonical transition."""
+    """Deterministic public receipt for one attempted canonical transition.
+
+    ``source_state_hash`` and ``successor_state_hash`` are hashes of the
+    predeclared normalized semantic snapshots.  Exact structural snapshots stay
+    in their capsules under ``source_snapshot_digest`` because canonical CED
+    timestamps and provisional rejected-move IDs are already non-semantic and
+    may differ across isolated replays.
+    """
 
     schema_version: Literal[
         CANONICAL_TRANSITION_RECEIPT_SCHEMA_VERSION
@@ -1166,9 +1173,10 @@ class CanonicalTransitionResult(_FrozenContract):
                 raise ContractValidationError(
                     "successor capsule and projected SearchState-v1 identities differ"
                 )
-            if capsule.source_snapshot_digest != self.receipt.successor_state_hash:
+            if capsule.normalized_semantic_digest \
+                    != self.receipt.successor_state_hash:
                 raise ContractValidationError(
-                    "successor capsule and receipt exact-state hashes differ"
+                    "successor capsule and receipt semantic-state hashes differ"
                 )
             if state.state_id != self.receipt.successor_state_v1_id:
                 raise ContractValidationError(
