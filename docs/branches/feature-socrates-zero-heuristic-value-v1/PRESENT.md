@@ -10,7 +10,10 @@
   in `backend/dialogues/ced_search_value_v1_contracts.py`.
 - The exact nine-category `18/27` canonical source-recipe suite, metric IDs,
   split, thresholds, semantic digest, SHA lock, and leakage tests are complete.
-- No estimator behavior and no development/holdout result exists yet.
+- `HeuristicValueEstimatorV1` now implements only the frozen penalty-only
+  semantics at `backend/dialogues/ced_search_value_v1.py`.
+- Estimator/case/v0/observability focused verification: `72 passed`.
+- No development or holdout comparative result exists yet.
 
 ## Worktree
 
@@ -19,5 +22,5 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit the frozen evaluation lineage, then implement the estimator against the
-already-fixed contracts and guardrails without semantic tuning.
+Commit the estimator implementation, then validate the development split and
+freeze the authoritative holdout runner before the first holdout execution.

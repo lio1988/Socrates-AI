@@ -11,10 +11,10 @@ chronologically frozen canonical holdout and no architecture expansion.
    contracts without implementing estimator behavior.
 2. [done] Freeze evaluation contracts, all 45 canonical case blueprints,
    split, metrics, thresholds, and identity/label firewalls.
-3. [in progress] Add leakage, provenance, reward-farming, terminal, purity, and
+3. [done] Add leakage, provenance, reward-farming, terminal, purity, and
    malformed-input tests.
-4. [pending] Implement `heuristic-value-estimator/v1` without changing v0.
-5. [pending] Run development validation without semantic tuning.
+4. [done] Implement `heuristic-value-estimator/v1` without changing v0.
+5. [in progress] Run development validation without semantic tuning.
 6. [pending] Freeze the authoritative holdout runner after focused gates pass.
 7. [pending] Execute the first holdout once, persist its immutable artifact,
    replay it, and classify the primary gate.

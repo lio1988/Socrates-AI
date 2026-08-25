@@ -93,6 +93,7 @@ class ValueV1Audit:
     base_state_id: str
     base_value: float
     selected_worst_support_state: Optional[SupportState]
+    source_claim_assessment_id: Optional[str]
     source_claim_id: Optional[str]
     source_claim_assessment_digest: Optional[str]
     reason_code: Optional[str]
@@ -101,6 +102,32 @@ class ValueV1Audit:
     terminal_suppression_status: bool
     raw_value: float
     bounded_value: float
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "estimator_id": self.estimator_id,
+            "search_state_version": self.search_state_version,
+            "projection_version": self.projection_version,
+            "state_id": self.state_id,
+            "base_state_id": self.base_state_id,
+            "base_value": self.base_value,
+            "selected_worst_support_state": (
+                self.selected_worst_support_state.value
+                if self.selected_worst_support_state is not None
+                else None
+            ),
+            "source_claim_assessment_id": self.source_claim_assessment_id,
+            "source_claim_id": self.source_claim_id,
+            "source_claim_assessment_digest": self.source_claim_assessment_digest,
+            "reason_code": self.reason_code,
+            "components": [item.identity_payload() for item in self.components],
+            "suppressed_sources": [
+                item.identity_payload() for item in self.suppressed_sources
+            ],
+            "terminal_suppression_status": self.terminal_suppression_status,
+            "raw_value": self.raw_value,
+            "bounded_value": self.bounded_value,
+        }
 
 
 __all__ = [
