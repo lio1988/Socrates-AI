@@ -140,8 +140,8 @@ class CanonicalSuccessorCoreBlobLockV2(_FrozenCoreContract):
         self,
     ) -> "CanonicalSuccessorCoreBlobLockV2":
         core = tuple(sorted(self.core_blobs, key=lambda item: item.path))
-        if len(core) != 27:
-            raise ContractValidationError("v2 frozen core must contain exactly 27 blobs")
+        if len(core) != 34:
+            raise ContractValidationError("v2 frozen core must contain exactly 34 blobs")
         if len({item.path for item in core}) != len(core):
             raise ContractValidationError("v2 frozen core contains duplicate paths")
         object.__setattr__(self, "core_blobs", core)
@@ -273,9 +273,19 @@ _CORE_BLOBS = (
         role="governing Hybrid record and support-state semantics consumed by projection and Value",
     ),
     FrozenCoreBlobEntry(
+        path="backend/dialogues/hybrid_authority.py",
+        git_blob_id="01608a67de8f24040ad6ac4d6d89d5e625ee98b6",
+        role="Hybrid authority and canonical ownership boundary",
+    ),
+    FrozenCoreBlobEntry(
         path="backend/dialogues/hybrid_shadow.py",
         git_blob_id="5ac5db43aeec6c223a32c1d87e1e01b769bffb83",
         role="transitive governing Hybrid record contracts",
+    ),
+    FrozenCoreBlobEntry(
+        path="backend/dialogues/hybrid_support.py",
+        git_blob_id="96e6b7897ef7e8fbb929ead06625d27de8639f87",
+        role="Hybrid H8 support semantics consumed by frozen projections",
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/model_identity.py",
@@ -313,6 +323,11 @@ _CORE_BLOBS = (
         role="Socratic content, injection, commitment, and aporia semantics",
     ),
     FrozenCoreBlobEntry(
+        path="backend/dialogues/socrates_zero/baseline.py",
+        git_blob_id="1def881b0c3ed350dbcba8d96fd0f9a27741ebb2",
+        role="frozen canonical baseline adapter",
+    ),
+    FrozenCoreBlobEntry(
         path="backend/dialogues/socrates_zero/constitution.py",
         git_blob_id="fec133c67715db39645a466a823159934eb2a449",
         role="hard-legal action generation and validation",
@@ -321,6 +336,26 @@ _CORE_BLOBS = (
         path="backend/dialogues/socrates_zero/contracts.py",
         git_blob_id="086de2a94614891939b2cf9d72896044840f15b6",
         role="canonical IDs, SearchState, action, budget, and receipt primitives",
+    ),
+    FrozenCoreBlobEntry(
+        path="backend/dialogues/socrates_zero/policy.py",
+        git_blob_id="33b0a10cf814bf4bc5f908b878024c1eb0b74904",
+        role="frozen deterministic Policy-v0 prior",
+    ),
+    FrozenCoreBlobEntry(
+        path="backend/dialogues/socrates_zero/puct.py",
+        git_blob_id="576d939f214f50d1cd90bee964fa19bfa7482472",
+        role="frozen bounded depth-one PUCT-v0 search",
+    ),
+    FrozenCoreBlobEntry(
+        path="backend/dialogues/socrates_zero/strategy.py",
+        git_blob_id="eb36b9b771db13312f826a7a4b4a02d0e12d3662",
+        role="frozen Greedy-v0 and BestOfN-v0 search strategies",
+    ),
+    FrozenCoreBlobEntry(
+        path="backend/dialogues/socrates_zero/value.py",
+        git_blob_id="eb34584219221ac15d3ef825941b7e5100915ccb",
+        role="frozen deterministic Value-v0 estimator",
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/task_checker.py",

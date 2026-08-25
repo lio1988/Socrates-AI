@@ -20,7 +20,7 @@
 - Core transition parity was supported; the old negative taxonomy was
   falsified by the sole `wrong-provider` expectation mismatch.
 
-## Frozen core Git blobs at branch creation
+## Minimum frozen core Git blobs at branch creation
 
 | File | Git blob |
 |---|---|
@@ -38,10 +38,18 @@
 | `backend/dialogues/socrates_zero/puct.py` | `576d939f214f50d1cd90bee964fa19bfa7482472` |
 | `backend/dialogues/socrates_zero/baseline.py` | `1def881b0c3ed350dbcba8d96fd0f9a27741ebb2` |
 
-These blobs jointly cover the environment, capsule, pending transition,
+The broader audited lock is now the immutable
+`ced-canonical-successor-core-blob-lock/v2` contract.  It contains 34 core
+files, the sealed predecessor evaluator/artifact blobs, and the four historical
+artifact hashes.  Its pre-result identity is:
+
+`cedcorebloblockv2_2cfc46afcf7afca20b4eb537d626296e11c8b85e885f5caa78d7322e0eb0a957`
+
+The contract is defined in
+`backend/dialogues/ced_canonical_successor_frozen_core_v2.py` and is the
+authoritative superset for the environment, capsule, pending transition,
 recorded observation, task identity, result, receipt, extracted CED seam,
-SearchState/projection, Value, Policy, Greedy, BestOfN, PUCT, and baseline
-lineages that must remain frozen.
+parser/Socratic dependencies, SearchState/projection, and Value lineages.
 
 ## Immutable scientific hashes
 
