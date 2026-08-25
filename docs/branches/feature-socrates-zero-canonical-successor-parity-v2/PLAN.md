@@ -1,10 +1,10 @@
 # Canonical Successor Parity v2 execution plan
 
-## Current phase: PRE-RESULT
+## Current phase: COMPLETE
 
-The scientific result, artifact, replay, and replay lock are all pending. This
-plan authorizes no aggregate before the complete semantic freeze is reviewed,
-verified, and committed.
+The pre-registered experiment completed without retry, tuning, expectation
+change, runtime semantic change, or authority expansion. Its first authoritative
+artifact is `SUPPORTED`, and its single reverse-order replay is byte-identical.
 
 ## Success criterion
 
@@ -12,6 +12,8 @@ Pre-freeze all scientific semantics, execute exactly one authoritative 23-case
 aggregate, preserve its first artifact whether supported or falsified, replay
 only a full pass, and require exact semantic, identity, byte, SHA, lock,
 isolation, receipt, resource, and zero-call evidence.
+The supported family remains only `ASK_SOCRATIC_QUESTION` at
+`OPENING / SOCRATES / SOCRATIC_QUESTION / round=0 / slot=0 / attempt=0`.
 
 ## Ordered steps
 
@@ -32,19 +34,26 @@ isolation, receipt, resource, and zero-call evidence.
    focused/regression/static/lock/zero-call gates. Stop on any mismatch; update
    deterministic documentation before freeze if a contract legitimately
    changes.
-7. [in progress] Commit the complete pre-result semantic freeze and publish a status
+7. [done] Commit the complete pre-result semantic freeze and publish a status
    update that still reports aggregate/result/artifact/replay as pending.
-8. [pending] Execute the first and only authoritative aggregate in the exact
+8. [done] Execute the first and only authoritative aggregate in the exact
    canonical `5 + 11 + 7` order.
-9. [pending] Publish the first artifact with write-once semantics whether its
+9. [done] Publish the first artifact with write-once semantics whether its
    mechanically derived status is `SUPPORTED` or `FALSIFIED`.
-10. [pending] If and only if the first artifact is `SUPPORTED`, execute one
+10. [done] Because the first artifact is `SUPPORTED`, execute one
     independent reverse-order `5 + 11 + 7` replay.
-11. [pending] Compare both actual validated artifacts internally and require
+11. [done] Compare both actual validated artifacts internally and require
     semantic equality, artifact-ID equality, canonical byte identity, and
     equal SHA-256 before publishing the replay lock once.
-12. [pending] Run the final regression/lock/protected-file checks and create a
+12. [done] Run the final regression/lock/protected-file checks and create a
     durable checkpoint without expanding authority.
+
+## Completed checkpoints
+
+- pre-result freeze: `9bfbfd8ef938ee82e2eda9aa60685403d4f88f2c`;
+- authoritative artifact: `f0f8a5dad5e9632757f236ad619ccf5107b8af50`;
+- replay lock: `afeb21e2253c701b9e7cc2bb33b2d76b11a9aac9`;
+- raw artifact-integrity tests: `3576ee4cb2a7dee505558047b23aa95245c15f36`.
 
 ## Stop conditions before the aggregate
 
@@ -61,3 +70,7 @@ The first artifact is immutable. On any threshold failure, preserve it as
 `FALSIFIED` and stop without tuning, retry, replay, or expectation changes. On a
 supported first artifact, any reverse-replay semantic/ID/byte/SHA divergence is
 also a permanent falsification and blocks replay-lock publication.
+
+None of those stop conditions occurred. The next permitted action is only the
+**Phase 8.5 — Real Shadow Safety & Experimental Design Gate**; Phase 8.5
+implementation has not begun.

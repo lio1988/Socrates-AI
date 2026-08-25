@@ -1,24 +1,31 @@
 # Current Canonical Successor Parity v2 state
 
-## PRE-RESULT checkpoint
+## COMPLETE checkpoint
 
 | Item | State |
 |---|---|
 | Branch | `feature/socrates-zero-canonical-successor-parity-v2` |
-| Current committed implementation/test HEAD | `324fac42ab8602a80802f5c180963a7e4712047b` |
+| Pre-result semantic freeze | `9bfbfd8ef938ee82e2eda9aa60685403d4f88f2c` |
+| Result/test checkpoint before final documentation | `3576ee4cb2a7dee505558047b23aa95245c15f36` |
 | Runtime semantic changes | none |
+| Supported action family | `ASK_SOCRATIC_QUESTION`; `OPENING / SOCRATES / SOCRATIC_QUESTION / 0 / 0 / 0` |
 | Sealed v1 artifact | unchanged; permanently `FALSIFIED` |
-| Authoritative v2 aggregate runs | `0` |
-| Authoritative result | **PENDING** |
-| Authoritative artifact / ID / SHA | **PENDING** |
-| Reverse-order replay | **PENDING; not yet authorized** |
-| Replay lock | **PENDING** |
+| Authoritative v2 aggregate runs | exactly `1` |
+| Authoritative result | **SUPPORTED** |
+| Authoritative artifact ID | `cedparityartifactv2_f3a9c85ef31dd5afc09c1353ff8fb67461ebce42ae5390a3dff1efb0f2e109e7` |
+| Authoritative artifact SHA-256 | `8b6d2dd8f347d1dffc60e8a67e7a9bc0652bb2acdcd31c81ec9800ba76f78fdc` |
+| Reverse-order replay | complete; semantic / ID / byte equality = `true / true / true` |
+| Replay-lock ID | `cedparityreplaylockv2_e524b9e57fb070f67adc1098aeffe469d65b9f42bc0a9a77ddc9f3553e5f5280` |
+| Replay-lock SHA-256 | `896ef4536a447ad9edbe49b59704b74f8f3a126486d02c4230d49897250fd224` |
 | Pre-result focused tests | `151 passed / 0 skipped / 0 failed / 0 warnings` |
+| Post-result raw artifact tests | `30 passed / 0 skipped / 0 failed` |
+| Repository-wide tests | `2890 passed / 1 skipped / 0 failed / 23 warnings` |
 | Live/provider/model/tool calls | `0 / 0 / 0 / 0` |
 
-No current document claims that parity v2 passed.
+The result proves the frozen depth-one offline corpus and evaluator contracts;
+it grants no production authority.
 
-## Implemented pre-result surface in the current worktree
+## Delivered and locked surface
 
 - immutable 34-file core and sealed-predecessor locks;
 - exact 44-guard validation order and four-layer, 16-code taxonomy;
@@ -34,7 +41,7 @@ No current document claims that parity v2 passed.
 - strict `1 + 4`, `11`, `7`, and all-zero mismatch thresholds;
 - additive v2 artifact, reverse-order replay, exact order lock, and conflict-
   refusing write-once publication contracts; and
-- the complete PRE-RESULT specification at
+- the complete specification and result record at
   [`../../SOCRATES_ZERO_CANONICAL_SUCCESSOR_PARITY_V2.md`](../../SOCRATES_ZERO_CANONICAL_SUCCESSOR_PARITY_V2.md).
 
 ## Current deterministic contract IDs
@@ -51,10 +58,16 @@ corpus:      cedparitycorpusv2_9d7d8563b931f1206c2e685c51d62dfa66b7a5ae66a40254f
 thresholds:  cedparitythresholdsv2_e241fe357d1a6c36e7e19addd0a421e0c55332bf16d999a2aa895fcdccf9e210
 ```
 
-These are pre-result contract IDs, not artifact or replay-lock IDs.
+The immutable instance IDs are:
 
-## Next safe step
+```text
+artifact:    cedparityartifactv2_f3a9c85ef31dd5afc09c1353ff8fb67461ebce42ae5390a3dff1efb0f2e109e7
+replay lock: cedparityreplaylockv2_e524b9e57fb070f67adc1098aeffe469d65b9f42bc0a9a77ddc9f3553e5f5280
+```
 
-The commit containing this document is the complete pre-result semantic freeze.
-Publish its exact hash in the mandated pre-aggregate status update; only after
-that update is the single authoritative aggregate permitted.
+## Next decision
+
+Phase 8.5 readiness is **EARNED**. The next permitted action is only the **Phase
+8.5 — Real Shadow Safety & Experimental Design Gate**. No Phase 8.5
+implementation, shadow collection, depth-two search, learning, RL, or production
+authority has begun or been authorized.

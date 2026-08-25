@@ -1,27 +1,62 @@
-# SocratesZero Phase 8 v2 — Canonical Successor Parity PRE-RESULT Freeze
+# SocratesZero Phase 8 v2 — Canonical Successor Parity COMPLETE
 
 ## Scientific status
 
-**PRE-RESULT ONLY.** This document freezes the proposed Phase 8 v2 experiment
-before its first authoritative aggregate. It is not an evaluation result and
-does not claim that the hypothesis is supported.
+The complete experiment was pre-registered and frozen at commit
+`9bfbfd8ef938ee82e2eda9aa60685403d4f88f2c`. After the mandated pre-aggregate
+status update, exactly one authoritative aggregate produced a `SUPPORTED`
+artifact. Exactly one independent reverse-order replay then established
+semantic equality, artifact-ID equality, canonical byte identity, and equal
+SHA-256. No aggregate retry, replay retry, tuning, or post-result expectation
+change occurred.
 
 | Item | Current state |
 |---|---|
+| Branch | `feature/socrates-zero-canonical-successor-parity-v2` |
 | Runtime environment | unchanged `ced-canonical-successor-env/v0` |
-| Authoritative aggregate executions | `0` |
-| Authoritative v2 result | **PENDING** |
-| Authoritative v2 artifact ID / SHA-256 | **PENDING** |
-| Reverse-order replay | **PENDING and forbidden before a SUPPORTED first artifact** |
-| Replay-lock ID / SHA-256 | **PENDING** |
+| Frozen core Git blobs | `34 / 34` unchanged; mismatches `0` |
+| Pre-result semantic freeze | `9bfbfd8ef938ee82e2eda9aa60685403d4f88f2c` |
+| Authoritative aggregate executions | exactly `1` |
+| Authoritative v2 result | **SUPPORTED** |
+| Authoritative v2 artifact ID | `cedparityartifactv2_f3a9c85ef31dd5afc09c1353ff8fb67461ebce42ae5390a3dff1efb0f2e109e7` |
+| Authoritative v2 artifact SHA-256 | `8b6d2dd8f347d1dffc60e8a67e7a9bc0652bb2acdcd31c81ec9800ba76f78fdc` |
+| Reverse-order replay | **COMPLETE**; semantic / ID / byte equality = `true / true / true` |
+| Replay-lock ID | `cedparityreplaylockv2_e524b9e57fb070f67adc1098aeffe469d65b9f42bc0a9a77ddc9f3553e5f5280` |
+| Replay-lock SHA-256 | `896ef4536a447ad9edbe49b59704b74f8f3a126486d02c4230d49897250fd224` |
 | Pre-result focused tests | `151 passed / 0 skipped / 0 failed / 0 warnings` |
-| Live provider / model / tool calls in this pre-result documentation step | `0 / 0 / 0` |
+| Post-result raw artifact tests | `30 passed / 0 skipped / 0 failed` |
+| `tests_dialogues` | `2583 passed / 1 skipped / 0 failed` |
+| `tests_ced` | `34 passed / 0 skipped / 0 failed` |
+| `tests` | `261 passed / 0 skipped / 0 failed` |
+| Repository-wide pytest | `2890 passed / 1 skipped / 0 failed / 23 warnings` |
+| Live provider / model / tool calls | `0 / 0 / 0` |
 | Production authority | `none` |
+| Durable final checkpoint | commit containing this record; exact HEAD reported in the final handoff |
+| Final tracked worktree | clean after checkpoint; only the two protected untracked files remain |
 
-The sealed v1 artifact remains permanently `FALSIFIED`. The v2 experiment does
-not repair, relabel, or rerun it. Phase 8.5, shadow collection, depth two,
-Experience Store, learned Value, learned Policy, RL, and production authority
-remain blocked.
+The sealed v1 artifact remains permanently `FALSIFIED`. The v2 experiment did
+not rerun the sealed v1 aggregate or repair, replace, or relabel its artifact.
+It re-evaluated only the five immutable v1 positive references under the new v2
+harness. The `SUPPORTED` v2 result earns only the Phase 8.5 — Real Shadow Safety
+& Experimental Design Gate. Phase 8.5 implementation, shadow collection, depth
+two, Experience Store, learned Value, learned Policy, RL, and production
+authority remain unbegun and unauthorized.
+
+The implementation chronology is preserved, not squashed:
+
+```text
+8e6f1a92568b7cbe9dded31d2fad1e7d3a6e7a8f  documentation start
+d5c52650c1b7f72d830a63bcc27ec531c05c48cf  frozen core lineage
+8c2cb77cd0067002787904c22333cfc2b2b4b277  frozen-core lock tests
+358dcc52d97d93d870611837d1b40073ab5da9eb  probe semantics
+d3494a67382559528343e53e3f1683e8d298dde7  complete probe contracts
+cfde3afd337790c85d43f564f55aa6f606556ee5  v2 evaluator
+324fac42ab8602a80802f5c180963a7e4712047b  pre-result gates
+9bfbfd8ef938ee82e2eda9aa60685403d4f88f2c  pre-result semantic freeze
+f0f8a5dad5e9632757f236ad619ccf5107b8af50  first authoritative artifact
+afeb21e2253c701b9e7cc2bb33b2d76b11a9aac9  reverse replay lock
+3576ee4cb2a7dee505558047b23aa95245c15f36  raw artifact integrity tests
+```
 
 The governing implementation sources are:
 
@@ -32,9 +67,9 @@ The governing implementation sources are:
 - `backend/dialogues/ced_canonical_successor_evaluation_v2.py` — additive
   harness, evidence, metrics, thresholds, artifact, replay, and write-once APIs.
 
-The identifiers below were read from those import-only contracts without
-invoking any aggregate, artifact builder, publisher, provider, model, tool, or
-live path.
+The deterministic contract identifiers below were frozen before the aggregate.
+Their pre-result derivation invoked no aggregate, artifact builder, publisher,
+provider, model, tool, or live path.
 
 ## Frozen deterministic identities
 
@@ -70,7 +105,14 @@ ced-canonical-successor-parity-artifact/v2
 ced-canonical-successor-parity-replay-lock/v2
 ```
 
-No artifact-instance or replay-lock-instance identity exists pre-result.
+The resulting immutable instance identities are:
+
+```text
+artifact ID:        cedparityartifactv2_f3a9c85ef31dd5afc09c1353ff8fb67461ebce42ae5390a3dff1efb0f2e109e7
+artifact SHA-256:   8b6d2dd8f347d1dffc60e8a67e7a9bc0652bb2acdcd31c81ec9800ba76f78fdc
+replay-lock ID:     cedparityreplaylockv2_e524b9e57fb070f67adc1098aeffe469d65b9f42bc0a9a77ddc9f3553e5f5280
+replay-lock SHA-256: 896ef4536a447ad9edbe49b59704b74f8f3a126486d02c4230d49897250fd224
+```
 
 ## Unchanged runtime lineages and authority
 
@@ -89,6 +131,13 @@ ced-canonical-successor-recording/v0
 ced-opening-socratic-question/v0
 ced-canonical-successor-semantic-parity/v0
 ```
+
+The only supported action family remains `ASK_SOCRATIC_QUESTION`, restricted to
+`OPENING / SOCRATES / SOCRATIC_QUESTION / round=0 / slot=0 / attempt=0`. The CED
+helper refactor remains a behavior-preserving extraction; CED owns task capture,
+response application, and canonical transition semantics. The authoritative
+reference-capture path remains the actual registry/CED path implemented by
+`ced_canonical_successor_recording.py`, not an evaluator-created transition.
 
 CED remains the only canonical transition owner:
 `backend.dialogues.ced.CEDOrchestrator`. The exact processor set remains:
@@ -347,6 +396,16 @@ invented for `o02`, whose observation state is `NOT_APPLICABLE`.
 | `p8v2-p07-caller-rebinding-vs-manifest` | `d5c2e08b898cde4ab040d91e4b837b5454789b24615b74265a4bbea48270e71f` |
 
 ## Five immutable v1 references and the 23-case corpus
+
+The original rebound corpus
+`cedobscorpus_99a8090204758b4085f6f937d0e36ab77f6fe4f79f3c66ab8416b05c49bfb8e0`
+remains `INVALIDATED / SUPERSEDED FOR AUTHORITATIVE PHASE-8 PARITY` because raw
+provider output had been rebound to caller-created task/provider metadata. The
+authoritative observation-bound v1 corpus
+`cedobscorpus_b5ebe4b46d2b3ae4fed3faded341c8a2d8ff5f5f254531f000e479bf66b7f8b7`
+was frozen at commit `5ad83dbf2f701b078dd2081f12dc11692dbf362a`.
+The v2 corpus preserves those observation-bound references while introducing
+new failure-precedence semantics, negative-probe design, and evaluator lineage.
 
 The v2 corpus references these records; it does not copy, re-record, or
 regenerate any observation or expected successor.
@@ -663,7 +722,17 @@ already exists, byte-identical content is accepted idempotently and conflicting
 bytes are rejected. A `FALSIFIED` first artifact remains immutable and forbids
 the reverse aggregate and replay lock.
 
-At this PRE-RESULT checkpoint, every item in steps 3–8 above is **PENDING**.
+The chronology completed without retry or semantic change:
+
+1. the pre-result semantic freeze was committed at
+   `9bfbfd8ef938ee82e2eda9aa60685403d4f88f2c`;
+2. the only authoritative aggregate ran, and its first artifact was preserved
+   at commit `f0f8a5dad5e9632757f236ad619ccf5107b8af50`;
+3. because that artifact was `SUPPORTED`, the only reverse-order replay ran and
+   its lock was preserved at commit
+   `afeb21e2253c701b9e7cc2bb33b2d76b11a9aac9`; and
+4. raw JSON/Git-byte integrity tests were committed at
+   `3576ee4cb2a7dee505558047b23aa95245c15f36`.
 
 ## Frozen core and predecessor locks
 
@@ -765,23 +834,91 @@ core/predecessor lock mismatch, fabricated observation, future-label leakage,
 call/dispatch, post-result expectation change, or replay semantic/ID/byte/SHA
 divergence. There is no “close enough” or post-hoc reclassification.
 
-## PRE-RESULT stop line
+## Authoritative result and regression closure
 
-The contracts and documentation above define what may be run after a complete
-pre-result review and freeze commit. They do not establish a result. Until that
-commit and the explicitly authorized one-run step:
+The first and only authoritative aggregate evaluated exactly `5 + 11 + 7 = 23`
+frozen cases. Its mechanically derived status is `SUPPORTED`:
+
+| Measurement | Authoritative value |
+|---|---|
+| Supported authoritative cases | `5` |
+| Accepted references / parity | `1 / 1` |
+| Canonical-rejection references / parity | `4 / 4` |
+| Orthogonal negatives / exact primary classifications | `11 / 11` |
+| Precedence negatives / exact primary classifications | `7 / 7` |
+| Combined unavailable negatives / exact primary classifications | `18 / 18` |
+| Orthogonal / precedence invalid constructions | `0 / 0` |
+| Historical offline fixture dispatches | `5` |
+| Evaluation / validity / firewall failures | `0 / 0 / 0` |
+| Invariant-vector / literal-mutation mismatches | `0 / 0` |
+| Primary-classification / guard-precedence / diagnostic mismatches | `0 / 0 / 0` |
+| Status / rejection-reason / semantic / move mismatches | `0 / 0 / 0 / 0` |
+| Task-log / commitment / phase-role / SearchState-v1 mismatches | `0 / 0 / 0 / 0` |
+| Processor / observation / receipt / resource / Value-v1 mismatches | `0 / 0 / 0 / 0 / 0` |
+| Source / sibling / production isolation failures | `0 / 0 / 0` |
+| Idempotence / negative-successor failures | `0 / 0` |
+| Fabricated observations / future-label violations | `0 / 0` |
+| Negative / aggregate provider dispatches | `0 / 0` |
+| Live / model / tool calls | `0 / 0 / 0` |
+| Core / predecessor lock mismatches | `0 / 0` |
+
+The provider-roster precedence case `p8v2-p02-provider-roster-context` produced
+`root_context_mismatch` at guard `A8`, exactly matching its frozen expectation.
+Context, provider, model, and configuration binding are not separate aggregate
+failure counters in metrics v2; they are locked by the per-case invariant
+vectors and exact primary-classification evidence. All relevant orthogonal and
+precedence cases passed, with validity-gate and invariant-vector mismatches both
+zero. The caller-rebinding firewall likewise passed through the frozen
+manifest/identity guard ordering without runtime access to evaluator truth.
+
+The immutable result files are:
+
+- `docs/branches/feature-socrates-zero-canonical-successor-parity-v2/artifacts/socrateszero_canonical_successor_parity_v2.json` — artifact ID
+  `cedparityartifactv2_f3a9c85ef31dd5afc09c1353ff8fb67461ebce42ae5390a3dff1efb0f2e109e7`,
+  SHA-256 `8b6d2dd8f347d1dffc60e8a67e7a9bc0652bb2acdcd31c81ec9800ba76f78fdc`;
+- `docs/branches/feature-socrates-zero-canonical-successor-parity-v2/artifacts/socrateszero_canonical_successor_parity_replay_lock_v2.json` — replay-lock ID
+  `cedparityreplaylockv2_e524b9e57fb070f67adc1098aeffe469d65b9f42bc0a9a77ddc9f3553e5f5280`,
+  SHA-256 `896ef4536a447ad9edbe49b59704b74f8f3a126486d02c4230d49897250fd224`.
+
+The reverse replay independently reversed each of the supported, orthogonal,
+and precedence order groups. The authoritative and replay artifact IDs and
+SHA-256 values are equal, and semantic equality, artifact-ID equality, and byte
+identity are all `true`.
+
+Final gates were green: `151` pre-result focused tests, `30` post-result raw
+artifact tests, `2583 passed / 1 skipped` in `tests_dialogues`, `34 passed` in
+`tests_ced`, `261 passed` in `tests`, and `2890 passed / 1 skipped / 0 failed`
+repository-wide. The repository-wide run reported `23` non-failing warnings:
+`21` Pydantic `.dict()` deprecations and `2` FastAPI duplicate-operation-ID
+warnings. The required Phase 8, CED/Socratic, SearchState/projection,
+Value/Policy/strategy, Phase 5/7 integrity, SocratesZero, Hybrid H8, and
+roles/markers groups are included in those green gates. The final lock-only
+rerun passed `35 / 35`, and `git diff --check` was clean. No true external
+provider, model, tool, or live call occurred.
+
+The final frozen-state confirmations are:
 
 ```text
-aggregate = PENDING
-result = PENDING
-artifact = PENDING
-artifact ID/SHA = PENDING
-reverse replay = PENDING / NOT YET AUTHORIZED
-replay lock = PENDING
-pre-result focused tests = 151 passed / 0 skipped / 0 failed / 0 warnings
+Value v0/v1 unchanged = YES
+Policy v0 unchanged = YES
+Search (Greedy/BestOfN/PUCT; N=4; c_puct=1.0; depth=1) unchanged = YES
+SearchState v0/v1 unchanged = YES
+Projection v0/v1 unchanged = YES
+Hybrid semantics unchanged = YES
+CED runtime semantics and transition ownership unchanged = YES
+environment/core blob mismatches = 0
+tracked worktree after durable checkpoint = CLEAN
+protected untracked = scripts/live_dialogue.py.bak + malformed root name beginning ocratic_followup_mandate
 ```
 
-The pre-result verification and review matrix is green. The commit containing
-this document is the explicit pre-result freeze. Once that commit exists, the
-next safe action is the mandated pre-aggregate status update. The aggregate is
-permitted only after that update.
+This proves exact parity for the frozen depth-one, offline, model-free corpus;
+exact First Canonical Guard Wins behavior for the eleven orthogonal and seven
+precedence probes; isolation, no-successor, no-dispatch, and frozen-lock
+properties measured by this harness; and deterministic reverse replay. It does
+not prove arbitrary-input correctness, real-provider behavior, depth-two or
+recursive search quality, learned Value/Policy performance, production safety,
+or production authority.
+
+**PHASE 8.5 READINESS: EARNED.** The next permitted action is **Phase 8.5 — Real
+Shadow Safety & Experimental Design Gate**. Phase 8.5 implementation has not
+begun and is not authorized by this result alone.
