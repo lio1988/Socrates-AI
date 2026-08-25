@@ -16,7 +16,10 @@
 - `HeuristicValueEstimatorV1` now implements only the frozen penalty-only
   semantics at `backend/dialogues/ced_search_value_v1.py`.
 - Estimator/case/v0/observability focused verification: `72 passed`.
-- No development or holdout comparative result exists yet.
+- Development result: Value v0 ordered `1/5` (`20%`) and required ties `12/13`;
+  Value v1 ordered `5/5` (`100%`) and required ties `13/13` (`100%`). Value v1
+  has zero directional errors, ordered ties, ranking loss, or hard-safety counts.
+- No `/v1` holdout result exists yet.
 
 ## Worktree
 
@@ -25,5 +28,5 @@ pre-existing untracked files remain untouched.
 
 ## Next safe step
 
-Commit the estimator implementation, then validate the development split and
-freeze the authoritative holdout runner before the first holdout execution.
+Commit the development-tested harness, then freeze a one-shot authoritative
+holdout runner and its artifact contract before first execution.
