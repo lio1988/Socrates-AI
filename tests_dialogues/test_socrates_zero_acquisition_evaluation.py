@@ -1,7 +1,7 @@
 """Pre-freeze locks for the deterministic acquisition evaluator.
 
 Every frozen case is executed and discarded independently.  This module never
-constructs the 49-case aggregate, an experiment artifact, or a replay artifact,
+constructs the 50-case aggregate, an experiment artifact, or a replay artifact,
 and it never invokes a publisher.  The only filesystem write is the explicitly
 scoped write-once primitive test under pytest's temporary directory.
 """
@@ -113,7 +113,7 @@ _EXPECTED_PROBE_ROWS = (
     ("acqv0-o23-fallback-activated", ("envelope.fallback_used",), "A07_FALLBACK_ACTIVATION", "FALLBACK_ACTIVATED"),
     ("acqv0-o24-retry-activated", ("envelope.retry_count",), "A08_RETRY_ACTIVATION", "RETRY_ACTIVATED"),
     ("acqv0-o25-tool-activated", ("envelope.tool_calls",), "A09_TOOL_ACTIVATION", "TOOL_ACTIVATED"),
-    ("acqv0-o26-missing-raw", ("envelope.raw_response_text",), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
+    ("acqv0-o26-missing-raw", ("envelope.raw_response_base64",), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
     ("acqv0-o27-raw-digest-mismatch", ("envelope.raw_response_sha256",), "A11_RESPONSE_DIGEST_INTEGRITY", "INVALID_RESPONSE_DIGEST"),
     ("acqv0-o28-usage-incomplete", ("envelope.new_usage_completeness",), "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE"),
     ("acqv0-o29-false-zero-usage", ("envelope.usage.tokens.knowledge",), "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE"),
@@ -124,17 +124,18 @@ _EXPECTED_PROBE_ROWS = (
     ("acqv0-o34-retention-policy-violation", ("retention_receipt.artifact_inclusion",), "A15_RETENTION_PRIVACY_INTEGRITY", "RETENTION_POLICY_VIOLATION"),
     ("acqv0-o35-final-receipt-identity-mismatch", ("attempt_recorder.final_receipt_integrity",), "A16_FINAL_RECEIPT_INTEGRITY", "RECEIPT_MISMATCH"),
     ("acqv0-o36-future-label-envelope", ("envelope.expected_canonical_acceptance",), "A02_TRANSPORT_COMPLETION", "TRANSPORT_ERROR"),
+    ("acqv0-o37-missing-actual-model", ("envelope.actual_model_id",), "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH"),
     ("acqv0-p01-invalid-request-plus-unknown-capability", ("request.schema_version", "capability.actual_provider_identity_verification"), "P01_REQUEST_INTEGRITY", "INVALID_ACQUISITION_REQUEST"),
     ("acqv0-p02-unknown-capability-plus-budget-gap", ("capability.actual_provider_identity_verification", "budget.max_canned_transport_invocations"), "P04_REQUIRED_CONTROL_COMPLETENESS", "REQUIRED_CONTROL_UNKNOWN"),
     ("acqv0-p03-prompt-entropy-plus-fallback-policy", ("capability.fallback", "renderer.entropy_source"), "P09_FALLBACK_DISABLED", "FALLBACK_CONTROL_UNPROVEN"),
     ("acqv0-p04-actual-model-plus-fallback-activation", ("envelope.actual_model_id", "envelope.fallback_used"), "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH"),
-    ("acqv0-p05-missing-raw-plus-usage-incomplete", ("envelope.raw_response_text", "envelope.new_usage_completeness"), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
+    ("acqv0-p05-missing-raw-plus-usage-incomplete", ("envelope.raw_response_base64", "envelope.new_usage_completeness"), "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION"),
     ("acqv0-p06-network-plus-credential-policy", ("capability.external_network", "capability.credential_access"), "P06_EXTERNAL_NETWORK_PROHIBITION", "EXTERNAL_NETWORK_FORBIDDEN"),
     ("acqv0-p07-timeout-plus-worker-nontermination", ("envelope.transport_status", "envelope.worker_terminated"), "A02_TRANSPORT_COMPLETION", "TRANSPORT_TIMEOUT"),
 )
 
 _EXPECTED_PROBE_DESIGN_SHA256 = (
-    "a93b7d5bf371e3cc32f59b8f0796db06a6c0c68e2284e120ddacda889fe7fc63"
+    "49c0d0cca2c06dc01087ba667eb1c4e71d9173c04b2b26292b8ba3169a880e73"
 )
 
 _THRESHOLD_TO_METRIC_FIELDS = (
@@ -175,6 +176,7 @@ _THRESHOLD_TO_METRIC_FIELDS = (
     ("required_new_cost_microusd", "new_cost_microusd"),
     ("required_external_provider_wall_time_ms", "external_provider_wall_time_ms"),
     ("required_historical_lock_mismatches", "historical_lock_mismatches"),
+    ("required_core_blob_lock_mismatches", "core_blob_lock_mismatches"),
 )
 
 
@@ -195,7 +197,7 @@ def test_exact_frozen_fixture_ids_bytes_and_resource_knowledge() -> None:
     visible = request.provider_visible_request
 
     assert fixtures.fixture_set_id == (
-        "acqfixturesv0_821d26eb13ed09e8f13b2aebd2c776a5b928abf0140e7f5e8f216f4b4c9b9a06"
+        "acqfixturesv0_6571aefb7415a637d64e27ed9a372c1cc4ebc6abc7b19bf0931748549b123f59"
     )
     assert fixtures.capability_snapshot.capability_snapshot_id == (
         "szacqcap_d36f538978eae2158aaf94afa71fe09a211f33cf0acaa7c33d9d6dd6b62c9656"
@@ -216,7 +218,7 @@ def test_exact_frozen_fixture_ids_bytes_and_resource_knowledge() -> None:
         "szacqvisible_ea8c396387199ef8911a21c013f4ea7cc92fb502afdb92a3a695eb8b3a9b4bab"
     )
     assert fixtures.retention_policy.retention_policy_id == (
-        "szacqretentionpolicy_751bfc4b829f377caa140e0852b89195d89914c427a9e2984b420c0ab34a4b00"
+        "szacqretentionpolicy_88e70a6baa9c5a51267e02a6a676650381fee2e54602cc14ff20f61d6e419c59"
     )
     assert FROZEN_PROVIDER_VISIBLE_REQUEST_BYTES_V0 == _EXPECTED_VISIBLE_BYTES
     assert visible.canonical_request_json.encode("utf-8") == _EXPECTED_VISIBLE_BYTES
@@ -231,9 +233,11 @@ def test_exact_frozen_fixture_ids_bytes_and_resource_knowledge() -> None:
     assert FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0 == (
         "52695d9df7b354e29d2faef21f569f1d1972cfd17d3c5e70a30cedaa646bee31"
     )
-    assert FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0 == b"{not canonical Socratic JSON"
+    assert FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0 == (
+        b"\x00\xff{not canonical Socratic JSON\x80"
+    )
     assert FROZEN_OPAQUE_INVALID_RAW_RESPONSE_SHA256_V0 == (
-        "4dfe9986c5655ebb54d1732fc5d02cb14ec18ff62256cdcbaa2f0a72a7b7e3ea"
+        "7f41b1a101c82abeb70e6cb3f27547a2bbb21027f4b554a44877d1fed854449a"
     )
 
     known = fixtures.known_historical_usage
@@ -280,6 +284,30 @@ def test_all_six_historical_artifact_hashes_are_exact() -> None:
         locked_path = _repository_root() / item.repository_path
         assert hashlib.sha256(locked_path.read_bytes()).hexdigest() == item.expected_sha256
         _canonical_roundtrip(item)
+
+
+def test_frozen_core_blob_lock_is_recomputed_from_sealed_phase8_v2_artifact() -> None:
+    evidence = evaluation.verify_frozen_core_blob_lock_v0(_repository_root())
+    expected = (
+        "cedcorebloblockv2_"
+        "2cfc46afcf7afca20b4eb537d626296e11c8b85e885f5caa78d7322e0eb0a957"
+    )
+    assert evidence.matches is True
+    assert evidence.expected_lock_id == expected
+    assert evidence.actual_top_level_lock_id == expected
+    assert evidence.actual_embedded_lock_id == expected
+    assert evidence.recomputed_embedded_lock_id == expected
+    assert evidence.actual_embedded_fingerprint == expected.removeprefix(
+        "cedcorebloblockv2_"
+    )
+    assert evidence.recomputed_embedded_fingerprint == (
+        evidence.actual_embedded_fingerprint
+    )
+    _canonical_roundtrip(evidence)
+    tampered = evidence.model_dump(mode="json")
+    tampered["actual_embedded_lock_id"] = "cedcorebloblockv2_tampered"
+    with pytest.raises(Exception, match="match flag differs"):
+        type(evidence).model_validate(tampered)
 
 
 def test_exact_probe_mutation_failure_and_trace_design_lock() -> None:
@@ -483,16 +511,18 @@ def test_one_attempt_local_metrics_and_all_synthetic_threshold_gates() -> None:
 
     local_aggregate = evaluation._build_aggregate_receipt_v0(executions)
     historical = evaluation.verify_frozen_historical_hashes_v0(_repository_root())
+    core_blob_lock = evaluation.verify_frozen_core_blob_lock_v0(_repository_root())
     local_metrics = evaluation._calculate_evaluation_metrics_v0(
         (result,),
         local_aggregate,
         historical,
+        core_blob_lock,
     )
     assert local_aggregate.aggregate_receipt_id == (
-        "szacqaggregate_f569b296a8fda6edee2970aa0f905a1d0de8a67b125c61ac9122e0d333496d94"
+        "szacqaggregate_c056e560753eaf919c752c2dbc76c9449ba7c494d3267ddc437c9dc885553388"
     )
     assert local_metrics.metrics_id == (
-        "acqmetricsv0_483f17d020dea8d27edba1cb590a01fd5fef9a02dcac7682643ffe6f4f1444d0"
+        "acqmetricsv0_c693cdf57fff8b4b4756324f66f46928fb77849d7e3bba1e8cf9ea993e69b1db"
     )
     assert (
         local_metrics.cases_total,
@@ -510,16 +540,16 @@ def test_one_attempt_local_metrics_and_all_synthetic_threshold_gates() -> None:
     )
     supported_payload.update(
         {
-            "cases_total": 49,
+            "cases_total": 50,
             "positive_cases_total": 6,
             "positive_complete_case_results": 6,
             "positive_attempt_receipts": 8,
-            "orthogonal_probes_total": 36,
-            "orthogonal_exact_primary_results": 36,
+            "orthogonal_probes_total": 37,
+            "orthogonal_exact_primary_results": 37,
             "precedence_probes_total": 7,
             "precedence_exact_primary_results": 7,
-            "attempt_receipts_total": 51,
-            "observed_canned_transport_invocations": 31,
+            "attempt_receipts_total": 52,
+            "observed_canned_transport_invocations": 32,
             "mismatch_or_failure_count": 0,
         }
     )

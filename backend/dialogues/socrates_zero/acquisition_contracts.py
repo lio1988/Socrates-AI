@@ -13,6 +13,8 @@ admission/application layer owns every canonical decision.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -110,6 +112,19 @@ def _utf8_digest(value: str) -> str:
     except UnicodeEncodeError as exc:
         raise ContractValidationError("text must be valid UTF-8") from exc
     return hashlib.sha256(payload).hexdigest()
+
+
+def _decode_canonical_base64(value: str, field_name: str) -> bytes:
+    """Decode one exact opaque byte string without interpreting its content."""
+
+    try:
+        encoded = value.encode("ascii")
+        payload = base64.b64decode(encoded, validate=True)
+    except (UnicodeEncodeError, binascii.Error, ValueError) as exc:
+        raise ContractValidationError(f"{field_name} must be canonical Base64") from exc
+    if base64.b64encode(payload).decode("ascii") != value:
+        raise ContractValidationError(f"{field_name} must be canonical Base64")
+    return payload
 
 
 def _canonical_strings(values: Tuple[str, ...], field_name: str) -> Tuple[str, ...]:
@@ -298,7 +313,7 @@ class PromptRetentionMode(str, Enum):
 
 
 class ResponseRetentionMode(str, Enum):
-    RAW_UTF8 = "RAW_UTF8"
+    RAW_BYTES_BASE64 = "RAW_BYTES_BASE64"
     CONTENT_ADDRESSED_REFERENCE = "CONTENT_ADDRESSED_REFERENCE"
 
 
@@ -920,10 +935,17 @@ class CannedTransportEnvelope(_FrozenAcquisitionContract):
     transport_attempt_id: str
     transport_status: AcquisitionTransportStatus
     canned_transport_invocations: Optional[int] = Field(default=None, ge=0, strict=True)
-    actual_binding: Optional[AcquisitionProviderModelBinding] = None
-    raw_response_text: Optional[str] = None
+    actual_provider_id: Optional[str] = None
+    actual_model_id: Optional[str] = None
+    actual_configuration_digest: Optional[str] = Field(
+        default=None, pattern=_HEX64_PATTERN
+    )
+    raw_response_base64: Optional[str] = None
     reported_raw_response_digest: Optional[str] = Field(
         default=None, pattern=_HEX64_PATTERN
+    )
+    reported_raw_response_length: Optional[int] = Field(
+        default=None, ge=0, strict=True
     )
     fallback_used: Optional[bool] = None
     explicit_retry_count: Optional[int] = Field(default=None, ge=0, strict=True)
@@ -941,7 +963,10 @@ class CannedTransportEnvelope(_FrozenAcquisitionContract):
 
     _transport_attempt_nonblank = field_validator("transport_attempt_id")(_nonblank)
     _optional_nonblank_fields = field_validator(
-        "source_provenance_id", "transport_error_code"
+        "actual_provider_id",
+        "actual_model_id",
+        "source_provenance_id",
+        "transport_error_code",
     )(_optional_nonblank)
     _strict_bool_fields = field_validator(
         "fallback_used",
@@ -965,16 +990,21 @@ class CannedTransportEnvelope(_FrozenAcquisitionContract):
 
     @model_validator(mode="after")
     def identify_without_interpreting_content(self) -> "CannedTransportEnvelope":
-        if self.raw_response_text is None:
+        if self.raw_response_base64 is None:
             raw_digest = None
             raw_length = None
         else:
-            raw_digest = _utf8_digest(self.raw_response_text)
-            raw_length = len(self.raw_response_text.encode("utf-8"))
+            raw = _decode_canonical_base64(
+                self.raw_response_base64, "raw_response_base64"
+            )
+            raw_digest = hashlib.sha256(raw).hexdigest()
+            raw_length = len(raw)
         expected = stable_contract_id(
             "szacqenvelope",
             {
-                **self.model_dump(mode="json", exclude={"envelope_id", "raw_response_text"}),
+                **self.model_dump(
+                    mode="json", exclude={"envelope_id", "raw_response_base64"}
+                ),
                 "computed_raw_response_digest": raw_digest,
                 "computed_raw_response_length": raw_length,
             },
@@ -987,9 +1017,43 @@ class CannedTransportEnvelope(_FrozenAcquisitionContract):
     @property
     def computed_raw_response_digest(self) -> Optional[str]:
         return (
-            _utf8_digest(self.raw_response_text)
-            if self.raw_response_text is not None
+            hashlib.sha256(self.raw_response_bytes or b"").hexdigest()
+            if self.raw_response_base64 is not None
             else None
+        )
+
+    @property
+    def computed_raw_response_length(self) -> Optional[int]:
+        return (
+            len(self.raw_response_bytes or b"")
+            if self.raw_response_base64 is not None
+            else None
+        )
+
+    @property
+    def raw_response_bytes(self) -> Optional[bytes]:
+        return (
+            _decode_canonical_base64(
+                self.raw_response_base64, "raw_response_base64"
+            )
+            if self.raw_response_base64 is not None
+            else None
+        )
+
+    @property
+    def actual_binding(self) -> Optional[AcquisitionProviderModelBinding]:
+        """Return a complete binding only when all three actual fields exist."""
+
+        if (
+            self.actual_provider_id is None
+            or self.actual_model_id is None
+            or self.actual_configuration_digest is None
+        ):
+            return None
+        return AcquisitionProviderModelBinding(
+            provider_id=self.actual_provider_id,
+            model_id=self.actual_model_id,
+            configuration_digest=self.actual_configuration_digest,
         )
 
 
@@ -1133,7 +1197,7 @@ class AcquisitionRetentionReceipt(_FrozenAcquisitionContract):
     provider_visible_prompt_raw_retained: bool
     raw_response_digest: Optional[str] = Field(default=None, pattern=_HEX64_PATTERN)
     raw_response_length: Optional[int] = Field(default=None, ge=0, strict=True)
-    raw_response_text: Optional[str] = None
+    raw_response_base64: Optional[str] = None
     content_addressed_response_reference: Optional[str] = None
     data_classification: AcquisitionDataClassification
     credentials_inspected: bool
@@ -1182,16 +1246,18 @@ class AcquisitionRetentionReceipt(_FrozenAcquisitionContract):
         if self.artifact_inclusion is not self.policy.artifact_inclusion_policy:
             violations.append("artifact_inclusion")
 
-        raw_present = self.raw_response_text is not None
+        raw_present = self.raw_response_base64 is not None
         ref_present = self.content_addressed_response_reference is not None
-        if self.policy.response_retention_mode is ResponseRetentionMode.RAW_UTF8:
+        if self.policy.response_retention_mode is ResponseRetentionMode.RAW_BYTES_BASE64:
             if not raw_present or ref_present:
                 violations.append("raw_response_retention_shape")
         elif raw_present or not ref_present:
             violations.append("content_addressed_retention_shape")
 
         if raw_present:
-            raw = (self.raw_response_text or "").encode("utf-8")
+            raw = _decode_canonical_base64(
+                self.raw_response_base64 or "", "raw_response_base64"
+            )
             digest = hashlib.sha256(raw).hexdigest()
             if self.raw_response_digest != digest:
                 violations.append("raw_response_digest")
@@ -1558,6 +1624,11 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
     provider_visible_request_length: int = Field(ge=0, strict=True)
     canned_transport_id: str
     requested_binding: AcquisitionProviderModelBinding
+    actual_provider_id: Optional[str] = None
+    actual_model_id: Optional[str] = None
+    actual_configuration_digest: Optional[str] = Field(
+        default=None, pattern=_HEX64_PATTERN
+    )
     actual_binding: Optional[AcquisitionProviderModelBinding] = None
     guard_evaluations: Tuple[AcquisitionGuardEvaluation, ...]
     transport_status: Optional[AcquisitionTransportStatus] = None
@@ -1567,12 +1638,21 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
     computed_raw_response_digest: Optional[str] = Field(
         default=None, pattern=_HEX64_PATTERN
     )
+    reported_raw_response_length: Optional[int] = Field(
+        default=None, ge=0, strict=True
+    )
+    computed_raw_response_length: Optional[int] = Field(
+        default=None, ge=0, strict=True
+    )
+    raw_response_base64: Optional[str] = None
     fallback_used: Optional[bool] = None
     explicit_retry_count: Optional[int] = Field(default=None, ge=0, strict=True)
     adapter_retry_count: Optional[int] = Field(default=None, ge=0, strict=True)
     sdk_internal_retry_count: Optional[int] = Field(default=None, ge=0, strict=True)
     hidden_transport_retry_count: Optional[int] = Field(default=None, ge=0, strict=True)
     tool_calls: Optional[int] = Field(default=None, ge=0, strict=True)
+    reported_execution_usage_json: Optional[str] = None
+    resource_receipt_integrity: Optional[bool] = None
     execution_usage: AcquisitionExecutionUsage
     historical_usage: AcquisitionHistoricalUsage
     isolation_receipt_id: str
@@ -1599,10 +1679,13 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
         "retention_receipt_id",
     )(_nonblank)
     _optional_nonblank_fields = field_validator(
-        "unadmitted_observation_id"
+        "actual_provider_id",
+        "actual_model_id",
+        "unadmitted_observation_id",
     )(_optional_nonblank)
     _strict_bool_fields = field_validator(
         "fallback_used",
+        "resource_receipt_integrity",
         "retention_policy_compliant",
         "prompt_byte_mismatch",
         mode="before",
@@ -1625,6 +1708,38 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
             item for item in self.guard_evaluations
             if item.state is AcquisitionGuardState.FAILED
         )
+        complete_actual_binding = (
+            AcquisitionProviderModelBinding(
+                provider_id=self.actual_provider_id,
+                model_id=self.actual_model_id,
+                configuration_digest=self.actual_configuration_digest,
+            )
+            if (
+                self.actual_provider_id is not None
+                and self.actual_model_id is not None
+                and self.actual_configuration_digest is not None
+            )
+            else None
+        )
+        if self.actual_binding != complete_actual_binding:
+            raise ContractValidationError(
+                "attempt receipt complete binding differs from partial actual evidence"
+            )
+        reported_execution_usage: Optional[AcquisitionExecutionUsage] = None
+        if self.reported_execution_usage_json is not None:
+            try:
+                reported_execution_usage = AcquisitionExecutionUsage.model_validate_json(
+                    self.reported_execution_usage_json
+                )
+            except Exception:
+                reported_execution_usage = None
+            else:
+                if canonical_json(
+                    reported_execution_usage.model_dump(mode="json")
+                ) != self.reported_execution_usage_json:
+                    raise ContractValidationError(
+                        "reported execution usage is not canonical JSON"
+                    )
         if self.primary_result.outcome is AcquisitionAttemptOutcome.ACQUIRED:
             if failed or any(
                 item.state is not AcquisitionGuardState.PASSED
@@ -1636,9 +1751,67 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
                 or self.actual_binding is None
                 or self.transport_status is not AcquisitionTransportStatus.DELIVERED
                 or self.computed_raw_response_digest is None
+                or self.computed_raw_response_length is None
+                or self.raw_response_base64 is None
             ):
                 raise ContractValidationError(
                     "acquired receipt requires observation, actual identity, and raw response"
+                )
+            raw_response = _decode_canonical_base64(
+                self.raw_response_base64, "raw_response_base64"
+            )
+            independently_computed_digest = hashlib.sha256(raw_response).hexdigest()
+            if self.actual_binding != self.requested_binding:
+                raise ContractValidationError(
+                    "acquired receipt actual identity differs from requested identity"
+                )
+            if (
+                self.reported_raw_response_digest is None
+                or self.reported_raw_response_digest
+                != self.computed_raw_response_digest
+                or self.computed_raw_response_digest
+                != independently_computed_digest
+                or self.reported_raw_response_length is None
+                or self.reported_raw_response_length
+                != self.computed_raw_response_length
+                or self.computed_raw_response_length != len(raw_response)
+            ):
+                raise ContractValidationError(
+                    "acquired receipt raw response digest or length evidence differs"
+                )
+            if self.fallback_used is not False:
+                raise ContractValidationError(
+                    "acquired receipt requires fallback explicitly disabled"
+                )
+            if (
+                self.explicit_retry_count,
+                self.adapter_retry_count,
+                self.sdk_internal_retry_count,
+                self.hidden_transport_retry_count,
+            ) != (0, 0, 0, 0):
+                raise ContractValidationError(
+                    "acquired receipt requires every retry count explicitly zero"
+                )
+            if self.tool_calls != 0:
+                raise ContractValidationError(
+                    "acquired receipt requires tool count explicitly zero"
+                )
+            if (
+                not self.execution_usage.complete
+                or reported_execution_usage != self.execution_usage
+                or self.resource_receipt_integrity is not True
+                or not self.retention_policy_compliant
+                or self.prompt_byte_mismatch
+                or any(
+                    (
+                        self.source_mutations,
+                        self.sibling_mutations,
+                        self.production_mutations,
+                    )
+                )
+            ):
+                raise ContractValidationError(
+                    "acquired receipt contradicts accounting, isolation, or retention evidence"
                 )
         else:
             if len(failed) != 1:
@@ -1662,6 +1835,92 @@ class AcquisitionAttemptReceipt(_FrozenAcquisitionContract):
                 or self.primary_result.failure_code is not primary.failure_code
             ):
                 raise ContractValidationError("primary result differs from first failed guard")
+            raw_bytes = (
+                _decode_canonical_base64(
+                    self.raw_response_base64, "raw_response_base64"
+                )
+                if self.raw_response_base64 is not None
+                else None
+            )
+            raw_integrity_invalid = (
+                raw_bytes is None
+                or self.reported_raw_response_digest is None
+                or self.computed_raw_response_digest
+                != hashlib.sha256(raw_bytes).hexdigest()
+                or self.reported_raw_response_digest
+                != self.computed_raw_response_digest
+                or self.reported_raw_response_length is None
+                or self.computed_raw_response_length != len(raw_bytes)
+                or self.reported_raw_response_length
+                != self.computed_raw_response_length
+            )
+            derived_postdispatch_failures = {
+                AcquisitionGuardId.A04_ACTUAL_PROVIDER_IDENTITY: (
+                    self.actual_provider_id is None
+                    or self.actual_provider_id != self.requested_binding.provider_id
+                ),
+                AcquisitionGuardId.A05_ACTUAL_MODEL_IDENTITY: (
+                    self.actual_provider_id == self.requested_binding.provider_id
+                    and (
+                        self.actual_model_id is None
+                        or self.actual_model_id != self.requested_binding.model_id
+                    )
+                ),
+                AcquisitionGuardId.A06_ACTUAL_CONFIGURATION_IDENTITY: (
+                    self.actual_provider_id == self.requested_binding.provider_id
+                    and self.actual_model_id == self.requested_binding.model_id
+                    and (
+                        self.actual_configuration_digest is None
+                        or self.actual_configuration_digest
+                        != self.requested_binding.configuration_digest
+                    )
+                ),
+                AcquisitionGuardId.A07_FALLBACK_ACTIVATION: (
+                    self.fallback_used is not False
+                ),
+                AcquisitionGuardId.A08_RETRY_ACTIVATION: (
+                    (
+                        self.explicit_retry_count,
+                        self.adapter_retry_count,
+                        self.sdk_internal_retry_count,
+                        self.hidden_transport_retry_count,
+                    )
+                    != (0, 0, 0, 0)
+                ),
+                AcquisitionGuardId.A09_TOOL_ACTIVATION: self.tool_calls != 0,
+                AcquisitionGuardId.A10_RAW_RESPONSE_PRESENCE: raw_bytes is None,
+                AcquisitionGuardId.A11_RESPONSE_DIGEST_INTEGRITY: (
+                    raw_bytes is not None and raw_integrity_invalid
+                ),
+                AcquisitionGuardId.A12_USAGE_COMPLETENESS: (
+                    reported_execution_usage is None
+                    or not reported_execution_usage.complete
+                ),
+                AcquisitionGuardId.A13_RESOURCE_RECEIPT_INTEGRITY: (
+                    self.resource_receipt_integrity is not True
+                    or (
+                        reported_execution_usage is not None
+                        and reported_execution_usage != self.execution_usage
+                    )
+                ),
+                AcquisitionGuardId.A14_ISOLATION_INTEGRITY: any(
+                    (
+                        self.source_mutations,
+                        self.sibling_mutations,
+                        self.production_mutations,
+                    )
+                ),
+                AcquisitionGuardId.A15_RETENTION_PRIVACY_INTEGRITY: (
+                    not self.retention_policy_compliant
+                ),
+            }
+            if (
+                primary.guard_id in derived_postdispatch_failures
+                and not derived_postdispatch_failures[primary.guard_id]
+            ):
+                raise ContractValidationError(
+                    "failed receipt primary guard contradicts serialized evidence"
+                )
             if self.unadmitted_observation_id is not None:
                 raise ContractValidationError(
                     "failed acquisition cannot publish an unadmitted observation"
@@ -1751,6 +2010,24 @@ _IDENTITY_FAILURES = frozenset(
 )
 
 
+def _receipt_has_identity_mismatch(receipt: AcquisitionAttemptReceipt) -> bool:
+    return any(
+        (
+            receipt.actual_provider_id is not None
+            and receipt.actual_provider_id != receipt.requested_binding.provider_id,
+            receipt.actual_model_id is not None
+            and receipt.actual_model_id != receipt.requested_binding.model_id,
+            receipt.actual_configuration_digest is not None
+            and receipt.actual_configuration_digest
+            != receipt.requested_binding.configuration_digest,
+            receipt.reported_raw_response_digest is not None
+            and receipt.computed_raw_response_digest is not None
+            and receipt.reported_raw_response_digest
+            != receipt.computed_raw_response_digest,
+        )
+    )
+
+
 def _aggregate_metrics(
     receipts: Tuple[AcquisitionAttemptReceipt, ...],
     counters: AcquisitionTripwireCounters,
@@ -1804,7 +2081,9 @@ def _aggregate_metrics(
             not item.execution_usage.complete for item in receipts
         ),
         identity_mismatches=sum(
-            item.primary_result.failure_code in _IDENTITY_FAILURES for item in receipts
+            item.primary_result.failure_code in _IDENTITY_FAILURES
+            or _receipt_has_identity_mismatch(item)
+            for item in receipts
         ),
         prompt_byte_mismatches=sum(item.prompt_byte_mismatch for item in receipts),
         source_mutations=sum(item.source_mutations for item in receipts),

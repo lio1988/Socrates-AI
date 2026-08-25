@@ -15,6 +15,7 @@ counters are structurally fixed at zero and response content remains opaque.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 from dataclasses import dataclass
@@ -72,6 +73,8 @@ CANNED_ACQUISITION_RUNTIME_VERSION = "socrateszero-canned-acquisition-runtime/v0
 CANNED_TRANSPORT_IMPLEMENTATION_ID = CANNED_TRANSPORT_ID
 PROVIDER_VISIBLE_RENDERER_VERSION = "socrateszero-canonical-json-utf8/v0"
 PROVIDER_VISIBLE_ENCODING = "utf-8"
+CANNED_TIMEOUT_CLEANUP_ROUNDS = 2
+CANNED_TIMEOUT_CLEANUP_GRACE_SECONDS = 0.05
 FIRST_ACQUISITION_GUARD_ORDER = ACQUISITION_GUARD_ORDER
 
 _HEX_DIGITS = frozenset("0123456789abcdef")
@@ -454,6 +457,7 @@ class CannedTransportDirective:
     envelope: Optional[CannedTransportEnvelope] = None
     failure_code: Optional[AcquisitionFailureCode] = None
     wait_for_cancellation: bool = False
+    resist_initial_cancellation: bool = False
     completion_integrity: bool = True
     resource_integrity: bool = True
     retention_integrity: bool = True
@@ -464,6 +468,10 @@ class CannedTransportDirective:
         selected += int(self.wait_for_cancellation)
         if selected != 1:
             raise ValueError("exactly one canned directive outcome is required")
+        if self.resist_initial_cancellation and not self.wait_for_cancellation:
+            raise ValueError(
+                "initial cancellation resistance requires a cancellation outcome"
+            )
         if self.envelope is None and (
             not self.completion_integrity
             or not self.resource_integrity
@@ -485,6 +493,8 @@ class CannedInvocationRecord:
     resource_integrity: bool
     retention_integrity: bool
     final_receipt_integrity: bool
+    cancellation_requests: int = 0
+    forced_cleanup: bool = False
 
 
 @dataclass(frozen=True)
@@ -677,18 +687,32 @@ class CannedAcquisitionTransport:
             raise CannedTransportFailure(directive.failure_code)
 
         blocker = asyncio.Event()
-        try:
-            await blocker.wait()
-        except asyncio.CancelledError:
-            self._records.append(
-                CannedInvocationRecord(
-                    **common,
-                    outcome="CANCELLED",
-                    cancellation_acknowledged=True,
-                    worker_terminated=True,
+        cancellation_requests = 0
+        while True:
+            try:
+                await blocker.wait()
+            except asyncio.CancelledError:
+                cancellation_requests += 1
+                if (
+                    directive.resist_initial_cancellation
+                    and cancellation_requests == 1
+                ):
+                    continue
+                self._records.append(
+                    CannedInvocationRecord(
+                        **common,
+                        outcome=(
+                            "FORCED_CLEANUP"
+                            if cancellation_requests > 1
+                            else "CANCELLED"
+                        ),
+                        cancellation_acknowledged=True,
+                        worker_terminated=True,
+                        cancellation_requests=cancellation_requests,
+                        forced_cleanup=cancellation_requests > 1,
+                    )
                 )
-            )
-            raise
+                raise
         raise AssertionError("unreachable canned cancellation outcome")
 
 
@@ -812,18 +836,17 @@ def _build_retention_receipt(
     request: AcquisitionSemanticRequest,
     attempt: AcquisitionTransportAttempt,
     policy: AcquisitionRetentionPolicy,
-    raw_response_text: Optional[str],
+    raw_response_bytes: Optional[bytes],
     *,
     integrity: bool,
 ) -> AcquisitionRetentionReceipt:
-    retained_text = raw_response_text if raw_response_text is not None else ""
-    raw = retained_text.encode(PROVIDER_VISIBLE_ENCODING)
+    raw = raw_response_bytes if raw_response_bytes is not None else b""
     raw_digest = _sha256(raw)
-    if policy.response_retention_mode is ResponseRetentionMode.RAW_UTF8:
-        receipt_text: Optional[str] = retained_text
+    if policy.response_retention_mode is ResponseRetentionMode.RAW_BYTES_BASE64:
+        receipt_base64: Optional[str] = base64.b64encode(raw).decode("ascii")
         response_reference: Optional[str] = None
     else:
-        receipt_text = None
+        receipt_base64 = None
         response_reference = f"szacqraw_{raw_digest}"
     artifact_policy = (
         policy.artifact_inclusion_policy
@@ -842,7 +865,7 @@ def _build_retention_receipt(
         provider_visible_prompt_raw_retained=False,
         raw_response_digest=raw_digest,
         raw_response_length=len(raw),
-        raw_response_text=receipt_text,
+        raw_response_base64=receipt_base64,
         content_addressed_response_reference=response_reference,
         data_classification=AcquisitionDataClassification.NON_SENSITIVE_CANNED,
         credentials_inspected=False,
@@ -1291,22 +1314,44 @@ async def _invoke_transport(
         transport.acquire(body, attempt),
         name=f"socrates-zero-canned-acquisition-{before + 1}",
     )
-    try:
-        envelope = await asyncio.wait_for(task, timeout=timeout_ms / 1000.0)
-    except TimeoutError:
-        timed_out = True
-        if not task.done():
+
+    async def terminate_task() -> None:
+        for _cleanup_round in range(CANNED_TIMEOUT_CLEANUP_ROUNDS):
             task.cancel()
+            done, _pending = await asyncio.wait(
+                (task,),
+                timeout=CANNED_TIMEOUT_CLEANUP_GRACE_SECONDS,
+            )
+            if done:
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
+                return
+        raise AcquisitionRuntimeError(
+            "timed-out canned task resisted deterministic forced cleanup"
+        )
+
+    try:
+        done, _pending = await asyncio.wait(
+            (task,), timeout=timeout_ms / 1000.0
+        )
+        if not done:
+            timed_out = True
+            await terminate_task()
+        else:
             try:
-                await task
+                envelope = task.result()
             except asyncio.CancelledError:
-                pass
-        if not task.done():
-            raise AcquisitionRuntimeError("timed-out canned task did not terminate")
+                raise
+            except Exception as exc:
+                error = type(exc).__name__
     except asyncio.CancelledError:
+        if not task.done():
+            await terminate_task()
         raise
-    except Exception as exc:
-        error = type(exc).__name__
     records = transport.invocation_records
     return _TransportEvidence(
         invocation_count_before=before,
@@ -1428,9 +1473,8 @@ def _post_guard_failure(
     elif guard is AcquisitionGuardId.A04_ACTUAL_PROVIDER_IDENTITY:
         if (
             envelope is None
-            or envelope.actual_binding is None
-            or envelope.actual_binding.provider_id
-            != ctx.request.requested_binding.provider_id
+            or envelope.actual_provider_id is None
+            or envelope.actual_provider_id != ctx.request.requested_binding.provider_id
         ):
             return _fail(
                 guard,
@@ -1441,8 +1485,8 @@ def _post_guard_failure(
     elif guard is AcquisitionGuardId.A05_ACTUAL_MODEL_IDENTITY:
         if (
             envelope is None
-            or envelope.actual_binding is None
-            or envelope.actual_binding.model_id != ctx.request.requested_binding.model_id
+            or envelope.actual_model_id is None
+            or envelope.actual_model_id != ctx.request.requested_binding.model_id
         ):
             return _fail(
                 guard,
@@ -1453,8 +1497,8 @@ def _post_guard_failure(
     elif guard is AcquisitionGuardId.A06_ACTUAL_CONFIGURATION_IDENTITY:
         if (
             envelope is None
-            or envelope.actual_binding is None
-            or envelope.actual_binding.configuration_digest
+            or envelope.actual_configuration_digest is None
+            or envelope.actual_configuration_digest
             != ctx.request.requested_binding.configuration_digest
         ):
             return _fail(
@@ -1494,7 +1538,7 @@ def _post_guard_failure(
             )
 
     elif guard is AcquisitionGuardId.A10_RAW_RESPONSE_PRESENCE:
-        if envelope is None or envelope.raw_response_text is None:
+        if envelope is None or envelope.raw_response_base64 is None:
             return _fail(
                 guard,
                 AcquisitionFailureCode.MISSING_RAW_OBSERVATION,
@@ -1507,11 +1551,14 @@ def _post_guard_failure(
             or envelope.reported_raw_response_digest is None
             or envelope.reported_raw_response_digest
             != envelope.computed_raw_response_digest
+            or envelope.reported_raw_response_length is None
+            or envelope.reported_raw_response_length
+            != envelope.computed_raw_response_length
         ):
             return _fail(
                 guard,
                 AcquisitionFailureCode.INVALID_RESPONSE_DIGEST,
-                "raw_response_digest",
+                "raw_response_digest_or_length",
             )
 
     elif guard is AcquisitionGuardId.A12_USAGE_COMPLETENESS:
@@ -1666,10 +1713,9 @@ def _build_observation(
     if envelope is None or envelope.actual_binding is None:
         raise AcquisitionRuntimeError("observation requires delivered actual binding")
     digest = envelope.computed_raw_response_digest
-    text = envelope.raw_response_text
-    if digest is None or text is None:
+    raw_length = envelope.computed_raw_response_length
+    if digest is None or raw_length is None:
         raise AcquisitionRuntimeError("observation requires raw response evidence")
-    raw_length = len(text.encode(PROVIDER_VISIBLE_ENCODING))
     return UnadmittedAcquiredObservation(
         semantic_request_id=ctx.request.semantic_request_id or "",
         transport_attempt_id=ctx.attempt.transport_attempt_id or "",
@@ -1794,8 +1840,8 @@ async def acquire_canned_observation(
     isolation_receipt = _build_isolation_receipt(
         request, attempt, isolation_before, isolation_after
     )
-    raw_response_text = (
-        evidence.envelope.raw_response_text if evidence.envelope is not None else None
+    raw_response_bytes = (
+        evidence.envelope.raw_response_bytes if evidence.envelope is not None else None
     )
     retention_integrity = (
         evidence.record.retention_integrity if evidence.record is not None else True
@@ -1804,7 +1850,7 @@ async def acquire_canned_observation(
         request,
         attempt,
         retention_policy,
-        raw_response_text,
+        raw_response_bytes,
         integrity=retention_integrity,
     )
 
@@ -1889,6 +1935,13 @@ async def acquire_canned_observation(
         provider_visible_request_length=request.provider_visible_request.byte_length or 0,
         canned_transport_id=attempt.canned_transport_id,
         requested_binding=request.requested_binding,
+        actual_provider_id=(
+            envelope.actual_provider_id if envelope is not None else None
+        ),
+        actual_model_id=(envelope.actual_model_id if envelope is not None else None),
+        actual_configuration_digest=(
+            envelope.actual_configuration_digest if envelope is not None else None
+        ),
         actual_binding=envelope.actual_binding if envelope is not None else None,
         guard_evaluations=guard_evaluations,
         transport_status=transport_status,
@@ -1897,6 +1950,15 @@ async def acquire_canned_observation(
         ),
         computed_raw_response_digest=(
             envelope.computed_raw_response_digest if envelope is not None else None
+        ),
+        reported_raw_response_length=(
+            envelope.reported_raw_response_length if envelope is not None else None
+        ),
+        computed_raw_response_length=(
+            envelope.computed_raw_response_length if envelope is not None else None
+        ),
+        raw_response_base64=(
+            envelope.raw_response_base64 if envelope is not None else None
         ),
         fallback_used=envelope.fallback_used if envelope is not None else None,
         explicit_retry_count=(
@@ -1912,6 +1974,14 @@ async def acquire_canned_observation(
             envelope.hidden_transport_retry_count if envelope is not None else None
         ),
         tool_calls=envelope.tool_calls if envelope is not None else None,
+        reported_execution_usage_json=(
+            _canonical_json(envelope.execution_usage.model_dump(mode="json"))
+            if envelope is not None and envelope.execution_usage is not None
+            else None
+        ),
+        resource_receipt_integrity=(
+            evidence.record.resource_integrity if evidence.record is not None else None
+        ),
         execution_usage=execution_usage,
         historical_usage=historical_usage,
         isolation_receipt_id=isolation_receipt.isolation_receipt_id or "",
@@ -1952,6 +2022,8 @@ run_canned_acquisition = acquire_canned_observation
 __all__ = [
     "CANNED_ACQUISITION_RUNTIME_VERSION",
     "CANNED_TRANSPORT_IMPLEMENTATION_ID",
+    "CANNED_TIMEOUT_CLEANUP_GRACE_SECONDS",
+    "CANNED_TIMEOUT_CLEANUP_ROUNDS",
     "PROVIDER_VISIBLE_RENDERER_VERSION",
     "FIRST_ACQUISITION_GUARD_ORDER",
     "AcquisitionRuntimeError",

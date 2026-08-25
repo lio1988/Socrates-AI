@@ -9,6 +9,7 @@ apply an observation, build an aggregate, or publish an artifact.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from enum import Enum
@@ -336,7 +337,9 @@ FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0 = (
 FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0 = hashlib.sha256(
     FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0
 ).hexdigest()
-FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0 = b"{not canonical Socratic JSON"
+FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0 = (
+    b"\x00\xff{not canonical Socratic JSON\x80"
+)
 FROZEN_OPAQUE_INVALID_RAW_RESPONSE_SHA256_V0 = hashlib.sha256(
     FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0
 ).hexdigest()
@@ -633,7 +636,7 @@ FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0: Tuple[AcquisitionProbeV0, ...] = (
     _probe("acqv0-o23-fallback-activated", O, "A07_FALLBACK_ACTIVATION", "FALLBACK_ACTIVATED", "Change only fallback-used from false to true.", (_mutation("envelope.fallback_used", False, True),), _vector(fallback=I)),
     _probe("acqv0-o24-retry-activated", O, "A08_RETRY_ACTIVATION", "RETRY_ACTIVATED", "Change only retry count from zero to one.", (_mutation("envelope.retry_count", 0, 1),), _vector(retry=I)),
     _probe("acqv0-o25-tool-activated", O, "A09_TOOL_ACTIVATION", "TOOL_ACTIVATED", "Change only tool-call count from zero to one.", (_mutation("envelope.tool_calls", 0, 1),), _vector(tools=I)),
-    _probe("acqv0-o26-missing-raw", O, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove only raw response text from an otherwise complete envelope.", (_mutation("envelope.raw_response_text", FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0.decode("utf-8"), None),), _vector(response_presence=I, response_digest=N)),
+    _probe("acqv0-o26-missing-raw", O, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove only the canonical opaque-byte encoding from an otherwise complete envelope.", (_mutation("envelope.raw_response_base64", base64.b64encode(FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0).decode("ascii"), None),), _vector(response_presence=I, response_digest=N)),
     _probe("acqv0-o27-raw-digest-mismatch", O, "A11_RESPONSE_DIGEST_INTEGRITY", "INVALID_RESPONSE_DIGEST", "Keep raw bytes exact and tamper only the stored digest.", (_mutation("envelope.raw_response_sha256", _BASE_RAW_DIGEST, "f" * 64),), _vector(response_digest=I)),
     _probe("acqv0-o28-usage-incomplete", O, "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE", "Change only new-execution usage completeness to INCOMPLETE.", (_mutation("envelope.new_usage_completeness", "COMPLETE", "INCOMPLETE"),), _vector(usage_completeness=I)),
     _probe("acqv0-o29-false-zero-usage", O, "A12_USAGE_COMPLETENESS", "USAGE_INCOMPLETE", "Change only source token knowledge from KNOWN to UNKNOWN while the candidate receipt retains numeric zero.", (_mutation("envelope.usage.tokens.knowledge", "KNOWN", "UNKNOWN"),), _vector(usage_completeness=I, receipt_identity=D)),
@@ -644,6 +647,7 @@ FROZEN_ACQUISITION_ORTHOGONAL_PROBES_V0: Tuple[AcquisitionProbeV0, ...] = (
     _probe("acqv0-o34-retention-policy-violation", O, "A15_RETENTION_PRIVACY_INTEGRITY", "RETENTION_POLICY_VIOLATION", "Change only the retained artifact-inclusion receipt away from the frozen policy.", (_mutation("retention_receipt.artifact_inclusion", "INCLUDE_RAW_NON_SENSITIVE_RESPONSE", "DIGESTS_AND_REFERENCES"),), _vector(retention=I)),
     _probe("acqv0-o35-final-receipt-identity-mismatch", O, "A16_FINAL_RECEIPT_INTEGRITY", "RECEIPT_MISMATCH", "Change only the independently recomputed final-receipt integrity verdict.", (_mutation("attempt_recorder.final_receipt_integrity", True, False),), _vector(receipt_identity=I)),
     _probe("acqv0-o36-future-label-envelope", O, "A02_TRANSPORT_COMPLETION", "TRANSPORT_ERROR", "Add a forbidden evaluator/future label to the envelope, never to opaque raw response bytes.", (_mutation("envelope.expected_canonical_acceptance", None, "ACCEPTED"),), _vector(future_label_status=I)),
+    _probe("acqv0-o37-missing-actual-model", O, "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH", "Omit only the typed actual exact-model identity while preserving actual provider and configuration evidence.", (_mutation("envelope.actual_model_id", "phase8-recorded-model/1", None),), _vector(model=I)),
 )
 
 
@@ -652,7 +656,7 @@ FROZEN_ACQUISITION_PRECEDENCE_PROBES_V0: Tuple[AcquisitionProbeV0, ...] = (
     _probe("acqv0-p02-unknown-capability-plus-budget-gap", X, "P04_REQUIRED_CONTROL_COMPLETENESS", "REQUIRED_CONTROL_UNKNOWN", "Change one required capability to UNKNOWN and make the budget insufficient; completeness wins.", (_mutation("capability.actual_provider_identity_verification", "PROVEN_SUPPORTED", "UNKNOWN"), _mutation("budget.max_canned_transport_invocations", 1, 0)), _vector(semantic_request_identity=D, capability_controls=I, budget=I)),
     _probe("acqv0-p03-prompt-entropy-plus-fallback-policy", X, "P09_FALLBACK_DISABLED", "FALLBACK_CONTROL_UNPROVEN", "Enable fallback explicitly and inject prompt entropy; fallback guard wins before prompt determinism.", (_mutation("capability.fallback", "PROVEN_DISABLED", "PROVEN_SUPPORTED"), _mutation("renderer.entropy_source", "NONE", "BRANCH_ID")), _vector(semantic_request_identity=D, capability_controls=D, fallback=I, prompt_bytes=I)),
     _probe("acqv0-p04-actual-model-plus-fallback-activation", X, "A05_ACTUAL_MODEL_IDENTITY", "ACTUAL_MODEL_MISMATCH", "Change actual model and activate fallback; exact-model identity wins.", (_mutation("envelope.actual_model_id", "phase8-recorded-model/1", "phase8-recorded-model/1-wrong"), _mutation("envelope.fallback_used", False, True)), _vector(model=I, fallback=I)),
-    _probe("acqv0-p05-missing-raw-plus-usage-incomplete", X, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove raw text and make usage incomplete; raw presence wins.", (_mutation("envelope.raw_response_text", FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0.decode("utf-8"), None), _mutation("envelope.new_usage_completeness", "COMPLETE", "INCOMPLETE")), _vector(response_presence=I, response_digest=N, usage_completeness=I)),
+    _probe("acqv0-p05-missing-raw-plus-usage-incomplete", X, "A10_RAW_RESPONSE_PRESENCE", "MISSING_RAW_OBSERVATION", "Remove the opaque-byte encoding and make usage incomplete; raw presence wins.", (_mutation("envelope.raw_response_base64", base64.b64encode(FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0).decode("ascii"), None), _mutation("envelope.new_usage_completeness", "COMPLETE", "INCOMPLETE")), _vector(response_presence=I, response_digest=N, usage_completeness=I)),
     _probe("acqv0-p06-network-plus-credential-policy", X, "P06_EXTERNAL_NETWORK_PROHIBITION", "EXTERNAL_NETWORK_FORBIDDEN", "Enable external-network and credential-access intent without executing either; network guard wins.", (_mutation("capability.external_network", "PROVEN_DISABLED", "PROVEN_SUPPORTED"), _mutation("capability.credential_access", "PROVEN_DISABLED", "PROVEN_SUPPORTED")), _vector(semantic_request_identity=D, capability_controls=D, external_network=I, credential_access=I)),
     _probe("acqv0-p07-timeout-plus-worker-nontermination", X, "A02_TRANSPORT_COMPLETION", "TRANSPORT_TIMEOUT", "Return timeout status and worker nontermination; transport completion wins.", (_mutation("envelope.transport_status", "DELIVERED", "TIMEOUT"), _mutation("envelope.worker_terminated", True, False)), _vector(timeout=I, worker_termination=I, response_presence=D, response_digest=N)),
 )
@@ -674,16 +678,16 @@ class AcquisitionThresholdsV0(_FrozenCaseContract):
         ACQUISITION_THRESHOLDS_SCHEMA_V0
     ] = ACQUISITION_THRESHOLDS_SCHEMA_V0
     thresholds_id: Optional[str] = None
-    cases_total: Literal[49] = 49
+    cases_total: Literal[50] = 50
     positive_cases_total: Literal[6] = 6
     required_positive_complete_case_results: Literal[6] = 6
     required_positive_attempt_receipts: Literal[8] = 8
-    orthogonal_probes_total: Literal[36] = 36
-    required_orthogonal_exact_primary_results: Literal[36] = 36
+    orthogonal_probes_total: Literal[37] = 37
+    required_orthogonal_exact_primary_results: Literal[37] = 37
     precedence_probes_total: Literal[7] = 7
     required_precedence_exact_primary_results: Literal[7] = 7
-    required_attempt_receipts_total: Literal[51] = 51
-    required_canned_transport_invocations: Literal[31] = 31
+    required_attempt_receipts_total: Literal[52] = 52
+    required_canned_transport_invocations: Literal[32] = 32
     maximum_mismatch_or_failure_count: Literal[0] = 0
     required_invalid_probe_constructions: Literal[0] = 0
     required_semantic_identity_collisions: Literal[0] = 0
@@ -711,6 +715,7 @@ class AcquisitionThresholdsV0(_FrozenCaseContract):
     required_new_cost_microusd: Literal[0] = 0
     required_external_provider_wall_time_ms: Literal[0] = 0
     required_historical_lock_mismatches: Literal[0] = 0
+    required_core_blob_lock_mismatches: Literal[0] = 0
     production_authority: Literal["none"] = "none"
 
     @model_validator(mode="after")
@@ -734,15 +739,15 @@ class AcquisitionCaseSetV0(_FrozenCaseContract):
     harness_id: Literal[ACQUISITION_HARNESS_ID_V0] = ACQUISITION_HARNESS_ID_V0
     guard_ids: Tuple[AcquisitionGuardId, ...] = Field(min_length=34, max_length=34)
     positive_cases: Tuple[AcquisitionPositiveCaseV0, ...] = Field(min_length=6, max_length=6)
-    orthogonal_probes: Tuple[AcquisitionProbeV0, ...] = Field(min_length=36, max_length=36)
+    orthogonal_probes: Tuple[AcquisitionProbeV0, ...] = Field(min_length=37, max_length=37)
     precedence_probes: Tuple[AcquisitionProbeV0, ...] = Field(min_length=7, max_length=7)
     thresholds_id: str
     positive_case_count: Literal[6] = 6
-    orthogonal_probe_count: Literal[36] = 36
+    orthogonal_probe_count: Literal[37] = 37
     precedence_probe_count: Literal[7] = 7
-    total_case_count: Literal[49] = 49
-    total_attempt_receipts: Literal[51] = 51
-    total_canned_transport_invocations: Literal[31] = 31
+    total_case_count: Literal[50] = 50
+    total_attempt_receipts: Literal[52] = 52
+    total_canned_transport_invocations: Literal[32] = 32
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> "AcquisitionCaseSetV0":
@@ -760,7 +765,7 @@ class AcquisitionCaseSetV0(_FrozenCaseContract):
             item.probe_fingerprint
             for item in self.orthogonal_probes + self.precedence_probes
         )
-        if len(set(all_fingerprints)) != 49:
+        if len(set(all_fingerprints)) != 50:
             raise ContractValidationError("all acquisition case fingerprints must be unique")
         attempts = sum(item.attempt_count for item in self.positive_cases) + len(
             self.orthogonal_probes

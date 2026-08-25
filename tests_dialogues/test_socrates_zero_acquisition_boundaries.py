@@ -8,6 +8,7 @@ import http.client
 import os
 import socket
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,16 @@ from backend.dialogues.ced_canonical_successor import (
     CanonicalSuccessorEnvironmentV0,
 )
 from backend.dialogues.socrates_zero import acquisition_evaluation
+from backend.dialogues.socrates_zero.acquisition_contracts import (
+    AcquisitionTripwireCounters,
+)
+from backend.dialogues.socrates_zero.acquisition_tripwires import (
+    AcquisitionBoundaryTripwireV0,
+    AcquisitionBoundaryViolation,
+    active_acquisition_boundary_tripwire_v0,
+    assert_acquisition_artifact_tripwires_v0,
+    require_clean_acquisition_boundary_tripwire_v0,
+)
 from backend.dialogues.socrates_zero.acquisition_cases import (
     FROZEN_ACQUISITION_POSITIVE_CASES_V0,
 )
@@ -160,6 +171,7 @@ def test_acquisition_file_reads_are_limited_to_frozen_hash_and_write_once_paths(
         )
         observed.update(_enclosing_function_names(tree))
     assert observed == {
+        ("verify_frozen_core_blob_lock_v0", "read_bytes"),
         ("verify_frozen_historical_hashes_v0", "read_bytes"),
         ("write_once_canonical_bytes_v0", "open"),
         ("write_once_canonical_bytes_v0", "read_bytes"),
@@ -260,3 +272,84 @@ def test_importing_evaluator_is_runtime_inert() -> None:
             )
         )
     )
+
+
+def test_reusable_tripwire_records_and_aborts_every_forbidden_category() -> None:
+    def inactive_guard_result() -> type[BaseException] | None:
+        try:
+            require_clean_acquisition_boundary_tripwire_v0()
+        except BaseException as exc:  # returned across the thread boundary
+            return type(exc)
+        return None
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        assert executor.submit(inactive_guard_result).result() is (
+            AcquisitionBoundaryViolation
+        )
+
+    actions = (
+        (
+            "external_network_attempts",
+            lambda: socket.getaddrinfo("forbidden.invalid", 443),
+        ),
+        (
+            "credential_access_attempts",
+            lambda: os.getenv("OPENROUTER_API_KEY"),
+        ),
+        (
+            "live_provider_calls",
+            lambda: provider_registry.CouncilProviderRegistry.run_adapter(None),
+        ),
+        (
+            "provider_sdk_calls",
+            lambda: provider_registry.BaseProviderAdapter.generate_agent_move(None),
+        ),
+        (
+            "model_executions",
+            lambda: __import__(
+                "backend.dialogues.providers", fromlist=["FakeProvider"]
+            ).FakeProvider.complete(None),
+        ),
+        (
+            "tool_calls",
+            lambda: __import__("subprocess").run(("forbidden-tool",)),
+        ),
+        (
+            "canonical_application_calls",
+            lambda: CanonicalSuccessorEnvironmentV0.apply_observation(None),
+        ),
+    )
+    for category, action in actions:
+        tripwire = AcquisitionBoundaryTripwireV0()
+        with pytest.raises(AcquisitionBoundaryViolation):
+            with tripwire:
+                action()
+        snapshot = tripwire.snapshot()
+        assert snapshot.total_forbidden_attempts == 1
+        assert getattr(snapshot, category) == 1
+        assert len(snapshot.hits) == 1
+        assert snapshot.hits[0].category == category
+
+
+def test_artifact_zero_counters_are_cross_checked_against_live_instrumentation() -> None:
+    tripwire = active_acquisition_boundary_tripwire_v0()
+    clean = tripwire.assert_clean()
+    assert clean.total_forbidden_attempts == 0
+    zero = AcquisitionTripwireCounters(
+        canned_transport_invocations=1,
+        external_network_attempts=0,
+        credential_access_attempts=0,
+        live_provider_calls=0,
+        provider_sdk_calls=0,
+        model_executions=0,
+        tool_calls=0,
+        canonical_application_calls=0,
+    )
+    assert_acquisition_artifact_tripwires_v0(zero)
+
+    claimed_attempt = zero.model_copy(update={"external_network_attempts": 1})
+    with pytest.raises(
+        AcquisitionBoundaryViolation,
+        match="differ from instrumented boundary evidence",
+    ):
+        assert_acquisition_artifact_tripwires_v0(claimed_attempt)

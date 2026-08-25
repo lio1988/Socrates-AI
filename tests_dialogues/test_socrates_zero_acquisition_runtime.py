@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from backend.dialogues.socrates_zero.acquisition import (
     AcquisitionIsolationSnapshot,
+    CANNED_TIMEOUT_CLEANUP_GRACE_SECONDS,
+    CANNED_TIMEOUT_CLEANUP_ROUNDS,
     CannedAcquisitionTransport,
     CannedImplementationProfile,
     CannedTransportDirective,
@@ -46,6 +50,9 @@ from backend.dialogues.socrates_zero.acquisition_evaluation import (
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+_USE_REQUESTED_IDENTITY = object()
 
 
 def _known(value: int) -> AcquisitionResourceQuantity:
@@ -114,9 +121,13 @@ def _envelope(
     attempt: AcquisitionTransportAttempt,
     historical_usage: Any,
     *,
-    raw_response_text: str | None = '{"kind":"canned"}',
+    raw_response_bytes: bytes | None = b'{"kind":"canned"}',
     reported_digest: str | None = None,
+    reported_length: int | None = None,
     actual_binding: AcquisitionProviderModelBinding | None = None,
+    actual_provider_id: str | None | object = _USE_REQUESTED_IDENTITY,
+    actual_model_id: str | None | object = _USE_REQUESTED_IDENTITY,
+    actual_configuration_digest: str | None | object = _USE_REQUESTED_IDENTITY,
     fallback_used: bool | None = False,
     explicit_retry_count: int | None = 0,
     adapter_retry_count: int | None = 0,
@@ -127,15 +138,40 @@ def _envelope(
     execution_usage: AcquisitionExecutionUsage | None = None,
     transport_status: AcquisitionTransportStatus = AcquisitionTransportStatus.DELIVERED,
 ) -> CannedTransportEnvelope:
-    if reported_digest is None and raw_response_text is not None:
-        reported_digest = _digest(raw_response_text)
+    if reported_digest is None and raw_response_bytes is not None:
+        reported_digest = hashlib.sha256(raw_response_bytes).hexdigest()
+    if reported_length is None and raw_response_bytes is not None:
+        reported_length = len(raw_response_bytes)
+    binding = actual_binding or request.requested_binding
+    provider_id = (
+        binding.provider_id
+        if actual_provider_id is _USE_REQUESTED_IDENTITY
+        else actual_provider_id
+    )
+    model_id = (
+        binding.model_id
+        if actual_model_id is _USE_REQUESTED_IDENTITY
+        else actual_model_id
+    )
+    configuration_digest = (
+        binding.configuration_digest
+        if actual_configuration_digest is _USE_REQUESTED_IDENTITY
+        else actual_configuration_digest
+    )
     return CannedTransportEnvelope(
         transport_attempt_id=attempt.transport_attempt_id or "",
         transport_status=transport_status,
         canned_transport_invocations=1,
-        actual_binding=actual_binding or request.requested_binding,
-        raw_response_text=raw_response_text,
+        actual_provider_id=provider_id,
+        actual_model_id=model_id,
+        actual_configuration_digest=configuration_digest,
+        raw_response_base64=(
+            base64.b64encode(raw_response_bytes).decode("ascii")
+            if raw_response_bytes is not None
+            else None
+        ),
         reported_raw_response_digest=reported_digest,
+        reported_raw_response_length=reported_length,
         fallback_used=fallback_used,
         explicit_retry_count=explicit_retry_count,
         adapter_retry_count=adapter_retry_count,
@@ -168,7 +204,7 @@ def _transport(script, request, *, profile=CannedImplementationProfile.SAFE):
 
 def _run(
     *,
-    raw_response_text: str | None = '{"kind":"canned"}',
+    raw_response_bytes: bytes | None = b'{"kind":"canned"}',
     profile=CannedImplementationProfile.SAFE,
     directive_kwargs: dict[str, Any] | None = None,
     envelope_kwargs: dict[str, Any] | None = None,
@@ -183,7 +219,7 @@ def _run(
                 base_request,
                 provisional_attempt,
                 fixture.known_historical_usage,
-                raw_response_text=raw_response_text,
+                raw_response_bytes=raw_response_bytes,
             )
         ],
         base_request,
@@ -194,7 +230,7 @@ def _run(
         provisional.capabilities.capability_snapshot_id or "",
     )
     attempt = _attempt(request)
-    envelope_options = {"raw_response_text": raw_response_text}
+    envelope_options = {"raw_response_bytes": raw_response_bytes}
     envelope_options.update(envelope_kwargs or {})
     envelope = _envelope(
         request,
@@ -222,7 +258,8 @@ def _run(
 
 
 def test_complete_canned_acquisition_is_opaque_unadmitted_and_hermetic() -> None:
-    result = _run(raw_response_text="{not canonical Socratic JSON")
+    opaque = b"\x00\xff{not canonical Socratic JSON\x80"
+    result = _run(raw_response_bytes=opaque)
     assert result.outcome is AcquisitionAttemptOutcome.ACQUIRED
     assert result.failure_code is None
     assert result.observation is not None
@@ -230,6 +267,10 @@ def test_complete_canned_acquisition_is_opaque_unadmitted_and_hermetic() -> None
     assert result.observation.canonical_status == "NON_CANONICAL"
     assert result.observation.governing_status == "NON_GOVERNING"
     assert result.observation.application_status == "NOT_APPLIED"
+    assert result.retention_receipt.raw_response_base64 is not None
+    assert base64.b64decode(
+        result.retention_receipt.raw_response_base64, validate=True
+    ) == opaque
     assert len(result.attempt_receipt.guard_evaluations) == 34
     assert all(
         row.state is AcquisitionGuardState.PASSED
@@ -265,6 +306,90 @@ def test_provider_visible_bytes_are_exact_and_transport_identity_is_out_of_band(
         first.experiment_id,
     ):
         assert canary.encode("utf-8") not in raw
+
+
+def test_sibling_acquisition_is_order_independent_with_private_transport_state() -> None:
+    async def execute_order(order: tuple[str, str]):
+        fixture = build_frozen_acquisition_fixtures_v0()
+        request = fixture.semantic_request
+        raw_by_branch = {
+            "sibling-a": b"\x00private-response-a\xff",
+            "sibling-b": b"\x00private-response-b\xfe",
+        }
+        attempts = {branch: _attempt(request, branch) for branch in raw_by_branch}
+        transports = {
+            branch: _transport(
+                [
+                    _envelope(
+                        request,
+                        attempts[branch],
+                        fixture.known_historical_usage,
+                        raw_response_bytes=raw_by_branch[branch],
+                    )
+                ],
+                request,
+            )
+            for branch in raw_by_branch
+        }
+        results = {}
+        for branch in order:
+            results[branch] = await acquire_canned_observation(
+                request,
+                attempts[branch],
+                fixture.control_policy,
+                fixture.retention_policy,
+                transports[branch],
+                historical_usage=fixture.known_historical_usage,
+                isolation_probe=_isolation_probe(),
+                capability_snapshot=transports[branch].capabilities,
+            )
+        return results, transports, attempts, raw_by_branch
+
+    async def scenario():
+        forward = await execute_order(("sibling-a", "sibling-b"))
+        reverse = await execute_order(("sibling-b", "sibling-a"))
+        return forward, reverse
+
+    (forward, forward_transports, attempts, raw_by_branch), (
+        reverse,
+        reverse_transports,
+        reverse_attempts,
+        reverse_raw,
+    ) = asyncio.run(scenario())
+
+    assert attempts == reverse_attempts
+    assert raw_by_branch == reverse_raw
+    assert attempts["sibling-a"].transport_attempt_id != (
+        attempts["sibling-b"].transport_attempt_id
+    )
+    assert {
+        result.provider_visible_body for result in (*forward.values(), *reverse.values())
+    } == {render_provider_visible_request(build_frozen_acquisition_fixtures_v0().semantic_request)}
+    for branch in ("sibling-a", "sibling-b"):
+        assert forward[branch].attempt_receipt == reverse[branch].attempt_receipt
+        assert forward[branch].isolation_receipt == reverse[branch].isolation_receipt
+        assert forward[branch].retention_receipt == reverse[branch].retention_receipt
+        assert forward_transports[branch] is not forward_transports[
+            "sibling-b" if branch == "sibling-a" else "sibling-a"
+        ]
+        assert forward_transports[branch].invocation_count == 1
+        assert reverse_transports[branch].invocation_count == 1
+        assert len(forward_transports[branch].invocation_records) == 1
+        assert len(reverse_transports[branch].invocation_records) == 1
+        assert forward[branch].attempt_receipt.computed_raw_response_digest == (
+            hashlib.sha256(raw_by_branch[branch]).hexdigest()
+        )
+        retained = base64.b64decode(
+            forward[branch].retention_receipt.raw_response_base64 or "",
+            validate=True,
+        )
+        assert retained == raw_by_branch[branch]
+        other = "sibling-b" if branch == "sibling-a" else "sibling-a"
+        assert raw_by_branch[other] not in forward[branch].provider_visible_body
+        assert forward[branch].transport_record is not None
+        assert forward[branch].transport_record.transport_attempt_id == (
+            attempts[branch].transport_attempt_id
+        )
 
 
 @pytest.mark.parametrize(
@@ -401,7 +526,11 @@ def test_predispatch_controls_fail_closed_without_canned_entry(
             AcquisitionFailureCode.TOOL_ACTIVATED,
         ),
         (
-            {"raw_response_text": None, "reported_digest": None},
+            {
+                "raw_response_bytes": None,
+                "reported_digest": None,
+                "reported_length": None,
+            },
             AcquisitionGuardId.A10_RAW_RESPONSE_PRESENCE,
             AcquisitionFailureCode.MISSING_RAW_OBSERVATION,
         ),
@@ -409,6 +538,16 @@ def test_predispatch_controls_fail_closed_without_canned_entry(
             {"reported_digest": "f" * 64},
             AcquisitionGuardId.A11_RESPONSE_DIGEST_INTEGRITY,
             AcquisitionFailureCode.INVALID_RESPONSE_DIGEST,
+        ),
+        (
+            {"reported_length": 999},
+            AcquisitionGuardId.A11_RESPONSE_DIGEST_INTEGRITY,
+            AcquisitionFailureCode.INVALID_RESPONSE_DIGEST,
+        ),
+        (
+            {"actual_model_id": None},
+            AcquisitionGuardId.A05_ACTUAL_MODEL_IDENTITY,
+            AcquisitionFailureCode.ACTUAL_MODEL_MISMATCH,
         ),
         (
             {"worker_terminated": False},
@@ -427,6 +566,59 @@ def test_postdispatch_failures_are_counted_and_use_first_guard(
     assert result.attempt_receipt.primary_result.primary_guard_id is guard
     assert result.runtime_counters.canned_transport_invocations == 1
     assert result.observation is None
+
+
+@pytest.mark.parametrize("tamper", ("actual_identity", "raw_digest", "retry", "tool"))
+def test_rehashed_acquired_receipt_rejects_contradictory_evidence(tamper: str) -> None:
+    receipt = _run().attempt_receipt
+    payload = receipt.model_dump(mode="json")
+    payload["receipt_id"] = None
+    payload["receipt_hash"] = None
+    if tamper == "actual_identity":
+        payload["actual_model_id"] = "wrong-model"
+        payload["actual_binding"]["model_id"] = "wrong-model"
+    elif tamper == "raw_digest":
+        payload["reported_raw_response_digest"] = "f" * 64
+        payload["computed_raw_response_digest"] = "f" * 64
+    elif tamper == "retry":
+        payload["explicit_retry_count"] = 1
+    else:
+        payload["tool_calls"] = 1
+    with pytest.raises(ValidationError):
+        type(receipt).model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("envelope_kwargs", "repair"),
+    (
+        (
+            {"actual_model_id": None},
+            "actual_model",
+        ),
+        (
+            {"reported_digest": "f" * 64},
+            "raw_digest",
+        ),
+    ),
+)
+def test_rehashed_failed_receipt_cannot_keep_label_after_repairing_evidence(
+    envelope_kwargs: dict[str, Any],
+    repair: str,
+) -> None:
+    receipt = _run(envelope_kwargs=envelope_kwargs).attempt_receipt
+    payload = receipt.model_dump(mode="json")
+    payload["receipt_id"] = None
+    payload["receipt_hash"] = None
+    if repair == "actual_model":
+        requested = payload["requested_binding"]
+        payload["actual_model_id"] = requested["model_id"]
+        payload["actual_binding"] = requested
+    else:
+        payload["reported_raw_response_digest"] = payload[
+            "computed_raw_response_digest"
+        ]
+    with pytest.raises(ValidationError, match="contradicts"):
+        type(receipt).model_validate(payload)
 
 
 @pytest.mark.parametrize(
@@ -467,7 +659,7 @@ def test_retention_receipt_and_isolation_guards_fail_closed(
     assert result.observation is None
 
 
-def test_real_canned_timeout_counts_entry_and_proves_cooperative_termination() -> None:
+async def _run_timeout_scenario(*, resist_initial_cancellation: bool):
     fixture = build_frozen_acquisition_fixtures_v0()
     policy_payload = fixture.control_policy.model_dump(mode="json")
     policy_payload["control_policy_id"] = None
@@ -496,20 +688,46 @@ def test_real_canned_timeout_counts_entry_and_proves_cooperative_termination() -
     request = AcquisitionSemanticRequest.model_validate(request_payload)
     attempt = _attempt(request, "timeout-branch")
     transport = _transport(
-        [CannedTransportDirective(wait_for_cancellation=True)],
+        [
+            CannedTransportDirective(
+                wait_for_cancellation=True,
+                resist_initial_cancellation=resist_initial_cancellation,
+            )
+        ],
         request,
     )
-    result = asyncio.run(
-        acquire_canned_observation(
-            request,
-            attempt,
-            policy,
-            fixture.retention_policy,
-            transport,
-            historical_usage=fixture.known_historical_usage,
-            isolation_probe=_isolation_probe(),
-            capability_snapshot=transport.capabilities,
-        )
+    result = await acquire_canned_observation(
+        request,
+        attempt,
+        policy,
+        fixture.retention_policy,
+        transport,
+        historical_usage=fixture.known_historical_usage,
+        isolation_probe=_isolation_probe(),
+        capability_snapshot=transport.capabilities,
+    )
+    frozen_receipt = result.attempt_receipt.model_dump_json()
+    frozen_records = transport.invocation_records
+    frozen_count = transport.invocation_count
+    for _turn in range(3):
+        await asyncio.sleep(0)
+    leaked = tuple(
+        task
+        for task in asyncio.all_tasks()
+        if task is not asyncio.current_task()
+        and task.get_name().startswith("socrates-zero-canned-acquisition-")
+        and not task.done()
+    )
+    assert leaked == ()
+    assert result.attempt_receipt.model_dump_json() == frozen_receipt
+    assert transport.invocation_records == frozen_records
+    assert transport.invocation_count == frozen_count
+    return result, transport
+
+
+def test_real_canned_timeout_counts_entry_and_proves_cooperative_termination() -> None:
+    result, transport = asyncio.run(
+        _run_timeout_scenario(resist_initial_cancellation=False)
     )
     assert result.failure_code is AcquisitionFailureCode.TRANSPORT_TIMEOUT
     assert result.attempt_receipt.primary_result.primary_guard_id is (
@@ -519,5 +737,31 @@ def test_real_canned_timeout_counts_entry_and_proves_cooperative_termination() -
     assert result.transport_record is not None
     assert result.transport_record.cancellation_acknowledged is True
     assert result.transport_record.worker_terminated is True
+    assert transport.invocation_count == 1
+    assert len(transport.invocation_records) == 1
+    assert result.transport_record.cancellation_requests == 1
+    assert result.transport_record.forced_cleanup is False
+
+
+def test_cancellation_resistant_worker_is_forced_clean_without_late_effects() -> None:
+    assert CANNED_TIMEOUT_CLEANUP_ROUNDS == 2
+    assert 0 < CANNED_TIMEOUT_CLEANUP_GRACE_SECONDS <= 0.05
+    result, transport = asyncio.run(
+        _run_timeout_scenario(resist_initial_cancellation=True)
+    )
+    assert result.outcome is AcquisitionAttemptOutcome.FAILED_CLOSED
+    assert result.failure_code is AcquisitionFailureCode.TRANSPORT_TIMEOUT
+    assert result.attempt_receipt.primary_result.primary_guard_id is (
+        AcquisitionGuardId.A02_TRANSPORT_COMPLETION
+    )
+    assert result.observation is None
+    assert result.runtime_counters.canned_transport_invocations == 1
+    assert result.attempt_receipt.execution_usage.canned_transport_invocations.value == 1
+    assert result.transport_record is not None
+    assert result.transport_record.outcome == "FORCED_CLEANUP"
+    assert result.transport_record.cancellation_acknowledged is True
+    assert result.transport_record.worker_terminated is True
+    assert result.transport_record.cancellation_requests == 2
+    assert result.transport_record.forced_cleanup is True
     assert transport.invocation_count == 1
     assert len(transport.invocation_records) == 1

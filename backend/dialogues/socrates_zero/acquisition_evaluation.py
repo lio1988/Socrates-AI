@@ -13,6 +13,7 @@ aggregate is an explicit caller action after the pre-result freeze.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 from dataclasses import dataclass
@@ -29,6 +30,11 @@ from pydantic import (
 )
 
 from . import acquisition as _runtime
+from .acquisition_tripwires import (
+    active_acquisition_boundary_tripwire_v0,
+    assert_acquisition_artifact_tripwires_v0,
+    require_clean_acquisition_boundary_tripwire_v0,
+)
 from .acquisition_cases import (
     ACQUISITION_HARNESS_ID_V0,
     AcquisitionCaseClass,
@@ -105,6 +111,9 @@ ACQUISITION_ARTIFACT_SCHEMA_V0 = "socrateszero-acquisition-artifact/v0"
 ACQUISITION_REPLAY_LOCK_SCHEMA_V0 = "socrateszero-acquisition-replay-lock/v0"
 ACQUISITION_HISTORICAL_HASH_SCHEMA_V0 = (
     "socrateszero-acquisition-historical-hash/v0"
+)
+ACQUISITION_CORE_BLOB_LOCK_EVIDENCE_SCHEMA_V0 = (
+    "socrateszero-acquisition-core-blob-lock-evidence/v0"
 )
 ACQUISITION_FIXTURE_SET_SCHEMA_V0 = "socrateszero-acquisition-fixture-set/v0"
 ACQUISITION_ATTEMPT_EVIDENCE_SCHEMA_V0 = (
@@ -198,6 +207,19 @@ _HISTORICAL_ARTIFACT_LOCKS: Tuple[Tuple[str, str, str], ...] = (
         "artifacts/socrateszero_canonical_successor_parity_replay_lock_v2.json",
         "896ef4536a447ad9edbe49b59704b74f8f3a126486d02c4230d49897250fd224",
     ),
+)
+
+_FROZEN_CORE_BLOB_LOCK_ID_V2 = (
+    "cedcorebloblockv2_"
+    "2cfc46afcf7afca20b4eb537d626296e11c8b85e885f5caa78d7322e0eb0a957"
+)
+_FROZEN_CORE_BLOB_LOCK_SOURCE_LABEL_V2 = "phase8-v2"
+_FROZEN_CORE_BLOB_LOCK_SOURCE_PATH_V2 = (
+    "docs/branches/feature-socrates-zero-canonical-successor-parity-v2/"
+    "artifacts/socrateszero_canonical_successor_parity_v2.json"
+)
+_FROZEN_CORE_BLOB_LOCK_SOURCE_SHA256_V2 = (
+    "8b6d2dd8f347d1dffc60e8a67e7a9bc0652bb2acdcd31c81ec9800ba76f78fdc"
 )
 
 
@@ -745,6 +767,68 @@ class AcquisitionHistoricalHashEvidenceV0(_FrozenEvaluationContract):
         return self
 
 
+class AcquisitionCoreBlobLockEvidenceV0(_FrozenEvaluationContract):
+    """Exact content-addressed core-lock evidence from the sealed Phase-8 v2 artifact."""
+
+    schema_version: Literal[
+        ACQUISITION_CORE_BLOB_LOCK_EVIDENCE_SCHEMA_V0
+    ] = ACQUISITION_CORE_BLOB_LOCK_EVIDENCE_SCHEMA_V0
+    source_label: Literal["phase8-v2"] = "phase8-v2"
+    repository_path: Literal[
+        "docs/branches/feature-socrates-zero-canonical-successor-parity-v2/"
+        "artifacts/socrateszero_canonical_successor_parity_v2.json"
+    ] = _FROZEN_CORE_BLOB_LOCK_SOURCE_PATH_V2
+    source_artifact_expected_sha256: Literal[
+        "8b6d2dd8f347d1dffc60e8a67e7a9bc0652bb2acdcd31c81ec9800ba76f78fdc"
+    ] = _FROZEN_CORE_BLOB_LOCK_SOURCE_SHA256_V2
+    source_artifact_actual_sha256: Optional[str] = Field(
+        default=None, pattern=_HEX64
+    )
+    expected_lock_id: Literal[
+        "cedcorebloblockv2_"
+        "2cfc46afcf7afca20b4eb537d626296e11c8b85e885f5caa78d7322e0eb0a957"
+    ] = _FROZEN_CORE_BLOB_LOCK_ID_V2
+    actual_top_level_lock_id: Optional[str] = None
+    actual_embedded_lock_id: Optional[str] = None
+    actual_embedded_fingerprint: Optional[str] = Field(default=None, pattern=_HEX64)
+    recomputed_embedded_lock_id: Optional[str] = None
+    recomputed_embedded_fingerprint: Optional[str] = Field(
+        default=None, pattern=_HEX64
+    )
+    matches: bool
+
+    @field_validator(
+        "actual_top_level_lock_id",
+        "actual_embedded_lock_id",
+        "recomputed_embedded_lock_id",
+    )
+    @classmethod
+    def optional_ids_are_nonblank(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            _nonblank(value)
+        return value
+
+    @model_validator(mode="after")
+    def validate_match(self) -> "AcquisitionCoreBlobLockEvidenceV0":
+        expected_fingerprint = self.expected_lock_id.removeprefix(
+            "cedcorebloblockv2_"
+        )
+        derived = all(
+            (
+                self.source_artifact_actual_sha256
+                == self.source_artifact_expected_sha256,
+                self.actual_top_level_lock_id == self.expected_lock_id,
+                self.actual_embedded_lock_id == self.expected_lock_id,
+                self.actual_embedded_fingerprint == expected_fingerprint,
+                self.recomputed_embedded_lock_id == self.expected_lock_id,
+                self.recomputed_embedded_fingerprint == expected_fingerprint,
+            )
+        )
+        if self.matches is not derived:
+            raise ContractValidationError("core blob-lock match flag differs")
+        return self
+
+
 def _validate_historical_hash_membership_v0(
     historical_hashes: Sequence[AcquisitionHistoricalHashEvidenceV0],
 ) -> Tuple[AcquisitionHistoricalHashEvidenceV0, ...]:
@@ -820,6 +904,7 @@ class AcquisitionEvaluationMetricsV0(_FrozenEvaluationContract):
     new_cost_microusd: int = Field(ge=0, strict=True)
     external_provider_wall_time_ms: int = Field(ge=0, strict=True)
     historical_lock_mismatches: int = Field(ge=0, strict=True)
+    core_blob_lock_mismatches: int = Field(ge=0, strict=True)
     mismatch_or_failure_count: int = Field(ge=0, strict=True)
 
     @model_validator(mode="after")
@@ -917,6 +1002,7 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
     retention_receipts: Tuple[AcquisitionRetentionReceipt, ...]
     provider_visible_prompt_digests: Tuple[str, ...]
     historical_hashes: Tuple[AcquisitionHistoricalHashEvidenceV0, ...]
+    core_blob_lock: AcquisitionCoreBlobLockEvidenceV0
     tripwire_counters: AcquisitionTripwireCounters
     hypothesis_status: Literal["SUPPORTED", "FALSIFIED"]
     production_authority: Literal["none"] = "none"
@@ -989,7 +1075,7 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
                 + FROZEN_ACQUISITION_PRECEDENCE_PROBES_V0
             )
         }
-        if len(results) != 49 or {item.case_id for item in results} != expected_case_ids:
+        if len(results) != 50 or {item.case_id for item in results} != expected_case_ids:
             raise ContractValidationError("artifact case membership changed")
         _validate_case_results_against_frozen_v0(results)
         aggregate_receipt_ids = tuple(
@@ -1032,6 +1118,7 @@ class AcquisitionExperimentArtifactV0(_FrozenEvaluationContract):
             results,
             self.aggregate_receipt,
             histories,
+            self.core_blob_lock,
         )
         if self.metrics != expected_metrics:
             raise ContractValidationError("artifact metrics do not match evidence")
@@ -1243,7 +1330,9 @@ _BASELINE_MUTATION_VALUES: Mapping[str, object] = {
     "envelope.fallback_used": False,
     "envelope.retry_count": 0,
     "envelope.tool_calls": 0,
-    "envelope.raw_response_text": FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0.decode("utf-8"),
+    "envelope.raw_response_base64": base64.b64encode(
+        FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0
+    ).decode("ascii"),
     "envelope.raw_response_sha256": FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0,
     "envelope.new_usage_completeness": "COMPLETE",
     "envelope.usage.tokens.knowledge": "KNOWN",
@@ -1350,7 +1439,7 @@ _MUTATION_IMPACTS: Mapping[str, Mapping[str, MutationState]] = {
     "envelope.fallback_used": {"fallback": MutationState.INTENTIONALLY_CHANGED},
     "envelope.retry_count": {"retry": MutationState.INTENTIONALLY_CHANGED},
     "envelope.tool_calls": {"tools": MutationState.INTENTIONALLY_CHANGED},
-    "envelope.raw_response_text": {
+    "envelope.raw_response_base64": {
         "response_presence": MutationState.INTENTIONALLY_CHANGED,
         "response_digest": MutationState.NOT_APPLICABLE,
     },
@@ -1531,7 +1620,7 @@ def build_frozen_acquisition_fixtures_v0() -> AcquisitionFixtureSetV0:
     )
     retention_policy = AcquisitionRetentionPolicy(
         prompt_retention_mode=PromptRetentionMode.DIGEST_AND_REFERENCE,
-        response_retention_mode=ResponseRetentionMode.RAW_UTF8,
+        response_retention_mode=ResponseRetentionMode.RAW_BYTES_BASE64,
         retention_classification=_RETENTION_CLASSIFICATION,
         retention_reason=_RETENTION_REASON,
         access_policy_id=_RETENTION_ACCESS_POLICY_ID,
@@ -1573,6 +1662,71 @@ def verify_frozen_historical_hashes_v0(
             )
         )
     return tuple(evidence)
+
+
+def verify_frozen_core_blob_lock_v0(
+    repository_root: Optional[Path | str] = None,
+) -> AcquisitionCoreBlobLockEvidenceV0:
+    """Verify the full v2 core-lock payload in its sealed, hash-locked artifact."""
+
+    root = (
+        Path(repository_root).resolve()
+        if repository_root is not None
+        else Path(__file__).resolve().parents[3]
+    )
+    path = root / Path(_FROZEN_CORE_BLOB_LOCK_SOURCE_PATH_V2)
+    actual_artifact_sha256: Optional[str] = None
+    top_level_lock_id: Optional[str] = None
+    embedded_lock_id: Optional[str] = None
+    embedded_fingerprint: Optional[str] = None
+    recomputed_lock_id: Optional[str] = None
+    recomputed_fingerprint: Optional[str] = None
+    if path.is_file():
+        raw = path.read_bytes()
+        actual_artifact_sha256 = hashlib.sha256(raw).hexdigest()
+        try:
+            artifact = json.loads(raw)
+            embedded = artifact["core_lock"]
+            if not isinstance(artifact, Mapping) or not isinstance(embedded, Mapping):
+                raise TypeError("core lock artifact shape changed")
+            top_level_lock_id = artifact.get("core_lock_id")
+            embedded_lock_id = embedded.get("lock_id")
+            embedded_fingerprint = embedded.get("fingerprint")
+            identity_payload = {
+                key: value
+                for key, value in embedded.items()
+                if key not in {"lock_id", "fingerprint"}
+            }
+            recomputed_fingerprint = hashlib.sha256(
+                canonical_json(identity_payload).encode("utf-8")
+            ).hexdigest()
+            recomputed_lock_id = stable_contract_id(
+                "cedcorebloblockv2", identity_payload
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+    expected_fingerprint = _FROZEN_CORE_BLOB_LOCK_ID_V2.removeprefix(
+        "cedcorebloblockv2_"
+    )
+    matches = all(
+        (
+            actual_artifact_sha256 == _FROZEN_CORE_BLOB_LOCK_SOURCE_SHA256_V2,
+            top_level_lock_id == _FROZEN_CORE_BLOB_LOCK_ID_V2,
+            embedded_lock_id == _FROZEN_CORE_BLOB_LOCK_ID_V2,
+            embedded_fingerprint == expected_fingerprint,
+            recomputed_lock_id == _FROZEN_CORE_BLOB_LOCK_ID_V2,
+            recomputed_fingerprint == expected_fingerprint,
+        )
+    )
+    return AcquisitionCoreBlobLockEvidenceV0(
+        source_artifact_actual_sha256=actual_artifact_sha256,
+        actual_top_level_lock_id=top_level_lock_id,
+        actual_embedded_lock_id=embedded_lock_id,
+        actual_embedded_fingerprint=embedded_fingerprint,
+        recomputed_embedded_lock_id=recomputed_lock_id,
+        recomputed_embedded_fingerprint=recomputed_fingerprint,
+        matches=matches,
+    )
 
 
 @dataclass(frozen=True)
@@ -1789,10 +1943,10 @@ def _envelope_and_directive(
     _runtime.CannedTransportDirective,
     bool,
 ]:
-    raw_text: Optional[str] = raw_bytes.decode("utf-8")
+    raw_base64: Optional[str] = base64.b64encode(raw_bytes).decode("ascii")
     binding = fixtures.semantic_request.requested_binding
     provider_id = binding.provider_id
-    model_id = binding.model_id
+    model_id: Optional[str] = binding.model_id
     configuration_digest = binding.configuration_digest
     transport_status = AcquisitionTransportStatus.DELIVERED
     reported_invocations = 1
@@ -1801,6 +1955,7 @@ def _envelope_and_directive(
     explicit_retry_count = 0
     tool_calls = 0
     reported_digest: Optional[str] = hashlib.sha256(raw_bytes).hexdigest()
+    reported_length: Optional[int] = len(raw_bytes)
     usage = _known_execution_usage(1)
     resource_integrity = True
     retention_integrity = True
@@ -1816,8 +1971,9 @@ def _envelope_and_directive(
             )
         if _has_mutation(probe, "envelope.transport_status"):
             transport_status = AcquisitionTransportStatus.TIMEOUT
-            raw_text = None
+            raw_base64 = None
             reported_digest = None
+            reported_length = None
         if _has_mutation(probe, "envelope.worker_terminated"):
             worker_terminated = bool(
                 _mutation_after(probe, "envelope.worker_terminated")
@@ -1825,7 +1981,8 @@ def _envelope_and_directive(
         if _has_mutation(probe, "envelope.actual_provider_id"):
             provider_id = str(_mutation_after(probe, "envelope.actual_provider_id"))
         if _has_mutation(probe, "envelope.actual_model_id"):
-            model_id = str(_mutation_after(probe, "envelope.actual_model_id"))
+            mutated_model = _mutation_after(probe, "envelope.actual_model_id")
+            model_id = None if mutated_model is None else str(mutated_model)
         if _has_mutation(probe, "envelope.actual_configuration_digest"):
             configuration_digest = str(
                 _mutation_after(probe, "envelope.actual_configuration_digest")
@@ -1838,9 +1995,10 @@ def _envelope_and_directive(
             )
         if _has_mutation(probe, "envelope.tool_calls"):
             tool_calls = int(_mutation_after(probe, "envelope.tool_calls"))
-        if _has_mutation(probe, "envelope.raw_response_text"):
-            raw_text = _mutation_after(probe, "envelope.raw_response_text")
+        if _has_mutation(probe, "envelope.raw_response_base64"):
+            raw_base64 = _mutation_after(probe, "envelope.raw_response_base64")
             reported_digest = None
+            reported_length = None
         if _has_mutation(probe, "envelope.raw_response_sha256"):
             reported_digest = str(
                 _mutation_after(probe, "envelope.raw_response_sha256")
@@ -1857,18 +2015,16 @@ def _envelope_and_directive(
         if _has_mutation(probe, "attempt_recorder.final_receipt_integrity"):
             final_receipt_integrity = False
 
-    actual_binding = AcquisitionProviderModelBinding(
-        provider_id=provider_id,
-        model_id=model_id,
-        configuration_digest=configuration_digest,
-    )
     envelope = CannedTransportEnvelope(
         transport_attempt_id=attempt.transport_attempt_id or "",
         transport_status=transport_status,
         canned_transport_invocations=reported_invocations,
-        actual_binding=actual_binding,
-        raw_response_text=raw_text,
+        actual_provider_id=provider_id,
+        actual_model_id=model_id,
+        actual_configuration_digest=configuration_digest,
+        raw_response_base64=raw_base64,
         reported_raw_response_digest=reported_digest,
+        reported_raw_response_length=reported_length,
         fallback_used=fallback_used,
         explicit_retry_count=explicit_retry_count,
         adapter_retry_count=0,
@@ -2196,14 +2352,14 @@ def _observed_mutation_value_v0(
     if path == "envelope.worker_terminated":
         return envelope.worker_terminated, "canned_transport_envelope.worker_terminated", envelope.worker_terminated
     if path == "envelope.actual_provider_id":
-        value = envelope.actual_binding.provider_id
-        return value, "canned_transport_envelope.actual_binding.provider_id", value
+        value = envelope.actual_provider_id
+        return value, "canned_transport_envelope.actual_provider_id", value
     if path == "envelope.actual_model_id":
-        value = envelope.actual_binding.model_id
-        return value, "canned_transport_envelope.actual_binding.model_id", value
+        value = envelope.actual_model_id
+        return value, "canned_transport_envelope.actual_model_id", value
     if path == "envelope.actual_configuration_digest":
-        value = envelope.actual_binding.configuration_digest
-        return value, "canned_transport_envelope.actual_binding.configuration_digest", value
+        value = envelope.actual_configuration_digest
+        return value, "canned_transport_envelope.actual_configuration_digest", value
     if path == "envelope.fallback_used":
         return envelope.fallback_used, "canned_transport_envelope.fallback_used", envelope.fallback_used
     if path == "envelope.retry_count":
@@ -2211,8 +2367,8 @@ def _observed_mutation_value_v0(
         return value, "canned_transport_envelope.explicit_retry_count", value
     if path == "envelope.tool_calls":
         return envelope.tool_calls, "canned_transport_envelope.tool_calls", envelope.tool_calls
-    if path == "envelope.raw_response_text":
-        return envelope.raw_response_text, "canned_transport_envelope.raw_response_text", envelope.raw_response_text
+    if path == "envelope.raw_response_base64":
+        return envelope.raw_response_base64, "canned_transport_envelope.raw_response_base64", envelope.raw_response_base64
     if path == "envelope.raw_response_sha256":
         value = envelope.reported_raw_response_digest
         return value, "canned_transport_envelope.reported_raw_response_digest", value
@@ -2302,14 +2458,14 @@ def _observed_construction_state_value_v0(
         value = envelope["worker_terminated"]
         return value, "canned_transport_envelope.worker_terminated", value
     if path == "envelope.actual_provider_id":
-        value = envelope["actual_binding"]["provider_id"]
-        return value, "canned_transport_envelope.actual_binding.provider_id", value
+        value = envelope["actual_provider_id"]
+        return value, "canned_transport_envelope.actual_provider_id", value
     if path == "envelope.actual_model_id":
-        value = envelope["actual_binding"]["model_id"]
-        return value, "canned_transport_envelope.actual_binding.model_id", value
+        value = envelope["actual_model_id"]
+        return value, "canned_transport_envelope.actual_model_id", value
     if path == "envelope.actual_configuration_digest":
-        value = envelope["actual_binding"]["configuration_digest"]
-        return value, "canned_transport_envelope.actual_binding.configuration_digest", value
+        value = envelope["actual_configuration_digest"]
+        return value, "canned_transport_envelope.actual_configuration_digest", value
     if path == "envelope.fallback_used":
         value = envelope["fallback_used"]
         return value, "canned_transport_envelope.fallback_used", value
@@ -2319,9 +2475,9 @@ def _observed_construction_state_value_v0(
     if path == "envelope.tool_calls":
         value = envelope["tool_calls"]
         return value, "canned_transport_envelope.tool_calls", value
-    if path == "envelope.raw_response_text":
-        value = envelope["raw_response_text"]
-        return value, "canned_transport_envelope.raw_response_text", value
+    if path == "envelope.raw_response_base64":
+        value = envelope["raw_response_base64"]
+        return value, "canned_transport_envelope.raw_response_base64", value
     if path == "envelope.raw_response_sha256":
         value = envelope["reported_raw_response_digest"]
         return value, "canned_transport_envelope.reported_raw_response_digest", value
@@ -2563,8 +2719,11 @@ def _positive_assertions_valid(
                 receipts[0].computed_raw_response_digest
                 == FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0,
                 receipts[0].execution_usage.complete,
-                results[0].retention_receipt.raw_response_text
-                == FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0.decode("utf-8"),
+                base64.b64decode(
+                    results[0].retention_receipt.raw_response_base64 or "",
+                    validate=True,
+                )
+                == FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0,
             )
         )
     if case.case_id == "acqv0-s02-content-opaque-invalid-json":
@@ -2894,8 +3053,10 @@ def _positive_receipt_assertions_valid_v0(
                 len(receipts) == 1,
                 receipts[0].computed_raw_response_digest
                 == FROZEN_COMPLETE_RAW_RESPONSE_SHA256_V0,
-                retentions[0].raw_response_text
-                == FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0.decode("utf-8"),
+                base64.b64decode(
+                    retentions[0].raw_response_base64 or "", validate=True
+                )
+                == FROZEN_COMPLETE_RAW_RESPONSE_BYTES_V0,
             )
         )
     if case_id == "acqv0-s02-content-opaque-invalid-json":
@@ -2906,8 +3067,10 @@ def _positive_receipt_assertions_valid_v0(
                 == hashlib.sha256(
                     FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0
                 ).hexdigest(),
-                retentions[0].raw_response_text
-                == FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0.decode("utf-8"),
+                base64.b64decode(
+                    retentions[0].raw_response_base64 or "", validate=True
+                )
+                == FROZEN_OPAQUE_INVALID_RAW_RESPONSE_BYTES_V0,
             )
         )
     if case_id in {
@@ -3118,6 +3281,26 @@ _IDENTITY_FAILURES = frozenset(
 )
 
 
+def _receipt_has_identity_mismatch_v0(
+    receipt: AcquisitionAttemptReceipt,
+) -> bool:
+    return any(
+        (
+            receipt.actual_provider_id is not None
+            and receipt.actual_provider_id != receipt.requested_binding.provider_id,
+            receipt.actual_model_id is not None
+            and receipt.actual_model_id != receipt.requested_binding.model_id,
+            receipt.actual_configuration_digest is not None
+            and receipt.actual_configuration_digest
+            != receipt.requested_binding.configuration_digest,
+            receipt.reported_raw_response_digest is not None
+            and receipt.computed_raw_response_digest is not None
+            and receipt.reported_raw_response_digest
+            != receipt.computed_raw_response_digest,
+        )
+    )
+
+
 def _aggregate_metrics_v0(
     receipts: Tuple[AcquisitionAttemptReceipt, ...],
     counters: AcquisitionTripwireCounters,
@@ -3167,6 +3350,7 @@ def _aggregate_metrics_v0(
         ),
         identity_mismatches=sum(
             receipt.primary_result.failure_code in _IDENTITY_FAILURES
+            or _receipt_has_identity_mismatch_v0(receipt)
             for receipt in receipts
         ),
         prompt_byte_mismatches=sum(
@@ -3243,6 +3427,7 @@ def _calculate_evaluation_metrics_v0(
     case_results: Sequence[AcquisitionCaseResultV0],
     aggregate: AcquisitionAggregateReceipt,
     historical_hashes: Sequence[AcquisitionHistoricalHashEvidenceV0],
+    core_blob_lock: AcquisitionCoreBlobLockEvidenceV0,
 ) -> AcquisitionEvaluationMetricsV0:
     results = tuple(case_results)
     historical_hashes = _validate_historical_hash_membership_v0(historical_hashes)
@@ -3369,7 +3554,7 @@ def _calculate_evaluation_metrics_v0(
         "accepted_sibling_mutations": accepted_sibling,
         "accepted_production_mutations": accepted_production,
         "injected_missing_raw_conditions": path_counts.get(
-            "envelope.raw_response_text", 0
+            "envelope.raw_response_base64", 0
         ),
         "accepted_missing_raw_observations": accepted_missing,
         "injected_false_zero_usage_conditions": path_counts.get(
@@ -3399,9 +3584,11 @@ def _calculate_evaluation_metrics_v0(
             receipts, "external_provider_wall_time_ms"
         ),
         "historical_lock_mismatches": historical_mismatches,
+        "core_blob_lock_mismatches": int(not core_blob_lock.matches),
     }
     mismatch_or_failure_count = sum(not item.case_passed for item in results)
     mismatch_or_failure_count += historical_mismatches
+    mismatch_or_failure_count += int(not core_blob_lock.matches)
     mismatch_or_failure_count += sum(
         preliminary[name]
         for name in (
@@ -3435,13 +3622,13 @@ def _calculate_evaluation_metrics_v0(
     )
     mismatch_or_failure_count += sum(
         (
-            preliminary["cases_total"] != 49,
+            preliminary["cases_total"] != 50,
             preliminary["positive_cases_total"] != 6,
             preliminary["positive_attempt_receipts"] != 8,
-            preliminary["orthogonal_probes_total"] != 36,
+            preliminary["orthogonal_probes_total"] != 37,
             preliminary["precedence_probes_total"] != 7,
-            preliminary["attempt_receipts_total"] != 51,
-            preliminary["observed_canned_transport_invocations"] != 31,
+            preliminary["attempt_receipts_total"] != 52,
+            preliminary["observed_canned_transport_invocations"] != 32,
         )
     )
     return AcquisitionEvaluationMetricsV0(
@@ -3522,6 +3709,8 @@ def supports_acquisition_metrics_v0(
             == thresholds.required_external_provider_wall_time_ms,
             metrics.historical_lock_mismatches
             == thresholds.required_historical_lock_mismatches,
+            metrics.core_blob_lock_mismatches
+            == thresholds.required_core_blob_lock_mismatches,
         )
     )
 
@@ -3607,10 +3796,12 @@ async def _build_acquisition_experiment_artifact_in_order_v0(
 
     aggregate = _build_aggregate_receipt_v0(executions)
     historical_hashes = verify_frozen_historical_hashes_v0(repository_root)
+    core_blob_lock = verify_frozen_core_blob_lock_v0(repository_root)
     metrics = _calculate_evaluation_metrics_v0(
         case_results,
         aggregate,
         historical_hashes,
+        core_blob_lock,
     )
     supported = supports_acquisition_metrics_v0(metrics)
     receipts = aggregate.attempt_receipts
@@ -3653,6 +3844,7 @@ async def _build_acquisition_experiment_artifact_in_order_v0(
             sorted({item.provider_visible_request_digest for item in receipts})
         ),
         historical_hashes=historical_hashes,
+        core_blob_lock=core_blob_lock,
         tripwire_counters=aggregate.observed_counters,
         hypothesis_status="SUPPORTED" if supported else "FALSIFIED",
     )
@@ -3668,12 +3860,15 @@ async def build_acquisition_experiment_artifact_v0_async(
     function.  Merely importing this module never calls it.
     """
 
-    return await _build_acquisition_experiment_artifact_in_order_v0(
+    require_clean_acquisition_boundary_tripwire_v0()
+    artifact = await _build_acquisition_experiment_artifact_in_order_v0(
         positive_order=FROZEN_POSITIVE_CASE_ORDER_V0,
         orthogonal_order=FROZEN_ORTHOGONAL_PROBE_ORDER_V0,
         precedence_order=FROZEN_PRECEDENCE_PROBE_ORDER_V0,
         repository_root=repository_root,
     )
+    assert_acquisition_artifact_tripwires_v0(artifact.tripwire_counters)
+    return artifact
 
 
 def _assert_no_running_loop() -> None:
@@ -3703,6 +3898,8 @@ async def build_acquisition_replay_artifact_v0_async(
     *,
     repository_root: Optional[Path | str] = None,
 ) -> AcquisitionReplayExecutionV0:
+    require_clean_acquisition_boundary_tripwire_v0()
+    assert_acquisition_artifact_tripwires_v0(authoritative.tripwire_counters)
     rendered = render_acquisition_experiment_artifact_v0(authoritative)
     validated = replay_acquisition_experiment_artifact_v0(rendered)
     if validated.hypothesis_status != "SUPPORTED":
@@ -3723,7 +3920,7 @@ async def build_acquisition_replay_artifact_v0_async(
         + FROZEN_REPLAY_PRECEDENCE_PROBE_ORDER_V0
     )
     results = {item.case_id: item for item in replay_artifact.case_results}
-    return AcquisitionReplayExecutionV0(
+    execution = AcquisitionReplayExecutionV0(
         source_authoritative_artifact_id=authoritative.artifact_id or "",
         source_authoritative_sha256=hashlib.sha256(
             rendered.encode("utf-8")
@@ -3745,6 +3942,10 @@ async def build_acquisition_replay_artifact_v0_async(
             )
         ),
     )
+    assert_acquisition_artifact_tripwires_v0(
+        execution.artifact.tripwire_counters
+    )
+    return execution
 
 
 def build_acquisition_replay_artifact_v0(
@@ -3819,12 +4020,15 @@ def create_acquisition_replay_lock_v0(
     authoritative: AcquisitionExperimentArtifactV0,
     replay: AcquisitionReplayExecutionV0,
 ) -> AcquisitionReplayLockV0:
+    require_clean_acquisition_boundary_tripwire_v0()
     if not isinstance(authoritative, AcquisitionExperimentArtifactV0) or not isinstance(
         replay, AcquisitionReplayExecutionV0
     ):
         raise ContractValidationError(
             "replay lock requires an artifact and reverse-execution evidence"
         )
+    assert_acquisition_artifact_tripwires_v0(authoritative.tripwire_counters)
+    assert_acquisition_artifact_tripwires_v0(replay.artifact.tripwire_counters)
     authoritative_rendered = render_acquisition_experiment_artifact_v0(authoritative)
     replay_serialized = render_acquisition_replay_execution_v0(replay)
     replay_validated_execution = replay_acquisition_replay_execution_v0(
@@ -3921,9 +4125,13 @@ def publish_acquisition_experiment_artifact_once_v0(
     destination: Path | str,
     artifact: AcquisitionExperimentArtifactV0,
 ) -> str:
+    tripwire = active_acquisition_boundary_tripwire_v0()
+    tripwire.assert_artifact_counters(artifact.tripwire_counters)
     rendered = render_acquisition_experiment_artifact_v0(artifact)
     replay_acquisition_experiment_artifact_v0(rendered)
-    return write_once_canonical_bytes_v0(destination, rendered.encode("utf-8"))
+    digest = write_once_canonical_bytes_v0(destination, rendered.encode("utf-8"))
+    tripwire.assert_artifact_counters(artifact.tripwire_counters)
+    return digest
 
 
 def publish_acquisition_replay_lock_once_v0(
@@ -3931,10 +4139,15 @@ def publish_acquisition_replay_lock_once_v0(
     authoritative: AcquisitionExperimentArtifactV0,
     replay: AcquisitionReplayExecutionV0,
 ) -> str:
+    tripwire = active_acquisition_boundary_tripwire_v0()
+    tripwire.assert_artifact_counters(authoritative.tripwire_counters)
+    tripwire.assert_artifact_counters(replay.artifact.tripwire_counters)
     replay_lock = create_acquisition_replay_lock_v0(authoritative, replay)
     rendered = render_acquisition_replay_lock_v0(replay_lock)
     replay_acquisition_replay_lock_v0(rendered)
-    return write_once_canonical_bytes_v0(destination, rendered.encode("utf-8"))
+    digest = write_once_canonical_bytes_v0(destination, rendered.encode("utf-8"))
+    tripwire.assert_clean()
+    return digest
 
 
 __all__ = [
@@ -3942,6 +4155,7 @@ __all__ = [
     "ACQUISITION_ATTEMPT_EVIDENCE_SCHEMA_V0",
     "ACQUISITION_CASE_RESULT_SCHEMA_V0",
     "ACQUISITION_CONSTRUCTION_STATE_SCHEMA_V0",
+    "ACQUISITION_CORE_BLOB_LOCK_EVIDENCE_SCHEMA_V0",
     "ACQUISITION_EXPERIMENT_ID_V0",
     "ACQUISITION_FIXTURE_SET_SCHEMA_V0",
     "ACQUISITION_HISTORICAL_HASH_SCHEMA_V0",
@@ -3953,6 +4167,7 @@ __all__ = [
     "AcquisitionCaseAttemptEvidenceV0",
     "AcquisitionCaseResultV0",
     "AcquisitionConstructionStateV0",
+    "AcquisitionCoreBlobLockEvidenceV0",
     "AcquisitionEvaluationMetricsV0",
     "AcquisitionExperimentArtifactV0",
     "AcquisitionFixtureSetV0",
@@ -3987,5 +4202,6 @@ __all__ = [
     "replay_acquisition_replay_lock_v0",
     "supports_acquisition_metrics_v0",
     "verify_frozen_historical_hashes_v0",
+    "verify_frozen_core_blob_lock_v0",
     "write_once_canonical_bytes_v0",
 ]

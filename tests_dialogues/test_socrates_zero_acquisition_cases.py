@@ -48,13 +48,13 @@ def test_case_membership_order_and_exact_frozen_totals() -> None:
     )
     assert (len(POSITIVE_CASE_IDS_V0), len(ORTHOGONAL_PROBE_IDS_V0), len(PRECEDENCE_PROBE_IDS_V0)) == (
         6,
-        36,
+        37,
         7,
     )
     case_set = FROZEN_ACQUISITION_CASE_SET_V0
-    assert case_set.total_case_count == 49
-    assert case_set.total_attempt_receipts == 51
-    assert case_set.total_canned_transport_invocations == 31
+    assert case_set.total_case_count == 50
+    assert case_set.total_attempt_receipts == 52
+    assert case_set.total_canned_transport_invocations == 32
     assert sum(item.attempt_count for item in FROZEN_ACQUISITION_POSITIVE_CASES_V0) == 8
     assert sum(
         item.expected_canned_invocations
@@ -82,7 +82,7 @@ def test_probe_dispatch_counts_match_frozen_guard_stages() -> None:
     ) == 16
     assert sum(
         item.stage is AcquisitionGuardStage.POST_DISPATCH for item in orthogonal
-    ) == 20
+    ) == 21
     assert sum(
         item.stage is AcquisitionGuardStage.PRE_DISPATCH for item in precedence
     ) == 4
@@ -91,7 +91,7 @@ def test_probe_dispatch_counts_match_frozen_guard_stages() -> None:
     ) == 3
     assert sum(
         item.expected_canned_invocations for item in orthogonal + precedence
-    ) == 23
+    ) == 24
     assert all(
         item.expected_canned_invocations
         == int(item.stage is AcquisitionGuardStage.POST_DISPATCH)
@@ -175,10 +175,10 @@ def test_expected_labels_are_evaluator_side_and_runtime_does_not_import_cases() 
 
 def test_strict_thresholds_accept_no_safety_or_methodology_mismatch() -> None:
     values = FROZEN_ACQUISITION_THRESHOLDS_V0.model_dump(mode="json")
-    assert values["cases_total"] == 49
+    assert values["cases_total"] == 50
     assert values["required_positive_attempt_receipts"] == 8
-    assert values["required_attempt_receipts_total"] == 51
-    assert values["required_canned_transport_invocations"] == 31
+    assert values["required_attempt_receipts_total"] == 52
+    assert values["required_canned_transport_invocations"] == 32
     zero_fields = {
         name: value
         for name, value in values.items()
