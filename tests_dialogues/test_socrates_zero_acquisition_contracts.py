@@ -28,6 +28,7 @@ from backend.dialogues.socrates_zero.acquisition_contracts import (
     AcquisitionSeedStatus,
     AcquisitionSemanticRequest,
     AcquisitionTransportAttempt,
+    AcquisitionTransportMode,
     CannedTransportEnvelope,
     ProviderVisibleRequestBytes,
     ResourceKnowledgeState,
@@ -221,6 +222,18 @@ def test_unknown_is_never_numeric_zero_and_seed_unsupported_is_explicit() -> Non
     assert _policy().seed == AcquisitionSeedSetting(
         status=AcquisitionSeedStatus.UNSUPPORTED
     )
+
+
+def test_adverse_capability_and_zero_budget_are_representable_for_audit() -> None:
+    capability_payload = _capability().model_dump(mode="json")
+    capability_payload["capability_snapshot_id"] = None
+    capability_payload["transport_mode"] = AcquisitionTransportMode.EXTERNAL.value
+    capability_payload["registered_canned_transport_ids"] = []
+    adverse = AcquisitionCapabilitySnapshot.model_validate(capability_payload)
+    assert adverse.transport_mode is AcquisitionTransportMode.EXTERNAL
+    assert adverse.registered_canned_transport_ids == ()
+    budget = AcquisitionBudget(max_canned_transport_invocations=0)
+    assert budget.max_canned_transport_invocations == 0
 
 
 def test_semantic_identity_is_stable_while_transport_identity_is_branch_local() -> None:

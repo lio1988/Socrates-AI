@@ -268,7 +268,7 @@ def _single_profile_guarantees(
         )
     if profile is CannedImplementationProfile.PROMPT_ENTROPY_INJECTION:
         return _ImplementationGuarantees(prompt_entropy_injection=True)
-    values: dict[str, bool] = {}
+    values: dict[str, object] = {}
     field_by_profile = {
         CannedImplementationProfile.CANNED_ONLY_UNPROVEN: "canned_only",
         CannedImplementationProfile.NETWORK_PROHIBITION_UNPROVEN: "network_prohibited",
@@ -286,6 +286,51 @@ def _single_profile_guarantees(
     field = field_by_profile.get(profile)
     if field is not None:
         values[field] = False
+    adverse_control_by_profile = {
+        CannedImplementationProfile.CANNED_ONLY_UNPROVEN: (
+            AcquisitionControlName.CANNED_ONLY_TRANSPORT,
+            AcquisitionControlState.PROVEN_UNSUPPORTED,
+        ),
+        CannedImplementationProfile.NETWORK_PROHIBITION_UNPROVEN: (
+            AcquisitionControlName.EXTERNAL_NETWORK,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+        ),
+        CannedImplementationProfile.CREDENTIAL_PROHIBITION_UNPROVEN: (
+            AcquisitionControlName.CREDENTIAL_ACCESS,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+        ),
+        CannedImplementationProfile.IDENTITY_VERIFICATION_UNPROVEN: (
+            AcquisitionControlName.ACTUAL_MODEL_IDENTITY_VALIDATION,
+            AcquisitionControlState.PROVEN_UNSUPPORTED,
+        ),
+        CannedImplementationProfile.FALLBACK_DISABLE_UNPROVEN: (
+            AcquisitionControlName.FALLBACK,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+        ),
+        CannedImplementationProfile.RETRY_DISABLE_UNPROVEN: (
+            AcquisitionControlName.EXPLICIT_RETRY,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+        ),
+        CannedImplementationProfile.SDK_RETRY_DISABLE_UNPROVEN: (
+            AcquisitionControlName.SDK_INTERNAL_RETRY,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+        ),
+        CannedImplementationProfile.TOOLS_DISABLE_UNPROVEN: (
+            AcquisitionControlName.TOOLS,
+            AcquisitionControlState.PROVEN_SUPPORTED,
+        ),
+        CannedImplementationProfile.TERMINATION_UNPROVEN: (
+            AcquisitionControlName.TIMEOUT_WORKER_TERMINATION,
+            AcquisitionControlState.PROVEN_UNSUPPORTED,
+        ),
+        CannedImplementationProfile.ACCOUNTING_UNPROVEN: (
+            AcquisitionControlName.COST_REPORTING,
+            AcquisitionControlState.PROVEN_UNSUPPORTED,
+        ),
+    }
+    adverse_control = adverse_control_by_profile.get(profile)
+    if adverse_control is not None:
+        values["control_state_overrides"] = (adverse_control,)
     return _ImplementationGuarantees(**values)
 
 
@@ -356,9 +401,14 @@ def build_canned_capability_snapshot(
 ) -> AcquisitionCapabilitySnapshot:
     """Build the only capability snapshot emitted by a named canned implementation."""
 
+    guarantees = _profile_guarantees(implementation_profile)
+    state_overrides = dict(guarantees.control_state_overrides)
     controls = []
     for name in AcquisitionControlName:
-        state = _control_state_for_snapshot(name, seed_status)
+        state = state_overrides.get(
+            name,
+            _control_state_for_snapshot(name, seed_status),
+        )
         evidence_payload = {
             "runtime_version": CANNED_ACQUISITION_RUNTIME_VERSION,
             "transport_id": CANNED_TRANSPORT_ID,
@@ -385,8 +435,14 @@ def build_canned_capability_snapshot(
         adapter_version=adapter_version,
         adapter_revision_digest=adapter_revision_digest,
         requested_model_id=requested_model_id,
-        transport_mode=AcquisitionTransportMode.CANNED_ONLY,
-        registered_canned_transport_ids=(CANNED_TRANSPORT_ID,),
+        transport_mode=(
+            AcquisitionTransportMode.CANNED_ONLY
+            if guarantees.canned_only
+            else AcquisitionTransportMode.EXTERNAL
+        ),
+        registered_canned_transport_ids=(
+            (CANNED_TRANSPORT_ID,) if guarantees.registered else ()
+        ),
         controls=tuple(controls),
     )
 
@@ -964,7 +1020,10 @@ def _pre_guard_failure(guard: AcquisitionGuardId, ctx: _RunContext) -> Optional[
             )
             if effective_state is None and evidence is not None:
                 effective_state = evidence.state
-            if effective_state not in requirement.allowed_states:
+            if (
+                effective_state is None
+                or effective_state is AcquisitionControlState.UNKNOWN
+            ):
                 return _fail(
                     guard,
                     AcquisitionFailureCode.REQUIRED_CONTROL_UNKNOWN,
@@ -975,6 +1034,8 @@ def _pre_guard_failure(guard: AcquisitionGuardId, ctx: _RunContext) -> Optional[
         if (
             policy.transport_mode is not AcquisitionTransportMode.CANNED_ONLY
             or snapshot.transport_mode is not AcquisitionTransportMode.CANNED_ONLY
+            or controls[AcquisitionControlName.CANNED_ONLY_TRANSPORT].state
+            is not AcquisitionControlState.PROVEN_SUPPORTED
             or not guarantees.canned_only
         ):
             return _fail(
@@ -1164,6 +1225,10 @@ def _pre_guard_failure(guard: AcquisitionGuardId, ctx: _RunContext) -> Optional[
         )
         if (
             ctx.provider_visible_error is not None
+            or controls[AcquisitionControlName.PROMPT_BYTE_DETERMINISM].state
+            is not AcquisitionControlState.PROVEN_SUPPORTED
+            or controls[AcquisitionControlName.TRANSPORT_METADATA_ISOLATION].state
+            is not AcquisitionControlState.PROVEN_SUPPORTED
             or visible.rendering_version != PROVIDER_VISIBLE_RENDERER_VERSION
             or visible.sha256 != _sha256(ctx.provider_visible_body)
             or visible.byte_length != len(ctx.provider_visible_body)

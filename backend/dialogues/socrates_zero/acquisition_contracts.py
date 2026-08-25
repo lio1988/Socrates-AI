@@ -168,6 +168,7 @@ class AcquisitionControlName(str, Enum):
 
 class AcquisitionTransportMode(str, Enum):
     CANNED_ONLY = "CANNED_ONLY"
+    EXTERNAL = "EXTERNAL"
 
 
 class AcquisitionSeedStatus(str, Enum):
@@ -409,9 +410,7 @@ class AcquisitionCapabilitySnapshot(_FrozenAcquisitionContract):
     adapter_version: str
     adapter_revision_digest: str = Field(pattern=_HEX64_PATTERN)
     requested_model_id: str
-    transport_mode: Literal[
-        AcquisitionTransportMode.CANNED_ONLY
-    ] = AcquisitionTransportMode.CANNED_ONLY
+    transport_mode: AcquisitionTransportMode = AcquisitionTransportMode.CANNED_ONLY
     registered_canned_transport_ids: Tuple[str, ...]
     controls: Tuple[AcquisitionControlEvidence, ...]
 
@@ -425,8 +424,6 @@ class AcquisitionCapabilitySnapshot(_FrozenAcquisitionContract):
             self.registered_canned_transport_ids,
             "registered_canned_transport_ids",
         )
-        if not transports:
-            raise ContractValidationError("at least one canned transport is required")
         controls = tuple(sorted(self.controls, key=lambda item: item.name.value))
         names = tuple(item.name for item in controls)
         if len(set(names)) != len(names):
@@ -463,7 +460,7 @@ class AcquisitionCapabilitySnapshot(_FrozenAcquisitionContract):
 
 
 class AcquisitionBudget(_FrozenAcquisitionContract):
-    max_canned_transport_invocations: int = Field(ge=1, strict=True)
+    max_canned_transport_invocations: int = Field(ge=0, strict=True)
     max_external_network_attempts: Literal[0] = 0
     max_credential_access_attempts: Literal[0] = 0
     max_live_provider_calls: Literal[0] = 0
