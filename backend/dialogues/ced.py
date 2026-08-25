@@ -265,6 +265,7 @@ class CanonicalRegistryResponseApplication:
     provider_ok: bool
     accepted_move_id: Optional[str]
     canonical_rejection_reason: Optional[str]
+    canonical_rejection_kind: Optional[str]
     dispatch_recorded: bool
 
 # Deliberation phases driven through the provider registry in Phase 8C (the
@@ -1259,6 +1260,14 @@ class CEDOrchestrator:
         self._apply_phase_roles(state, phase, assignment)
         return task_specs
 
+    def _effective_registry_quorum(self, scheduled_task_count: int) -> int:
+        """Return CED's canonical quorum for a bounded scheduled task set."""
+        return (
+            min(self.registry.quorum_for_assembly, scheduled_task_count)
+            if scheduled_task_count
+            else 0
+        )
+
     def _build_registry_phase_task(
         self,
         state: SessionState,
@@ -1436,11 +1445,22 @@ class CEDOrchestrator:
                     provider_id=resp.provider_id,
                     provider_status=resp.status,
                 )
+                audit = self._socratic_audit_rows[state.session_id][-1]
+                rejection_kind = (
+                    "answer_injection_rejected"
+                    if (
+                        audit.get("content_contract_accepted") is True
+                        and audit.get("injection_check")
+                        == InjectionCheck.ANSWER_INJECTION_DETECTED.value
+                    )
+                    else "socratic_content_rejected"
+                )
                 return CanonicalRegistryResponseApplication(
                     provider_status=resp.status,
                     provider_ok=True,
                     accepted_move_id=None,
                     canonical_rejection_reason=verdict,
+                    canonical_rejection_kind=rejection_kind,
                     dispatch_recorded=False,
                 )
 
@@ -1498,6 +1518,7 @@ class CEDOrchestrator:
                 provider_ok=True,
                 accepted_move_id=move.move_id,
                 canonical_rejection_reason=None,
+                canonical_rejection_kind=None,
                 dispatch_recorded=True,
             )
 
@@ -1514,6 +1535,7 @@ class CEDOrchestrator:
             provider_ok=False,
             accepted_move_id=None,
             canonical_rejection_reason=None,
+            canonical_rejection_kind=None,
             dispatch_recorded=True,
         )
 
@@ -1597,7 +1619,7 @@ class CEDOrchestrator:
                 *(_one(i, aid, role) for i, aid, role in wave_b)))
             responses = responses + _absorb(later)
             pairs = pairs + later
-        effective_quorum = min(self.registry.quorum_for_assembly, len(items)) if items else 0
+        effective_quorum = self._effective_registry_quorum(len(items))
 
         # Phase 20 — phase rescue (opt-in): a transient failure in one phase must
         # not destroy the whole session (and everything already paid for). Retry

@@ -40,7 +40,10 @@ CANONICAL_BRANCH_CAPSULE_SCHEMA_VERSION = "ced-canonical-branch-capsule/v0"
 PENDING_CANONICAL_TRANSITION_SCHEMA_VERSION = (
     "ced-pending-canonical-transition/v0"
 )
-RECORDED_CANONICAL_OBSERVATION_SCHEMA_VERSION = "ced-recorded-observation/v0"
+CANONICAL_TASK_SEMANTIC_IDENTITY_SCHEMA_VERSION = (
+    "ced-canonical-task-semantic-identity/v0"
+)
+RECORDED_CANONICAL_OBSERVATION_SCHEMA_VERSION = "ced-recorded-observation/v1"
 CANONICAL_TRANSITION_RESULT_SCHEMA_VERSION = "ced-canonical-transition-result/v0"
 CANONICAL_TRANSITION_RECEIPT_SCHEMA_VERSION = (
     "ced-canonical-transition-receipt/v0"
@@ -87,6 +90,11 @@ class _FrozenContract(BaseModel):
 class CanonicalTaskIdentity(_FrozenContract):
     """Normalized CED task coordinates; random ``task_id`` is intentionally absent."""
 
+    schema_version: Literal[
+        CANONICAL_TASK_SEMANTIC_IDENTITY_SCHEMA_VERSION
+    ] = CANONICAL_TASK_SEMANTIC_IDENTITY_SCHEMA_VERSION
+    task_identity_id: Optional[str] = None
+    source_session_semantic_id: str
     phase: DialogPhase
     round_number: int = Field(ge=0, strict=True)
     slot_index: int = Field(ge=0, strict=True)
@@ -99,10 +107,24 @@ class CanonicalTaskIdentity(_FrozenContract):
     request_semantic_digest: str = Field(pattern=_HEX64_PATTERN)
     model_config_digest: str = Field(pattern=_HEX64_PATTERN)
 
-    _agent_id_nonblank = field_validator("agent_id")(_nonblank)
+    _nonblank_fields = field_validator("source_session_semantic_id", "agent_id")(
+        _nonblank
+    )
+
+    @model_validator(mode="after")
+    def identify(self) -> "CanonicalTaskIdentity":
+        expected = stable_contract_id("cedtasksemantic", self.identity_payload())
+        if self.task_identity_id is not None and self.task_identity_id != expected:
+            raise ContractValidationError(
+                "task_identity_id does not match canonical task semantics"
+            )
+        object.__setattr__(self, "task_identity_id", expected)
+        return self
 
     def identity_payload(self) -> Dict[str, object]:
         return {
+            "schema_version": self.schema_version,
+            "source_session_semantic_id": self.source_session_semantic_id,
             "phase": self.phase.value,
             "round_number": self.round_number,
             "slot_index": self.slot_index,
@@ -657,23 +679,53 @@ FORBIDDEN_RECORDED_OBSERVATION_FIELDS = frozenset(
     {
         "accepted",
         "benchmark_label",
+        "branch_id",
+        "canonical_rejection_reason",
         "expected_acceptance",
+        "expected_move_id",
+        "expected_rejection",
         "expected_result",
         "expected_status",
+        "expected_successor",
         "final_response",
         "final_release",
         "future_state",
         "future_reward",
         "governing_outcome",
+        "ground_truth",
         "later_task_log",
         "later_governing_outcome",
         "metadata",
         "parsed_move",
+        "receipt_id",
+        "rejection_reason",
+        "result",
         "resulting_move_id",
         "reward",
         "successor",
+        "successor_capsule",
+        "successor_search_state_v1",
         "successor_state",
+        "successor_state_v1_id",
+        "terminal_status",
+        "transition_receipt",
+        "transition_result",
+        "unavailable_reason",
         "verification_result",
+    }
+)
+
+# The recorded raw payload is deliberately narrower than the generic parser:
+# v0 consumes one Socratic-question family and admits no side-channel metadata.
+RECORDED_SOCRATIC_ENVELOPE_FIELDS = frozenset({"content", "confidence"})
+RECORDED_SOCRATIC_CONTENT_FIELDS = frozenset(
+    {
+        "epistemic_marker",
+        "grounded_in",
+        "inquiry_state",
+        "introduces_new_proposition",
+        "operator",
+        "question",
     }
 )
 
@@ -683,31 +735,32 @@ class FutureLabelForbiddenError(ContractValidationError):
 
 
 class RecordedCanonicalObservation(_FrozenContract):
-    """Raw, replayable observation with no parsed or future-derived labels."""
+    """Captured raw observation with immutable task/root/provider identity.
+
+    ``materialize`` callers may validate this object against a pending
+    transition, but they cannot stamp a new task, root, provider, model, or
+    configuration onto it.  Random production ``task_id`` remains audit-only;
+    the versioned ``task_identity`` is the binding authority.
+    """
 
     schema_version: Literal[
         RECORDED_CANONICAL_OBSERVATION_SCHEMA_VERSION
     ] = RECORDED_CANONICAL_OBSERVATION_SCHEMA_VERSION
     observation_id: Optional[str] = None
 
-    # Audit-only capture identifiers, excluded from semantic observation identity.
+    # Capture/root identities are owned by the observation, not its replay caller.
+    capture_receipt_id: str
+    source_capsule_id: str
+    source_execution_id: str
+    source_configuration_digest: str = Field(pattern=_HEX64_PATTERN)
+
+    # Audit-only runtime identifiers, excluded from semantic compatibility.
     capture_id: Optional[str] = None
     source_task_id: Optional[str] = None
     recorded_response_id: Optional[str] = None
-    recorded_request_digest: Optional[str] = Field(
-        default=None, pattern=_HEX64_PATTERN
-    )
 
     action_id: str
-    phase: DialogPhase
-    round_number: int = Field(ge=0, strict=True)
-    slot_index: int = Field(ge=0, strict=True)
-    attempt_index: int = Field(ge=0, strict=True)
-    agent_id: str
-    role: AgentRole
-    task_kind: TaskKind
-    task_semantic_digest: str = Field(pattern=_HEX64_PATTERN)
-    request_semantic_digest: str = Field(pattern=_HEX64_PATTERN)
+    task_identity: CanonicalTaskIdentity
 
     provider_id: str
     configured_model_id: str
@@ -726,8 +779,10 @@ class RecordedCanonicalObservation(_FrozenContract):
     ] = OFFLINE_FIXTURE_PRIVACY_CLASSIFICATION
 
     _nonblank_fields = field_validator(
+        "capture_receipt_id",
+        "source_capsule_id",
+        "source_execution_id",
         "action_id",
-        "agent_id",
         "provider_id",
         "configured_model_id",
     )(_nonblank)
@@ -753,6 +808,10 @@ class RecordedCanonicalObservation(_FrozenContract):
 
     @model_validator(mode="after")
     def validate_transport_and_identify(self) -> "RecordedCanonicalObservation":
+        if self.model_config_digest != self.task_identity.model_config_digest:
+            raise ContractValidationError(
+                "observation and task model configuration identities differ"
+            )
         if self.transport_status is ObservationTransportStatus.DELIVERED:
             if self.raw_text is None:
                 raise ContractValidationError(
@@ -807,16 +866,12 @@ class RecordedCanonicalObservation(_FrozenContract):
     def identity_payload(self) -> Dict[str, object]:
         return {
             "schema_version": self.schema_version,
+            "capture_receipt_id": self.capture_receipt_id,
+            "source_capsule_id": self.source_capsule_id,
+            "source_execution_id": self.source_execution_id,
+            "source_configuration_digest": self.source_configuration_digest,
             "action_id": self.action_id,
-            "phase": self.phase.value,
-            "round_number": self.round_number,
-            "slot_index": self.slot_index,
-            "attempt_index": self.attempt_index,
-            "agent_id": self.agent_id,
-            "role": self.role.value,
-            "task_kind": self.task_kind.value,
-            "task_semantic_digest": self.task_semantic_digest,
-            "request_semantic_digest": self.request_semantic_digest,
+            "task_identity": self.task_identity.identity_payload(),
             "provider_id": self.provider_id,
             "configured_model_id": self.configured_model_id,
             "actual_model_id": self.actual_model_id,
@@ -828,6 +883,48 @@ class RecordedCanonicalObservation(_FrozenContract):
             "provenance": self.provenance.identity_payload(),
             "privacy_classification": self.privacy_classification,
         }
+
+    # Read-only compatibility accessors keep call sites explicit while the
+    # serialized contract has one non-duplicated task-identity authority.
+    @property
+    def phase(self) -> DialogPhase:
+        return self.task_identity.phase
+
+    @property
+    def round_number(self) -> int:
+        return self.task_identity.round_number
+
+    @property
+    def slot_index(self) -> int:
+        return self.task_identity.slot_index
+
+    @property
+    def attempt_index(self) -> int:
+        return self.task_identity.attempt_index
+
+    @property
+    def agent_id(self) -> str:
+        return self.task_identity.agent_id
+
+    @property
+    def role(self) -> AgentRole:
+        return self.task_identity.role
+
+    @property
+    def task_kind(self) -> TaskKind:
+        return self.task_identity.task_kind
+
+    @property
+    def task_semantic_digest(self) -> str:
+        return self.task_identity.task_semantic_digest
+
+    @property
+    def context_digest(self) -> str:
+        return self.task_identity.context_digest
+
+    @property
+    def request_semantic_digest(self) -> str:
+        return self.task_identity.request_semantic_digest
 
 
 class CanonicalTransitionStatus(str, Enum):
@@ -849,12 +946,17 @@ class SuccessorUnavailableReason(str, Enum):
     ILLEGAL_ACTION = "illegal_action"
     UNSUPPORTED_ACTION_FAMILY = "unsupported_action_family"
     MISSING_OBSERVATION = "missing_observation"
+    INVALID_OBSERVATION = "invalid_observation"
     OBSERVATION_TASK_MISMATCH = "observation_task_mismatch"
+    ROOT_CONTEXT_MISMATCH = "root_context_mismatch"
     OBSERVATION_PROVIDER_MISMATCH = "observation_provider_mismatch"
+    OBSERVATION_MODEL_MISMATCH = "observation_model_mismatch"
+    OBSERVATION_CONFIG_MISMATCH = "observation_config_mismatch"
     INVALID_OBSERVATION_IDENTITY = "invalid_observation_identity"
     FUTURE_LABEL_FORBIDDEN = "future_label_forbidden"
     BUDGET_EXHAUSTED = "budget_exhausted"
     CANONICAL_PROCESSING_REJECTED = "canonical_processing_rejected"
+    SUCCESSOR_UNAVAILABLE = "successor_unavailable"
 
 
 class LegalActionValidationStatus(str, Enum):
@@ -883,21 +985,43 @@ def validate_recorded_observation_compatibility(
     """
 
     task = pending.canonical_task
-    task_values = {
-        "phase": (observation.phase, task.phase),
-        "round_number": (observation.round_number, task.round_number),
-        "slot_index": (observation.slot_index, task.slot_index),
-        "attempt_index": (observation.attempt_index, task.attempt_index),
-        "agent_id": (observation.agent_id, task.agent_id),
-        "role": (observation.role, task.role),
-        "task_kind": (observation.task_kind, task.task_kind),
-        "task_semantic_digest": (
-            observation.task_semantic_digest,
-            task.task_semantic_digest,
+    observed_task = observation.task_identity
+
+    root_values = {
+        "source_session_semantic_id": (
+            observed_task.source_session_semantic_id,
+            task.source_session_semantic_id,
+        ),
+        "context_digest": (
+            observed_task.context_digest,
+            task.context_digest,
         ),
         "request_semantic_digest": (
-            observation.request_semantic_digest,
+            observed_task.request_semantic_digest,
             task.request_semantic_digest,
+        ),
+    }
+    root_mismatches = [
+        name for name, (actual, expected) in root_values.items()
+        if actual != expected
+    ]
+    if root_mismatches:
+        raise RecordedObservationCompatibilityError(
+            SuccessorUnavailableReason.ROOT_CONTEXT_MISMATCH,
+            "incompatible " + ", ".join(sorted(root_mismatches)),
+        )
+
+    task_values = {
+        "phase": (observed_task.phase, task.phase),
+        "round_number": (observed_task.round_number, task.round_number),
+        "slot_index": (observed_task.slot_index, task.slot_index),
+        "attempt_index": (observed_task.attempt_index, task.attempt_index),
+        "agent_id": (observed_task.agent_id, task.agent_id),
+        "role": (observed_task.role, task.role),
+        "task_kind": (observed_task.task_kind, task.task_kind),
+        "task_semantic_digest": (
+            observed_task.task_semantic_digest,
+            task.task_semantic_digest,
         ),
     }
     mismatches = [name for name, (actual, expected) in task_values.items() if actual != expected]
@@ -909,22 +1033,48 @@ def validate_recorded_observation_compatibility(
             "incompatible " + ", ".join(sorted(mismatches)),
         )
 
-    provider_mismatches = []
     if observation.provider_id != pending.expected_provider_id:
-        provider_mismatches.append("provider_id")
-    if observation.configured_model_id != pending.expected_model_id:
-        provider_mismatches.append("configured_model_id")
-    if (
-        observation.actual_model_id is not None
-        and observation.actual_model_id != pending.expected_model_id
-    ):
-        provider_mismatches.append("actual_model_id")
-    if observation.model_config_digest != task.model_config_digest:
-        provider_mismatches.append("model_config_digest")
-    if provider_mismatches:
         raise RecordedObservationCompatibilityError(
             SuccessorUnavailableReason.OBSERVATION_PROVIDER_MISMATCH,
-            "incompatible " + ", ".join(sorted(provider_mismatches)),
+            "incompatible provider_id",
+        )
+
+    model_mismatches = []
+    if observation.configured_model_id != pending.expected_model_id:
+        model_mismatches.append("configured_model_id")
+    if observation.actual_model_id != pending.expected_model_id:
+        model_mismatches.append("actual_model_id")
+    if model_mismatches:
+        raise RecordedObservationCompatibilityError(
+            SuccessorUnavailableReason.OBSERVATION_MODEL_MISMATCH,
+            "incompatible " + ", ".join(sorted(model_mismatches)),
+        )
+
+    config_mismatches = []
+    if (
+        observation.source_configuration_digest
+        != pending.source_capsule.configuration_digest
+    ):
+        config_mismatches.append("source_configuration_digest")
+    if observation.model_config_digest != task.model_config_digest:
+        config_mismatches.append("model_config_digest")
+    if observed_task.model_config_digest != task.model_config_digest:
+        config_mismatches.append("task_model_config_digest")
+    if config_mismatches:
+        raise RecordedObservationCompatibilityError(
+            SuccessorUnavailableReason.OBSERVATION_CONFIG_MISMATCH,
+            "incompatible " + ", ".join(sorted(config_mismatches)),
+        )
+
+    lineage_mismatches = []
+    if observation.source_capsule_id != pending.source_capsule_id:
+        lineage_mismatches.append("source_capsule_id")
+    if observation.source_execution_id != pending.source_capsule.source_execution_id:
+        lineage_mismatches.append("source_execution_id")
+    if lineage_mismatches:
+        raise RecordedObservationCompatibilityError(
+            SuccessorUnavailableReason.ROOT_CONTEXT_MISMATCH,
+            "incompatible " + ", ".join(sorted(lineage_mismatches)),
         )
 
 
@@ -1268,12 +1418,15 @@ Receipt = CanonicalTransitionReceipt
 __all__ = [
     "CANONICAL_BRANCH_CAPSULE_SCHEMA_VERSION",
     "CANONICAL_SUCCESSOR_ENV_ID",
+    "CANONICAL_TASK_SEMANTIC_IDENTITY_SCHEMA_VERSION",
     "CANONICAL_TRANSITION_RECEIPT_SCHEMA_VERSION",
     "CANONICAL_TRANSITION_RESULT_SCHEMA_VERSION",
     "FORBIDDEN_RECORDED_OBSERVATION_FIELDS",
     "OFFLINE_FIXTURE_PRIVACY_CLASSIFICATION",
     "PENDING_CANONICAL_TRANSITION_SCHEMA_VERSION",
     "RECORDED_CANONICAL_OBSERVATION_SCHEMA_VERSION",
+    "RECORDED_SOCRATIC_CONTENT_FIELDS",
+    "RECORDED_SOCRATIC_ENVELOPE_FIELDS",
     "SUPPORTED_ACTION_FAMILY",
     "CanonicalBranchCapsule",
     "CanonicalRejectionReason",

@@ -1,11 +1,10 @@
-"""Frozen recorded-observation blueprints for the Phase 8 parity corpus.
+"""Invalidated Phase 8 v0 recorded-observation corpus lineage.
 
-The corpus retains exact raw outputs and enough harness-only provenance to
-reconstruct each recorded opening root.  It deliberately contains no parsed
-move, acceptance label inside an observation, successor state, move identity,
-reward, or other future-derived truth.  ``materialize`` binds a blueprint to a
-previously validated pending transition; canonical CED processing remains the
-only source of an outcome.
+The committed v0 lineage is preserved for history and low-level processing
+tests only. It is explicitly invalid for authoritative Phase 8 parity because
+its original ``materialize`` implementation rebound raw provider output to
+caller-created task/provider metadata. Authoritative v1 cases live in
+``ced_canonical_successor_cases_v1``.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from typing import Literal, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .ced_canonical_successor_contracts import (
+    CanonicalTaskIdentity,
     HistoricalUsageKnowledge,
     ObservationCaptureKind,
     ObservationTransportStatus,
@@ -24,7 +24,9 @@ from .ced_canonical_successor_contracts import (
     RecordedCanonicalObservation,
     RecordedHistoricalUsage,
     RecordedObservationProvenance,
+    validate_recorded_observation_compatibility,
 )
+from .models import AgentRole, DialogPhase, TaskKind
 from .socrates_zero.contracts import (
     ContractValidationError,
     canonical_json,
@@ -35,8 +37,25 @@ from .socrates_zero.contracts import (
 CANONICAL_SUCCESSOR_CORPUS_VERSION = (
     "ced-canonical-successor-parity-corpus/v0"
 )
+INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_ID = (
+    "cedobscorpus_99a8090204758b4085f6f937d0e36ab77f6fe4f79f3c66ab8416b05c49bfb8e0"
+)
+INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_CANONICAL_SHA256 = (
+    "a6453fe7fe5bdabaa3258612c040ddc0e93c31214838405fa21afc373194cd8d"
+)
+INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_STATUS = (
+    "INVALIDATED / SUPERSEDED FOR AUTHORITATIVE PHASE-8 PARITY"
+)
+INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_REASON = (
+    "Raw provider output was rebound to caller-created task/provider metadata "
+    "instead of retaining the exact semantic identity of the original canonical "
+    "observation."
+)
 RECORDED_OBSERVATION_BLUEPRINT_SCHEMA_VERSION = (
     "ced-recorded-observation-blueprint/v0"
+)
+CANONICAL_SUCCESSOR_CAPTURE_REVISION = (
+    "3acd99497af22ad5104c9350b7690e0b9a8dfd39"
 )
 
 
@@ -61,7 +80,7 @@ def _nonblank(value: str) -> str:
 
 
 class RecordedObservationBlueprint(_FrozenCorpusContract):
-    """Root-independent exact fixture output plus harness-only root metadata."""
+    """Exact raw output and the immutable canonical request that acquired it."""
 
     schema_version: Literal[
         RECORDED_OBSERVATION_BLUEPRINT_SCHEMA_VERSION
@@ -70,9 +89,15 @@ class RecordedObservationBlueprint(_FrozenCorpusContract):
     case_name: str
     fixture_role: RecordedObservationFixtureRole
 
-    # Harness-only input used to build the same root request.  The observation
-    # receives only the normalized task/request digests from ``pending``.
+    # Harness-only root data. The complete request/provider identity below is
+    # frozen from an actual canonical offline capture and is never rebound.
     recorded_question: str
+    recorded_session_id: str
+    recorded_action_id: str
+    recorded_task: CanonicalTaskIdentity
+    recorded_provider_id: str
+    recorded_configured_model_id: str
+    recorded_actual_model_id: str
 
     source_artifact_id: str
     source_artifact_digest: Optional[str] = Field(
@@ -85,7 +110,14 @@ class RecordedObservationBlueprint(_FrozenCorpusContract):
     historical_usage: RecordedHistoricalUsage
 
     _nonblank_fields = field_validator(
-        "case_name", "recorded_question", "source_artifact_id"
+        "case_name",
+        "recorded_question",
+        "recorded_session_id",
+        "recorded_action_id",
+        "recorded_provider_id",
+        "recorded_configured_model_id",
+        "recorded_actual_model_id",
+        "source_artifact_id",
     )(_nonblank)
 
     @model_validator(mode="after")
@@ -104,6 +136,22 @@ class RecordedObservationBlueprint(_FrozenCorpusContract):
         if self.transport_error_code is not None:
             raise ContractValidationError(
                 "a delivered corpus blueprint cannot contain a transport error"
+            )
+        task = self.recorded_task
+        if (
+            task.phase is not DialogPhase.OPENING
+            or task.round_number != 0
+            or task.slot_index != 0
+            or task.attempt_index != 0
+            or task.role is not AgentRole.SOCRATES
+            or task.task_kind is not TaskKind.SOCRATIC_QUESTION
+        ):
+            raise ContractValidationError(
+                "the v0 corpus requires an exact canonical opening Socratic task"
+            )
+        if self.recorded_configured_model_id != self.recorded_actual_model_id:
+            raise ContractValidationError(
+                "the delivered offline capture requires exact configured/actual model parity"
             )
 
         expected_source_digest = hashlib.sha256(
@@ -142,7 +190,14 @@ class RecordedObservationBlueprint(_FrozenCorpusContract):
         return {
             "schema_version": self.schema_version,
             "recorded_question": self.recorded_question,
+            "recorded_session_id": self.recorded_session_id,
+            "recorded_action_id": self.recorded_action_id,
+            "recorded_task": self.recorded_task.identity_payload(),
+            "recorded_provider_id": self.recorded_provider_id,
+            "recorded_configured_model_id": self.recorded_configured_model_id,
+            "recorded_actual_model_id": self.recorded_actual_model_id,
             "source_artifact_id": self.source_artifact_id,
+            "source_revision": CANONICAL_SUCCESSOR_CAPTURE_REVISION,
             "capture_kind": self.capture_kind.value,
             "transport_status": self.transport_status.value,
             "transport_error_code": self.transport_error_code,
@@ -153,50 +208,11 @@ class RecordedObservationBlueprint(_FrozenCorpusContract):
     def materialize(
         self,
         pending: PendingCanonicalTransition,
-        *,
-        capture_id: Optional[str] = None,
-        source_task_id: Optional[str] = None,
-        recorded_response_id: Optional[str] = None,
-        recorded_request_digest: Optional[str] = None,
     ) -> RecordedCanonicalObservation:
-        """Bind raw fixture truth to one validated pending task.
+        """Refuse promotion of the scientifically invalidated v0 lineage."""
 
-        Audit-only IDs default to ``None`` because the existing donors did not
-        durably preserve their random runtime identifiers.  Inventing them
-        would weaken rather than improve provenance.
-        """
-
-        task = pending.canonical_task
-        assert self.source_artifact_digest is not None
-        return RecordedCanonicalObservation(
-            capture_id=capture_id,
-            source_task_id=source_task_id,
-            recorded_response_id=recorded_response_id,
-            recorded_request_digest=recorded_request_digest,
-            action_id=pending.selected_action.action_id,
-            phase=task.phase,
-            round_number=task.round_number,
-            slot_index=task.slot_index,
-            attempt_index=task.attempt_index,
-            agent_id=task.agent_id,
-            role=task.role,
-            task_kind=task.task_kind,
-            task_semantic_digest=task.task_semantic_digest,
-            request_semantic_digest=task.request_semantic_digest,
-            provider_id=pending.expected_provider_id,
-            configured_model_id=pending.expected_model_id,
-            actual_model_id=pending.expected_model_id,
-            model_config_digest=task.model_config_digest,
-            transport_status=self.transport_status,
-            transport_error_code=self.transport_error_code,
-            raw_text=self.raw_text,
-            historical_usage=self.historical_usage,
-            provenance=RecordedObservationProvenance(
-                capture_kind=self.capture_kind,
-                source_artifact_id=self.source_artifact_id,
-                source_artifact_digest=self.source_artifact_digest,
-                source_revision=CANONICAL_SUCCESSOR_CORPUS_VERSION,
-            ),
+        raise ContractValidationError(
+            INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_STATUS
         )
 
 
@@ -259,6 +275,40 @@ _OFFLINE_FIXTURE_USAGE = RecordedHistoricalUsage(
     observation_acquisitions=1,
 )
 
+_RECORDED_ACTION_ID = (
+    "szaction_e2f2e183f281d8741db89061d679f535042fc35ff9e25dcfb313a7796e232421"
+)
+
+
+def _recorded_task(
+    *,
+    agent_id: str,
+    task_semantic_digest: str,
+    context_digest: str,
+    request_semantic_digest: str,
+    model_config_digest: str,
+) -> CanonicalTaskIdentity:
+    return CanonicalTaskIdentity(
+        source_session_semantic_id=stable_contract_id(
+            "invalidatedsourcesession",
+            {
+                "agent_id": agent_id,
+                "task_semantic_digest": task_semantic_digest,
+            },
+        ),
+        phase=DialogPhase.OPENING,
+        round_number=0,
+        slot_index=0,
+        attempt_index=0,
+        agent_id=agent_id,
+        role=AgentRole.SOCRATES,
+        task_kind=TaskKind.SOCRATIC_QUESTION,
+        task_semantic_digest=task_semantic_digest,
+        context_digest=context_digest,
+        request_semantic_digest=request_semantic_digest,
+        model_config_digest=model_config_digest,
+    )
+
 
 FROZEN_CANONICAL_SUCCESSOR_OBSERVATION_CORPUS = RecordedObservationCorpus(
     cases=(
@@ -266,6 +316,26 @@ FROZEN_CANONICAL_SUCCESSOR_OBSERVATION_CORPUS = RecordedObservationCorpus(
             case_name="opening-scripted-mock",
             fixture_role=RecordedObservationFixtureRole.ACCEPTED_REFERENCE,
             recorded_question="Is knowledge merely justified true belief?",
+            recorded_session_id="phase8-recorded-opening-scripted-mock",
+            recorded_action_id=_RECORDED_ACTION_ID,
+            recorded_task=_recorded_task(
+                agent_id="phase8-recorded-agent-1",
+                task_semantic_digest=(
+                    "1abbf7300703a36a7849a3b6dea82e9ffeb3134295ad68127523b08f714f5898"
+                ),
+                context_digest=(
+                    "c7e105c1b837c31640516f7243e42662c8a377f0be8cc806c6dfb4c6627312f7"
+                ),
+                request_semantic_digest=(
+                    "bcec1aeb613f44c61843979e2469e0b003587650dcc648af39d2b292d1332e93"
+                ),
+                model_config_digest=(
+                    "412c2296bb32b6f6359af3eea819f8940a0a62a0057225955888644ea65eadcc"
+                ),
+            ),
+            recorded_provider_id="phase8-recorded-seat-1",
+            recorded_configured_model_id="phase8-recorded-model/1",
+            recorded_actual_model_id="phase8-recorded-model/1",
             source_artifact_id=(
                 "backend/dialogues/provider_registry.py::"
                 "ScriptedMockProvider._produce_raw_text;"
@@ -288,6 +358,26 @@ FROZEN_CANONICAL_SUCCESSOR_OBSERVATION_CORPUS = RecordedObservationCorpus(
                 RecordedObservationFixtureRole.CONTENT_CONTRACT_REFERENCE
             ),
             recorded_question="What is knowledge?",
+            recorded_session_id="phase8-recorded-opening-empty-question",
+            recorded_action_id=_RECORDED_ACTION_ID,
+            recorded_task=_recorded_task(
+                agent_id="phase8-recorded-agent-0",
+                task_semantic_digest=(
+                    "1dc32e986118ede060df30390e37fc309bb046a2faa84c106417a87681f577a6"
+                ),
+                context_digest=(
+                    "c7e105c1b837c31640516f7243e42662c8a377f0be8cc806c6dfb4c6627312f7"
+                ),
+                request_semantic_digest=(
+                    "01087e3506613fac89e4e1ab4905293f7ec54518bf723d070f8b8e67077761d8"
+                ),
+                model_config_digest=(
+                    "773b173a47dae0c64f7d2b19efa6b575c5ece84a3c940857db1d2c9e20c9b90c"
+                ),
+            ),
+            recorded_provider_id="phase8-recorded-seat-0",
+            recorded_configured_model_id="phase8-recorded-model/0",
+            recorded_actual_model_id="phase8-recorded-model/0",
             source_artifact_id=(
                 "tests_dialogues/test_socratic_acceptance_contract.py::"
                 "EmptySocrates._produce_raw_text;"
@@ -313,6 +403,26 @@ FROZEN_CANONICAL_SUCCESSOR_OBSERVATION_CORPUS = RecordedObservationCorpus(
                 "is immediately before Elena. Ben is not immediately before Anna. "
                 "Elena is last. Farid is before Ben."
             ),
+            recorded_session_id="phase8-recorded-opening-injection-question",
+            recorded_action_id=_RECORDED_ACTION_ID,
+            recorded_task=_recorded_task(
+                agent_id="phase8-recorded-agent-0",
+                task_semantic_digest=(
+                    "29ede9e4bb5ec48bcf76ae3890f10e8cd3d094f27be6fd688ad5421a3248ad9c"
+                ),
+                context_digest=(
+                    "a967affed98c5005207b9fc0767c87b219d7e7114e9b8912da979ebd40bf497e"
+                ),
+                request_semantic_digest=(
+                    "53f471f624d1639460791b042e0a4f6720fc8ea2866b597c91aa4aecc72c7ed6"
+                ),
+                model_config_digest=(
+                    "773b173a47dae0c64f7d2b19efa6b575c5ece84a3c940857db1d2c9e20c9b90c"
+                ),
+            ),
+            recorded_provider_id="phase8-recorded-seat-0",
+            recorded_configured_model_id="phase8-recorded-model/0",
+            recorded_actual_model_id="phase8-recorded-model/0",
             source_artifact_id=(
                 "tests_dialogues/test_socratic_firewall.py::"
                 "Injecting._produce_raw_text;"
@@ -334,6 +444,26 @@ FROZEN_CANONICAL_SUCCESSOR_OBSERVATION_CORPUS = RecordedObservationCorpus(
             case_name="opening-invalid-json",
             fixture_role=RecordedObservationFixtureRole.INVALID_JSON_REFERENCE,
             recorded_question="Q?",
+            recorded_session_id="phase8-recorded-opening-invalid-json",
+            recorded_action_id=_RECORDED_ACTION_ID,
+            recorded_task=_recorded_task(
+                agent_id="phase8-recorded-agent-1",
+                task_semantic_digest=(
+                    "37ee909044127cdd76b77df3ed8099c5498c2bb580fb9e25371491671a880774"
+                ),
+                context_digest=(
+                    "c7e105c1b837c31640516f7243e42662c8a377f0be8cc806c6dfb4c6627312f7"
+                ),
+                request_semantic_digest=(
+                    "8df788475297d9bb0cf69a1f8e57294ee1fe9544e9eb12a8fc2574a3e838d266"
+                ),
+                model_config_digest=(
+                    "412c2296bb32b6f6359af3eea819f8940a0a62a0057225955888644ea65eadcc"
+                ),
+            ),
+            recorded_provider_id="phase8-recorded-seat-1",
+            recorded_configured_model_id="phase8-recorded-model/1",
+            recorded_actual_model_id="phase8-recorded-model/1",
             source_artifact_id=(
                 "backend/dialogues/provider_registry.py::"
                 "InvalidJSONProvider._produce_raw_text;"
@@ -349,6 +479,26 @@ FROZEN_CANONICAL_SUCCESSOR_OBSERVATION_CORPUS = RecordedObservationCorpus(
             case_name="opening-schema-error",
             fixture_role=RecordedObservationFixtureRole.SCHEMA_ERROR_REFERENCE,
             recorded_question="Q?",
+            recorded_session_id="phase8-recorded-opening-schema-error",
+            recorded_action_id=_RECORDED_ACTION_ID,
+            recorded_task=_recorded_task(
+                agent_id="phase8-recorded-agent-0",
+                task_semantic_digest=(
+                    "7d9e907db1eaf201d17068645c624ec51450ec4f60d63d7dc38129948b94914f"
+                ),
+                context_digest=(
+                    "c7e105c1b837c31640516f7243e42662c8a377f0be8cc806c6dfb4c6627312f7"
+                ),
+                request_semantic_digest=(
+                    "8df788475297d9bb0cf69a1f8e57294ee1fe9544e9eb12a8fc2574a3e838d266"
+                ),
+                model_config_digest=(
+                    "773b173a47dae0c64f7d2b19efa6b575c5ece84a3c940857db1d2c9e20c9b90c"
+                ),
+            ),
+            recorded_provider_id="phase8-recorded-seat-0",
+            recorded_configured_model_id="phase8-recorded-model/0",
+            recorded_actual_model_id="phase8-recorded-model/0",
             source_artifact_id=(
                 "backend/dialogues/provider_registry.py::"
                 "SchemaErrorProvider._produce_raw_text;"
@@ -373,8 +523,13 @@ def frozen_corpus_canonical_json() -> str:
 
 
 __all__ = [
+    "CANONICAL_SUCCESSOR_CAPTURE_REVISION",
     "CANONICAL_SUCCESSOR_CORPUS_VERSION",
     "FROZEN_CANONICAL_SUCCESSOR_OBSERVATION_CORPUS",
+    "INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_CANONICAL_SHA256",
+    "INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_ID",
+    "INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_REASON",
+    "INVALIDATED_CANONICAL_SUCCESSOR_CORPUS_V0_STATUS",
     "RECORDED_OBSERVATION_BLUEPRINT_SCHEMA_VERSION",
     "RecordedObservationBlueprint",
     "RecordedObservationCorpus",
