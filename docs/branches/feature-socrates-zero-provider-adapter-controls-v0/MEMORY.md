@@ -35,9 +35,10 @@
 - Reference receipt: `szorattempt_8d8a5e847724b6f5281865cb95f4360ccfcb42ae604359885a36cbc33e065bfa`.
 - Reference summary: `szorrefreceipt_650f811440871da7c8672f29804b45da5286343bab9e7454d3eefb26bb8adb35`.
 
-The receipt graph is `reference_canned_fixture_only`. Before aggregate there
-are zero actual canned invocations, no actual attempt receipt and no actual
-response receipt.
+The receipt graph is `reference_canned_fixture_only`. It is evidence that the
+receipt machinery works on the sealed fixture, not evidence of an actual
+positive aggregate response. In the authoritative aggregate there were zero
+canned invocations, no actual attempt receipt and no actual response receipt.
 
 ## Canonical request
 
@@ -95,3 +96,40 @@ only in counterfactual predicate tests and do not override first-guard-wins.
 - No aggregate before the pre-result freeze commit.
 - Protected untracked files are never touched or staged.
 - On `FALSIFIED`, preserve the artifact but perform no reverse replay and create no replay lock.
+
+## Authoritative result
+
+- Exact pre-result freeze:
+  `88da597b6ba0c84e4c4614c001973febf3f40009`.
+- Artifact commit: `911340d`.
+- Artifact ID:
+  `szoracqevaluation_43f2f35f8e2e1eae6ac63d9aa8a3d26ad4afe79526b44ee8e872c79f75a2795f`.
+- Metrics ID:
+  `szoracqmetrics_e1b0a6b267c7f8253a422e5e23321a572c5eea6088a7acbbfd43dfae6fcdb8fa`.
+- Canonical artifact size / file SHA-256: `331624` bytes /
+  `0d530877fc3effe1fa6d0e676fcbb2e980705bb0082a992d6d9c89a7321e5083`.
+- Decision: `OPENROUTER ACQUISITION ADAPTER HARDENING FALSIFIED`.
+- First actual blocker: `P08_ROUTE_POLICY`.
+- Canned invocations: `0`; frozen success threshold: `34`.
+- Positive complete cases / exact positive receipts: `0/7` / `0`.
+- Orthogonal exact primary results: `8/44`.
+- Precedence exact primary results: `3/8`.
+- Accepted control, identity, raw/usage/privacy, token/pricing/cost and late
+  mutation violations: all `0`.
+- Network/credential/provider/model/tool/CED activity: `0/0/0/0/0/0`.
+- Source/sibling/production mutations: `0/0/0` across the frozen 72 paths.
+- Reverse replay: `NOT PERFORMED`; no replay lock exists.
+
+## Post-result verification
+
+- Targeted OpenRouter + Acquisition: `481 passed, 9 skipped`.
+- Targeted Search/Value/Canonical Successor: `385 passed`.
+- Full `tests_dialogues`: `3064 passed, 10 skipped`.
+- Repository-wide: `3371 passed, 10 skipped, 23 warnings`.
+- Warnings: 21 existing Pydantic `dict()` deprecations and two existing
+  FastAPI duplicate-operation-ID warnings.
+- All historical hashes and the Phase 8 v2 core lock remain exact.
+- The production OpenRouter adapter and all frozen scientific components remain
+  unchanged.
+- Live pilot readiness remains `REQUIRES RE-AUTHORIZATION GATE`.
+- Next decision: `RETURN TO ARCHITECTURE DECISION`.

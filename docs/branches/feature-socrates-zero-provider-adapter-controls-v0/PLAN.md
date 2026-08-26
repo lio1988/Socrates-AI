@@ -10,19 +10,22 @@
 6. [done] Implement canned response, identity, usage and raw receipts.
 7. [done] Implement sealed one-shot adapter and cancellation hardening.
 8. [done] Freeze 59 cases, mutation vectors, guard order and thresholds.
-9. [done in this documentation commit] Freeze artifact schema, falsification rules, exact IDs, 72-path mutation evidence and pre-result tests.
-10. [pending] Report the exact freeze commit, then run the first and only authoritative canned aggregate.
-11. [pending] Publish and commit the write-once authoritative artifact.
-12. [conditional] On a complete pass only, run and commit an independent reverse replay lock. On `FALSIFIED`, mark replay `NOT PERFORMED` and create no lock.
-13. [pending] Run full regressions and re-verify historical/core/protected hashes.
-14. [pending] Commit the durable supported/falsified checkpoint.
+9. [done] Freeze artifact schema, falsification rules, exact IDs, 72-path mutation evidence and pre-result tests.
+10. [done] Report freeze commit `88da597b6ba0c84e4c4614c001973febf3f40009`, then run the first and only authoritative canned aggregate.
+11. [done] Publish and commit the write-once authoritative artifact in `911340d`.
+12. [done — not performed by design] The result was `FALSIFIED`, so the complete-pass prerequisite for reverse replay was absent and no replay lock was created.
+13. [done] Run full regressions and re-verify historical/core/protected hashes.
+14. [done in this documentation commit] Record the durable falsified checkpoint.
 
-## Frozen expected consequence
+## Observed authoritative consequence
 
-The candidate has unresolved `P08`, `P09`, `P17`, `P18` and `P19`. Observed
-canned invocations must remain zero after the first pre-dispatch failure, while
-the unweakened success threshold remains 34. The expected authoritative decision
-is `FALSIFIED`, but this text is not an aggregate result.
+The candidate retained unresolved `P08`, `P09`, `P17`, `P18` and `P19`.
+`P08_ROUTE_POLICY` won as the first actual guard, zero canned invocations were
+observed, and the unweakened threshold remained 34. The authoritative decision
+is `OPENROUTER ACQUISITION ADAPTER HARDENING FALSIFIED`.
+
+The artifact is preserved. Replay is `NOT PERFORMED`, live authorization remains
+rejected, and the next decision is `RETURN TO ARCHITECTURE DECISION`.
 
 ## Stop conditions
 
