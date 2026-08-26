@@ -16,10 +16,15 @@ from backend.dialogues.socrates_zero.openrouter_acquisition_cases import (
 )
 from backend.dialogues.socrates_zero.openrouter_acquisition_evaluation import (
     FROZEN_CORE_BLOB_LOCK_SOURCE_PATH_V2,
+    FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_ID_V0,
+    FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0,
     OpenRouterEvaluationMetricsV0,
     OpenRouterEvaluationArtifactV0,
     OpenRouterHistoricalHashEvidenceV0,
     OpenRouterTripwireCountersV0,
+    OpenRouterMutationScope,
+    OpenRouterScopedMutationEvidenceV0,
+    OpenRouterScopedPathSnapshotV0,
     ProbeConstructionState,
     build_openrouter_candidate_evidence_v0,
     evaluate_openrouter_adapter_case_v0,
@@ -30,6 +35,10 @@ from backend.dialogues.socrates_zero.openrouter_acquisition_evaluation import (
     _first_projection_failure,
     _guard_predicate_failure,
     _metrics,
+    _assert_frozen_scoped_mutation_accounting_v0,
+    _build_authoritative_artifact_under_scoped_guard_v0,
+    capture_openrouter_scoped_path_snapshot_v0,
+    compare_openrouter_scoped_path_snapshots_v0,
 )
 from backend.dialogues.socrates_zero.openrouter_acquisition_contracts import (
     OPENROUTER_MAX_OUTPUT_TOKENS,
@@ -43,6 +52,24 @@ def _orthogonal(number: int):
 
 def _precedence(number: int):
     return FROZEN_OPENROUTER_ADAPTER_PRECEDENCE_PROBES_V0[number - 1]
+
+
+_TEST_SCOPED_PATH_INVENTORY = (
+    ("SOURCE", ("source.txt",)),
+    ("SIBLING", ("sibling.txt",)),
+    ("PRODUCTION", ("production.txt",)),
+)
+
+
+def _write_scoped_inventory(root, inventory, *, omitted=()) -> None:
+    omitted_paths = set(omitted)
+    for _, paths in inventory:
+        for relative_path in paths:
+            if relative_path in omitted_paths:
+                continue
+            target = root / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((relative_path + "\n").encode("utf-8"))
 
 
 def _fully_resolved_projection() -> dict[str, object]:
@@ -501,7 +528,7 @@ def test_two_attempt_positive_still_has_zero_transport_and_distinct_receipts() -
     assert result.attempt_receipts[0].attempt_receipt_id != result.attempt_receipts[1].attempt_receipt_id
 
 
-def test_tripwire_counters_are_immutable_exact_zero() -> None:
+def test_tripwire_counters_keep_external_zero_and_scoped_counts_strict() -> None:
     counters = OpenRouterTripwireCountersV0()
 
     assert set(counters.model_dump().values()) == {0}
@@ -511,6 +538,374 @@ def test_tripwire_counters_are_immutable_exact_zero() -> None:
         OpenRouterTripwireCountersV0(unexpected=0)
     with pytest.raises(ValidationError):
         counters.external_network_attempts = 0  # type: ignore[misc]
+    scoped = OpenRouterTripwireCountersV0(
+        source_mutations=1,
+        sibling_mutations=2,
+        production_mutations=3,
+    )
+    assert (
+        scoped.source_mutations,
+        scoped.sibling_mutations,
+        scoped.production_mutations,
+    ) == (1, 2, 3)
+    with pytest.raises(ValidationError):
+        scoped.source_mutations = 0  # type: ignore[misc]
+    for field_name in (
+        "source_mutations",
+        "sibling_mutations",
+        "production_mutations",
+    ):
+        for invalid in (True, 1.0, "1", -1):
+            with pytest.raises(ValidationError):
+                OpenRouterTripwireCountersV0(**{field_name: invalid})
+
+
+def test_frozen_scoped_inventory_has_exact_membership_and_order() -> None:
+    assert FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0 == (
+        (
+            "SOURCE",
+            (
+                "backend/dialogues/socrates_zero/openrouter_acquisition_contracts.py",
+                "backend/dialogues/socrates_zero/openrouter_acquisition_renderer.py",
+                "backend/dialogues/socrates_zero/openrouter_acquisition_adapter.py",
+                "backend/dialogues/socrates_zero/openrouter_acquisition_cases.py",
+                "backend/dialogues/socrates_zero/openrouter_acquisition_evaluation.py",
+                "backend/dialogues/socrates_zero/acquisition_tripwires.py",
+                "tests_dialogues/test_socrates_zero_openrouter_acquisition_contracts.py",
+                "tests_dialogues/test_socrates_zero_openrouter_acquisition_renderer.py",
+                "tests_dialogues/test_socrates_zero_openrouter_acquisition_adapter.py",
+                "tests_dialogues/test_socrates_zero_openrouter_acquisition_cases.py",
+                "tests_dialogues/test_socrates_zero_openrouter_acquisition_evaluation.py",
+                "tests_dialogues/conftest.py",
+                "tests_dialogues/test_socrates_zero_acquisition_boundaries.py",
+                "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/MEMORY.md",
+                "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/PLAN.md",
+                "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/PRESENT.md",
+                "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/README.md",
+            ),
+        ),
+        (
+            "SIBLING",
+            (
+                "backend/dialogues/socrates_zero/__init__.py",
+                "backend/dialogues/socrates_zero/acquisition.py",
+                "backend/dialogues/socrates_zero/acquisition_cases.py",
+                "backend/dialogues/socrates_zero/acquisition_contracts.py",
+                "backend/dialogues/socrates_zero/acquisition_evaluation.py",
+                "backend/dialogues/socrates_zero/acquisition_isolation_evidence.py",
+                "backend/dialogues/socrates_zero/baseline.py",
+                "backend/dialogues/socrates_zero/constitution.py",
+                "backend/dialogues/socrates_zero/contracts.py",
+                "backend/dialogues/socrates_zero/evaluation.py",
+                "backend/dialogues/socrates_zero/evaluation_cases.py",
+                "backend/dialogues/socrates_zero/evaluation_harness.py",
+                "backend/dialogues/socrates_zero/policy.py",
+                "backend/dialogues/socrates_zero/puct.py",
+                "backend/dialogues/socrates_zero/strategy.py",
+                "backend/dialogues/socrates_zero/value.py",
+            ),
+        ),
+        (
+            "PRODUCTION",
+            (
+                "backend/dialogues/agent.py",
+                "backend/dialogues/ced.py",
+                "backend/dialogues/ced_search_observability_v1.py",
+                "backend/dialogues/ced_search_projection.py",
+                "backend/dialogues/ced_search_projection_v1.py",
+                "backend/dialogues/ced_search_value_v1.py",
+                "backend/dialogues/ced_search_value_v1_artifact.py",
+                "backend/dialogues/ced_search_value_v1_bestofn.py",
+                "backend/dialogues/ced_search_value_v1_bestofn_cases.py",
+                "backend/dialogues/ced_search_value_v1_contracts.py",
+                "backend/dialogues/ced_search_value_v1_evaluation.py",
+                "backend/dialogues/ced_search_value_v1_evaluation_cases.py",
+                "backend/dialogues/hybrid_authority.py",
+                "backend/dialogues/hybrid_epistemic.py",
+                "backend/dialogues/hybrid_shadow.py",
+                "backend/dialogues/hybrid_support.py",
+                "backend/dialogues/ced_canonical_successor.py",
+                "backend/dialogues/ced_canonical_successor_cases.py",
+                "backend/dialogues/ced_canonical_successor_cases_v1.py",
+                "backend/dialogues/ced_canonical_successor_cases_v2.py",
+                "backend/dialogues/ced_canonical_successor_contracts.py",
+                "backend/dialogues/ced_canonical_successor_evaluation.py",
+                "backend/dialogues/ced_canonical_successor_evaluation_v2.py",
+                "backend/dialogues/ced_canonical_successor_frozen_core_v2.py",
+                "backend/dialogues/ced_canonical_successor_manifest.py",
+                "backend/dialogues/ced_canonical_successor_recording.py",
+                "backend/dialogues/ced_canonical_successor_recording_contracts.py",
+                "backend/dialogues/ced_canonical_successor_recording_fixtures.py",
+                "backend/dialogues/openrouter_provider.py",
+                "backend/dialogues/provider_registry.py",
+                "backend/dialogues/live_providers.py",
+                "backend/dialogues/model_identity.py",
+                "backend/dialogues/models.py",
+                "backend/dialogues/providers.py",
+                "backend/dialogues/reasoning_prompts.py",
+                "backend/dialogues/role_assignment.py",
+                "backend/dialogues/socratic.py",
+                "backend/dialogues/task_checker.py",
+                "backend/dialogues/topic.py",
+            ),
+        ),
+    )
+    assert tuple(
+        (scope, len(paths))
+        for scope, paths in FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0
+    ) == (("SOURCE", 17), ("SIBLING", 16), ("PRODUCTION", 39))
+
+
+def test_scoped_path_evidence_derives_zero_and_mismatch_counts(tmp_path) -> None:
+    _write_scoped_inventory(tmp_path, _TEST_SCOPED_PATH_INVENTORY)
+    before = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+    unchanged_after = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+    unchanged = compare_openrouter_scoped_path_snapshots_v0(
+        before, unchanged_after
+    )
+
+    assert unchanged.all_paths_unchanged is True
+    assert (
+        unchanged.source_mutations,
+        unchanged.sibling_mutations,
+        unchanged.production_mutations,
+    ) == (0, 0, 0)
+    assert all(row.matches is True for row in unchanged.rows)
+
+    (tmp_path / "source.txt").write_bytes(b"mutated\n")
+    changed_after = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+    changed = compare_openrouter_scoped_path_snapshots_v0(before, changed_after)
+
+    assert changed.all_paths_unchanged is False
+    assert (
+        changed.source_mutations,
+        changed.sibling_mutations,
+        changed.production_mutations,
+    ) == (1, 0, 0)
+    source_row = changed.rows[0]
+    assert source_row.before_sha256 != source_row.after_sha256
+    assert source_row.matches is False
+    assert source_row.mutation_detected is True
+
+
+def test_scoped_capture_ignores_unlisted_files_without_enumeration(tmp_path) -> None:
+    _write_scoped_inventory(tmp_path, _TEST_SCOPED_PATH_INVENTORY)
+    unlisted = tmp_path / "unlisted" / "new.py"
+    unlisted.parent.mkdir()
+    unlisted.write_bytes(b"before\n")
+    before = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+    unlisted.write_bytes(b"after\n")
+    after = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+
+    evidence = compare_openrouter_scoped_path_snapshots_v0(before, after)
+
+    assert evidence.all_paths_unchanged is True
+    assert tuple(row.relative_path for row in evidence.rows) == (
+        "source.txt",
+        "sibling.txt",
+        "production.txt",
+    )
+
+
+def test_scoped_path_evidence_treats_missing_frozen_paths_as_mutations(
+    tmp_path,
+) -> None:
+    _write_scoped_inventory(
+        tmp_path,
+        _TEST_SCOPED_PATH_INVENTORY,
+        omitted=("sibling.txt",),
+    )
+    before = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+    after = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+
+    evidence = compare_openrouter_scoped_path_snapshots_v0(before, after)
+
+    assert evidence.sibling_mutations == 1
+    missing = next(
+        row for row in evidence.rows if row.scope is OpenRouterMutationScope.SIBLING
+    )
+    assert missing.before_present is False
+    assert missing.after_present is False
+    assert missing.before_sha256 is None
+    assert missing.after_sha256 is None
+    assert missing.matches is False
+
+
+@pytest.mark.parametrize(
+    "unsafe_path",
+    (
+        "../outside.txt",
+        "/absolute.txt",
+        "nested/../../outside.txt",
+        "C:/outside.txt",
+        "C:outside.txt",
+        "//server/share/outside.txt",
+        r"\\server\share\outside.txt",
+        r"\\?\C:\outside.txt",
+        r"\\.\C:\outside.txt",
+    ),
+)
+def test_scoped_inventory_rejects_escape_paths(tmp_path, unsafe_path: str) -> None:
+    inventory = (
+        ("SOURCE", (unsafe_path,)),
+        ("SIBLING", ("sibling.txt",)),
+        ("PRODUCTION", ("production.txt",)),
+    )
+
+    with pytest.raises((ValueError, ValidationError)):
+        capture_openrouter_scoped_path_snapshot_v0(tmp_path, inventory)
+
+
+def test_scoped_inventory_rejects_symlink_resolution_outside_root(tmp_path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"outside\n")
+    link = root / "source-link.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("filesystem does not permit test symlinks")
+    inventory = (
+        ("SOURCE", ("source-link.txt",)),
+        ("SIBLING", ("sibling.txt",)),
+        ("PRODUCTION", ("production.txt",)),
+    )
+
+    with pytest.raises(ValueError):
+        capture_openrouter_scoped_path_snapshot_v0(root, inventory)
+
+
+def test_scoped_snapshot_comparison_rejects_category_tamper(tmp_path) -> None:
+    _write_scoped_inventory(tmp_path, _TEST_SCOPED_PATH_INVENTORY)
+    before = capture_openrouter_scoped_path_snapshot_v0(
+        tmp_path, _TEST_SCOPED_PATH_INVENTORY
+    )
+    tampered_first = before.rows[0].model_copy(
+        update={"scope": OpenRouterMutationScope.SIBLING}
+    )
+    tampered_after = before.model_copy(
+        update={"rows": (tampered_first,) + before.rows[1:]}
+    )
+
+    with pytest.raises(ValidationError):
+        compare_openrouter_scoped_path_snapshots_v0(before, tampered_after)
+
+
+def test_artifact_scoped_claims_reject_zero_counter_and_category_tamper(
+    tmp_path,
+) -> None:
+    _write_scoped_inventory(tmp_path, FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0)
+    before = capture_openrouter_scoped_path_snapshot_v0(tmp_path)
+    first_source_path = FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0[0][1][0]
+    (tmp_path / first_source_path).write_bytes(b"mutated-source\n")
+    after = capture_openrouter_scoped_path_snapshot_v0(tmp_path)
+    evidence = compare_openrouter_scoped_path_snapshots_v0(before, after)
+
+    assert evidence.inventory_id == FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_ID_V0
+    assert evidence.source_mutations == 1
+    with pytest.raises(ValueError):
+        _assert_frozen_scoped_mutation_accounting_v0(
+            evidence,
+            OpenRouterTripwireCountersV0(),
+        )
+
+    matching_counters = OpenRouterTripwireCountersV0(source_mutations=1)
+    _assert_frozen_scoped_mutation_accounting_v0(evidence, matching_counters)
+
+    payload = evidence.model_dump(mode="python")
+    payload["source_mutations"] = 0
+    with pytest.raises(ValidationError):
+        OpenRouterScopedMutationEvidenceV0.model_validate(payload)
+
+    category_tampered = evidence.model_copy(
+        update={
+            "rows": (
+                evidence.rows[0].model_copy(
+                    update={"scope": OpenRouterMutationScope.SIBLING}
+                ),
+            )
+            + evidence.rows[1:]
+        }
+    )
+    with pytest.raises(ValueError):
+        _assert_frozen_scoped_mutation_accounting_v0(
+            category_tampered,
+            matching_counters,
+        )
+
+    digest_poisoned = evidence.model_copy(
+        update={
+            "rows": (
+                evidence.rows[0].model_copy(
+                    update={"after_sha256": evidence.rows[0].before_sha256}
+                ),
+            )
+            + evidence.rows[1:]
+        }
+    )
+    with pytest.raises(ValidationError):
+        _assert_frozen_scoped_mutation_accounting_v0(
+            digest_poisoned,
+            matching_counters,
+        )
+
+
+def test_final_postbuild_snapshot_detects_mutation_during_artifact_validation(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    _write_scoped_inventory(tmp_path, FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0)
+    before = capture_openrouter_scoped_path_snapshot_v0(tmp_path)
+    embedded_after = capture_openrouter_scoped_path_snapshot_v0(tmp_path)
+    expected_evidence = compare_openrouter_scoped_path_snapshots_v0(
+        before,
+        embedded_after,
+    )
+
+    class FakeArtifact:
+        scoped_mutation_evidence = expected_evidence
+
+    class FakeArtifactValidator:
+        def validate_and_recompute(self):
+            return FakeArtifact()
+
+    validator = FakeArtifactValidator()
+    original_validate = validator.validate_and_recompute
+    first_source_path = FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0[0][1][0]
+
+    def mutate_during_validation():
+        artifact = original_validate()
+        (tmp_path / first_source_path).write_bytes(b"validator-mutation\n")
+        return artifact
+
+    monkeypatch.setattr(
+        validator,
+        "validate_and_recompute",
+        mutate_during_validation,
+    )
+
+    with pytest.raises(ValueError, match="artifact construction"):
+        _build_authoritative_artifact_under_scoped_guard_v0(
+            tmp_path,
+            before,
+            embedded_after,
+            validator.validate_and_recompute,
+        )
 
 
 def test_historical_hash_verifier_uses_bytes_and_reports_mismatch(tmp_path) -> None:
@@ -659,7 +1054,11 @@ def test_metric_control_failures_derive_from_candidate_and_activity_counters(
     tmp_path,
 ) -> None:
     candidate = build_openrouter_candidate_evidence_v0()
-    counters = OpenRouterTripwireCountersV0()
+    counters = OpenRouterTripwireCountersV0(
+        source_mutations=1,
+        sibling_mutations=2,
+        production_mutations=3,
+    )
     core = verify_core_blob_lock_v0(tmp_path)
 
     metrics = _metrics((), (), core, candidate, counters)
@@ -676,6 +1075,13 @@ def test_metric_control_failures_derive_from_candidate_and_activity_counters(
     assert (
         metrics.ced_application_invocations
         == counters.canonical_application_calls
+    )
+    assert metrics.source_mutations == counters.source_mutations
+    assert metrics.sibling_mutations == counters.sibling_mutations
+    assert metrics.production_mutations == counters.production_mutations
+    assert (
+        "ZERO_EXTERNAL_OR_CANONICAL_ACTIVITY"
+        in metrics.threshold_failure_reasons
     )
 
 

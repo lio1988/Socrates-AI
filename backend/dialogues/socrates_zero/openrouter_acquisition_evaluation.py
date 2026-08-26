@@ -18,8 +18,8 @@ import json
 import base64
 from collections.abc import Mapping
 from enum import Enum
-from pathlib import Path
-from typing import Literal, Optional, Tuple, Union
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Callable, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -128,6 +128,118 @@ OPENROUTER_FIXTURE_MANIFEST_SCHEMA_V0 = (
 OPENROUTER_REFERENCE_RECEIPT_SUMMARY_SCHEMA_V0 = (
     "socrateszero-openrouter-reference-canned-receipt-summary/v0"
 )
+OPENROUTER_SCOPED_PATH_SNAPSHOT_SCHEMA_V0 = (
+    "socrateszero-openrouter-scoped-path-snapshot/v0"
+)
+OPENROUTER_SCOPED_MUTATION_EVIDENCE_SCHEMA_V0 = (
+    "socrateszero-openrouter-scoped-mutation-evidence/v0"
+)
+OPENROUTER_SCOPED_PATH_INVENTORY_SCHEMA_V0 = (
+    "socrateszero-openrouter-scoped-path-inventory/v0"
+)
+
+FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0: Tuple[
+    Tuple[str, Tuple[str, ...]], ...
+] = (
+    (
+        "SOURCE",
+        (
+            "backend/dialogues/socrates_zero/openrouter_acquisition_contracts.py",
+            "backend/dialogues/socrates_zero/openrouter_acquisition_renderer.py",
+            "backend/dialogues/socrates_zero/openrouter_acquisition_adapter.py",
+            "backend/dialogues/socrates_zero/openrouter_acquisition_cases.py",
+            "backend/dialogues/socrates_zero/openrouter_acquisition_evaluation.py",
+            "backend/dialogues/socrates_zero/acquisition_tripwires.py",
+            "tests_dialogues/test_socrates_zero_openrouter_acquisition_contracts.py",
+            "tests_dialogues/test_socrates_zero_openrouter_acquisition_renderer.py",
+            "tests_dialogues/test_socrates_zero_openrouter_acquisition_adapter.py",
+            "tests_dialogues/test_socrates_zero_openrouter_acquisition_cases.py",
+            "tests_dialogues/test_socrates_zero_openrouter_acquisition_evaluation.py",
+            "tests_dialogues/conftest.py",
+            "tests_dialogues/test_socrates_zero_acquisition_boundaries.py",
+            "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/MEMORY.md",
+            "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/PLAN.md",
+            "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/PRESENT.md",
+            "docs/branches/feature-socrates-zero-provider-adapter-controls-v0/README.md",
+        ),
+    ),
+    (
+        "SIBLING",
+        (
+            "backend/dialogues/socrates_zero/__init__.py",
+            "backend/dialogues/socrates_zero/acquisition.py",
+            "backend/dialogues/socrates_zero/acquisition_cases.py",
+            "backend/dialogues/socrates_zero/acquisition_contracts.py",
+            "backend/dialogues/socrates_zero/acquisition_evaluation.py",
+            "backend/dialogues/socrates_zero/acquisition_isolation_evidence.py",
+            "backend/dialogues/socrates_zero/baseline.py",
+            "backend/dialogues/socrates_zero/constitution.py",
+            "backend/dialogues/socrates_zero/contracts.py",
+            "backend/dialogues/socrates_zero/evaluation.py",
+            "backend/dialogues/socrates_zero/evaluation_cases.py",
+            "backend/dialogues/socrates_zero/evaluation_harness.py",
+            "backend/dialogues/socrates_zero/policy.py",
+            "backend/dialogues/socrates_zero/puct.py",
+            "backend/dialogues/socrates_zero/strategy.py",
+            "backend/dialogues/socrates_zero/value.py",
+        ),
+    ),
+    (
+        "PRODUCTION",
+        (
+            "backend/dialogues/agent.py",
+            "backend/dialogues/ced.py",
+            "backend/dialogues/ced_search_observability_v1.py",
+            "backend/dialogues/ced_search_projection.py",
+            "backend/dialogues/ced_search_projection_v1.py",
+            "backend/dialogues/ced_search_value_v1.py",
+            "backend/dialogues/ced_search_value_v1_artifact.py",
+            "backend/dialogues/ced_search_value_v1_bestofn.py",
+            "backend/dialogues/ced_search_value_v1_bestofn_cases.py",
+            "backend/dialogues/ced_search_value_v1_contracts.py",
+            "backend/dialogues/ced_search_value_v1_evaluation.py",
+            "backend/dialogues/ced_search_value_v1_evaluation_cases.py",
+            "backend/dialogues/hybrid_authority.py",
+            "backend/dialogues/hybrid_epistemic.py",
+            "backend/dialogues/hybrid_shadow.py",
+            "backend/dialogues/hybrid_support.py",
+            "backend/dialogues/ced_canonical_successor.py",
+            "backend/dialogues/ced_canonical_successor_cases.py",
+            "backend/dialogues/ced_canonical_successor_cases_v1.py",
+            "backend/dialogues/ced_canonical_successor_cases_v2.py",
+            "backend/dialogues/ced_canonical_successor_contracts.py",
+            "backend/dialogues/ced_canonical_successor_evaluation.py",
+            "backend/dialogues/ced_canonical_successor_evaluation_v2.py",
+            "backend/dialogues/ced_canonical_successor_frozen_core_v2.py",
+            "backend/dialogues/ced_canonical_successor_manifest.py",
+            "backend/dialogues/ced_canonical_successor_recording.py",
+            "backend/dialogues/ced_canonical_successor_recording_contracts.py",
+            "backend/dialogues/ced_canonical_successor_recording_fixtures.py",
+            "backend/dialogues/openrouter_provider.py",
+            "backend/dialogues/provider_registry.py",
+            "backend/dialogues/live_providers.py",
+            "backend/dialogues/model_identity.py",
+            "backend/dialogues/models.py",
+            "backend/dialogues/providers.py",
+            "backend/dialogues/reasoning_prompts.py",
+            "backend/dialogues/role_assignment.py",
+            "backend/dialogues/socratic.py",
+            "backend/dialogues/task_checker.py",
+            "backend/dialogues/topic.py",
+        ),
+    ),
+)
+FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_ID_V0 = stable_contract_id(
+    "szorpathinventory",
+    {
+        "schema_version": OPENROUTER_SCOPED_PATH_INVENTORY_SCHEMA_V0,
+        "paths": tuple(
+            {"scope": scope, "relative_path": relative_path}
+            for scope, paths in FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0
+            for relative_path in paths
+        ),
+    },
+)
 
 _P08 = OpenRouterAdapterGuardId.P08_ROUTE_POLICY
 _P09 = OpenRouterAdapterGuardId.P09_FALLBACK_INTENT
@@ -218,6 +330,210 @@ class OpenRouterHypothesisStatus(str, Enum):
     FALSIFIED = "FALSIFIED"
 
 
+class OpenRouterMutationScope(str, Enum):
+    SOURCE = "SOURCE"
+    SIBLING = "SIBLING"
+    PRODUCTION = "PRODUCTION"
+
+
+def _canonical_scoped_relative_path(value: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("scoped inventory path must be nonblank")
+    if "\\" in value:
+        raise ValueError("scoped inventory path must use forward slashes")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or PureWindowsPath(value).drive
+        or path.parts in ((), (".",))
+    ):
+        raise ValueError("scoped inventory path must be relative")
+    if any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("scoped inventory path contains an unsafe segment")
+    canonical = path.as_posix()
+    if canonical != value:
+        raise ValueError("scoped inventory path is not canonical")
+    return canonical
+
+
+class OpenRouterScopedPathDigestV0(_FrozenEvaluationModel):
+    scope: OpenRouterMutationScope
+    relative_path: str
+    present: bool = Field(strict=True)
+    sha256: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_path_and_presence(self) -> "OpenRouterScopedPathDigestV0":
+        _canonical_scoped_relative_path(self.relative_path)
+        if self.present is not (self.sha256 is not None):
+            raise ContractValidationError("scoped path presence/digest evidence differs")
+        return self
+
+
+def _scoped_snapshot_id_v0(
+    rows: Tuple[OpenRouterScopedPathDigestV0, ...],
+) -> str:
+    return stable_contract_id(
+        "szorpathsnapshot",
+        {
+            "schema_version": OPENROUTER_SCOPED_PATH_SNAPSHOT_SCHEMA_V0,
+            "rows": tuple(row.model_dump(mode="json") for row in rows),
+        },
+    )
+
+
+class OpenRouterScopedPathSnapshotV0(_FrozenEvaluationModel):
+    schema_version: Literal[
+        OPENROUTER_SCOPED_PATH_SNAPSHOT_SCHEMA_V0
+    ] = OPENROUTER_SCOPED_PATH_SNAPSHOT_SCHEMA_V0
+    snapshot_id: Optional[str] = None
+    rows: Tuple[OpenRouterScopedPathDigestV0, ...] = Field(min_length=3)
+
+    @model_validator(mode="after")
+    def validate_and_identify(self) -> "OpenRouterScopedPathSnapshotV0":
+        identities = tuple((row.scope, row.relative_path) for row in self.rows)
+        if len(set(identities)) != len(identities):
+            raise ContractValidationError("scoped path snapshot contains duplicate rows")
+        if {row.scope for row in self.rows} != set(OpenRouterMutationScope):
+            raise ContractValidationError("scoped path snapshot misses a required category")
+        expected = _scoped_snapshot_id_v0(self.rows)
+        if self.snapshot_id not in (None, expected):
+            raise ContractValidationError("scoped path snapshot ID mismatch")
+        object.__setattr__(self, "snapshot_id", expected)
+        return self
+
+
+class OpenRouterScopedPathMutationV0(_FrozenEvaluationModel):
+    scope: OpenRouterMutationScope
+    relative_path: str
+    before_present: bool = Field(strict=True)
+    before_sha256: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    after_present: bool = Field(strict=True)
+    after_sha256: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    matches: Optional[bool] = Field(default=None, strict=True)
+    mutation_detected: Optional[bool] = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def derive_match_state(self) -> "OpenRouterScopedPathMutationV0":
+        _canonical_scoped_relative_path(self.relative_path)
+        if self.before_present is not (self.before_sha256 is not None):
+            raise ContractValidationError("before path presence/digest evidence differs")
+        if self.after_present is not (self.after_sha256 is not None):
+            raise ContractValidationError("after path presence/digest evidence differs")
+        matches = (
+            self.before_present
+            and self.after_present
+            and self.before_sha256 == self.after_sha256
+        )
+        if self.matches not in (None, matches):
+            raise ContractValidationError("scoped path match claim differs from digests")
+        if self.mutation_detected not in (None, not matches):
+            raise ContractValidationError("scoped path mutation claim differs from digests")
+        object.__setattr__(self, "matches", matches)
+        object.__setattr__(self, "mutation_detected", not matches)
+        return self
+
+
+def _scoped_inventory_id_from_mutations_v0(
+    rows: Tuple[OpenRouterScopedPathMutationV0, ...],
+) -> str:
+    return stable_contract_id(
+        "szorpathinventory",
+        {
+            "schema_version": OPENROUTER_SCOPED_PATH_INVENTORY_SCHEMA_V0,
+            "paths": tuple(
+                {"scope": row.scope.value, "relative_path": row.relative_path}
+                for row in rows
+            ),
+        },
+    )
+
+
+class OpenRouterScopedMutationEvidenceV0(_FrozenEvaluationModel):
+    """Endpoint snapshot mismatches over the explicit inventory, not a watcher."""
+
+    schema_version: Literal[
+        OPENROUTER_SCOPED_MUTATION_EVIDENCE_SCHEMA_V0
+    ] = OPENROUTER_SCOPED_MUTATION_EVIDENCE_SCHEMA_V0
+    evidence_id: Optional[str] = None
+    inventory_id: str
+    before_snapshot_id: str
+    after_snapshot_id: str
+    rows: Tuple[OpenRouterScopedPathMutationV0, ...] = Field(min_length=3)
+    source_mutations: Optional[int] = Field(default=None, ge=0, strict=True)
+    sibling_mutations: Optional[int] = Field(default=None, ge=0, strict=True)
+    production_mutations: Optional[int] = Field(default=None, ge=0, strict=True)
+    all_paths_unchanged: Optional[bool] = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def validate_and_identify(self) -> "OpenRouterScopedMutationEvidenceV0":
+        identities = tuple((row.scope, row.relative_path) for row in self.rows)
+        if len(set(identities)) != len(identities):
+            raise ContractValidationError("scoped mutation evidence contains duplicate rows")
+        if {row.scope for row in self.rows} != set(OpenRouterMutationScope):
+            raise ContractValidationError("scoped mutation evidence misses a category")
+        expected_inventory_id = _scoped_inventory_id_from_mutations_v0(self.rows)
+        if self.inventory_id != expected_inventory_id:
+            raise ContractValidationError("scoped mutation inventory ID mismatch")
+        before_rows = tuple(
+            OpenRouterScopedPathDigestV0(
+                scope=row.scope,
+                relative_path=row.relative_path,
+                present=row.before_present,
+                sha256=row.before_sha256,
+            )
+            for row in self.rows
+        )
+        after_rows = tuple(
+            OpenRouterScopedPathDigestV0(
+                scope=row.scope,
+                relative_path=row.relative_path,
+                present=row.after_present,
+                sha256=row.after_sha256,
+            )
+            for row in self.rows
+        )
+        if self.before_snapshot_id != _scoped_snapshot_id_v0(before_rows):
+            raise ContractValidationError("before snapshot link differs from path evidence")
+        if self.after_snapshot_id != _scoped_snapshot_id_v0(after_rows):
+            raise ContractValidationError("after snapshot link differs from path evidence")
+        counts = {
+            scope: sum(
+                row.scope is scope and bool(row.mutation_detected)
+                for row in self.rows
+            )
+            for scope in OpenRouterMutationScope
+        }
+        expected_counts = (
+            counts[OpenRouterMutationScope.SOURCE],
+            counts[OpenRouterMutationScope.SIBLING],
+            counts[OpenRouterMutationScope.PRODUCTION],
+        )
+        supplied_counts = (
+            self.source_mutations,
+            self.sibling_mutations,
+            self.production_mutations,
+        )
+        if any(
+            supplied is not None and supplied != expected
+            for supplied, expected in zip(supplied_counts, expected_counts)
+        ):
+            raise ContractValidationError("scoped mutation count claim differs")
+        unchanged = sum(expected_counts) == 0
+        if self.all_paths_unchanged not in (None, unchanged):
+            raise ContractValidationError("scoped all-paths claim differs")
+        object.__setattr__(self, "source_mutations", expected_counts[0])
+        object.__setattr__(self, "sibling_mutations", expected_counts[1])
+        object.__setattr__(self, "production_mutations", expected_counts[2])
+        object.__setattr__(self, "all_paths_unchanged", unchanged)
+        payload = self.model_dump(mode="json", exclude={"evidence_id"})
+        expected_id = stable_contract_id("szormutationevidence", payload)
+        if self.evidence_id not in (None, expected_id):
+            raise ContractValidationError("scoped mutation evidence ID mismatch")
+        object.__setattr__(self, "evidence_id", expected_id)
+        return self
+
+
 class OpenRouterTripwireCountersV0(_FrozenEvaluationModel):
     external_network_attempts: Literal[0] = 0
     credential_access_attempts: Literal[0] = 0
@@ -226,9 +542,9 @@ class OpenRouterTripwireCountersV0(_FrozenEvaluationModel):
     model_executions: Literal[0] = 0
     tool_calls: Literal[0] = 0
     canonical_application_calls: Literal[0] = 0
-    source_mutations: Literal[0] = 0
-    sibling_mutations: Literal[0] = 0
-    production_mutations: Literal[0] = 0
+    source_mutations: int = Field(default=0, ge=0, strict=True)
+    sibling_mutations: int = Field(default=0, ge=0, strict=True)
+    production_mutations: int = Field(default=0, ge=0, strict=True)
 
 
 class OpenRouterReferenceCannedReceiptSummaryV0(_FrozenEvaluationModel):
@@ -754,9 +1070,9 @@ class OpenRouterEvaluationMetricsV0(_FrozenEvaluationModel):
     model_calls: Literal[0] = 0
     tool_calls: Literal[0] = 0
     ced_application_invocations: Literal[0] = 0
-    source_mutations: Literal[0] = 0
-    sibling_mutations: Literal[0] = 0
-    production_mutations: Literal[0] = 0
+    source_mutations: int = Field(default=0, ge=0, strict=True)
+    sibling_mutations: int = Field(default=0, ge=0, strict=True)
+    production_mutations: int = Field(default=0, ge=0, strict=True)
     accepted_control_violations: int = Field(ge=0, le=59, strict=True)
     accepted_identity_mismatches: int = Field(ge=0, le=59, strict=True)
     accepted_fallback_retry_stream_tool_activations: int = Field(
@@ -844,6 +1160,7 @@ class OpenRouterEvaluationMetricsV0(_FrozenEvaluationModel):
                     self.external_network_attempts,
                     self.credential_access_attempts,
                     self.provider_calls,
+                    self.provider_sdk_calls,
                     self.model_calls,
                     self.tool_calls,
                     self.ced_application_invocations,
@@ -991,6 +1308,7 @@ class OpenRouterEvaluationArtifactV0(_FrozenEvaluationModel):
     )
     core_blob_lock: OpenRouterCoreBlobLockEvidenceV0
     tripwire_counters: OpenRouterTripwireCountersV0
+    scoped_mutation_evidence: OpenRouterScopedMutationEvidenceV0
     hypothesis_status: Optional[OpenRouterHypothesisStatus] = None
     replay_lock_created: bool = Field(default=False, strict=True)
     production_authority: Literal["none"] = "none"
@@ -1138,6 +1456,11 @@ class OpenRouterEvaluationArtifactV0(_FrozenEvaluationModel):
             raise ContractValidationError(
                 "artifact activity metrics differ from tripwire counters"
             )
+        _assert_frozen_scoped_mutation_accounting_v0(
+            self.scoped_mutation_evidence,
+            self.tripwire_counters,
+            self.metrics,
+        )
         expected_metrics = _metrics(
             self.case_results,
             self.historical_hashes,
@@ -2698,6 +3021,186 @@ def evaluate_openrouter_adapter_case_v0(
     )
 
 
+def _normalize_scoped_path_inventory_v0(
+    inventory: Tuple[Tuple[str, Tuple[str, ...]], ...],
+) -> Tuple[Tuple[OpenRouterMutationScope, Tuple[str, ...]], ...]:
+    expected_scopes = tuple(OpenRouterMutationScope)
+    if len(inventory) != len(expected_scopes):
+        raise ContractValidationError("scoped path inventory category count changed")
+    normalized = []
+    seen_paths = set()
+    for (raw_scope, raw_paths), expected_scope in zip(inventory, expected_scopes):
+        try:
+            scope = OpenRouterMutationScope(raw_scope)
+        except (TypeError, ValueError) as exc:
+            raise ContractValidationError("scoped path inventory category is invalid") from exc
+        if scope is not expected_scope:
+            raise ContractValidationError("scoped path inventory category order changed")
+        if not isinstance(raw_paths, tuple) or not raw_paths:
+            raise ContractValidationError("scoped path inventory category is empty")
+        paths = tuple(_canonical_scoped_relative_path(path) for path in raw_paths)
+        if len(set(paths)) != len(paths):
+            raise ContractValidationError("scoped path inventory contains duplicates")
+        if not seen_paths.isdisjoint(paths):
+            raise ContractValidationError("scoped path appears in multiple categories")
+        seen_paths.update(paths)
+        normalized.append((scope, paths))
+    return tuple(normalized)
+
+
+def capture_openrouter_scoped_path_snapshot_v0(
+    repository_root: Path | str,
+    inventory: Tuple[
+        Tuple[str, Tuple[str, ...]], ...
+    ] = FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0,
+) -> OpenRouterScopedPathSnapshotV0:
+    """Hash only the explicit inventory; never enumerate the repository."""
+
+    root = Path(repository_root).resolve()
+    if not root.is_dir():
+        raise ContractValidationError("scoped path repository root is not a directory")
+    normalized = _normalize_scoped_path_inventory_v0(inventory)
+    rows = []
+    for scope, paths in normalized:
+        for relative_path in paths:
+            relative = PurePosixPath(relative_path)
+            target = (root / Path(*relative.parts)).resolve()
+            try:
+                target.relative_to(root)
+            except ValueError as exc:
+                raise ContractValidationError(
+                    "scoped inventory path resolves outside repository root"
+                ) from exc
+            raw: Optional[bytes]
+            if target.is_file():
+                try:
+                    raw = target.read_bytes()
+                except FileNotFoundError:
+                    raw = None
+            else:
+                raw = None
+            rows.append(
+                OpenRouterScopedPathDigestV0(
+                    scope=scope,
+                    relative_path=relative_path,
+                    present=raw is not None,
+                    sha256=(hashlib.sha256(raw).hexdigest() if raw is not None else None),
+                )
+            )
+    return OpenRouterScopedPathSnapshotV0(rows=tuple(rows))
+
+
+def compare_openrouter_scoped_path_snapshots_v0(
+    before: OpenRouterScopedPathSnapshotV0,
+    after: OpenRouterScopedPathSnapshotV0,
+) -> OpenRouterScopedMutationEvidenceV0:
+    before = OpenRouterScopedPathSnapshotV0.model_validate(
+        before.model_dump(mode="python")
+    )
+    after = OpenRouterScopedPathSnapshotV0.model_validate(
+        after.model_dump(mode="python")
+    )
+    before_identities = tuple(
+        (row.scope, row.relative_path) for row in before.rows
+    )
+    after_identities = tuple((row.scope, row.relative_path) for row in after.rows)
+    if before_identities != after_identities:
+        raise ContractValidationError("scoped before/after inventory coverage differs")
+    rows = tuple(
+        OpenRouterScopedPathMutationV0(
+            scope=before_row.scope,
+            relative_path=before_row.relative_path,
+            before_present=before_row.present,
+            before_sha256=before_row.sha256,
+            after_present=after_row.present,
+            after_sha256=after_row.sha256,
+        )
+        for before_row, after_row in zip(before.rows, after.rows)
+    )
+    return OpenRouterScopedMutationEvidenceV0(
+        inventory_id=_scoped_inventory_id_from_mutations_v0(rows),
+        before_snapshot_id=before.snapshot_id or "",
+        after_snapshot_id=after.snapshot_id or "",
+        rows=rows,
+    )
+
+
+def _assert_frozen_scoped_mutation_accounting_v0(
+    evidence: OpenRouterScopedMutationEvidenceV0,
+    counters: OpenRouterTripwireCountersV0,
+    metrics: Optional[OpenRouterEvaluationMetricsV0] = None,
+) -> None:
+    validated_evidence = OpenRouterScopedMutationEvidenceV0.model_validate(
+        evidence.model_dump(mode="python")
+    )
+    if validated_evidence != evidence:
+        raise ContractValidationError("artifact scoped mutation evidence was not validated")
+    validated_counters = OpenRouterTripwireCountersV0.model_validate(
+        counters.model_dump(mode="python")
+    )
+    if validated_counters != counters:
+        raise ContractValidationError("artifact mutation counters were not validated")
+    if metrics is not None:
+        validated_metrics = OpenRouterEvaluationMetricsV0.model_validate(
+            metrics.model_dump(mode="python")
+        )
+        if validated_metrics != metrics:
+            raise ContractValidationError("artifact mutation metrics were not validated")
+    frozen_pairs = tuple(
+        (OpenRouterMutationScope(scope), relative_path)
+        for scope, paths in FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0
+        for relative_path in paths
+    )
+    actual_pairs = tuple((row.scope, row.relative_path) for row in evidence.rows)
+    if evidence.inventory_id != FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_ID_V0:
+        raise ContractValidationError("artifact scoped inventory ID is not frozen")
+    if actual_pairs != frozen_pairs:
+        raise ContractValidationError("artifact scoped inventory membership changed")
+    evidence_counts = (
+        evidence.source_mutations,
+        evidence.sibling_mutations,
+        evidence.production_mutations,
+    )
+    counter_counts = (
+        counters.source_mutations,
+        counters.sibling_mutations,
+        counters.production_mutations,
+    )
+    if evidence_counts != counter_counts:
+        raise ContractValidationError("artifact mutation counters differ from path evidence")
+    if metrics is not None and evidence_counts != (
+        metrics.source_mutations,
+        metrics.sibling_mutations,
+        metrics.production_mutations,
+    ):
+        raise ContractValidationError("artifact mutation metrics differ from path evidence")
+
+
+def _build_authoritative_artifact_under_scoped_guard_v0(
+    repository_root: Path,
+    before: OpenRouterScopedPathSnapshotV0,
+    embedded_after: OpenRouterScopedPathSnapshotV0,
+    artifact_builder: Callable[[], OpenRouterEvaluationArtifactV0],
+) -> OpenRouterEvaluationArtifactV0:
+    """Build and validate the artifact before closing the scoped hash window."""
+
+    artifact = artifact_builder()
+    final_postbuild = capture_openrouter_scoped_path_snapshot_v0(repository_root)
+    if final_postbuild != embedded_after or final_postbuild != before:
+        raise ContractValidationError(
+            "scoped paths changed during authoritative artifact construction"
+        )
+    expected_evidence = compare_openrouter_scoped_path_snapshots_v0(
+        before,
+        embedded_after,
+    )
+    if artifact.scoped_mutation_evidence != expected_evidence:
+        raise ContractValidationError(
+            "artifact scoped evidence differs from authoritative capture window"
+        )
+    return artifact
+
+
 def verify_historical_hashes_v0(
     repository_root: Path | str,
     locks: Tuple[Tuple[str, str, str], ...] = _HISTORICAL_ARTIFACT_LOCKS,
@@ -3082,6 +3585,7 @@ def run_authoritative_openrouter_acquisition_evaluation_v0(
         if repository_root is not None
         else Path(__file__).resolve().parents[3]
     )
+    scoped_paths_before = capture_openrouter_scoped_path_snapshot_v0(root)
     historical_before = verify_historical_hashes_v0(root)
     core_blob_lock_before = verify_core_blob_lock_v0(root)
     results = _evaluate_frozen_case_set_v0()
@@ -3092,7 +3596,16 @@ def run_authoritative_openrouter_acquisition_evaluation_v0(
         raise ContractValidationError(
             "historical or core-lock evidence changed during evaluation"
         )
-    counters = OpenRouterTripwireCountersV0()
+    scoped_paths_after = capture_openrouter_scoped_path_snapshot_v0(root)
+    scoped_mutation_evidence = compare_openrouter_scoped_path_snapshots_v0(
+        scoped_paths_before,
+        scoped_paths_after,
+    )
+    counters = OpenRouterTripwireCountersV0(
+        source_mutations=scoped_mutation_evidence.source_mutations,
+        sibling_mutations=scoped_mutation_evidence.sibling_mutations,
+        production_mutations=scoped_mutation_evidence.production_mutations,
+    )
     metrics = _metrics(
         results,
         historical,
@@ -3100,42 +3613,53 @@ def run_authoritative_openrouter_acquisition_evaluation_v0(
         candidate,
         counters,
     )
-    artifact = OpenRouterEvaluationArtifactV0(
-        capability_snapshot_id=candidate.capability_snapshot_id,
-        endpoint_policy_id=candidate.endpoint_policy_id,
-        route_policy_id=candidate.route_policy_id,
-        control_policy_id=candidate.control_policy_id,
-        transport_policy_id=candidate.transport_policy_id,
-        token_policy_id=candidate.token_policy_id,
-        pricing_record_id=candidate.pricing_record_id,
-        cost_bound_id=candidate.cost_bound_id,
-        raw_response_evidence_id=candidate.raw_response_evidence_id,
-        identity_evidence_id=candidate.identity_evidence_id,
-        usage_evidence_id=candidate.usage_evidence_id,
-        canned_response_envelope_id=candidate.canned_response_envelope_id,
-        attempt_receipt_id=candidate.attempt_receipt_id,
-        reference_receipt_summary_id=candidate.reference_receipt_summary_id,
-        reference_receipt_summary=candidate.reference_receipt_summary,
-        reference_canned_fixture_only=candidate.reference_canned_fixture_only,
-        actual_canned_transport_invocations=(
-            candidate.actual_canned_transport_invocations
-        ),
-        actual_response_receipt=candidate.actual_response_receipt,
-        baseline_projection_sha256=candidate.baseline_projection_sha256,
-        fixture_manifest_id=candidate.fixture_manifest_id,
-        case_set_id=FROZEN_OPENROUTER_ADAPTER_CASE_SET_V0.case_set_id or "",
-        metrics_id=metrics.metrics_id or "",
-        thresholds_id=FROZEN_OPENROUTER_ADAPTER_THRESHOLDS_V0.thresholds_id or "",
-        case_set_sha256=frozen_openrouter_adapter_case_set_sha256_v0(),
-        candidate_evidence=candidate,
-        case_results=results,
-        metrics=metrics,
-        historical_hashes=historical,
-        core_blob_lock=core_blob_lock,
-        tripwire_counters=counters,
+    def build_and_validate_artifact() -> OpenRouterEvaluationArtifactV0:
+        artifact = OpenRouterEvaluationArtifactV0(
+            capability_snapshot_id=candidate.capability_snapshot_id,
+            endpoint_policy_id=candidate.endpoint_policy_id,
+            route_policy_id=candidate.route_policy_id,
+            control_policy_id=candidate.control_policy_id,
+            transport_policy_id=candidate.transport_policy_id,
+            token_policy_id=candidate.token_policy_id,
+            pricing_record_id=candidate.pricing_record_id,
+            cost_bound_id=candidate.cost_bound_id,
+            raw_response_evidence_id=candidate.raw_response_evidence_id,
+            identity_evidence_id=candidate.identity_evidence_id,
+            usage_evidence_id=candidate.usage_evidence_id,
+            canned_response_envelope_id=candidate.canned_response_envelope_id,
+            attempt_receipt_id=candidate.attempt_receipt_id,
+            reference_receipt_summary_id=candidate.reference_receipt_summary_id,
+            reference_receipt_summary=candidate.reference_receipt_summary,
+            reference_canned_fixture_only=candidate.reference_canned_fixture_only,
+            actual_canned_transport_invocations=(
+                candidate.actual_canned_transport_invocations
+            ),
+            actual_response_receipt=candidate.actual_response_receipt,
+            baseline_projection_sha256=candidate.baseline_projection_sha256,
+            fixture_manifest_id=candidate.fixture_manifest_id,
+            case_set_id=FROZEN_OPENROUTER_ADAPTER_CASE_SET_V0.case_set_id or "",
+            metrics_id=metrics.metrics_id or "",
+            thresholds_id=(
+                FROZEN_OPENROUTER_ADAPTER_THRESHOLDS_V0.thresholds_id or ""
+            ),
+            case_set_sha256=frozen_openrouter_adapter_case_set_sha256_v0(),
+            candidate_evidence=candidate,
+            case_results=results,
+            metrics=metrics,
+            historical_hashes=historical,
+            core_blob_lock=core_blob_lock,
+            tripwire_counters=counters,
+            scoped_mutation_evidence=scoped_mutation_evidence,
+        )
+        tripwire.assert_artifact_counters(artifact.tripwire_counters)
+        return artifact
+
+    return _build_authoritative_artifact_under_scoped_guard_v0(
+        root,
+        scoped_paths_before,
+        scoped_paths_after,
+        build_and_validate_artifact,
     )
-    tripwire.assert_artifact_counters(artifact.tripwire_counters)
-    return artifact
 
 
 def render_openrouter_evaluation_artifact_v0(
@@ -3195,12 +3719,17 @@ def publish_openrouter_evaluation_artifact_once_v0(
 
 __all__ = [
     "FROZEN_CORE_BLOB_LOCK_ID_V2",
+    "FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_ID_V0",
+    "FROZEN_OPENROUTER_SCOPED_PATH_INVENTORY_V0",
     "OPENROUTER_ARTIFACT_SCHEMA_V0",
     "OPENROUTER_CASE_RESULT_SCHEMA_V0",
     "OPENROUTER_EVALUATION_SCHEMA_V0",
     "OPENROUTER_EVALUATOR_VERSION_V0",
     "OPENROUTER_FIXTURE_MANIFEST_SCHEMA_V0",
     "OPENROUTER_REFERENCE_RECEIPT_SUMMARY_SCHEMA_V0",
+    "OPENROUTER_SCOPED_MUTATION_EVIDENCE_SCHEMA_V0",
+    "OPENROUTER_SCOPED_PATH_INVENTORY_SCHEMA_V0",
+    "OPENROUTER_SCOPED_PATH_SNAPSHOT_SCHEMA_V0",
     "OpenRouterCandidateEvidenceV0",
     "OpenRouterCaseEvaluationV0",
     "OpenRouterCoreBlobLockEvidenceV0",
@@ -3209,11 +3738,18 @@ __all__ = [
     "OpenRouterHistoricalHashEvidenceV0",
     "OpenRouterHypothesisStatus",
     "OpenRouterMutationObservationV0",
+    "OpenRouterMutationScope",
     "OpenRouterProbeConstructionEvidenceV0",
     "OpenRouterReferenceCannedReceiptSummaryV0",
+    "OpenRouterScopedMutationEvidenceV0",
+    "OpenRouterScopedPathDigestV0",
+    "OpenRouterScopedPathMutationV0",
+    "OpenRouterScopedPathSnapshotV0",
     "OpenRouterTripwireCountersV0",
     "ProbeConstructionState",
     "build_openrouter_candidate_evidence_v0",
+    "capture_openrouter_scoped_path_snapshot_v0",
+    "compare_openrouter_scoped_path_snapshots_v0",
     "evaluate_openrouter_adapter_case_v0",
     "openrouter_evaluation_artifact_sha256_v0",
     "publish_openrouter_evaluation_artifact_once_v0",
