@@ -1,0 +1,536 @@
+{
+  "schema_version": "socrateszero-openrouter-wire-specification-manifest/v2",
+  "manifest_id": "szorwirespecmanifestv2_openrouterdocs_4a5a458dbb6a0041",
+  "status": "SUPPORTED_FOR_WIRE_MAPPING_DECISION_ONLY",
+  "created_for": "Phase 8.5D-S recovery after the sealed v1 retrieval-environment failure",
+  "predecessor": {
+    "branch": "feature/socrates-zero-openrouter-wire-spec-evidence-v1",
+    "head": "a37e6c0068e3132ca49128295a5ef8453f91592c",
+    "result": "FALSIFIED",
+    "reason": "The single frozen downloader pass received six NETWORK_ERROR results and retained zero official response bytes."
+  },
+  "official_source_repository": {
+    "repository": "OpenRouterTeam/docs",
+    "commit": "4a5a458dbb6a0041db0480c17ab67c4c1a3ae0db",
+    "policy": "PINNED_GIT_COMMIT_AND_BLOB_SHA",
+    "authenticated_calls": 0,
+    "provider_inference_calls": 0,
+    "credential_accesses": 0
+  },
+  "source_records": [
+    {
+      "source_id": "ORWIRE-V2-S01-OPENAPI",
+      "path": "openapi/openapi.yaml",
+      "git_blob_sha": "62ebcd1e1ff13d671096954daee7d2229cd42238",
+      "byte_size": 1397709,
+      "source_class": "OFFICIAL_OPENAPI_SCHEMA",
+      "scope": [
+        "request and response schema reference",
+        "machine-readable child-schema authority where explicitly present"
+      ],
+      "limitations": [
+        "The large OpenAPI blob was pinned by commit and blob SHA; this manifest does not claim that every behavioral invariant appears in OpenAPI."
+      ]
+    },
+    {
+      "source_id": "ORWIRE-V2-S02-ROUTER-METADATA",
+      "path": "guides/features/router-metadata.mdx",
+      "git_blob_sha": "224633ac1dc7b8e9b7dab36f0d6458afd85a7309",
+      "byte_size": 14038,
+      "source_class": "OFFICIAL_ROUTER_METADATA_DOCUMENTATION",
+      "scope": [
+        "success and error placement",
+        "field paths and types",
+        "attempt and fallback semantics",
+        "endpoint candidate metadata",
+        "pipeline stages",
+        "cache-hit omission",
+        "additive-field policy"
+      ]
+    },
+    {
+      "source_id": "ORWIRE-V2-S03-API-OVERVIEW",
+      "path": "api_reference/overview.mdx",
+      "git_blob_sha": "72ec6e804f20127b16a83abb16a312ff8c56ce41",
+      "byte_size": 15698,
+      "source_class": "OFFICIAL_API_REFERENCE",
+      "scope": [
+        "non-streaming response envelope",
+        "actual served model field",
+        "usage fields"
+      ]
+    },
+    {
+      "source_id": "ORWIRE-V2-S04-RESPONSE-CACHE",
+      "path": "guides/features/response-caching.mdx",
+      "git_blob_sha": "437dc6abab221bb7bdcfbe6c4d3bdcb37df84b90",
+      "byte_size": 16643,
+      "source_class": "OFFICIAL_RESPONSE_CACHE_DOCUMENTATION",
+      "scope": [
+        "cache disable request header",
+        "cache status response headers",
+        "cache-hit zero usage and metadata limitations"
+      ]
+    },
+    {
+      "source_id": "ORWIRE-V2-S05-PROVIDER-ROUTING",
+      "path": "guides/routing/provider-selection.mdx",
+      "git_blob_sha": "7451e2ff9c5d898d642c9e1e6a516d1f3904ad01",
+      "byte_size": 61399,
+      "source_class": "OFFICIAL_PROVIDER_ROUTING_DOCUMENTATION",
+      "scope": [
+        "provider.order",
+        "provider.only",
+        "provider.allow_fallbacks",
+        "provider.require_parameters",
+        "provider selector terminology"
+      ]
+    },
+    {
+      "source_id": "ORWIRE-V2-S06-MODEL-FALLBACKS",
+      "path": "guides/routing/model-fallbacks.mdx",
+      "git_blob_sha": "473c202c4420bbd917f9d65452a3b8240fc00cbf",
+      "byte_size": 6002,
+      "source_class": "OFFICIAL_MODEL_FALLBACK_DOCUMENTATION",
+      "scope": [
+        "models-array fallback order",
+        "fallback trigger behavior",
+        "actual model returned in the response model field"
+      ]
+    }
+  ],
+  "typed_facts": [
+    {
+      "fact_id": "ORWIRE-F01",
+      "path": "openrouter_metadata",
+      "json_type": "object",
+      "presence": "OPTIONAL_BY_OPT_IN_AND_EXECUTION_PATH",
+      "envelope": "SUCCESS_TOP_LEVEL_SIBLING",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F02",
+      "path": "openrouter_metadata",
+      "json_type": "object",
+      "presence": "OPTIONAL_BY_OPT_IN_AND_ERROR_CLASS",
+      "envelope": "ERROR_TOP_LEVEL_SIBLING_OF_ERROR",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F03",
+      "path": "openrouter_metadata.requested",
+      "json_type": "string",
+      "presence": "REQUIRED_WHEN_FULL_METADATA_OBJECT_IS_PRESENT",
+      "meaning": "Client-requested model slug or alias.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F04",
+      "path": "openrouter_metadata.strategy",
+      "json_type": "string",
+      "presence": "REQUIRED_WHEN_FULL_METADATA_OBJECT_IS_PRESENT",
+      "meaning": "Routing strategy; documented values are additive rather than a permanently closed enum.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F05",
+      "path": "openrouter_metadata.region",
+      "json_type": ["string", "null"],
+      "presence": "CONDITIONALLY_PRESENT",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F06",
+      "path": "openrouter_metadata.summary",
+      "json_type": "string",
+      "presence": "CONDITIONALLY_PRESENT",
+      "authority": "DIAGNOSTIC_ONLY",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F07",
+      "path": "openrouter_metadata.attempt",
+      "json_type": "integer",
+      "presence": "REQUIRED_WHEN_METADATA_HAS_ROUTING_STATE",
+      "meaning": "One-indexed successful attempt on success; greater than one means earlier failures and fallback. On documented failures, zero can mean no provider was reached.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F08",
+      "path": "openrouter_metadata.is_byok",
+      "json_type": "boolean",
+      "presence": "CONDITIONALLY_PRESENT",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F09",
+      "path": "openrouter_metadata.endpoints",
+      "json_type": "object",
+      "presence": "REQUIRED_WHEN_ENDPOINT_SNAPSHOT_EXISTS",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F10",
+      "path": "openrouter_metadata.endpoints.total",
+      "json_type": "integer",
+      "presence": "REQUIRED_WITH_ENDPOINTS_OBJECT",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F11",
+      "path": "openrouter_metadata.endpoints.available",
+      "json_type": "array<object>",
+      "presence": "REQUIRED_WITH_ENDPOINTS_OBJECT",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F12",
+      "path": "openrouter_metadata.endpoints.available[].provider",
+      "json_type": "string",
+      "presence": "REQUIRED_PER_DOCUMENTED_ENDPOINT_ENTRY",
+      "granularity": "PROVIDER_DISPLAY_OR_ORGANIZATION_LABEL_NOT_EXACT_ENDPOINT_SLUG",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F13",
+      "path": "openrouter_metadata.endpoints.available[].model",
+      "json_type": "string",
+      "presence": "REQUIRED_PER_DOCUMENTED_ENDPOINT_ENTRY",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F14",
+      "path": "openrouter_metadata.endpoints.available[].selected",
+      "json_type": "boolean",
+      "presence": "REQUIRED_PER_DOCUMENTED_ENDPOINT_ENTRY",
+      "meaning": "No endpoint is selected on documented failures; a successful response can identify the selected candidate at provider/model granularity.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F15",
+      "path": "openrouter_metadata.params",
+      "json_type": "object",
+      "presence": "OPTIONAL",
+      "authority": "ROUTER_PARAMETER_DIAGNOSTIC",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F16",
+      "path": "openrouter_metadata.attempts",
+      "json_type": "array<object>",
+      "presence": "OPTIONAL",
+      "meaning": "Per-attempt provider/model/status entries when the router retried against fallbacks.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F17",
+      "path": "openrouter_metadata.attempts[].provider",
+      "json_type": "string",
+      "presence": "REQUIRED_PER_DOCUMENTED_ATTEMPT_ENTRY",
+      "granularity": "PROVIDER_DISPLAY_OR_ORGANIZATION_LABEL",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F18",
+      "path": "openrouter_metadata.attempts[].model",
+      "json_type": "string",
+      "presence": "REQUIRED_PER_DOCUMENTED_ATTEMPT_ENTRY",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F19",
+      "path": "openrouter_metadata.attempts[].status",
+      "json_type": "integer",
+      "presence": "REQUIRED_PER_DOCUMENTED_ATTEMPT_ENTRY",
+      "meaning": "HTTP-like attempt status in the official example and field contract.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F20",
+      "path": "openrouter_metadata.pipeline",
+      "json_type": "array<object>",
+      "presence": "OPTIONAL",
+      "meaning": "Stages that materially altered request or response; unknown stage types are opaque and additive.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F21",
+      "path": "openrouter_metadata.pipeline[].type",
+      "json_type": "string",
+      "presence": "REQUIRED_PER_DOCUMENTED_PIPELINE_ENTRY",
+      "unknown_value_policy": "PRESERVE_OPAQUELY_NON_AUTHORITATIVE",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F22",
+      "path": "openrouter_metadata.pipeline[].name",
+      "json_type": "string",
+      "presence": "REQUIRED_PER_DOCUMENTED_PIPELINE_ENTRY",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F23",
+      "path": "openrouter_metadata.pipeline[].data",
+      "json_type": "object",
+      "presence": "OPTIONAL_OR_STAGE_SPECIFIC",
+      "unknown_field_policy": "OPAQUE_FREE_FORM_RECORD",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F24",
+      "path": "model",
+      "json_type": "string",
+      "presence": "REQUIRED_ON_NON_STREAMING_SUCCESS_RESPONSE",
+      "meaning": "Actual model that served the response; can differ when model fallback is used.",
+      "evidence": ["ORWIRE-V2-S03-API-OVERVIEW", "ORWIRE-V2-S06-MODEL-FALLBACKS"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F25",
+      "path": "X-OpenRouter-Cache-Status",
+      "json_type": "http-header-string",
+      "presence": "PRESENT_WHEN_RESPONSE_CACHE_FEATURE_REPORTS_STATUS",
+      "allowed_values": ["HIT", "MISS"],
+      "evidence": ["ORWIRE-V2-S04-RESPONSE-CACHE"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F26",
+      "path": "openrouter_metadata",
+      "json_type": "object",
+      "presence": "OMITTED_ON_CACHE_HIT",
+      "meaning": "Cache hits intentionally omit router metadata because stale routing data must not be treated as current.",
+      "evidence": ["ORWIRE-V2-S02-ROUTER-METADATA", "ORWIRE-V2-S04-RESPONSE-CACHE"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F27",
+      "path": "provider.allow_fallbacks",
+      "json_type": "boolean",
+      "presence": "OPTIONAL_REQUEST_FIELD_DEFAULT_TRUE",
+      "meaning": "Request-side provider fallback control, distinct from model fallback and client retries.",
+      "evidence": ["ORWIRE-V2-S05-PROVIDER-ROUTING"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    },
+    {
+      "fact_id": "ORWIRE-F28",
+      "path": "models",
+      "json_type": "array<string>",
+      "presence": "OPTIONAL_REQUEST_FIELD",
+      "meaning": "Priority-ordered model fallback list; absence is required by a single-model no-model-fallback experiment.",
+      "evidence": ["ORWIRE-V2-S06-MODEL-FALLBACKS"],
+      "strength": "DIRECTLY_DOCUMENTED"
+    }
+  ],
+  "lossless_mapping_records": [
+    {
+      "mapping_id": "ORWIRE-M01",
+      "source_path": "openrouter_metadata.requested",
+      "target_field": "requested_model",
+      "transform": "IDENTITY_STRING",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F03"]
+    },
+    {
+      "mapping_id": "ORWIRE-M02",
+      "source_path": "openrouter_metadata.strategy",
+      "target_field": "routing_strategy",
+      "transform": "IDENTITY_STRING_OPAQUE_FORWARD_COMPATIBLE",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F04"]
+    },
+    {
+      "mapping_id": "ORWIRE-M03",
+      "source_path": "openrouter_metadata.attempt",
+      "target_field": "attempt_number",
+      "transform": "IDENTITY_INTEGER",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F07"]
+    },
+    {
+      "mapping_id": "ORWIRE-M04",
+      "source_path": "openrouter_metadata.endpoints.total",
+      "target_field": "endpoint_total",
+      "transform": "IDENTITY_INTEGER",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F10"]
+    },
+    {
+      "mapping_id": "ORWIRE-M05",
+      "source_path": "openrouter_metadata.endpoints.available[].provider",
+      "target_field": "endpoint_candidates[].provider_label",
+      "transform": "IDENTITY_STRING_WITH_GRANULARITY_TAG",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F12"]
+    },
+    {
+      "mapping_id": "ORWIRE-M06",
+      "source_path": "openrouter_metadata.endpoints.available[].model",
+      "target_field": "endpoint_candidates[].model",
+      "transform": "IDENTITY_STRING",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F13"]
+    },
+    {
+      "mapping_id": "ORWIRE-M07",
+      "source_path": "openrouter_metadata.endpoints.available[].selected",
+      "target_field": "endpoint_candidates[].selected",
+      "transform": "IDENTITY_BOOLEAN",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F14"]
+    },
+    {
+      "mapping_id": "ORWIRE-M08",
+      "source_path": "openrouter_metadata.attempts[].provider",
+      "target_field": "attempts[].provider_label",
+      "transform": "IDENTITY_STRING_WITH_GRANULARITY_TAG",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F17"]
+    },
+    {
+      "mapping_id": "ORWIRE-M09",
+      "source_path": "openrouter_metadata.attempts[].model",
+      "target_field": "attempts[].model",
+      "transform": "IDENTITY_STRING",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F18"]
+    },
+    {
+      "mapping_id": "ORWIRE-M10",
+      "source_path": "openrouter_metadata.attempts[].status",
+      "target_field": "attempts[].status",
+      "transform": "IDENTITY_INTEGER",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F19"]
+    },
+    {
+      "mapping_id": "ORWIRE-M11",
+      "source_path": "openrouter_metadata.pipeline[]",
+      "target_field": "pipeline_stages[]",
+      "transform": "PRESERVE_KNOWN_FIELDS_AND_DIGEST_UNKNOWN_FIELDS",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F20", "ORWIRE-F21", "ORWIRE-F22", "ORWIRE-F23"]
+    },
+    {
+      "mapping_id": "ORWIRE-M12",
+      "source_path": "model",
+      "target_field": "actual_served_model",
+      "transform": "IDENTITY_STRING",
+      "lossless": true,
+      "fact_ids": ["ORWIRE-F24"]
+    }
+  ],
+  "relationship_assessments": [
+    {
+      "relationship": "SUCCESS_ENVELOPE_METADATA_PLACEMENT",
+      "status": "ESTABLISHED",
+      "evidence": ["ORWIRE-F01"]
+    },
+    {
+      "relationship": "ERROR_ENVELOPE_METADATA_PLACEMENT",
+      "status": "ESTABLISHED_WITH_DOCUMENTED_EXCEPTIONS",
+      "evidence": ["ORWIRE-F02"]
+    },
+    {
+      "relationship": "CACHE_HIT_METADATA_OMISSION",
+      "status": "ESTABLISHED",
+      "evidence": ["ORWIRE-F25", "ORWIRE-F26"]
+    },
+    {
+      "relationship": "ATTEMPT_SEMANTICS",
+      "status": "ESTABLISHED",
+      "evidence": ["ORWIRE-F07"]
+    },
+    {
+      "relationship": "ATTEMPTS_LIST_OPTIONALITY",
+      "status": "ESTABLISHED",
+      "evidence": ["ORWIRE-F16", "ORWIRE-F17", "ORWIRE-F18", "ORWIRE-F19"]
+    },
+    {
+      "relationship": "ENDPOINT_CANDIDATE_COLLECTION",
+      "status": "ESTABLISHED_AT_DOCUMENTED_FIELD_LEVEL",
+      "evidence": ["ORWIRE-F09", "ORWIRE-F10", "ORWIRE-F11", "ORWIRE-F12", "ORWIRE-F13", "ORWIRE-F14"]
+    },
+    {
+      "relationship": "PROVIDER_IDENTITY_GRANULARITY",
+      "status": "ESTABLISHED_AS_BROAD_PROVIDER_LABEL_ONLY",
+      "evidence": ["ORWIRE-F12", "ORWIRE-F17"]
+    },
+    {
+      "relationship": "EXACT_ENDPOINT_RESPONSE_IDENTITY",
+      "status": "NOT_ESTABLISHED",
+      "reason": "The official wire examples expose broad provider labels, not the exact request endpoint selector such as azure/swedencentral."
+    },
+    {
+      "relationship": "ACTUAL_SERVED_MODEL_PRECEDENCE",
+      "status": "ESTABLISHED_FROM_TOP_LEVEL_RESPONSE_MODEL",
+      "evidence": ["ORWIRE-F24", "ORWIRE-M12"]
+    },
+    {
+      "relationship": "ROUTING_STRATEGY_MAPPING",
+      "status": "ESTABLISHED_AS_FORWARD_COMPATIBLE_STRING",
+      "evidence": ["ORWIRE-F04", "ORWIRE-M02"]
+    },
+    {
+      "relationship": "PIPELINE_STAGE_AUTHORITY",
+      "status": "ESTABLISHED_FOR_MATERIAL_STAGE_RECORDING_WITH_OPAQUE_UNKNOWN_TYPES",
+      "evidence": ["ORWIRE-F20", "ORWIRE-F21", "ORWIRE-F22", "ORWIRE-F23"]
+    },
+    {
+      "relationship": "ADDITIVE_UNKNOWN_FIELD_POLICY",
+      "status": "ESTABLISHED",
+      "policy": "IGNORE_OR_DIGEST_UNKNOWN_OPTIONAL_FIELDS; NEVER_ALLOW_UNKNOWN_FIELDS_TO_OVERRIDE_KNOWN_AUTHORITY",
+      "evidence": ["ORWIRE-F20", "ORWIRE-F21", "ORWIRE-F23"]
+    },
+    {
+      "relationship": "MODEL_FALLBACK_REQUEST_INTENT",
+      "status": "ESTABLISHED",
+      "policy": "ONE_EXACT_MODEL_AND_MODELS_FIELD_ABSENT",
+      "evidence": ["ORWIRE-F28"]
+    },
+    {
+      "relationship": "PROVIDER_FALLBACK_REQUEST_INTENT",
+      "status": "ESTABLISHED",
+      "policy": "provider.allow_fallbacks=false",
+      "evidence": ["ORWIRE-F27"]
+    }
+  ],
+  "explicit_non_claims": {
+    "live_openrouter_conformance": "NOT_ESTABLISHED",
+    "exact_endpoint_response_attestation": "NOT_ESTABLISHED",
+    "P17_input_token_bound": "NOT_ESTABLISHED",
+    "P18_pricing_record": "NOT_ESTABLISHED",
+    "P19_total_cost_bound": "NOT_ESTABLISHED",
+    "credential_network_boundary": "NOT_ESTABLISHED",
+    "live_pilot_readiness": "NOT_EARNED"
+  },
+  "decision": {
+    "wire_mapping_v2_authorization_gate": "EARNED",
+    "wire_mapping_v2_implementation": "NOT_AUTOMATICALLY_AUTHORIZED",
+    "live_pilot": "BLOCKED",
+    "next": "Phase 8.5D-S2 official wire-mapping v2 authorization gate"
+  }
+}
