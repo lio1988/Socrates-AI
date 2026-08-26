@@ -244,4 +244,3 @@ def test_prepared_body_is_immutable() -> None:
     prepared = _render(_semantic_request())
     with pytest.raises(ValidationError, match="frozen"):
         prepared.canonical_body_json = "{}"  # type: ignore[misc]
-
