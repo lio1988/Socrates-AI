@@ -16,7 +16,12 @@ def _zero_external_acquisition_boundary(request: pytest.FixtureRequest):
     """Instrument every acquisition test, including future artifact tests."""
 
     test_name = Path(str(request.node.path)).name
-    if not test_name.startswith("test_socrates_zero_acquisition"):
+    if not test_name.startswith(
+        (
+            "test_socrates_zero_acquisition",
+            "test_socrates_zero_openrouter_acquisition",
+        )
+    ):
         yield
         return
 
