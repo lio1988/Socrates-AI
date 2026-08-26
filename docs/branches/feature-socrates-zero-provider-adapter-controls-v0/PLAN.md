@@ -3,9 +3,9 @@
 ## Ordered scientific chronology
 
 1. [done] Verify the Phase 8.5B checkpoint and create the approved branch.
-2. [in progress] Audit repository-native contracts, OpenRouter semantics and
+2. [done] Audit repository-native contracts, OpenRouter semantics and
    evaluation patterns; create branch documentation.
-3. [pending] Freeze immutable adapter contracts and canonical renderer.
+3. [in progress] Freeze immutable adapter contracts and canonical renderer.
 4. [pending] Freeze route/retry/fallback/stream/tool policies.
 5. [pending] Freeze token-bound and pricing/cost evidence contracts.
 6. [pending] Implement canned response, identity, usage and raw receipts.
