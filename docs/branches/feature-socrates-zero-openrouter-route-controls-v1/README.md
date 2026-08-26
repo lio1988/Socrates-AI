@@ -5,14 +5,14 @@
 Implement the approved Phase 8.5D additive, network-inert OpenRouter route
 controls v1 experiment against the frozen Phase 8.5C specification manifest.
 
-## Success criterion
+## Decision criterion
 
-Freeze before results and then prove, through one authoritative canned
-aggregate and an independent reverse replay, that canonical request/header
-intent and router-metadata parsing deterministically enforce the declared exact
-model, exact endpoint selector, no-fallback, metadata-required and
-response-cache-disabled policy without overclaiming live or exact-endpoint
-response evidence.
+Freeze before results and then run exactly one authoritative canned aggregate
+to test whether the sole-authority Phase 8.5C manifest supports both the exact
+request controls and the official response-envelope mapping required by the
+Phase 8.5D hypothesis. A repository-owned normalized parser may establish only
+a narrower offline subresult. Reverse replay is permitted only after complete
+support.
 
 ## Scope
 
@@ -40,5 +40,25 @@ vocabulary extension.
   `azure/swedencentral`.
 - Decision: `OPENROUTER ROUTE-CONTROL MILESTONE ONLY EARNED`.
 
-Branch context: [MEMORY.md](MEMORY.md) · [PLAN.md](PLAN.md) · [PRESENT.md](PRESENT.md)
+## Frozen pre-result design
 
+- Canonical body: 447 bytes, SHA-256
+  `35a119b1e35f9f8ce05baf57009d787358bf086aaae4055ef56fcfedade514a1`.
+- Canonical semantic headers: 98 bytes, SHA-256
+  `1c688da6c6494631d6922fcb89a56b126e0900327dd865c2483d84f3c9f58149`.
+- Cases: 63 = 6 positive + 49 orthogonal + 8 precedence.
+- Validation: 32 deterministic guards, first route-control guard wins.
+- Expected canned dispatches: 26.
+- Official response wire mapping from the sole-authority manifest:
+  `NOT_ESTABLISHED_FROM_FROZEN_MANIFEST`.
+- Frozen wire-mapping violations: 1; maximum allowed: 0.
+- Typed manifest audit:
+  `szorwiremappingassessmentv1_4837280cd07f68b98c73a84c48c59b44fc907b177f46fddfd6ece843f5a20b48`.
+- Expected hypothesis result: `FALSIFIED` even if the local normalized canned
+  contract passes every case.
+- Expected replay: prohibited for a falsified artifact.
+- Authoritative artifact: not run at the pre-result freeze.
+- Full design report:
+  [SOCRATES_ZERO_OPENROUTER_ROUTE_CONTROLS_V1.md](../../SOCRATES_ZERO_OPENROUTER_ROUTE_CONTROLS_V1.md).
+
+Branch context: [MEMORY.md](MEMORY.md) · [PLAN.md](PLAN.md) · [PRESENT.md](PRESENT.md)

@@ -67,6 +67,7 @@ def test_raw_first_positive_partial_attestation_is_deterministic() -> None:
     assert first.metadata_receipt.cache_metadata_status == (
         "METADATA_PRESENT_NO_CACHE_HIT_INFERENCE"
     )
+    assert first.metadata_receipt.unknown_field_count == 0
     assert first.route_attestation.response_provider_attestation == (
         "PARTIAL_BROAD_PROVIDER"
     )
@@ -114,32 +115,32 @@ def test_optional_attempts_and_unknown_fields_are_honest_and_opaque() -> None:
     ("mutate", "code", "guard"),
     [
         (
-            lambda value: value.pop("router_metadata"),
+            lambda value: value.pop("openrouter_metadata"),
             OpenRouterRouteControlFailureCodeV1.ROUTER_METADATA_MISSING,
             OpenRouterRouteControlGuardV1.METADATA_PRESENCE,
         ),
         (
-            lambda value: value["router_metadata"].pop("attempt"),
+            lambda value: value["openrouter_metadata"].pop("attempt"),
             OpenRouterRouteControlFailureCodeV1.ATTEMPT_MISSING,
             OpenRouterRouteControlGuardV1.ATTEMPT_PRESENT_AND_VALID,
         ),
         (
-            lambda value: value["router_metadata"].update(attempt=True),
+            lambda value: value["openrouter_metadata"].update(attempt=True),
             OpenRouterRouteControlFailureCodeV1.ATTEMPT_INVALID,
             OpenRouterRouteControlGuardV1.ATTEMPT_PRESENT_AND_VALID,
         ),
         (
-            lambda value: value["router_metadata"].update(attempt=2),
+            lambda value: value["openrouter_metadata"].update(attempt=2),
             OpenRouterRouteControlFailureCodeV1.MULTI_ATTEMPT_ROUTING_OBSERVED,
             OpenRouterRouteControlGuardV1.ATTEMPT_EQUALS_ONE,
         ),
         (
-            lambda value: value["router_metadata"].update(actual_model="other/model"),
+            lambda value: value["openrouter_metadata"].update(actual_model="other/model"),
             OpenRouterRouteControlFailureCodeV1.ACTUAL_MODEL_MISMATCH,
             OpenRouterRouteControlGuardV1.ACTUAL_MODEL_MATCH,
         ),
         (
-            lambda value: value["router_metadata"].update(provider="openai"),
+            lambda value: value["openrouter_metadata"].update(provider="openai"),
             OpenRouterRouteControlFailureCodeV1.PROVIDER_MISMATCH,
             OpenRouterRouteControlGuardV1.PROVIDER_COMPATIBILITY,
         ),
@@ -157,8 +158,8 @@ def test_attempts_cache_fallback_and_pipeline_fail_closed() -> None:
     raw = build_reference_openrouter_route_response_v1(include_attempts=True)
     probes = (
         (
-            lambda value: value["router_metadata"]["attempts"].append(
-                dict(value["router_metadata"]["attempts"][0])
+            lambda value: value["openrouter_metadata"]["attempts"].append(
+                dict(value["openrouter_metadata"]["attempts"][0])
             ),
             OpenRouterRouteControlFailureCodeV1.MULTIPLE_ATTEMPTS_REPORTED,
             OpenRouterRouteControlGuardV1.ATTEMPTS_LIST_CONSISTENCY,
@@ -169,12 +170,14 @@ def test_attempts_cache_fallback_and_pipeline_fail_closed() -> None:
             OpenRouterRouteControlGuardV1.CACHE_METADATA_AVAILABILITY,
         ),
         (
-            lambda value: value["router_metadata"].update(fallback_observed=True),
+            lambda value: value["openrouter_metadata"].update(fallback_observed=True),
             OpenRouterRouteControlFailureCodeV1.FALLBACK_INDICATOR_OBSERVED,
             OpenRouterRouteControlGuardV1.FALLBACK_INDICATORS_ABSENT,
         ),
         (
-            lambda value: value["router_metadata"].update(pipeline=[{"stage": "x"}]),
+            lambda value: value["openrouter_metadata"].update(
+                pipeline=[{"stage": "fallback"}]
+            ),
             OpenRouterRouteControlFailureCodeV1.FORBIDDEN_PIPELINE_STAGE,
             OpenRouterRouteControlGuardV1.FALLBACK_INDICATORS_ABSENT,
         ),
@@ -182,11 +185,53 @@ def test_attempts_cache_fallback_and_pipeline_fail_closed() -> None:
     for mutate, code, guard in probes:
         _assert_failure(_mutated(raw, mutate), code, guard)
 
+    forward = _mutated(
+        raw,
+        lambda value: value["openrouter_metadata"].update(
+            pipeline=[{"stage": "future-observational-stage"}]
+        ),
+    )
+    receipt = parse_openrouter_router_metadata_v1(forward, _prepared())
+    assert receipt.metadata_receipt.unknown_field_count > 0
+
+
+def test_strategy_and_nested_fallback_authority_fail_closed() -> None:
+    raw = build_reference_openrouter_route_response_v1()
+    for mutate in (
+        lambda value: value["openrouter_metadata"].update(
+            routing_strategy="fallback"
+        ),
+        lambda value: value["openrouter_metadata"].update(
+            future={"fallback_observed": True}
+        ),
+    ):
+        _assert_failure(
+            _mutated(raw, mutate),
+            OpenRouterRouteControlFailureCodeV1.FALLBACK_INDICATOR_OBSERVED,
+            OpenRouterRouteControlGuardV1.FALLBACK_INDICATORS_ABSENT,
+        )
+
+
+def test_model_copy_cannot_forge_prepared_request_receipt_links() -> None:
+    prepared = _prepared().model_copy(
+        update={"route_intent_id": "szorrouteintent_" + "0" * 64}
+    )
+    with pytest.raises(OpenRouterRouteControlParserError) as caught:
+        parse_openrouter_router_metadata_v1(
+            build_reference_openrouter_route_response_v1(), prepared
+        )
+    assert caught.value.failure_code is (
+        OpenRouterRouteControlFailureCodeV1.RECEIPT_INTEGRITY_FAILURE
+    )
+    assert caught.value.guard_id is (
+        OpenRouterRouteControlGuardV1.RECEIPT_AND_CLAIMS_INTEGRITY
+    )
+
 
 def test_exact_endpoint_and_unknown_authority_claims_never_gain_authority() -> None:
     exact = _mutated(
         build_reference_openrouter_route_response_v1(),
-        lambda value: value["router_metadata"].update(
+        lambda value: value["openrouter_metadata"].update(
             endpoint_slug=OPENROUTER_EXACT_ENDPOINT_SELECTOR_V1
         ),
     )
@@ -205,7 +250,7 @@ def test_exact_endpoint_and_unknown_authority_claims_never_gain_authority() -> N
     )
 
 
-def test_raw_envelope_and_transport_fail_before_semantic_parsing() -> None:
+def test_raw_envelope_transport_and_noncanonical_json_are_raw_first() -> None:
     _assert_failure(
         None,
         OpenRouterRouteControlFailureCodeV1.TRANSPORT_INCOMPLETE,
@@ -220,11 +265,11 @@ def test_raw_envelope_and_transport_fail_before_semantic_parsing() -> None:
     noncanonical = json.dumps(
         json.loads(build_reference_openrouter_route_response_v1()), indent=2
     ).encode("utf-8")
-    _assert_failure(
-        noncanonical,
-        OpenRouterRouteControlFailureCodeV1.ROUTER_METADATA_MALFORMED,
-        OpenRouterRouteControlGuardV1.METADATA_SCHEMA,
-    )
+    receipt = parse_openrouter_router_metadata_v1(noncanonical, _prepared())
+    assert receipt.raw_response.raw_response_json.encode("utf-8") == noncanonical
+    assert receipt.raw_response.raw_response_sha256 == hashlib.sha256(
+        noncanonical
+    ).hexdigest()
 
 
 def test_literal_claim_and_receipt_identity_firewalls_reject_overclaim() -> None:

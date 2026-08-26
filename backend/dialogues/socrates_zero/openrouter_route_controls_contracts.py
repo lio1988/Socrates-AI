@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
@@ -401,7 +402,11 @@ class OpenRouterRouteIntentV1(_FrozenRouteContractV1):
     @field_validator("temperature", mode="before")
     @classmethod
     def exact_temperature_type(cls, value: object) -> object:
-        if type(value) is not float:
+        if (
+            type(value) is not float
+            or value != OPENROUTER_ROUTE_TEMPERATURE_V1
+            or math.copysign(1.0, value) < 0
+        ):
             raise ValueError("temperature must use the frozen JSON number form")
         return value
 

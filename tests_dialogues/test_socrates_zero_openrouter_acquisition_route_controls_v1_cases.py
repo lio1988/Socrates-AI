@@ -58,11 +58,11 @@ def test_exact_case_id_sequence_is_frozen() -> None:
         "os05-attempt-greater-than-one os06-wrong-actual-model os07-wrong-provider os08-actual-model-missing "
         "os09-provider-missing os10-attempts-inconsistent os11-several-attempts os12-attempts-top-level-contradiction "
         "os13-cache-hit-metadata-unavailable os14-fake-exact-endpoint-claim os15-unknown-authority-override "
-        "os16-fallback-indicator os17-alias-model-substitution os18-provider-substitution "
+        "os16-fallback-strategy os17-alias-model-substitution os18-provider-substitution "
         "os19-forbidden-pipeline-stage os20-cache-hit-with-metadata "
         "p01-manifest-mismatch-plus-malformed-route p02-wrong-model-plus-fallback-true "
-        "p03-cache-header-missing-plus-metadata-missing p04-metadata-missing-plus-model-mismatch "
-        "p05-multi-attempt-plus-model-substitution p06-malformed-metadata-plus-fake-endpoint "
+        "p03-cache-header-missing-plus-metadata-missing p04-actual-model-missing-plus-provider-mismatch "
+        "p05-multi-attempt-plus-model-substitution p06-fallback-strategy-plus-fake-endpoint "
         "p07-max-price-plus-wrong-endpoint p08-body-entropy-plus-wrong-endpoint"
     ).split()
     assert [case.case_id for case in FROZEN_OPENROUTER_ROUTE_CONTROL_CASES_V1] == [
@@ -151,4 +151,3 @@ def test_case_module_remains_data_only() -> None:
         "acquisition_tripwires",
     ):
         assert forbidden_import not in source
-

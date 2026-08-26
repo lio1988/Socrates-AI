@@ -170,6 +170,7 @@ def test_route_intent_rejects_every_frozen_control_mutation(
         ("stream", 0),
         ("max_tokens", 256.0),
         ("temperature", 0),
+        ("temperature", -0.0),
     ),
 )
 def test_route_intent_rejects_json_type_coercion_loopholes(

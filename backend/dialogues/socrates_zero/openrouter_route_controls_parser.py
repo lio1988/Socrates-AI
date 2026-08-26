@@ -3,8 +3,9 @@
 The JSON accepted here is an explicitly local, normalized concept binding for
 the offline canned experiment.  Its field names are not represented as the
 official OpenRouter wire paths: the frozen Phase 8.5C manifest retained the
-concepts below, but not a complete wire-schema snapshot.  Raw canonical UTF-8
-JSON is retained before any semantic interpretation.
+concepts below, but not a complete wire-schema snapshot.  Exact raw UTF-8 JSON
+bytes are retained before any semantic interpretation; response member order
+and insignificant whitespace are not treated as provider authority.
 
 This module has no transport, environment, credential, provider, model, tool,
 CED, filesystem, or documentation-fetch capability.
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from enum import Enum
 from typing import Dict, Iterable, Literal, Mapping, Optional, Tuple
 
@@ -139,11 +141,15 @@ class OpenRouterRawResponseEvidenceV1(_FrozenModel):
         if hashlib.sha256(encoded).hexdigest() != self.raw_response_sha256:
             raise ValueError("raw response digest does not match retained bytes")
         try:
-            decoded = json.loads(self.raw_response_json)
+            decoded = json.loads(
+                self.raw_response_json,
+                object_pairs_hook=_unique_object,
+                parse_constant=_reject_json_constant,
+            )
         except (TypeError, ValueError) as exc:
             raise ValueError("retained raw response must be JSON") from exc
-        if not isinstance(decoded, dict) or canonical_json(decoded) != self.raw_response_json:
-            raise ValueError("retained raw response must be canonical JSON object bytes")
+        if not isinstance(decoded, dict):
+            raise ValueError("retained raw response must be a JSON object")
         expected = stable_contract_id(
             "szorrawroutev1",
             self.model_dump(mode="json", exclude={"evidence_id"}),
@@ -212,6 +218,10 @@ class OpenRouterRouteAttestationV1(_FrozenModel):
         ROUTE_ATTESTATION_SCHEMA_VERSION
     ] = ROUTE_ATTESTATION_SCHEMA_VERSION
     metadata_receipt_id: str
+    route_intent_id: str = Field(pattern=r"^szorrouteintent_[0-9a-f]{64}$")
+    request_intent_receipt_id: str = Field(
+        pattern=r"^szorrouteintentreceiptv1_[0-9a-f]{64}$"
+    )
     request_exact_model_intent: Literal["PROVEN"] = "PROVEN"
     request_exact_endpoint_intent: Literal["PROVEN"] = "PROVEN"
     request_provider_fallback_disabled_intent: Literal["PROVEN"] = "PROVEN"
@@ -251,7 +261,10 @@ class OpenRouterRouteControlReceiptV1(_FrozenModel):
     schema_version: Literal[
         ROUTE_CONTROL_RECEIPT_SCHEMA_VERSION
     ] = ROUTE_CONTROL_RECEIPT_SCHEMA_VERSION
-    route_intent_id: str
+    route_intent_id: str = Field(pattern=r"^szorrouteintent_[0-9a-f]{64}$")
+    request_intent_receipt_id: str = Field(
+        pattern=r"^szorrouteintentreceiptv1_[0-9a-f]{64}$"
+    )
     raw_response: OpenRouterRawResponseEvidenceV1
     metadata_receipt: OpenRouterRouterMetadataReceiptV1
     route_attestation: OpenRouterRouteAttestationV1
@@ -275,6 +288,9 @@ class OpenRouterRouteControlReceiptV1(_FrozenModel):
             != self.raw_response.raw_response_sha256
             or self.route_attestation.metadata_receipt_id
             != self.metadata_receipt.receipt_id
+            or self.route_attestation.route_intent_id != self.route_intent_id
+            or self.route_attestation.request_intent_receipt_id
+            != self.request_intent_receipt_id
         ):
             raise ValueError("route-control receipt evidence links do not match")
         expected = stable_contract_id(
@@ -312,7 +328,10 @@ _CACHE_KEYS = frozenset(
 _FALLBACK_KEYS = frozenset(
     {
         "fallback",
+        "fallback_observed",
         "fallback_used",
+        "routing_strategy",
+        "strategy",
         "provider_fallback",
         "model_fallback",
         "fallback_indicator",
@@ -336,6 +355,13 @@ _AUTHORITY_KEYS = frozenset(
         "requested_model",
         "requested_provider_only",
         "routing_strategy",
+        "strategy",
+        "requested",
+        "selected",
+        "selection",
+        "summary",
+        "region",
+        "is_byok",
         "actual_model",
         "model",
         "provider",
@@ -411,7 +437,7 @@ def _parse_raw_object(raw: bytes, raw_digest: str) -> Tuple[Dict[str, object], s
             OpenRouterRouteControlGuardV1.METADATA_SCHEMA,
             raw_digest,
         )
-    if not isinstance(value, dict) or canonical_json(value).encode("utf-8") != raw:
+    if not isinstance(value, dict):
         _failure(
             OpenRouterRouteControlFailureCodeV1.ROUTER_METADATA_MALFORMED,
             OpenRouterRouteControlGuardV1.METADATA_SCHEMA,
@@ -426,7 +452,7 @@ def _opaque_extras(
     envelope_extras = {
         key: value
         for key, value in envelope.items()
-        if key not in {"schema_version", "router_metadata"}
+        if key not in {"schema_version", "openrouter_metadata"}
     }
     metadata_extras = {
         key: value for key, value in metadata.items() if key not in _METADATA_KEYS
@@ -443,10 +469,15 @@ def _opaque_extras(
                         if key not in {"attempt", "model", "provider", "outcome"}
                     }
                 )
+    pipeline_extras = []
+    pipeline = metadata.get("pipeline")
+    if isinstance(pipeline, list):
+        pipeline_extras = [deepcopy(entry) for entry in pipeline]
     return {
         "envelope": envelope_extras,
         "metadata": metadata_extras,
         "attempts": attempts_extras,
+        "pipeline": pipeline_extras,
     }
 
 
@@ -489,7 +520,7 @@ def build_reference_openrouter_route_response_v1(
             raise ValueError("metadata extras collide with normalized concepts")
         metadata.update(metadata_extras)
     envelope: Dict[str, object] = {
-        "router_metadata": metadata,
+        "openrouter_metadata": metadata,
         "schema_version": NORMALIZED_CANNED_RESPONSE_SCHEMA_VERSION,
     }
     if envelope_extras:
@@ -534,7 +565,7 @@ def parse_openrouter_router_metadata_v1(
     raw_digest = hashlib.sha256(raw_response_bytes).hexdigest()
     envelope, raw_text = _parse_raw_object(raw_response_bytes, raw_digest)
 
-    metadata_value = envelope.get("router_metadata")
+    metadata_value = envelope.get("openrouter_metadata")
     if metadata_value is None:
         _failure(
             OpenRouterRouteControlFailureCodeV1.ROUTER_METADATA_MISSING,
@@ -552,12 +583,6 @@ def parse_openrouter_router_metadata_v1(
         )
     metadata: Dict[str, object] = metadata_value
 
-    if not isinstance(prepared_request, OpenRouterPreparedRouteRequestV1):
-        _failure(
-            OpenRouterRouteControlFailureCodeV1.RECEIPT_INTEGRITY_FAILURE,
-            OpenRouterRouteControlGuardV1.RECEIPT_AND_CLAIMS_INTEGRITY,
-            raw_digest,
-        )
     requested_model = metadata.get("requested_model")
     requested_only = metadata.get("requested_provider_only")
     strategy = metadata.get("routing_strategy")
@@ -588,6 +613,7 @@ def parse_openrouter_router_metadata_v1(
         "envelope": opaque["envelope"],
         "metadata": opaque["metadata"],
         "attempts": opaque["attempts"],
+        "pipeline": opaque["pipeline"],
     }
     authority_without_deferred_keys = _remove_keys(
         authority_extras,
@@ -717,9 +743,27 @@ def parse_openrouter_router_metadata_v1(
             OpenRouterRouteControlGuardV1.FALLBACK_INDICATORS_ABSENT,
             raw_digest,
         )
-    if not isinstance(pipeline, list) or pipeline:
+    if not isinstance(pipeline, list):
         _failure(
             OpenRouterRouteControlFailureCodeV1.FORBIDDEN_PIPELINE_STAGE,
+            OpenRouterRouteControlGuardV1.FALLBACK_INDICATORS_ABSENT,
+            raw_digest,
+        )
+    if any(
+        not isinstance(stage, dict)
+        or stage.get("stage") == "fallback"
+        or _contains_named_key(stage, _FALLBACK_KEYS)
+        for stage in pipeline
+    ):
+        _failure(
+            OpenRouterRouteControlFailureCodeV1.FORBIDDEN_PIPELINE_STAGE,
+            OpenRouterRouteControlGuardV1.FALLBACK_INDICATORS_ABSENT,
+            raw_digest,
+        )
+
+    if strategy != "direct":
+        _failure(
+            OpenRouterRouteControlFailureCodeV1.FALLBACK_INDICATOR_OBSERVED,
             OpenRouterRouteControlGuardV1.FALLBACK_INDICATORS_ABSENT,
             raw_digest,
         )
@@ -730,6 +774,29 @@ def parse_openrouter_router_metadata_v1(
         _failure(
             OpenRouterRouteControlFailureCodeV1.FALSE_EXACT_ENDPOINT_CLAIM,
             OpenRouterRouteControlGuardV1.NO_FALSE_EXACT_ENDPOINT_ATTESTATION,
+            raw_digest,
+        )
+
+    if type(prepared_request) is not OpenRouterPreparedRouteRequestV1:
+        _failure(
+            OpenRouterRouteControlFailureCodeV1.RECEIPT_INTEGRITY_FAILURE,
+            OpenRouterRouteControlGuardV1.RECEIPT_AND_CLAIMS_INTEGRITY,
+            raw_digest,
+        )
+    try:
+        validated_prepared = OpenRouterPreparedRouteRequestV1.model_validate(
+            prepared_request.model_dump(mode="json")
+        )
+    except (TypeError, ValueError, AttributeError):
+        _failure(
+            OpenRouterRouteControlFailureCodeV1.RECEIPT_INTEGRITY_FAILURE,
+            OpenRouterRouteControlGuardV1.RECEIPT_AND_CLAIMS_INTEGRITY,
+            raw_digest,
+        )
+    if validated_prepared != prepared_request:
+        _failure(
+            OpenRouterRouteControlFailureCodeV1.RECEIPT_INTEGRITY_FAILURE,
+            OpenRouterRouteControlGuardV1.RECEIPT_AND_CLAIMS_INTEGRITY,
             raw_digest,
         )
 
@@ -746,13 +813,22 @@ def parse_openrouter_router_metadata_v1(
             attempts_list_status=attempts_status,
             routing_strategy_summary=strategy,
             unknown_fields_sha256=opaque_digest,
-            unknown_field_count=_unknown_field_count(opaque),
+            unknown_field_count=sum(
+                _unknown_field_count(section) for section in opaque.values()
+            ),
         )
         attestation = OpenRouterRouteAttestationV1(
             metadata_receipt_id=metadata_receipt.receipt_id,
+            route_intent_id=validated_prepared.route_intent_id,
+            request_intent_receipt_id=(
+                validated_prepared.request_intent_receipt.receipt_id
+            ),
         )
         return OpenRouterRouteControlReceiptV1(
-            route_intent_id=prepared_request.route_intent_id,
+            route_intent_id=validated_prepared.route_intent_id,
+            request_intent_receipt_id=(
+                validated_prepared.request_intent_receipt.receipt_id
+            ),
             raw_response=raw_evidence,
             metadata_receipt=metadata_receipt,
             route_attestation=attestation,
