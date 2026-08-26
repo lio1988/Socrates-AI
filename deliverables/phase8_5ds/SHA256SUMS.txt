@@ -1,4 +1,3 @@
-15675944573860a93b02b413a33efc3e90bac661fa0f0a3bb456c260f1d87201  Socrates-AI-OpenRouter-phase8_5ds-changed-files.zip
-
-# Full snapshot retained in the ChatGPT conversation, not committed to this delivery branch:
 6cdd1115c3deae951384dc0e12c523d9a7d1a47098ae3caf1e379330b763256a  Socrates-AI-OpenRouter-phase8_5ds-completed.zip
+d9a863beaf7d548f0625e3b73b0ed69fa6e72d0278996a1f87124d2d93bd1dfa  Socrates-AI-OpenRouter-phase8_5ds.patch
+15675944573860a93b02b413a33efc3e90bac661fa0f0a3bb456c260f1d87201  Socrates-AI-OpenRouter-phase8_5ds-changed-files.zip

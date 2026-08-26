@@ -1,49 +1,53 @@
-# SocratesZero Phase 8.5D-S — Delivery artifacts
+# SocratesZero Phase 8.5D-S — Delivery branch
 
-This is a **delivery branch**, not a reconstructed source-history branch.
+This branch is a **delivery branch**, not a reconstructed source-history branch.
 
-The recent local Phase 8.x commits and the local base commit were not present
-on the remote GitHub repository. To avoid fabricating ancestry from `main`, this
-branch publishes the completed work as content-addressed download artifacts.
+The completed Phase 8.5D-S work was produced from the user's local Windows
+snapshot. The corresponding recent local commits are not present on the remote
+GitHub repository, so this branch deliberately avoids fabricating ancestry from
+`main`.
 
-## Download
+## Completed deliverable
 
-- `Socrates-AI-OpenRouter-phase8_5ds-changed-files.zip` — all added/changed
-  Phase 8.5D-S files, the complete methodology report, validation and
-  revalidation artifacts, application instructions, changed-file inventory,
-  completion metadata and test results.
-- `SHA256SUMS.txt` — integrity checksums.
+File to upload into this directory:
 
-## Result
+`Socrates-AI-OpenRouter-phase8_5ds-completed.zip`
 
-`OPENROUTER WIRE SPECIFICATION MANIFEST v1` is **FALSIFIED** for this execution.
-All six predeclared official-document retrieval attempts returned
-`NETWORK_ERROR`; no replacement locator, seventh source, second retrieval pass,
+Expected SHA-256:
+
+`6cdd1115c3deae951384dc0e12c523d9a7d1a47098ae3caf1e379330b763256a`
+
+The full snapshot contains:
+
+- the completed Phase 8.5D-S source and tests;
+- the methodology/result report;
+- manifest validation and revalidation artifacts;
+- `_completion_diagnostics/APPLY_TO_WINDOWS.md`;
+- exact changed-file inventory and test results.
+
+It excludes `.git`, `.venv`, credentials and the two protected untracked files.
+
+## Why the final ZIP is not committed by the connector
+
+The connected GitHub text/Git-data interface truncated large binary payloads.
+The truncated object was removed rather than being presented as a valid
+artifact. A normal local Git push preserves the ZIP byte-for-byte.
+
+## Safe upload from Windows
+
+Follow `UPLOAD_FROM_WINDOWS.md` in this directory. It uses a separate temporary
+clone and does not switch or modify the active Socrates-AI-OpenRouter worktree.
+
+## Scientific result
+
+`OPENROUTER WIRE SPECIFICATION MANIFEST v1` was **FALSIFIED for this execution**:
+all six predeclared official-document retrieval attempts returned
+`NETWORK_ERROR`. No replacement locator, seventh source, second retrieval pass,
 credential, provider inference or invented schema fact was used.
 
-The local implementation and focused tests completed successfully:
+Focused Phase 8.5D-S tests: `29 passed`.
+Historical artifact hashes: `12/12 exact`.
+Offline deterministic revalidation: passed.
 
-- Phase 8.5D-S focused tests: `29 passed`
-- historical artifact hashes: `12/12 exact`
-- offline deterministic revalidation: passed
-
-The negative result is evidence about source retrieval in the execution
-environment, not a claim that OpenRouter's public specification is necessarily
-insufficient.
-
-## Apply on Windows
-
-1. Download `Socrates-AI-OpenRouter-phase8_5ds-changed-files.zip`.
-2. Extract it to a temporary folder.
-3. Follow `_completion_diagnostics/APPLY_TO_WINDOWS.md` inside the ZIP.
-4. Preserve these local protected untracked files:
-   - `scripts/live_dialogue.py.bak`
-   - the malformed root filename beginning `ocratic_followup_mandate`
-5. Run the focused tests before committing locally.
-
-## Full snapshot
-
-The larger full repository snapshot is retained in the ChatGPT conversation.
-The GitHub delivery uses the smaller changed-files package because the remote
-repository does not contain the local commit ancestry needed to present the
-snapshot as a genuine source branch.
+This negative result concerns retrieval in the execution environment. It does
+not claim that OpenRouter's public specification is necessarily insufficient.
