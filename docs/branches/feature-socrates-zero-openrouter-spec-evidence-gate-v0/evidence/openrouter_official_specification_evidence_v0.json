@@ -1,0 +1,608 @@
+{
+  "schema_version": "socrateszero-openrouter-official-specification-evidence/v0",
+  "manifest_id": "szorspecmanifestv0_6f09a0f2b2b42920710c19d97bb5b64bbd184c88c6d9983af2efe9b5f7d84f03",
+  "manifest_semantic_sha256": "6f09a0f2b2b42920710c19d97bb5b64bbd184c88c6d9983af2efe9b5f7d84f03",
+  "created_utc": "2026-08-26T04:50:00Z",
+  "authorization_effect": "NONE",
+  "decision_gate_only": true,
+  "candidate_model": "openai/gpt-4.1-mini",
+  "candidate_exact_provider_endpoint": "azure/swedencentral",
+  "candidate_endpoint_status": "AVAILABLE_FOR_REQUEST_INTENT_AT_RETRIEVAL_TIME_ONLY",
+  "supported_future_component": "socrateszero-openrouter-route-controls/v1-not-implemented",
+  "revalidation_policy": "REVALIDATE_BEFORE_AUTHORIZATION",
+  "expiration_policy": "NO_FUTURE_AUTHORIZATION_VALIDITY_IS_CONFERRED_BY_THIS_SNAPSHOT",
+  "source_drift_policy": "FAIL_CLOSED",
+  "activity_ledger": {
+    "accepted_content_addressed_source_records": 16,
+    "direct_unauthenticated_public_document_retrievals": 127,
+    "additional_in_app_public_page_inspections": 1,
+    "authenticated_api_calls": 0,
+    "credential_accesses": 0,
+    "provider_inference_calls": 0,
+    "model_executions": 0,
+    "generation_lookup_calls": 0,
+    "account_or_usage_endpoint_calls": 0,
+    "repository_runtime_edits": 0
+  },
+  "source_records": [
+    {
+      "source_id": "OR-S01-PROVIDER-ROUTING",
+      "source_class": "OFFICIAL_OPENROUTER_PROTOCOL_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/guides/routing/provider-selection.md",
+      "title": "Provider Routing - Smart Multi-Provider Request Management",
+      "relevant_sections": [
+        "Provider object",
+        "Ordering",
+        "Specific Endpoints",
+        "Base Slugs",
+        "Require Parameters",
+        "Disabling Fallbacks",
+        "Only",
+        "Max Price"
+      ],
+      "retrieved_utc": "2026-08-26T04:43:01Z",
+      "source_content_sha256": "39868a5775f2bdb7d0dab0e42905bc871545123f918fcb8f31f5b9c80ee3d212",
+      "source_content_bytes": 69104,
+      "digest_scope": "OFFICIAL_MARKDOWN_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_DOCUMENTATION",
+      "limitations": "The routing guide and current OpenAPI disagree on max_price child JSON value types; live enforcement was not observed.",
+      "revalidation": "REQUIRED_ON_DOCUMENT_DIGEST_DRIFT_AND_BEFORE_AUTHORIZATION"
+    },
+    {
+      "source_id": "OR-S02-CHAT-SCHEMA",
+      "source_class": "OFFICIAL_OPENROUTER_PUBLIC_API_SCHEMA_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request.md",
+      "title": "Create a chat completion",
+      "relevant_sections": [
+        "ProviderPreferences",
+        "ChatResult",
+        "ChatUsage",
+        "CostDetails"
+      ],
+      "retrieved_utc": "2026-08-26T04:43:04Z",
+      "source_content_sha256": "81376df2c355803d324d00ef2de8bf363e492e20f4047f75880a21952b74e3d4",
+      "source_content_bytes": 168392,
+      "digest_scope": "OFFICIAL_MARKDOWN_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_SCHEMA_DOCUMENTATION",
+      "limitations": "ChatResult does not make usage mandatory and cost fields are nullable; max_price values are typed differently from routing-guide examples.",
+      "revalidation": "REQUIRED_ON_SCHEMA_DIGEST_DRIFT_AND_BEFORE_AUTHORIZATION"
+    },
+    {
+      "source_id": "OR-S03-MODELS-SCHEMA",
+      "source_class": "OFFICIAL_OPENROUTER_MODEL_SCHEMA_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/guides/overview/models.md",
+      "title": "Models",
+      "relevant_sections": [
+        "Model Object",
+        "Top Provider",
+        "Pricing Object",
+        "Supported Parameters"
+      ],
+      "retrieved_utc": "2026-08-26T04:43:04Z",
+      "source_content_sha256": "f2707c9d96def905976d45c00e228c95bb7f58b91791f92915c34bee3e609005",
+      "source_content_bytes": 17099,
+      "digest_scope": "OFFICIAL_MARKDOWN_RESPONSE_BODY",
+      "temporal_status": "PROTOCOL_SCHEMA_AND_MUTABLE_MODEL_METADATA",
+      "limitations": "Model and provider metadata can change; an absent pricing property is not specified as zero.",
+      "revalidation": "REQUIRED_FOR_MODEL_OR_PRICING_USE_BEFORE_AUTHORIZATION"
+    },
+    {
+      "source_id": "OR-S04-ROUTER-METADATA",
+      "source_class": "OFFICIAL_OPENROUTER_PROTOCOL_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/guides/features/router-metadata.md",
+      "title": "Router Metadata - Inspect Routing Decisions on Every Response",
+      "relevant_sections": [
+        "Enabling Router Metadata",
+        "Field Reference",
+        "Pipeline",
+        "Cache Hits",
+        "Error Responses",
+        "Stability"
+      ],
+      "retrieved_utc": "2026-08-26T04:43:02Z",
+      "source_content_sha256": "61e68dc8d131a7294b852de8c632f6f26687658de2e460771fce362085fae50f",
+      "source_content_bytes": null,
+      "digest_scope": "OFFICIAL_MARKDOWN_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_DOCUMENTATION",
+      "limitations": "Metadata is absent on cache hits and some failures; selected endpoint data does not include a full endpoint slug or endpoint identifier.",
+      "revalidation": "REQUIRED_ON_DOCUMENT_OR_OPENAPI_DRIFT"
+    },
+    {
+      "source_id": "OR-S05-RESPONSE-CACHING",
+      "source_class": "OFFICIAL_OPENROUTER_PROTOCOL_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/guides/features/response-caching",
+      "title": "Response Caching - Cache Identical API Responses",
+      "relevant_sections": [
+        "Precedence",
+        "Request and Response Headers",
+        "Cache Hits"
+      ],
+      "retrieved_utc": "2026-08-26T04:44:30.4957970Z",
+      "source_content_sha256": "6e8e4a4cc479a277ec783760e51a1fd111de413a89ee974ce84ca42ca64a7e8c",
+      "source_content_bytes": null,
+      "digest_scope": "DECODED_OFFICIAL_HTML_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_DOCUMENTATION",
+      "limitations": "OpenRouter response caching is distinct from provider prompt caching.",
+      "revalidation": "REQUIRED_ON_DOCUMENT_DIGEST_DRIFT"
+    },
+    {
+      "source_id": "OR-S06-MODEL-FALLBACKS",
+      "source_class": "OFFICIAL_OPENROUTER_PROTOCOL_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/guides/routing/model-fallbacks",
+      "title": "Model Fallbacks - Automatic Failover Between Models",
+      "relevant_sections": [
+        "How It Works",
+        "Fallback Behavior",
+        "Pricing"
+      ],
+      "retrieved_utc": "2026-08-26T04:44:28.2046731Z",
+      "source_content_sha256": "7ffd4d209e758f02bd07301d580c0069f6792268f83c7da561348f600683ddd9",
+      "source_content_bytes": null,
+      "digest_scope": "DECODED_OFFICIAL_HTML_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_DOCUMENTATION",
+      "limitations": "This documents model-array fallback, not local, HTTP, adapter, router-internal, or upstream-provider retry budgets.",
+      "revalidation": "REQUIRED_ON_DOCUMENT_DIGEST_DRIFT"
+    },
+    {
+      "source_id": "OR-S07-CANDIDATE-PROVIDERS",
+      "source_class": "OFFICIAL_OPENROUTER_MUTABLE_MODEL_PROVIDER_PAGE",
+      "locator": "https://openrouter.ai/openai/gpt-4.1-mini/providers",
+      "title": "OpenAI: GPT-4.1 Mini - Providers",
+      "relevant_sections": [
+        "Provider endpoint inventory",
+        "Pricing",
+        "Context and output limits",
+        "Supported parameters"
+      ],
+      "retrieved_utc": "2026-08-26T04:47:55Z",
+      "source_content_sha256": "8ffe59fa3cb3d2d1847c91d9669a2e52a4079a715c6d4cf1b3d21c8e55bbfe3a",
+      "source_content_bytes": null,
+      "digest_scope": "DECODED_OFFICIAL_DYNAMIC_PAGE_BODY",
+      "temporal_status": "MUTABLE_MODEL_AND_PROVIDER_METADATA",
+      "limitations": "The dynamic page digest can drift without a semantic change; endpoint and price facts require separate semantic digests and immediate revalidation.",
+      "revalidation": "ALWAYS_REVALIDATE_BEFORE_AUTHORIZATION"
+    },
+    {
+      "source_id": "OR-S08-OPENAPI",
+      "source_class": "OFFICIAL_OPENROUTER_PUBLIC_OPENAPI_SCHEMA",
+      "locator": "https://openrouter.ai/openapi.yaml",
+      "title": "OpenRouter API OpenAPI 3.1 schema",
+      "relevant_sections": [
+        "ProviderPreferences",
+        "OpenRouterMetadata",
+        "EndpointInfo",
+        "RouterAttempt",
+        "PipelineStage"
+      ],
+      "retrieved_utc": "2026-08-26T04:44:35.5642840Z",
+      "source_content_sha256": "db0408d86824292ee5ebb1630bd5fe53c5a84e242f964f7fed38ca2ec6ec0629",
+      "source_content_bytes": null,
+      "digest_scope": "RAW_OFFICIAL_YAML_RESPONSE_BODY",
+      "temporal_status": "MUTABLE_PUBLIC_SCHEMA",
+      "limitations": "The schema can change and does not require every one-call attestation field needed by the experiment.",
+      "revalidation": "REQUIRED_ON_SCHEMA_DIGEST_DRIFT_AND_BEFORE_AUTHORIZATION"
+    },
+    {
+      "source_id": "OR-S09-USAGE-ACCOUNTING",
+      "source_class": "OFFICIAL_OPENROUTER_USAGE_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/cookbook/administration/usage-accounting.md",
+      "title": "Usage Accounting",
+      "relevant_sections": [
+        "Response Format",
+        "Cost Breakdown"
+      ],
+      "retrieved_utc": "2026-08-26T04:43:03Z",
+      "source_content_sha256": "7d9548e999264b84a56b6e2b74e968013042e9d7dcf6698ebc1681fa20a42d7f",
+      "source_content_bytes": null,
+      "digest_scope": "OFFICIAL_MARKDOWN_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_DOCUMENTATION",
+      "limitations": "Usage-accounting prose promises primary-response usage, but the formal ChatResult schema does not require usage and permits nullable cost fields.",
+      "revalidation": "REQUIRED_ON_DOCUMENT_OR_SCHEMA_DRIFT"
+    },
+    {
+      "source_id": "OR-S10-PROMPT-CACHING",
+      "source_class": "OFFICIAL_OPENROUTER_PROTOCOL_DOCUMENTATION",
+      "locator": "https://openrouter.ai/docs/guides/best-practices/prompt-caching",
+      "title": "Prompt Caching - Optimize AI Model Costs",
+      "relevant_sections": [
+        "Provider Sticky Routing",
+        "OpenAI Caching"
+      ],
+      "retrieved_utc": "2026-08-26T04:46:06.0231395Z",
+      "source_content_sha256": "c9a52e3c971a194d88ac498cadfe1b65c10ed5ab2bf7568d4641a448c8e08135",
+      "source_content_bytes": null,
+      "digest_scope": "DECODED_OFFICIAL_HTML_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_DOCUMENTATION",
+      "limitations": "No audited source established a global request control disabling all provider-managed automatic prompt caching for this model.",
+      "revalidation": "REQUIRED_ON_DOCUMENT_DIGEST_DRIFT"
+    },
+    {
+      "source_id": "OR-S11-ENDPOINT-CATALOG-API",
+      "source_class": "OFFICIAL_OPENROUTER_API_REFERENCE",
+      "locator": "https://openrouter.ai/docs/api/api-reference/endpoints/list-endpoints",
+      "title": "List endpoints",
+      "relevant_sections": [
+        "Authentication",
+        "Endpoint metadata"
+      ],
+      "retrieved_utc": "2026-08-26T04:45:08Z",
+      "source_content_sha256": "340bae9e83bdebefc9c272b2184024a5abe61854d2955dcccb8be45c5ef6e08c",
+      "source_content_bytes": 456587,
+      "digest_scope": "RAW_OFFICIAL_HTML_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_REFERENCE_TO_MUTABLE_AUTHENTICATED_CATALOG",
+      "limitations": "The endpoint requires bearer authentication and was not called; it cannot supply evidence in this zero-credential gate.",
+      "revalidation": "NOT_USABLE_WITHOUT_SEPARATE_AUTHORIZATION"
+    },
+    {
+      "source_id": "OA-S01-GPT41-MINI",
+      "source_class": "OFFICIAL_OPENAI_MODEL_DOCUMENTATION",
+      "locator": "https://developers.openai.com/api/docs/models/gpt-4.1-mini",
+      "title": "GPT-4.1 Mini Model",
+      "relevant_sections": [
+        "Overview",
+        "Endpoints",
+        "Snapshots"
+      ],
+      "retrieved_utc": "2026-08-26T04:45:57Z",
+      "source_content_sha256": "c3cea0b9705bc0579862dae68fbdf4a4d58c7be9fb3466b8fb9d6161b4db87f2",
+      "source_content_bytes": 3829,
+      "digest_scope": "OFFICIAL_MARKDOWN_RESPONSE_BODY",
+      "temporal_status": "MUTABLE_MODEL_METADATA",
+      "limitations": "Direct OpenAI metadata does not prove OpenRouter endpoint routing, prices, transformations, framing, or billing.",
+      "revalidation": "REQUIRED_BEFORE_USING_AS_MODEL_COMPATIBILITY_EVIDENCE"
+    },
+    {
+      "source_id": "OA-S02-TOKEN-COUNTING",
+      "source_class": "OFFICIAL_OPENAI_TOKEN_COUNTING_DOCUMENTATION",
+      "locator": "https://developers.openai.com/api/docs/guides/token-counting",
+      "title": "Counting tokens",
+      "relevant_sections": [
+        "Why use the token counting API",
+        "Structured request limitations"
+      ],
+      "retrieved_utc": "2026-08-26T04:45:57Z",
+      "source_content_sha256": "646ac9fc0a85b5bf2d62c598f9172a37191205c4cd7e66697c88239cb6c807a7",
+      "source_content_bytes": 22464,
+      "digest_scope": "OFFICIAL_MARKDOWN_RESPONSE_BODY",
+      "temporal_status": "VERSIONED_SNAPSHOT_OF_MUTABLE_DOCUMENTATION",
+      "limitations": "The exact-count endpoint is a separate authenticated OpenAI Responses request and cannot attest OpenRouter Chat transformations.",
+      "revalidation": "REQUIRED_ON_DOCUMENT_DIGEST_DRIFT"
+    },
+    {
+      "source_id": "OA-S03-TIKTOKEN-MODEL",
+      "source_class": "OFFICIAL_OPENAI_VERSIONED_SOURCE_CODE",
+      "locator": "https://raw.githubusercontent.com/openai/tiktoken/refs/tags/0.14.0/tiktoken/model.py",
+      "title": "tiktoken 0.14.0 model mapping",
+      "relevant_sections": [
+        "MODEL_PREFIX_TO_ENCODING"
+      ],
+      "retrieved_utc": "2026-08-26T04:45:57Z",
+      "source_content_sha256": "600f26902d1cf6a1a5f54e37be988b3e0d911f1ff17ba7060bb361f9b5295521",
+      "source_content_bytes": 3909,
+      "digest_scope": "RAW_IMMUTABLE_TAGGED_SOURCE_BODY",
+      "temporal_status": "IMMUTABLE_TAGGED_SOURCE",
+      "limitations": "The mapping selects an encoding for matching model names but does not define OpenRouter Chat message framing.",
+      "revalidation": "PIN_EXACT_TAG_AND_WHEEL_HASHES_IF_IMPLEMENTED"
+    },
+    {
+      "source_id": "OA-S04-TIKTOKEN-ENCODING",
+      "source_class": "OFFICIAL_OPENAI_VERSIONED_SOURCE_CODE",
+      "locator": "https://raw.githubusercontent.com/openai/tiktoken/refs/tags/0.14.0/tiktoken_ext/openai_public.py",
+      "title": "tiktoken 0.14.0 OpenAI public encodings",
+      "relevant_sections": [
+        "o200k_base"
+      ],
+      "retrieved_utc": "2026-08-26T04:45:57Z",
+      "source_content_sha256": "954392738e60d0fb6dca1dad80872efc47c8e2733babecbbf0a23970ed66c2cb",
+      "source_content_bytes": 5613,
+      "digest_scope": "RAW_IMMUTABLE_TAGGED_SOURCE_BODY",
+      "temporal_status": "IMMUTABLE_TAGGED_SOURCE",
+      "limitations": "The code references external BPE data; the dependency is not offline merely because the wheel is pinned.",
+      "revalidation": "VENDOR_AND_HASH_BPE_DATA_IF_IMPLEMENTED"
+    },
+    {
+      "source_id": "OA-S05-TIKTOKEN-LOADER",
+      "source_class": "OFFICIAL_OPENAI_VERSIONED_SOURCE_CODE",
+      "locator": "https://raw.githubusercontent.com/openai/tiktoken/refs/tags/0.14.0/tiktoken/load.py",
+      "title": "tiktoken 0.14.0 data loader",
+      "relevant_sections": [
+        "read_file_cached"
+      ],
+      "retrieved_utc": "2026-08-26T04:45:57Z",
+      "source_content_sha256": "43c3cfb29dc48a74e70e0c85bb01cfd96a3de069a98de8778ccab7f72a2836cc",
+      "source_content_bytes": 5887,
+      "digest_scope": "RAW_IMMUTABLE_TAGGED_SOURCE_BODY",
+      "temporal_status": "IMMUTABLE_TAGGED_SOURCE",
+      "limitations": "A cache miss may fetch model data; a future offline milestone must tripwire network and fail closed on absent or mismatched data.",
+      "revalidation": "PIN_EXACT_TAG_AND_OFFLINE_DATA_HASH_IF_IMPLEMENTED"
+    }
+  ],
+  "fact_records": [
+    {
+      "evidence_id": "ORSPEC-F01",
+      "source_ids": [
+        "OR-S01-PROVIDER-ROUTING",
+        "OR-S02-CHAT-SCHEMA"
+      ],
+      "normalized_fact": "OpenRouter documents provider.only as an allow-list, provider.order as an ordering preference, provider.allow_fallbacks=false as disabling backup-provider fallback, and provider.require_parameters=true as filtering endpoints that lack requested parameters.",
+      "semantic_sha256": "d9705712623f504a2a0c6daa9de3d20c9d3630193828e9d3fb3bf5cc14418329",
+      "scope": "REQUEST_SIDE_PROVIDER_ROUTING_INTENT",
+      "limitations": "No live enforcement was observed and order alone is not a restriction.",
+      "temporal_status": "PROTOCOL_SCHEMA_SNAPSHOT",
+      "revalidation": "ON_SCHEMA_DRIFT",
+      "expiration": "FAIL_CLOSED_AFTER_DRIFT",
+      "downstream_controls": [
+        "P08_ROUTE_POLICY",
+        "P09_FALLBACK_INTENT"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F02",
+      "source_ids": [
+        "OR-S01-PROVIDER-ROUTING",
+        "OR-S07-CANDIDATE-PROVIDERS"
+      ],
+      "normalized_fact": "OpenRouter documents full suffixed provider slugs as selectors for a specific endpoint variant or region; the current GPT-4.1 Mini provider inventory exposes azure/swedencentral, while the base openai slug is shared by standard and batch entries.",
+      "semantic_sha256": "d48518fa88753ad602140cb54e09f7f046a784b94edcd4938988c605f799a065",
+      "scope": "MUTABLE_EXACT_ENDPOINT_REQUEST_SELECTOR",
+      "limitations": "The primary response metadata does not attest the full selected endpoint slug, and live enforcement remains unobserved.",
+      "temporal_status": "MUTABLE_MODEL_PROVIDER_METADATA",
+      "revalidation": "ALWAYS_BEFORE_AUTHORIZATION",
+      "expiration": "SNAPSHOT_ONLY",
+      "downstream_controls": [
+        "P08_ROUTE_POLICY",
+        "P18_PRICING_RECORD"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F03",
+      "source_ids": [
+        "OR-S01-PROVIDER-ROUTING",
+        "OR-S06-MODEL-FALLBACKS"
+      ],
+      "normalized_fact": "Provider fallback and model fallback are separate: provider.allow_fallbacks controls provider fallback, while a models array defines alternate-model fallback; local application, adapter, HTTP, router-internal, and upstream-provider retries require separate controls or evidence.",
+      "semantic_sha256": "2802827a00e66d202eae3e7a3e74c2c3650759cabdd3a3ccaa3b16005c732ace",
+      "scope": "FALLBACK_AND_RETRY_TAXONOMY",
+      "limitations": "Official sources do not expose every internal retry or upstream failover mechanism.",
+      "temporal_status": "PROTOCOL_SCHEMA_SNAPSHOT",
+      "revalidation": "ON_SCHEMA_DRIFT",
+      "expiration": "FAIL_CLOSED_AFTER_DRIFT",
+      "downstream_controls": [
+        "P09_FALLBACK_INTENT"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F04",
+      "source_ids": [
+        "OR-S04-ROUTER-METADATA",
+        "OR-S08-OPENAPI"
+      ],
+      "normalized_fact": "The non-secret X-OpenRouter-Metadata: enabled header opts into primary-response router metadata containing requested routing information, strategy, selected provider/model summaries, a one-based successful attempt number, optional attempt details, and optional pipeline stages.",
+      "semantic_sha256": "5c5e77e1b7257136a9059f7225dc106d59b5fc7dcb982059435f8a93bcdfbba5",
+      "scope": "PRIMARY_RESPONSE_ROUTING_ATTESTATION_SCHEMA",
+      "limitations": "Attempt details and pipeline are optional; the selected full endpoint slug or endpoint ID is absent; unknown future fields and stages are additive.",
+      "temporal_status": "PROTOCOL_SCHEMA_SNAPSHOT",
+      "revalidation": "ON_DOCUMENT_OR_OPENAPI_DRIFT",
+      "expiration": "FAIL_CLOSED_AFTER_DRIFT",
+      "downstream_controls": [
+        "P08_ROUTE_POLICY",
+        "P09_FALLBACK_INTENT",
+        "ONE_CALL_ATTESTATION"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F05",
+      "source_ids": [
+        "OR-S04-ROUTER-METADATA",
+        "OR-S05-RESPONSE-CACHING",
+        "OR-S10-PROMPT-CACHING"
+      ],
+      "normalized_fact": "X-OpenRouter-Cache:false disables OpenRouter response caching, cache hits omit openrouter_metadata, and provider prompt caching is a distinct mechanism that may be automatic and affect routing.",
+      "semantic_sha256": "f7470d7a4aaa2848b93ee6fd3b20afe9c8f67f76826c6bb7201013414cea7190",
+      "scope": "CACHE_AND_ROUTING_METADATA_INTERACTION",
+      "limitations": "No audited global control disables every provider-managed prompt-cache behavior for the candidate.",
+      "temporal_status": "PROTOCOL_DOCUMENTATION_SNAPSHOT",
+      "revalidation": "ON_DOCUMENT_DRIFT",
+      "expiration": "FAIL_CLOSED_AFTER_DRIFT",
+      "downstream_controls": [
+        "P09_FALLBACK_INTENT",
+        "ONE_CALL_ATTESTATION"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F06",
+      "source_ids": [
+        "OR-S03-MODELS-SCHEMA",
+        "OR-S07-CANDIDATE-PROVIDERS",
+        "OA-S01-GPT41-MINI"
+      ],
+      "normalized_fact": "The candidate openai/gpt-4.1-mini is currently publicly listed, official OpenRouter/OpenAI metadata records a 1,047,576-token context window and 32,768-token maximum output, and retained standard OpenAI endpoint metadata lists max_tokens support; no complete supported-parameter set for azure/swedencentral was established.",
+      "semantic_sha256": "1c87be4df0824587eb5f97189ee56812f0565fdc3eb66a11058e06686b80dc45",
+      "scope": "MUTABLE_CANDIDATE_MODEL_METADATA",
+      "limitations": "Listing does not prove runtime availability; direct OpenAI metadata does not prove OpenRouter endpoint behavior.",
+      "temporal_status": "MUTABLE_MODEL_METADATA",
+      "revalidation": "ALWAYS_BEFORE_AUTHORIZATION",
+      "expiration": "SNAPSHOT_ONLY",
+      "downstream_controls": [
+        "P17_INPUT_TOKEN_BOUND",
+        "P19_COST_BOUND"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F07",
+      "source_ids": [
+        "OR-S03-MODELS-SCHEMA",
+        "OR-S07-CANDIDATE-PROVIDERS"
+      ],
+      "normalized_fact": "OpenRouter defines context_length as a maximum shared by input and output and exposes provider-specific context limits; therefore an exact endpoint's frozen context ceiling can conservatively bound prompt tokens for a successfully accepted request, including provider-visible framing.",
+      "semantic_sha256": "7a4800aa7dbabf22efe7c717e7617d01f31fa16585a6c8d2dbbe8cc727e4194f",
+      "scope": "PROPOSED_EXACT_ENDPOINT_CONTEXT_CEILING_V0",
+      "limitations": "It is a coarse successful-request ceiling, depends on an exact endpoint snapshot, and does not establish billing behavior for rejected over-context requests.",
+      "temporal_status": "PROTOCOL_RULE_PLUS_MUTABLE_ENDPOINT_METADATA",
+      "revalidation": "ALWAYS_BEFORE_AUTHORIZATION",
+      "expiration": "SNAPSHOT_ONLY",
+      "downstream_controls": [
+        "P17_INPUT_TOKEN_BOUND",
+        "P19_COST_BOUND"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F08",
+      "source_ids": [
+        "OA-S02-TOKEN-COUNTING",
+        "OA-S03-TIKTOKEN-MODEL",
+        "OA-S04-TIKTOKEN-ENCODING",
+        "OA-S05-TIKTOKEN-LOADER"
+      ],
+      "normalized_fact": "tiktoken 0.14.0 maps the gpt-4.1- model prefix to o200k_base, but it does not define exact OpenRouter Chat framing and may fetch BPE data on a cache miss; exact offline use requires pinned code, vendored hashed data, a network tripwire, and fail-closed loading.",
+      "semantic_sha256": "f9ea5001b72383bd606c886ddfd3b715da72f68b9ead63c5f7fd1ee230b473d8",
+      "scope": "OPTIONAL_FUTURE_OFFLINE_TOKENIZER_MILESTONE",
+      "limitations": "Plain-text tokenization is not an exact full structured-request token count.",
+      "temporal_status": "IMMUTABLE_TAGGED_SOURCE_PLUS_SEPARATE_MODEL_BINDING",
+      "revalidation": "PIN_ALL_DEPENDENCY_AND_DATA_HASHES_IF_IMPLEMENTED",
+      "expiration": "NOT_IMPLEMENTED",
+      "downstream_controls": [
+        "P17_INPUT_TOKEN_BOUND"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F09",
+      "source_ids": [
+        "OA-S02-TOKEN-COUNTING"
+      ],
+      "normalized_fact": "FULL_REQUEST_UTF8_BYTE_COUNT_V0 is not a proven provider-token upper bound because token counts include structured-message formatting not represented by locally counted UTF-8 bytes and no primary source proves bytes dominate provider tokens for all allowed Unicode and framing cases.",
+      "semantic_sha256": "7df67e087a89082229e4096eaba0b1e5bce8d015605ef1e159302b8fe43a09f2",
+      "scope": "V0_TOKEN_BOUND_REJECTION",
+      "limitations": "This rejects the v0 method; it does not reject the separate context-ceiling design.",
+      "temporal_status": "ARCHITECTURAL_ASSESSMENT_FROM_PRIMARY_LIMITATION",
+      "revalidation": "NONE_UNLESS_A_PRIMARY_FORMAL_PROOF_APPEARS",
+      "expiration": "NO_EXPIRY",
+      "downstream_controls": [
+        "P17_INPUT_TOKEN_BOUND"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F10",
+      "source_ids": [
+        "OR-S01-PROVIDER-ROUTING",
+        "OR-S02-CHAT-SCHEMA",
+        "OR-S03-MODELS-SCHEMA"
+      ],
+      "normalized_fact": "provider.max_price is documented as a provider-eligibility filter with prompt and completion unit-price ceilings and optional request, image, and schema-level audio ceilings; it is not a total-request cost cap and it omits documented pricing dimensions such as cache, internal reasoning, and web search.",
+      "semantic_sha256": "d4d00b06485a5f2bb2cff4a82cf67158e8179608593787ac549660440d607cab",
+      "scope": "UNIT_PRICE_ROUTE_FILTER",
+      "limitations": "Routing examples use numeric values while the current OpenAPI child properties use strings; applicability and all billing dimensions remain unresolved.",
+      "temporal_status": "PROTOCOL_SCHEMA_SNAPSHOT_WITH_CONFLICT",
+      "revalidation": "REQUIRED_BEFORE_IMPLEMENTATION_OR_AUTHORIZATION",
+      "expiration": "FAIL_CLOSED_UNTIL_TYPE_CONFLICT_IS_RESOLVED",
+      "downstream_controls": [
+        "P08_ROUTE_POLICY",
+        "P18_PRICING_RECORD",
+        "P19_COST_BOUND"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F11",
+      "source_ids": [
+        "OR-S03-MODELS-SCHEMA",
+        "OR-S07-CANDIDATE-PROVIDERS"
+      ],
+      "normalized_fact": "A mutable official snapshot records standard OpenAI endpoint rates for openai/gpt-4.1-mini, but complete endpoint-specific pricing for the exact azure/swedencentral candidate is not established and absent billing properties cannot be interpreted as zero.",
+      "semantic_sha256": "5754a0b3bf484767e68b7b5b172333076076f7abc11ddea3d02e5856f3ac6027",
+      "scope": "P18_MUTABLE_PRICING_SNAPSHOT_ASSESSMENT",
+      "limitations": "The available OpenAI rate snapshot does not bind the selected exact Azure endpoint and cannot authorize future use without revalidation.",
+      "temporal_status": "MUTABLE_ENDPOINT_PRICING_METADATA",
+      "revalidation": "ALWAYS_BEFORE_AUTHORIZATION",
+      "expiration": "SNAPSHOT_ONLY",
+      "downstream_controls": [
+        "P18_PRICING_RECORD",
+        "P19_COST_BOUND"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F12",
+      "source_ids": [
+        "OR-S02-CHAT-SCHEMA",
+        "OR-S09-USAGE-ACCOUNTING"
+      ],
+      "normalized_fact": "Official usage-accounting prose describes prompt, completion, total, cache, reasoning, charged cost, and optional upstream-cost data in the primary non-streaming response, but the formal ChatResult schema does not require usage and allows cost fields to be null.",
+      "semantic_sha256": "736c834528298b9c0e153678ef3f9934399b1fefd8301918fd44046f916caf55",
+      "scope": "POST_RESPONSE_USAGE_AND_COST",
+      "limitations": "A future pilot must fail closed if mandatory receipt fields are absent; post-response actual cost cannot replace a pre-dispatch maximum.",
+      "temporal_status": "DOCUMENTATION_AND_SCHEMA_SNAPSHOT",
+      "revalidation": "ON_DOCUMENT_OR_SCHEMA_DRIFT",
+      "expiration": "FAIL_CLOSED_AFTER_DRIFT",
+      "downstream_controls": [
+        "P19_COST_BOUND",
+        "ONE_CALL_ATTESTATION"
+      ]
+    },
+    {
+      "evidence_id": "ORSPEC-F13",
+      "source_ids": [
+        "OR-S04-ROUTER-METADATA",
+        "OR-S09-USAGE-ACCOUNTING",
+        "OR-S11-ENDPOINT-CATALOG-API"
+      ],
+      "normalized_fact": "The primary response is not specification-guaranteed to contain the full exact endpoint slug plus complete routing, usage, and cost evidence in every success or failure; filling gaps through an endpoint catalog or generation lookup would require a prohibited authenticated follow-up call.",
+      "semantic_sha256": "00653dc019d60c69d800e2acd59ab9897bce31fa874e15e5121abf971c383ca2",
+      "scope": "ONE_CALL_ATTESTATION_LIMIT",
+      "limitations": "A future one-call pilot can fail closed on missing data but cannot reinterpret absence or issue a retry or follow-up.",
+      "temporal_status": "ARCHITECTURAL_ASSESSMENT_FROM_PRIMARY_SCHEMAS",
+      "revalidation": "REASSESS_ON_SCHEMA_CHANGE",
+      "expiration": "NO_AUTHORIZATION_UNTIL_RESOLVED",
+      "downstream_controls": [
+        "P08_ROUTE_POLICY",
+        "P09_FALLBACK_INTENT",
+        "P19_COST_BOUND",
+        "ONE_CALL_ATTESTATION"
+      ]
+    }
+  ],
+  "blocker_audit": {
+    "P08_ROUTE_POLICY": {
+      "official_specification_support": "PARTIAL_STRONG_REQUEST_CONTROLS",
+      "repository_v0_support": "NOT_RENDERED_OR_VALIDATED",
+      "offline_manifest_freezable": true,
+      "live_execution_still_required": true,
+      "required_semantic_version": "socrateszero-openrouter-route-policy/v1",
+      "status": "ROUTE_CONTROL_MILESTONE_EARNED_EXACT_ENDPOINT_RESPONSE_ATTESTATION_UNRESOLVED"
+    },
+    "P09_FALLBACK_INTENT": {
+      "official_specification_support": "PARTIAL_STRONG_PROVIDER_AND_MODEL_FALLBACK_INTENT",
+      "repository_v0_support": "LOCAL_AND_ADAPTER_INTENT_ONLY",
+      "offline_manifest_freezable": true,
+      "live_execution_still_required": true,
+      "required_semantic_version": "socrateszero-openrouter-fallback-policy/v1",
+      "status": "ROUTE_CONTROL_MILESTONE_EARNED_INTERNAL_AND_UPSTREAM_RETRY_ATTESTATION_UNRESOLVED"
+    },
+    "P17_INPUT_TOKEN_BOUND": {
+      "official_specification_support": "CREDIBLE_COARSE_CONTEXT_CEILING_PATH",
+      "repository_v0_support": "INVALID_UNPROVEN_BYTE_COUNT_METHOD",
+      "offline_manifest_freezable": false,
+      "live_execution_still_required": false,
+      "required_semantic_version": "socrateszero-openrouter-token-bound/exact-endpoint-context-ceiling-v0",
+      "status": "V0_UNRESOLVED_SEPARATE_VERSIONED_CLOSURE_MILESTONE_REQUIRED"
+    },
+    "P18_PRICING_RECORD": {
+      "official_specification_support": "PARTIAL_MUTABLE_SNAPSHOT_PATH",
+      "repository_v0_support": "NOT_ESTABLISHED",
+      "offline_manifest_freezable": false,
+      "live_execution_still_required": false,
+      "required_semantic_version": "socrateszero-openrouter-pricing-record/v1",
+      "status": "EXACT_CANDIDATE_ENDPOINT_COMPLETE_PRICING_NOT_ESTABLISHED"
+    },
+    "P19_COST_BOUND": {
+      "official_specification_support": "INSUFFICIENT_FOR_TOTAL_PRE_DISPATCH_MAXIMUM",
+      "repository_v0_support": "NOT_ESTABLISHED",
+      "offline_manifest_freezable": false,
+      "live_execution_still_required": false,
+      "required_semantic_version": "socrateszero-openrouter-cost-bound/v1",
+      "status": "BLOCKING_ALL_BILLING_DIMENSIONS_ROUNDING_AND_EXACT_PRICING_UNRESOLVED"
+    }
+  },
+  "selected_decision": "OPENROUTER_ROUTE_CONTROL_MILESTONE_ONLY_EARNED",
+  "next_branch": "feature/socrates-zero-openrouter-route-controls-v1",
+  "live_pilot_readiness": "NOT_EARNED",
+  "manifest_canonicalization": "UTF8_JSON_SORTED_KEYS_COMPACT_SEPARATORS_ENSURE_ASCII_FALSE_EXCLUDING_MANIFEST_ID_AND_MANIFEST_SEMANTIC_SHA256"
+}
