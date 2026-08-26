@@ -1,11 +1,24 @@
 # SocratesZero OpenRouter Route Controls v1
 
-## Status before the authoritative aggregate
+## Final authoritative result
 
-Phase 8.5D is an additive, offline route-control experiment. The semantic
-design, case set, validation order, thresholds, artifact schema, and replay
-schema below are frozen before the first authoritative aggregate. This report
-must not be read as live authorization.
+Phase 8.5D is complete as an additive, offline route-control experiment. The
+semantic design, case set, validation order, thresholds, artifact schema, and
+replay schema were frozen in commit
+`848166dd3eacfa5d31175745b160b98751b3a904` before the sole authoritative
+aggregate. The write-once artifact was committed separately in
+`d225113`. This report must not be read as live authorization.
+
+- Hypothesis status: `FALSIFIED`.
+- Artifact path:
+  `docs/branches/feature-socrates-zero-openrouter-route-controls-v1/artifacts/socrateszero_openrouter_route_controls_v1.json`.
+- Artifact ID:
+  `szorroutecontrolartifactv1_1a747011668f620b9db04cc2a42c57c5b23b59def879bcc978d37c3f94f0e2cd`.
+- Artifact SHA-256:
+  `61043f033e8c2afb73e72f0f3e9199ea008c8baf114e33f4b9829d0e70b90661`.
+- Artifact length: 366,623 bytes.
+- Replay: `NOT PERFORMED / N/A`; replay execution and lock are absent because
+  replay is prohibited after falsification.
 
 - Specification basis: frozen Phase 8.5C manifest.
 - External specification revalidation: not performed on this branch.
@@ -23,11 +36,10 @@ must not be read as live authorization.
 
 The strict Phase 8.5D hypothesis requires an official response-envelope parser,
 not merely a repository-owned normalized semantic parser. The manifest audit
-therefore freezes one `official_response_wire_mapping_violations` finding
-against a maximum of zero. This is a pre-result evidence-sufficiency gate: it
-cannot be tuned after the aggregate, and it requires the full milestone to be
-reported `FALSIFIED` even if every local normalized canned case behaves exactly
-as designed.
+froze one `official_response_wire_mapping_violations` finding against a maximum
+of zero. The authoritative artifact observed that exact `1 > 0` failure, so the
+full milestone is `FALSIFIED` even though every local normalized canned case
+behaved exactly as designed. The finding was not tuned after the aggregate.
 
 ## Frozen specification authority
 
@@ -174,10 +186,10 @@ match repository canonicalization.
 - Precedence probes: 8.
 - Required complete route-intent receipts: 7.
 - Required complete metadata receipts: 3.
-- Expected canned invocations: 26.
+- Frozen expected canned invocations: 26; observed: 26.
 - Invalid probe constructions allowed: 0.
 - Official response wire-mapping violations allowed: 0.
-- Frozen manifest-only wire-mapping assessment: 1.
+- Frozen and observed manifest-only wire-mapping assessment: 1.
 
 The wire-mapping assessment is a typed, content-derived receipt over the exact
 canonical record digests for `OR-S04-ROUTER-METADATA`, `OR-S08-OPENAPI`,
@@ -236,21 +248,55 @@ receipts, or route attestations.
 
 ## Artifact and replay protocol
 
-The authoritative operation requires an active Acquisition Boundary Tripwire,
-captures scoped source/sibling/production hashes before and after evaluation,
-verifies all ten historical artifact hashes and the embedded Phase 8 v2 core
-lock, evaluates the frozen cases once, canonicalizes results back into frozen
-case order, and publishes one canonical sorted UTF-8 JSON artifact with one
-trailing newline using exclusive creation.
+The authoritative operation ran exactly once with an active Acquisition
+Boundary Tripwire. It captured scoped source/sibling/production hashes before
+and after evaluation, verified all ten historical artifact hashes and the
+embedded Phase 8 v2 core lock, evaluated the frozen cases once, canonicalized
+results back into frozen case order, and published one canonical sorted UTF-8
+JSON artifact with one trailing newline using exclusive creation. All 63 case
+results matched their frozen expectations: 6/6 positives, 49/49 orthogonal
+primary failures, and 8/8 precedence primary failures. Source, sibling,
+production, historical/core-lock, credential, network, provider, model, tool,
+and CED mismatch/activity counters were zero.
 
 If and only if the artifact is `SUPPORTED`, one independent reverse-order
 replay rebuilds the artifact. Semantic equality, artifact-ID equality, and byte
 identity are mandatory. Replay execution evidence and its lock are separate
 write-once files; the authoritative artifact is never rewritten.
 
-Because the predeclared manifest-only wire-mapping gate is one, a truthful first
-artifact is expected to be `FALSIFIED`. In that state replay is prohibited and
-no replay execution or lock may be created.
+Because the predeclared manifest-only wire-mapping gate is one, the truthful
+first artifact is `FALSIFIED`. Replay was not performed; the replay execution
+and replay lock are confirmed absent.
+
+## Final regression gates
+
+| Gate | Exact result |
+|---|---|
+| Route controls v1, artifact-aware | `103 passed` |
+| Acquisition Contract v0 | `239 passed, 8 skipped` |
+| Phase 5 artifact | `3 passed` |
+| Phase 7 primary artifact | `4 passed` |
+| Phase 7 BestOfN artifact | `3 passed` |
+| Phase 8 v1 predecessor/core | `5 passed` |
+| Phase 8 v2 artifact/replay | `30 passed` |
+| Production OpenRouter fake/canned only | `12 passed, 1 deliberately deselected` |
+| Focused CED/Socratic | `142 passed, 14 warnings` |
+| OpenRouter adapter-controls v0 group | `241 passed, 1 skipped, 1 failed` |
+| SocratesZero bundle | `916 passed, 9 skipped, 1 failed` |
+| Full `tests_dialogues` | `3165 passed, 10 skipped, 1 deliberately deselected, 1 failed` |
+| Repository-wide | `3472 passed, 10 skipped, 1 deliberately deselected, 1 failed, 1 teardown error, 23 warnings` |
+
+The sole failing assertion is the sealed v0 static data-only check
+`test_expected_labels_are_evaluator_side_and_cases_module_is_data_only`. It
+scans every runtime Python file and rejects the literal historical inventory
+path `openrouter_acquisition_cases.py` in the new additive evaluator. The
+repository-wide run additionally reported an acquisition-tripwire error during
+that same test's teardown; its suite-order-specific cause was not reclassified.
+No post-result source or test change was made to hide or tune either result. The
+deliberately deselected test is the sole selected production-provider test that
+exercises production resolution of the real `OPENROUTER_API_KEY` environment
+name; separate boundary tests use instrumented environment seams and fail-closed
+tripwires.
 
 ## Frozen predecessor
 
@@ -275,8 +321,8 @@ specification validity, endpoint availability, live enforcement, credentials,
 network boundaries, exact response-side endpoint identity, tokenizer closure,
 pricing, or a total cost bound.
 
-Only complete support plus byte-identical replay could advance to Phase 8.5E.
-The frozen evidence gap instead requires `RETURN TO ARCHITECTURE DECISION` after
-the first artifact. A future authorized phase could version a richer manifest
-or explicitly authorize another frozen source as response-schema authority;
-this branch must not do either and must stop before P17/P18/P19 work.
+Only complete support plus byte-identical replay could have advanced to Phase
+8.5E. That condition was not earned. The final disposition is `RETURN TO
+ARCHITECTURE DECISION`. A future authorized phase could version a richer
+manifest or explicitly authorize another frozen source as response-schema
+authority; this branch does neither and stops before P17/P18/P19 work.
