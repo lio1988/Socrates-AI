@@ -3,39 +3,64 @@
 ## Parent decision
 
 - Parent branch: `feature/socrates-zero-openrouter-wire-mapping-gate-v0`.
-- Parent HEAD: `c5ede33d8d793bbe032ac7e88d786dd9111ee594`.
-- Approved dependency: `SPECIFICATION EVIDENCE MANIFEST v1 REQUIRED FIRST`.
-- This is the sole authorized manifest implementation attempt. Any missing
-  mandatory relationship falsifies the hypothesis; no immediate manifest v2.
+- Parent decision: `SPECIFICATION EVIDENCE MANIFEST v1 REQUIRED FIRST`.
+- Base Git HEAD: `5ac106b61c9c79b9b9090b5824b967a6a435cca3`.
+- This was the sole authorized manifest v1 implementation attempt.
 
-## Sealed predecessors
+## Permanent result
 
-- Route Controls v1 artifact ID:
-  `szorroutecontrolartifactv1_1a747011668f620b9db04cc2a42c57c5b23b59def879bcc978d37c3f94f0e2cd`.
-- Route Controls v1 SHA-256:
-  `61043f033e8c2afb73e72f0f3e9199ea008c8baf114e33f4b9829d0e70b90661`.
-- Manifest v0 ID/semantic digest:
-  `szorspecmanifestv0_6f09a0f2b2b42920710c19d97bb5b64bbd184c88c6d9983af2efe9b5f7d84f03` /
-  `6f09a0f2b2b42920710c19d97bb5b64bbd184c88c6d9983af2efe9b5f7d84f03`.
-- Manifest v0 file SHA-256:
-  `818a1ec466bd37bd23dd86ef14fecf0fcc0049360bef7b5a16fdc2f575069e9f`.
-- All remain immutable; Route Controls v1 stays `FALSIFIED` with no replay.
+- Hypothesis: `FALSIFIED`.
+- Reason: one frozen six-source retrieval pass produced six `NETWORK_ERROR`
+  events and retained zero official source bytes.
+- The negative result must not be restated as proof that the official docs are
+  insufficient; source sufficiency was not observable in this environment.
+- No second retrieval, alternate downloader, replacement locator, seventh
+  source, or memory-derived mapping was used.
 
-## Non-negotiable evidence rules
+## Authoritative IDs
+
+- Source plan:
+  `szorwiresourceplanv1_19b0fcbaab0004ab5db0b7d529f8eaf055ccbcba75b68b48a3a059c540bb98cc`.
+- Retrieval log:
+  `szorwireretrievallogv1_df7bb7728564d549057a9cd135eab07cb3377315b907ef092cd74e24a72295e4`.
+- Manifest:
+  `szorwirespecmanifestv1_bb4919b28f1913de4484c54dadbece8f0e16876ce233aa12eaaf00eb506a3a41`.
+- Validation:
+  `szorwiremanifestvalidationv1_9a30a408ff6c4537319cfc8b1e3c62fec24e783f2d52db6a498612d10464fee2`.
+- Revalidation:
+  `szorwiremanifestrevalidationv1_436590983388bb4d412d7db3c5124c9ce56480056ff3fb7d41569a37bb9c18a3`.
+
+## Frozen evidence rules
 
 - Official public unauthenticated sources only.
-- A used source must have inspectable retained bytes and non-null lengths.
-- Prose is not a typed schema; local names are not official paths.
-- Positive facts/mappings are only `DIRECTLY_DOCUMENTED` or
+- Used source facts require inspectable retained bytes, lengths, SHA-256 and
+  exact anchors/ranges.
+- Positive mappings may be only `DIRECTLY_DOCUMENTED` or
   `DERIVED_LOSSLESSLY`.
-- Unknown provider/model/cache/attempt/endpoint semantics remain
+- Missing provider/model/cache/attempt/endpoint semantics remain
   `NOT_ESTABLISHED`.
-- No unsupported defaults, local rename conventions, or requested-to-served
-  identity inference.
+- No parser/runtime/predecessor mutation.
 
-## Protected local files
+## Frozen source boundary
 
-Never stage or modify:
+- Domain: `openrouter.ai` only.
+- Planned sources: exactly 6.
+- Retries: 0.
+- Browser inspections: 0.
+- Maximum one same-origin HTTPS redirect.
+- 8 MiB per source, 20 MiB total response, 1 MiB retained evidence.
+- 20-second per-source timeout.
 
-- `scripts/live_dialogue.py.bak`;
-- the malformed root filename beginning `ocratic_followup_mandate`.
+## Testing limitation
+
+The assistant worked from a user-provided source ZIP without `.git`. Focused
+Phase 8.5D-S tests pass, but historical tests that invoke `git show` cannot run
+in that environment. Rerun the full suite in the user's actual Git checkout
+after applying the returned patch.
+
+## Next
+
+`RETURN TO ARCHITECTURE DECISION`.
+
+Wire-mapping v2, P17/P18/P19, live pilot, Experience Store, learned Value,
+learned Policy, RL and production authority remain blocked.

@@ -1,4 +1,4 @@
-# Phase 8.5D-S plan
+# Phase 8.5D-S plan — closed
 
 ## Frozen hypothesis
 
@@ -8,36 +8,33 @@ authoritative normalized field is linked to an official source path, JSON type,
 presence rule, nullability rule, envelope kind, semantic meaning, and either a
 directly documented or demonstrably lossless mapping.
 
-## Ordered work
+## Executed chronology
 
-1. Verify the parent checkpoint, sealed hashes, and protected files.
-2. Freeze contracts, source locators, domain allowlist, retrieval bounds, and
-   sufficiency thresholds before network activity.
-3. Perform one bounded official-public retrieval/inspection pass and retain
-   minimal source snapshots.
-4. Commit source snapshots before interpreting facts.
-5. Freeze source/fact/mapping/fixture/manifest schemas and tests.
-6. Extract facts and mappings; record unsupported relationships explicitly.
-7. Freeze pre-evaluation counts, identities, and test results.
-8. Run exactly one authoritative sufficiency evaluation and publish one
-   write-once validation artifact.
-9. Run one offline revalidation with no documentation retrieval.
-10. Verify historical hashes, inherited boundary status, and documentation.
+1. Verified the parent checkpoint and sealed predecessor hashes.
+2. Froze immutable source/retrieval/canonicalization contracts and six locators.
+3. Passed the local pre-retrieval contract gate.
+4. Performed exactly one bounded six-source public retrieval pass.
+5. Recorded six typed `NETWORK_ERROR` events; retained zero source bytes.
+6. Did not retry, add a source, switch downloader, or infer schema from memory.
+7. Built source-evidence records and fourteen `NOT_ESTABLISHED` relationship
+   assessments.
+8. Published one content-addressed manifest and one validation artifact.
+9. Ran one offline deterministic revalidation without documentation retrieval.
+10. Verified focused tests and sealed predecessor hashes.
+11. Documented the negative result and returned the completed worktree as ZIP
+    plus patch because the uploaded source snapshot contained no `.git` data.
 
-## Validation gates
+## Final status
 
-- no source bytes used without retention, length, and digest;
-- exact paths/types/presence/nullability and envelope placement required;
-- no assumption-based or repository-convention positive mapping;
-- deterministic canonicalization, IDs, manifest, validation, and revalidation;
-- no parser/runtime/predecessor mutation;
-- all external activity bounded and logged;
-- inherited static failure reported separately and unchanged;
-- tracked worktree clean and protected files untouched.
+- Hypothesis: `FALSIFIED`.
+- Wire-mapping v2: not earned.
+- P17/P18/P19: `NOT_ESTABLISHED`.
+- Live pilot and downstream learning/RL: blocked.
+- Next: `RETURN TO ARCHITECTURE DECISION`.
 
-## Stop conditions
+## Anti-loop rule
 
-Stop on a non-official redirect, retrieval-limit breach, credential/authenticated
-endpoint access, source-size breach, silent source substitution, predecessor
-hash drift, post-freeze semantic mutation, a second authoritative evaluation,
-or any parser/runtime edit.
+This is the sole authorized manifest v1 attempt. No immediate manifest v2 or
+silent source substitution is permitted. A future architecture decision may
+choose a different execution environment for the same frozen source plan or
+move OpenRouter certification out of the critical path.
