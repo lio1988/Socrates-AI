@@ -171,29 +171,30 @@ v0, even when a related prose concept is present:
 `.attempt`, `.is_byok`, `.endpoints.total`, `.endpoints.available[]` and its
 children, `.params`, `.attempts[]` and its children, and `.pipeline[]`.
 
-The existence/name of top-level `openrouter_metadata` and the conceptual
-one-based attempt, provider summary, and optional pipeline are retained. Their
-complete dotted paths, types, and mapping semantics are not.
+The exact token `openrouter_metadata` and the conceptual one-based attempt,
+provider summary, and optional pipeline are retained. The token's exact
+envelope placement and all complete dotted paths, types, and mapping semantics
+are not.
 
 ## 7. Internal normalized schema
 
 The repository schema is explicit and internally testable, but it is not an
 official response schema.
 
-| Local raw path | Local type / presence | v1 rule | Receipt projection | Authority |
-|---|---|---|---|---|
-| `schema_version` | required string | must equal local normalized schema ID | none | Repository-only |
-| `openrouter_metadata` | required object | absence G20; wrong shape G21 | `required_metadata=PRESENT` | Name concept supported; shape not mapped |
-| `.requested_model` | required string | exact local model | constant verified `requested_model` | Repository convention |
-| `.requested_provider_only` | required `list[str]` | exact singleton endpoint | request-derived `requested_endpoint` | Repository convention |
-| `.routing_strategy` | required nonblank string | must equal local literal `direct` | `routing_strategy_summary` | Repository convention |
-| `.actual_model` | required string | exact local model | `actual_model`, `model_match` | Repository convention |
-| `.provider` | required string | exact broad literal `azure`; exact endpoint is rejected | `attested_provider`, broad granularity | Repository convention over F04 concept |
-| `.attempt` | required positive integer | must equal 1 | literal `attempt=1` | Concept aligned; type/path not mapped |
-| `.attempts` | optional list | when present, exactly one consistent success entry | absent/present-consistent status | Repository convention over optional-detail concept |
-| `.pipeline` | optional list, default `[]` | dict stages allowed except fallback-like content | opaque digest/count only | Partial concept; child rules local |
-| `.fallback_observed` | optional bool, default false | any true/non-bool fails | no-observed-fallback | Repository-only |
-| unknown content | any JSON | digest/count; authority/cache/fallback/endpoint names fail closed | SHA-256 and count | Non-authoritative |
+| INTERNAL FIELD | TYPE | SOURCE RAW PATH | EVIDENCE ID | LOCAL PRESENCE | NORMALIZATION RULE | LOSSLESS / LOSSY | DEFAULT | MISSING RESULT | INVALID RESULT | UNKNOWN-FIELD BEHAVIOR | AUTHORITY |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `schema_version` | string | `$.schema_version` | none | Mandatory | exact equality to local schema ID | Local exact; official unsupported | none | G21 | G21 | envelope extras handled separately | Repository-only |
+| metadata object | object | `$.openrouter_metadata` | F04/F05 token/concept only | Mandatory | direct local lookup | Local exact; official placement/shape unsupported | none | G20 | G21 | unknown children enter opaque policy | Partially grounded name only |
+| `requested_model` | string | `$.openrouter_metadata.requested_model` | none | Mandatory | compare with frozen request model; receipt uses verified literal | Local semantic exact; official unsupported | none | G21 | G21 | duplicate/colliding name rejected | Repository-only |
+| `requested_provider_only` | `list[str]` | `$.openrouter_metadata.requested_provider_only` | none | Mandatory | exact singleton equality; receipt projects frozen requested endpoint | Local semantic exact; official unsupported | none | G21 | G21 | duplicate/colliding name rejected | Repository-only |
+| `routing_strategy` | nonblank string | `$.openrouter_metadata.routing_strategy` | F04 strategy concept only | Mandatory | preserve string summary, require local `direct` | Local value exact; official rename/value unsupported | none | G21 | G21/G30 | official-like `strategy` is an authority unknown | Repository convention |
+| `actual_model` | string | `$.openrouter_metadata.actual_model` | F04 selected-model concept only | Mandatory | exact equality; receipt uses verified literal | Local semantic exact; official source unsupported | none | G25 | G26 | model-like unknowns fail authority check | Repository convention |
+| `provider` | string | `$.openrouter_metadata.provider` | F04 provider-summary concept only | Mandatory | equal local broad `azure`; exact endpoint rejected | Local semantic exact; official granularity unsupported | none | G27 | G28/G31 | endpoint/provider shadowing fails | Repository convention |
+| `attempt` | positive integer | `$.openrouter_metadata.attempt` | F04 one-based attempt concept | Mandatory | require integer >0 and exactly 1 | Local semantic exact; official type/path unsupported | none | G23 | G23/G24 | duplicate/colliding name rejected | Derived with assumptions |
+| `attempts` | list of local entry objects | `$.openrouter_metadata.attempts` | F04 optional attempt-detail concept only | Optional | validate singleton consistency; project status only | Receipt projection lossy; full raw bytes retained | `ABSENT_ACCEPTED` | accepted as absent | G29 | child extras digested; authority shadows fail | Repository convention |
+| `pipeline` | list of objects | `$.openrouter_metadata.pipeline` | F04 optional pipeline concept only | Optional | reject malformed/fallback-like stages; digest contents | Receipt projection lossy; full raw bytes retained | `[]` | accepted as absent | G30 | opaque stage content digested; fallback names fail | Derived with assumptions |
+| `fallback_observed` | boolean | `$.openrouter_metadata.fallback_observed` | none | Optional | require false | Boolean control projection; raw bytes retained | `false` | accepted as false | G30 | fallback-like shadows fail | Repository-only |
+| opaque extras | any JSON | envelope, metadata, attempt children, pipeline | F04 additive-field limitation only | Optional | canonical digest and recursive count | Digest/count lossy; exact raw bytes retained | empty sections | accepted | protected-name collisions fail | harmless extras non-authoritative; protected names fail closed | Non-authoritative |
 
 The parser entry point is `parse_openrouter_router_metadata_v1`. It retains
 exact UTF-8 JSON text, length, and digest, rejects duplicate members and
@@ -209,7 +210,7 @@ IDs, not official-wire certification.
 
 | OFFICIAL WIRE PATH | OFFICIAL TYPE | OFFICIAL REQUIRED/OPTIONAL STATUS | FROZEN EVIDENCE RECORD | RAW FIXTURE PATH | INTERNAL NORMALIZED FIELD | NORMALIZATION FUNCTION | LOSSLESS | MISSING-FIELD RESULT | INVALID-TYPE RESULT | UNKNOWN-FIELD POLICY | AUTHORITY CLAIM | TEST CASES |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `openrouter_metadata` | NR | cache hits may omit; other requiredness NR | F04/F05 | same local top-level name | metadata object | direct local lookup | No: official shape/type absent | G20 missing | G21 malformed | N/A | Name/concept directly documented; schema unsupported | SS01–03, OS01–02 |
+| candidate token `openrouter_metadata` (placement NR) | NR | cache hits may omit; other requiredness NR | F04/F05 | local top-level field of same name | metadata object | direct local lookup | No: official placement/shape/type absent | G20 missing | G21 malformed | N/A | Token/concept documented; placement/schema unsupported | SS01–03, OS01–02 |
 | `openrouter_metadata.requested` | NR | NR | F04 concept only | absent; local fixture uses two echo fields | `requested_model`, `requested_provider_only` | no official map; local equality checks | No | official-shaped input lacks local names and fails G21 | G21 | `requested` is authority-like | Unsupported mapping | SS01–03; local schema probes |
 | `openrouter_metadata.strategy` | NR | NR | F04 concept only | local `.routing_strategy` | `routing_strategy` | local rename plus `==direct` assumption | No | G21 | G21 | `strategy` is authority-like | Repository convention | OS16, P06 |
 | `openrouter_metadata.region` | NR | NR | none | absent | none | none | No | N/A | N/A | authority-like unknown fails | Unsupported | none |
@@ -499,14 +500,11 @@ imports its own v1 route-control cases, contracts, renderer, and parser. The two
 forbidden strings are runtime-read provenance/mutation-inventory members, not a
 runtime route-decision dependency or test-fixture reuse.
 
-The raw-substring assertion is consequently a false positive against its likely
-semantic goal, but the reference itself is classified by purpose as provenance.
-The existing inventory contract is `PARTIAL`:
-
-- its data-only, forbidden-seam, and expected-label separation rules are valid;
-- its unqualified repository-wide substring rule conflates import/semantic
-  consumption with comments, documentation, and provenance inventory;
-- it is not version-aware and does not report the offending path directly.
+The assertion accurately detects the raw historical-path references it forbids.
+The references are classified by purpose as provenance rather than case
+semantics, but that does not make the detected repository dependency imaginary.
+The existing inventory contract is therefore `VALID`: v1 violates its explicit
+raw-reference boundary even though it does not import predecessor case logic.
 
 A credible later closure is available without route-semantic changes:
 
@@ -515,13 +513,15 @@ A credible later closure is available without route-semantic changes:
    immutable artifact IDs, artifact SHA-256 values, semantic manifest IDs, and
    sealed commit IDs rather than mutable historical module/test paths where
    those identities are sufficient;
-3. in a separately authorized boundary cleanup, replace the broad substring
-   rule with an AST/reference-aware semantic-dependency rule plus a narrow,
-   explicit treatment of sealed provenance—not a blanket exemption.
+3. decide in a separately authorized boundary gate how sealed legacy provenance
+   and the existing raw-reference prohibition can coexist while keeping the
+   suite green; this gate does not pre-authorize a test exemption or weaker
+   semantic-only rule.
 
-Because sealed v1 will continue to contain the historical strings, a full-suite
-closure ultimately needs the version-aware test rule as well as clean future
-evaluator provenance. No runtime route semantic change is required.
+Because sealed v1 will continue to contain the historical strings, the later
+closure must explicitly resolve that versioned compatibility problem rather
+than silently exempt it. No runtime route semantic change is required, but a
+real repository-provenance boundary change is.
 
 ## 20. Teardown-error audit
 
@@ -562,15 +562,16 @@ access or hidden external execution.
 | Runtime route-semantic dependence | None |
 | Reference purpose | Provenance/mutation inventory |
 | Teardown in isolation | Clean; prior error not reproduced |
-| Existing inventory contract | `PARTIAL` |
+| Existing inventory contract | `YES — valid raw-reference boundary` |
 | Runtime route semantic change required | `NO` |
 | Credible closure path | `YES`, through version-aware semantic inventory plus immutable provenance |
 | Current repository-integrity status | `INCOMPLETE` |
 
 Repository integrity cannot be called green. It also does not logically supply
-the missing official schema. The boundary issue is real test-suite debt with a
-non-semantic repair path, while manifest evidence is the smaller prerequisite
-that must come first.
+the missing official schema. The boundary issue is a real provenance violation
+with no runtime route-semantic contamination; its exact version-aware closure
+must be decided later. Manifest evidence is the smaller prerequisite that must
+come first.
 
 ## 22. Decision matrix
 
@@ -578,7 +579,7 @@ that must come first.
 |---|---|---|
 | `NEW OFFICIAL-WIRE MAPPING v2 EXPERIMENT EARNED` | No case/path mapping; no structured schema/types; no official-shape fixture; suite still red | Rejected |
 | `SPECIFICATION EVIDENCE MANIFEST v1 REQUIRED FIRST` | Exact fields, types, placements, provider granularity, and mappings are missing/ambiguous in v0 | **Selected** |
-| `REPOSITORY BOUNDARY CLEANUP REQUIRED FIRST` | Credible cleanup is needed later, but there is no route-semantic predecessor coupling and cleanup cannot characterize the wire mapping | Rejected as first dependency |
+| `REPOSITORY BOUNDARY CLEANUP REQUIRED FIRST` | Real provenance cleanup is needed later, but there is no route-semantic predecessor coupling and cleanup cannot characterize the wire mapping | Rejected as first dependency |
 | `OPENROUTER ROUTE-CONTROL APPROACH NOT JUSTIFIED` | v0 proves an evidence gap, not that official sources can never expose a usable contract | Not established |
 
 There is no tie. The preferred dependency rule explicitly places specification
