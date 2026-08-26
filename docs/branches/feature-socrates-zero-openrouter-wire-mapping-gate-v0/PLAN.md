@@ -9,15 +9,15 @@ implementation preference—decide.
 
 ## Ordered work
 
-1. Verify the sealed checkpoint, protected files, and historical identities.
-2. Extract the typed wire-mapping assessment and artifact forensic sufficiency.
-3. Audit frozen official evidence against every normalized parser field.
-4. Build the field-by-field mapping and fixture-authenticity matrices.
-5. Audit success/error/cache/attempt/endpoints/provider/strategy/pipeline rules.
-6. Reproduce and classify static-inventory and teardown failures offline.
-7. Determine manifest sufficiency and repository-boundary status independently.
-8. Write the canonical decision report and choose exactly one next branch.
-9. Run only permitted integrity/static tests and commit the durable checkpoint.
+1. [x] Verify the sealed checkpoint, protected files, and historical identities.
+2. [x] Extract the typed wire-mapping assessment and artifact forensic sufficiency.
+3. [x] Audit frozen official evidence against every normalized parser field.
+4. [x] Build the field-by-field mapping and fixture-authenticity matrices.
+5. [x] Audit success/error/cache/attempt/endpoints/provider/strategy/pipeline rules.
+6. [x] Reproduce and classify static-inventory and teardown failures offline.
+7. [x] Determine manifest sufficiency and repository-boundary status independently.
+8. [x] Write the canonical decision report and choose exactly one next branch.
+9. [x] Run only permitted integrity/static tests and commit the durable checkpoint.
 
 ## Validation gates
 
@@ -29,6 +29,10 @@ implementation preference—decide.
 - one decision and one next branch only;
 - zero external activity and no protected-file changes;
 - `git diff --check` clean.
+
+All validation gates completed. The one static-inventory assertion remains an
+honestly preserved repository-integrity failure; it was not patched by this
+gate.
 
 ## Stop conditions
 

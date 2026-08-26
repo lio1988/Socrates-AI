@@ -25,3 +25,30 @@ Never stage or modify:
 
 - `scripts/live_dialogue.py.bak`;
 - the malformed root filename beginning `ocratic_followup_mandate`.
+
+## Gate decision
+
+- Exactly one decision:
+  `SPECIFICATION EVIDENCE MANIFEST v1 REQUIRED FIRST`.
+- Next branch:
+  `feature/socrates-zero-openrouter-wire-spec-evidence-v1`.
+- The violation is global and not case-attributable. Artifact forensics are
+  insufficient to name one exact official field/path mismatch.
+- Retained exact local tokens: `openrouter_metadata`, `attempt`, `provider`,
+  `pipeline`.
+- Missing local tokens: `requested_model`, `requested_provider_only`,
+  `routing_strategy`, `actual_model`, `attempts`.
+- Structured official schema, complete types, exact placement, and
+  official-wire-to-local mapping are absent from manifest v0.
+- All positive response fixtures are repository-normalized, not official-shape.
+
+## Repository boundary
+
+- Exact isolated static test: deterministic assertion failure in four runs.
+- Offending evaluator references: provenance inventory strings at lines 1624
+  and 1635; no predecessor case import or route-semantic consumption.
+- Existing raw-reference inventory contract: valid and currently violated.
+- Teardown error: not reproduced in isolation.
+- Runtime route semantic change required: no.
+- A later version-aware provenance closure remains required, but specification
+  evidence is the dependency-ordered first step.
