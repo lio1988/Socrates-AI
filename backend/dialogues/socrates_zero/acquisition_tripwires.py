@@ -122,7 +122,10 @@ _CREDENTIAL_PATH_MARKERS = frozenset(
 
 
 def _is_secret_environment_key(key: object) -> bool:
-    text = str(key).upper()
+    if isinstance(key, bytes):
+        text = os.fsdecode(key).upper()
+    else:
+        text = str(key).upper()
     return (
         text in _SECRET_ENV_EXACT
         or text.endswith(("_PASSWORD", "_SECRET", "_TOKEN"))
@@ -134,7 +137,8 @@ def _is_credential_path(value: object) -> bool:
     if isinstance(value, int):
         return False
     try:
-        path = Path(os.fspath(value))
+        raw_path = os.fspath(value)
+        path = Path(os.fsdecode(raw_path) if isinstance(raw_path, bytes) else raw_path)
     except TypeError:
         return False
     lowered = tuple(part.lower() for part in path.parts)
@@ -274,6 +278,23 @@ class AcquisitionBoundaryTripwireV0:
         self._patch(socket.socket, "send", guarded_socket_send)
         self._patch(socket.socket, "sendall", guarded_socket_sendall)
 
+        for attribute in (
+            "gethostbyname",
+            "gethostbyname_ex",
+            "gethostbyaddr",
+            "getnameinfo",
+            "getfqdn",
+        ):
+            if hasattr(socket, attribute):
+                self._patch(
+                    socket,
+                    attribute,
+                    self._forbidden(
+                        "external_network_attempts",
+                        f"socket.{attribute}",
+                    ),
+                )
+
         optional_http_seams = (
             ("requests.sessions", ("Session",), "request", "requests.Session.request"),
             ("requests.sessions", ("Session",), "send", "requests.Session.send"),
@@ -298,32 +319,125 @@ class AcquisitionBoundaryTripwireV0:
 
     def _install_credential_tripwires(self) -> None:
         original_getenv = os.getenv
-        original_environment_get = type(os.environ).get
-        original_environment_getitem = type(os.environ).__getitem__
         original_open = builtins.open
         original_io_open = io.open
         original_os_open = os.open
+        original_os_stat = os.stat
+        original_os_lstat = os.lstat
+        original_os_access = os.access
         original_path_open = Path.open
         original_path_read_bytes = Path.read_bytes
         original_path_read_text = Path.read_text
+        original_path_exists = Path.exists
+        original_path_stat = Path.stat
+        original_path_lstat = Path.lstat
+        original_path_is_file = Path.is_file
+        original_path_is_dir = Path.is_dir
+        original_os_path_exists = os.path.exists
+        original_os_path_lexists = os.path.lexists
+        original_os_path_isfile = os.path.isfile
+        original_os_path_isdir = os.path.isdir
 
         def getenv(key: object, default: object = None) -> object:
             if _is_secret_environment_key(key):
                 self._abort("credential_access_attempts", f"os.getenv:{key}")
             return original_getenv(key, default)
 
-        def environment_get(environment: object, key: object, default: object = None) -> object:
-            if _is_secret_environment_key(key):
-                self._abort("credential_access_attempts", f"os.environ.get:{key}")
-            return original_environment_get(environment, key, default)
+        def environment_name(environment: object) -> str:
+            environb = getattr(os, "environb", None)
+            return "os.environb" if environb is environment else "os.environ"
 
-        def environment_getitem(environment: object, key: object) -> object:
-            if _is_secret_environment_key(key):
-                self._abort("credential_access_attempts", f"os.environ.__getitem__:{key}")
-            return original_environment_getitem(environment, key)
+        def install_environment_type_tripwires(environment_type: type[Any]) -> None:
+            original_get = environment_type.get
+            original_getitem = environment_type.__getitem__
+            original_contains = environment_type.__contains__
+            original_pop = environment_type.pop
+            original_setdefault = environment_type.setdefault
 
-        def environment_bulk_read(*_args: object, **_kwargs: object) -> object:
-            self._abort("credential_access_attempts", "os.environ.bulk_read")
+            def environment_get(
+                environment: object,
+                key: object,
+                default: object = None,
+            ) -> object:
+                if _is_secret_environment_key(key):
+                    self._abort(
+                        "credential_access_attempts",
+                        f"{environment_name(environment)}.get:{key}",
+                    )
+                return original_get(environment, key, default)
+
+            def environment_getitem(environment: object, key: object) -> object:
+                if _is_secret_environment_key(key):
+                    self._abort(
+                        "credential_access_attempts",
+                        f"{environment_name(environment)}.__getitem__:{key}",
+                    )
+                return original_getitem(environment, key)
+
+            def environment_contains(environment: object, key: object) -> bool:
+                if _is_secret_environment_key(key):
+                    self._abort(
+                        "credential_access_attempts",
+                        f"{environment_name(environment)}.__contains__:{key}",
+                    )
+                return original_contains(environment, key)
+
+            def environment_pop(
+                environment: object,
+                key: object,
+                *args: object,
+                **kwargs: object,
+            ) -> object:
+                if _is_secret_environment_key(key):
+                    self._abort(
+                        "credential_access_attempts",
+                        f"{environment_name(environment)}.pop:{key}",
+                    )
+                return original_pop(environment, key, *args, **kwargs)
+
+            def environment_setdefault(
+                environment: object,
+                key: object,
+                default: object = None,
+            ) -> object:
+                if _is_secret_environment_key(key):
+                    self._abort(
+                        "credential_access_attempts",
+                        f"{environment_name(environment)}.setdefault:{key}",
+                    )
+                return original_setdefault(environment, key, default)
+
+            def environment_enumeration(method_name: str):
+                def abort_enumeration(
+                    environment: object,
+                    *_args: object,
+                    **_kwargs: object,
+                ) -> None:
+                    self._abort(
+                        "credential_access_attempts",
+                        f"{environment_name(environment)}.{method_name}",
+                    )
+
+                return abort_enumeration
+
+            self._patch(environment_type, "get", environment_get)
+            self._patch(environment_type, "__getitem__", environment_getitem)
+            self._patch(environment_type, "__contains__", environment_contains)
+            self._patch(environment_type, "pop", environment_pop)
+            self._patch(environment_type, "setdefault", environment_setdefault)
+            for method_name in (
+                "__iter__",
+                "copy",
+                "items",
+                "keys",
+                "popitem",
+                "values",
+            ):
+                self._patch(
+                    environment_type,
+                    method_name,
+                    environment_enumeration(method_name),
+                )
 
         def guarded_open(file: object, *args: object, **kwargs: object):
             if _is_credential_path(file):
@@ -340,6 +454,21 @@ class AcquisitionBoundaryTripwireV0:
                 self._abort("credential_access_attempts", f"os.open:{file}")
             return original_os_open(file, *args, **kwargs)
 
+        def guarded_os_stat(path: object, *args: object, **kwargs: object):
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"os.stat:{path}")
+            return original_os_stat(path, *args, **kwargs)
+
+        def guarded_os_lstat(path: object, *args: object, **kwargs: object):
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"os.lstat:{path}")
+            return original_os_lstat(path, *args, **kwargs)
+
+        def guarded_os_access(path: object, *args: object, **kwargs: object):
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"os.access:{path}")
+            return original_os_access(path, *args, **kwargs)
+
         def guarded_path_open(path: Path, *args: object, **kwargs: object):
             if _is_credential_path(path):
                 self._abort("credential_access_attempts", f"Path.open:{path}")
@@ -355,18 +484,84 @@ class AcquisitionBoundaryTripwireV0:
                 self._abort("credential_access_attempts", f"Path.read_text:{path}")
             return original_path_read_text(path, *args, **kwargs)
 
+        def guarded_path_exists(path: Path, *args: object, **kwargs: object) -> bool:
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"Path.exists:{path}")
+            return original_path_exists(path, *args, **kwargs)
+
+        def guarded_path_stat(path: Path, *args: object, **kwargs: object):
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"Path.stat:{path}")
+            return original_path_stat(path, *args, **kwargs)
+
+        def guarded_path_lstat(path: Path, *args: object, **kwargs: object):
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"Path.lstat:{path}")
+            return original_path_lstat(path, *args, **kwargs)
+
+        def guarded_path_is_file(path: Path, *args: object, **kwargs: object) -> bool:
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"Path.is_file:{path}")
+            return original_path_is_file(path, *args, **kwargs)
+
+        def guarded_path_is_dir(path: Path, *args: object, **kwargs: object) -> bool:
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"Path.is_dir:{path}")
+            return original_path_is_dir(path, *args, **kwargs)
+
+        def guarded_os_path_exists(path: object) -> bool:
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"os.path.exists:{path}")
+            return original_os_path_exists(path)
+
+        def guarded_os_path_lexists(path: object) -> bool:
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"os.path.lexists:{path}")
+            return original_os_path_lexists(path)
+
+        def guarded_os_path_isfile(path: object) -> bool:
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"os.path.isfile:{path}")
+            return original_os_path_isfile(path)
+
+        def guarded_os_path_isdir(path: object) -> bool:
+            if _is_credential_path(path):
+                self._abort("credential_access_attempts", f"os.path.isdir:{path}")
+            return original_os_path_isdir(path)
+
         self._patch(os, "getenv", getenv)
-        self._patch(type(os.environ), "get", environment_get)
-        self._patch(type(os.environ), "__getitem__", environment_getitem)
-        self._patch(type(os.environ), "copy", environment_bulk_read)
-        self._patch(type(os.environ), "items", environment_bulk_read)
-        self._patch(type(os.environ), "values", environment_bulk_read)
+        environment_types = {type(os.environ)}
+        if hasattr(os, "environb"):
+            environment_types.add(type(os.environb))
+        for environment_type in environment_types:
+            install_environment_type_tripwires(environment_type)
+        if hasattr(os, "getenvb"):
+            original_getenvb = os.getenvb
+
+            def getenvb(key: object, default: object = None) -> object:
+                if _is_secret_environment_key(key):
+                    self._abort("credential_access_attempts", f"os.getenvb:{key}")
+                return original_getenvb(key, default)
+
+            self._patch(os, "getenvb", getenvb)
         self._patch(builtins, "open", guarded_open)
         self._patch(io, "open", guarded_io_open)
         self._patch(os, "open", guarded_os_open)
+        self._patch(os, "stat", guarded_os_stat)
+        self._patch(os, "lstat", guarded_os_lstat)
+        self._patch(os, "access", guarded_os_access)
         self._patch(Path, "open", guarded_path_open)
         self._patch(Path, "read_bytes", guarded_read_bytes)
         self._patch(Path, "read_text", guarded_read_text)
+        self._patch(Path, "exists", guarded_path_exists)
+        self._patch(Path, "stat", guarded_path_stat)
+        self._patch(Path, "lstat", guarded_path_lstat)
+        self._patch(Path, "is_file", guarded_path_is_file)
+        self._patch(Path, "is_dir", guarded_path_is_dir)
+        self._patch(os.path, "exists", guarded_os_path_exists)
+        self._patch(os.path, "lexists", guarded_os_path_lexists)
+        self._patch(os.path, "isfile", guarded_os_path_isfile)
+        self._patch(os.path, "isdir", guarded_os_path_isdir)
 
         try:
             keyring = importlib.import_module("keyring")

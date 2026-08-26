@@ -347,7 +347,10 @@ def test_reusable_tripwire_records_and_aborts_every_forbidden_category() -> None
         assert snapshot.hits[0].category == category
 
 
-def _assert_single_credential_tripwire_abort(action) -> None:
+def _assert_single_credential_tripwire_abort(
+    action,
+    expected_seam: str | None = None,
+) -> None:
     tripwire = AcquisitionBoundaryTripwireV0()
     with pytest.raises(AcquisitionBoundaryViolation):
         with tripwire:
@@ -357,6 +360,58 @@ def _assert_single_credential_tripwire_abort(action) -> None:
     assert snapshot.credential_access_attempts == 1
     assert len(snapshot.hits) == 1
     assert snapshot.hits[0].category == "credential_access_attempts"
+    if expected_seam is not None:
+        assert snapshot.hits[0].seam == expected_seam
+
+
+def _assert_single_network_tripwire_abort(action, expected_seam: str) -> None:
+    tripwire = AcquisitionBoundaryTripwireV0()
+    with pytest.raises(AcquisitionBoundaryViolation):
+        with tripwire:
+            action()
+    snapshot = tripwire.snapshot()
+    assert snapshot.total_forbidden_attempts == 1
+    assert snapshot.external_network_attempts == 1
+    assert len(snapshot.hits) == 1
+    assert snapshot.hits[0].category == "external_network_attempts"
+    assert snapshot.hits[0].seam == expected_seam
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_seam"),
+    (
+        pytest.param(
+            lambda: socket.gethostbyname("forbidden.invalid"),
+            "socket.gethostbyname",
+            id="gethostbyname",
+        ),
+        pytest.param(
+            lambda: socket.gethostbyname_ex("forbidden.invalid"),
+            "socket.gethostbyname_ex",
+            id="gethostbyname-ex",
+        ),
+        pytest.param(
+            lambda: socket.gethostbyaddr("203.0.113.1"),
+            "socket.gethostbyaddr",
+            id="gethostbyaddr",
+        ),
+        pytest.param(
+            lambda: socket.getnameinfo(("203.0.113.1", 443), 0),
+            "socket.getnameinfo",
+            id="getnameinfo",
+        ),
+        pytest.param(
+            lambda: socket.getfqdn("forbidden.invalid"),
+            "socket.getfqdn",
+            id="getfqdn",
+        ),
+    ),
+)
+def test_network_tripwire_rejects_all_available_dns_resolution_seams(
+    action,
+    expected_seam: str,
+) -> None:
+    _assert_single_network_tripwire_abort(action, expected_seam)
 
 
 @pytest.mark.parametrize(
@@ -376,6 +431,86 @@ def test_credential_tripwire_rejects_common_secret_environment_keys(
     key: str,
 ) -> None:
     _assert_single_credential_tripwire_abort(lambda: os.getenv(key))
+
+
+@pytest.mark.parametrize(
+    "action",
+    (
+        pytest.param(
+            lambda: "OPENROUTER_API_KEY" in os.environ,
+            id="contains-secret-key",
+        ),
+        pytest.param(lambda: iter(os.environ), id="iterate"),
+        pytest.param(lambda: os.environ.keys(), id="keys"),
+    ),
+)
+def test_credential_tripwire_rejects_environment_existence_and_enumeration(
+    action,
+) -> None:
+    _assert_single_credential_tripwire_abort(action)
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_seam"),
+    (
+        pytest.param(
+            lambda: os.environ.pop("OPENROUTER_API_KEY", None),
+            "os.environ.pop:OPENROUTER_API_KEY",
+            id="pop-secret-key",
+        ),
+        pytest.param(
+            lambda: os.environ.setdefault("OPENROUTER_API_KEY", "forbidden"),
+            "os.environ.setdefault:OPENROUTER_API_KEY",
+            id="setdefault-secret-key",
+        ),
+        pytest.param(
+            lambda: os.environ.popitem(),
+            "os.environ.popitem",
+            id="popitem",
+        ),
+    ),
+)
+def test_credential_tripwire_rejects_environment_pop_seams(
+    action,
+    expected_seam: str,
+) -> None:
+    _assert_single_credential_tripwire_abort(action, expected_seam)
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "getenvb") or not hasattr(os, "environb"),
+    reason="byte environment APIs are unavailable on this platform",
+)
+@pytest.mark.parametrize(
+    "action",
+    (
+        pytest.param(
+            lambda: os.getenvb(b"OPENROUTER_API_KEY"),
+            id="getenvb-secret-key",
+        ),
+        pytest.param(
+            lambda: os.environb.get(b"OPENROUTER_API_KEY"),
+            id="environb-get-secret-key",
+        ),
+        pytest.param(
+            lambda: b"OPENROUTER_API_KEY" in os.environb,
+            id="environb-contains-secret-key",
+        ),
+        pytest.param(lambda: iter(os.environb), id="environb-iterate"),
+        pytest.param(lambda: os.environb.keys(), id="environb-keys"),
+        pytest.param(
+            lambda: os.environb.pop(b"OPENROUTER_API_KEY", None),
+            id="environb-pop-secret-key",
+        ),
+        pytest.param(
+            lambda: os.environb.setdefault(b"OPENROUTER_API_KEY", b"forbidden"),
+            id="environb-setdefault-secret-key",
+        ),
+        pytest.param(lambda: os.environb.popitem(), id="environb-popitem"),
+    ),
+)
+def test_credential_tripwire_rejects_byte_environment_reads(action) -> None:
+    _assert_single_credential_tripwire_abort(action)
 
 
 @pytest.mark.parametrize(
@@ -402,6 +537,44 @@ def test_credential_tripwire_rejects_bulk_environment_reads(action) -> None:
 )
 def test_credential_tripwire_rejects_low_level_credential_file_reads(action) -> None:
     _assert_single_credential_tripwire_abort(action)
+
+
+@pytest.mark.parametrize(
+    "action",
+    (
+        pytest.param(lambda: Path(".netrc").exists(), id="path-exists"),
+        pytest.param(lambda: Path("credentials.json").stat(), id="path-stat"),
+        pytest.param(lambda: Path(".ssh").lstat(), id="path-lstat"),
+        pytest.param(lambda: Path("secrets.json").is_file(), id="path-is-file"),
+        pytest.param(lambda: Path(".aws").is_dir(), id="path-is-dir"),
+        pytest.param(lambda: os.stat(".env"), id="os-stat"),
+        pytest.param(lambda: os.lstat("token.json"), id="os-lstat"),
+        pytest.param(lambda: os.access("auth.json", os.F_OK), id="os-access"),
+        pytest.param(lambda: os.path.exists(".netrc"), id="os-path-exists"),
+        pytest.param(lambda: os.path.lexists(".env.local"), id="os-path-lexists"),
+        pytest.param(
+            lambda: os.path.isfile(".ssh/id_rsa"),
+            id="os-path-isfile",
+        ),
+        pytest.param(
+            lambda: os.path.isdir(".aws"),
+            id="os-path-isdir",
+        ),
+        pytest.param(lambda: os.stat(b"credentials.json"), id="bytes-os-stat"),
+    ),
+)
+def test_credential_tripwire_rejects_credential_file_metadata_probes(action) -> None:
+    _assert_single_credential_tripwire_abort(action)
+
+
+def test_credential_tripwire_preserves_noncredential_environment_and_file_checks() -> None:
+    expected_path_membership = "PATH" in os.environ
+    assert ("PATH" in os.environ) is expected_path_membership
+    assert "SOCRATES_ZERO_TEST_MISSING" not in os.environ
+    assert Path(__file__).exists()
+    assert Path(__file__).is_file()
+    assert os.path.exists(__file__)
+    assert os.path.isfile(__file__)
 
 
 def test_artifact_zero_counters_are_cross_checked_against_live_instrumentation() -> None:
