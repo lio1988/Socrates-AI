@@ -82,6 +82,17 @@ _UNKNOWN_PRICING_ITEMS = (
     "output_token_price",
     "route_or_non_token_price",
 )
+OPENROUTER_IDENTITY_SOURCE_FIELDS = tuple(
+    sorted(("configuration_digest", "fallback_used", "model", "provider"))
+)
+OPENROUTER_PROVIDER_REPORTED_USAGE_SOURCE_FIELDS = tuple(
+    sorted(("usage.input_tokens", "usage.output_tokens", "usage.total_tokens"))
+)
+OPENROUTER_LOCALLY_DERIVED_USAGE_SOURCE_FIELDS = tuple(
+    sorted(("usage.input_tokens", "usage.output_tokens"))
+)
+OPENROUTER_LOCALLY_DERIVED_USAGE_FIELDS = ("usage.total_tokens",)
+OPENROUTER_USAGE_TOTAL_DERIVATION_RULE_ID = "TOTAL_EQUALS_INPUT_PLUS_OUTPUT_V0"
 _PREPARED_BODY_KEYS = frozenset(
     {
         "model",
@@ -154,6 +165,33 @@ class OpenRouterAttemptOutcome(str, Enum):
     FAILED_CLOSED = "FAILED_CLOSED"
 
 
+class OpenRouterFinishReason(str, Enum):
+    STOP = "stop"
+
+
+class OpenRouterPrivacyClassification(str, Enum):
+    SYNTHETIC_CANNED_OBSERVATION = "SYNTHETIC_CANNED_OBSERVATION"
+
+
+class OpenRouterRawRetentionState(str, Enum):
+    INLINE_RAW_BYTES_RETAINED = "INLINE_RAW_BYTES_RETAINED"
+    NO_RAW_BYTES_CAPTURED = "NO_RAW_BYTES_CAPTURED"
+
+
+class OpenRouterUsageSource(str, Enum):
+    UNKNOWN = "UNKNOWN"
+    PROVIDER_REPORTED = "PROVIDER_REPORTED"
+    LOCALLY_DERIVED = "LOCALLY_DERIVED"
+
+
+class OpenRouterResponseValidationState(str, Enum):
+    NO_TRANSPORT_BYTES = "NO_TRANSPORT_BYTES"
+    TRANSPORT_BYTES_CAPTURED = "TRANSPORT_BYTES_CAPTURED"
+    IDENTITY_DERIVED = "IDENTITY_DERIVED"
+    USAGE_DERIVED = "USAGE_DERIVED"
+    ADAPTER_RESPONSE_VALIDATED = "ADAPTER_RESPONSE_VALIDATED"
+
+
 class _FrozenOpenRouterContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -206,6 +244,16 @@ def _ceil_microusd(tokens: int, rate_per_million: int) -> int:
         1 if remainder else 0,
         "ceiling-rounded micro-USD line item",
     )
+
+
+def calculate_openrouter_cost_line_microusd(
+    tokens: int, rate_per_million: int
+) -> int:
+    """Return one ceiling-rounded micro-USD line using exact integer inputs."""
+
+    if type(tokens) is not int or type(rate_per_million) is not int:
+        raise ContractValidationError("cost-line inputs must be exact integers")
+    return _ceil_microusd(tokens, rate_per_million)
 
 
 def _checked_multiply(left: int, right: int, field_name: str) -> int:
@@ -657,7 +705,10 @@ class OpenRouterPricingRecord(_FrozenOpenRouterContract):
     pricing_record_id: Optional[str] = None
     provider_id: Literal[OPENROUTER_PROVIDER_ID] = OPENROUTER_PROVIDER_ID
     model_id: Literal[OPENROUTER_MODEL_ID] = OPENROUTER_MODEL_ID
-    pricing_state: OpenRouterEvidenceState = OpenRouterEvidenceState.NOT_ESTABLISHED
+    pricing_state: Literal[
+        OpenRouterEvidenceState.NOT_ESTABLISHED,
+        OpenRouterEvidenceState.SYNTHETIC_ONLY,
+    ] = OpenRouterEvidenceState.NOT_ESTABLISHED
     currency: Literal["USD"] = "USD"
     unit: Literal["MICRO_USD_PER_MILLION_TOKENS"] = (
         "MICRO_USD_PER_MILLION_TOKENS"
@@ -763,7 +814,12 @@ class OpenRouterCostBound(_FrozenOpenRouterContract):
     cost_bound_id: Optional[str] = None
     token_policy: OpenRouterTokenPolicy
     pricing_record: OpenRouterPricingRecord
-    cost_state: Optional[OpenRouterEvidenceState] = None
+    cost_state: Optional[
+        Literal[
+            OpenRouterEvidenceState.NOT_ESTABLISHED,
+            OpenRouterEvidenceState.SYNTHETIC_ONLY,
+        ]
+    ] = None
     maximum_input_cost_microusd: Optional[int] = Field(
         default=None, ge=0, le=MAX_SIGNED_64, strict=True
     )
@@ -949,6 +1005,15 @@ class OpenRouterRawResponseEvidence(_FrozenOpenRouterContract):
     ] = OPENROUTER_REFERENCE_RAW_RESPONSE_MAX_BYTES
     truncated: Literal[False] = False
     transport_error_code: Optional[str] = None
+    privacy_classification: Literal[
+        OpenRouterPrivacyClassification.SYNTHETIC_CANNED_OBSERVATION
+    ] = OpenRouterPrivacyClassification.SYNTHETIC_CANNED_OBSERVATION
+    retention_state: Optional[OpenRouterRawRetentionState] = None
+    credential_material_retained: Literal[False] = False
+    sensitive_headers_retained: Literal[False] = False
+    assistant_content_treatment: Literal[
+        "OPAQUE_NO_SEMANTIC_EVALUATION"
+    ] = "OPAQUE_NO_SEMANTIC_EVALUATION"
 
     @field_validator("transport_error_code")
     @classmethod
@@ -991,8 +1056,16 @@ class OpenRouterRawResponseEvidence(_FrozenOpenRouterContract):
             self.reported_sha256 is not None or self.reported_byte_length is not None
         ):
             raise ContractValidationError("absent raw response cannot report digest or length")
+        retention_state = (
+            OpenRouterRawRetentionState.INLINE_RAW_BYTES_RETAINED
+            if raw is not None
+            else OpenRouterRawRetentionState.NO_RAW_BYTES_CAPTURED
+        )
+        if self.retention_state is not None and self.retention_state is not retention_state:
+            raise ContractValidationError("raw retention state does not match captured bytes")
         object.__setattr__(self, "reported_sha256", digest)
         object.__setattr__(self, "reported_byte_length", length)
+        object.__setattr__(self, "retention_state", retention_state)
         _freeze_id(
             self,
             field_name="raw_response_evidence_id",
@@ -1020,7 +1093,10 @@ class OpenRouterIdentityEvidence(_FrozenOpenRouterContract):
         IDENTITY_EVIDENCE_SCHEMA_VERSION
     ] = IDENTITY_EVIDENCE_SCHEMA_VERSION
     identity_evidence_id: Optional[str] = None
-    evidence_state: OpenRouterEvidenceState
+    evidence_state: Literal[
+        OpenRouterEvidenceState.NOT_ESTABLISHED,
+        OpenRouterEvidenceState.SYNTHETIC_ONLY,
+    ]
     requested_router_id: Literal[OPENROUTER_PROVIDER_ID] = OPENROUTER_PROVIDER_ID
     requested_model_id: Literal[OPENROUTER_MODEL_ID] = OPENROUTER_MODEL_ID
     requested_configuration_digest: str = Field(pattern=_HEX64_PATTERN)
@@ -1037,6 +1113,11 @@ class OpenRouterIdentityEvidence(_FrozenOpenRouterContract):
     configuration_identity_match: bool = Field(strict=True)
     identity_match: bool = Field(strict=True)
     exact_router_model_configuration_verified: bool = Field(strict=True)
+    source_raw_response_sha256: Optional[str] = Field(
+        default=None, pattern=_HEX64_PATTERN
+    )
+    source_fields: Tuple[str, ...] = ()
+    fallback_used: Optional[bool] = Field(default=None, strict=True)
     upstream_provider_id: Literal[None] = None
     upstream_route_id: Literal[None] = None
     upstream_route_state: Literal[
@@ -1049,6 +1130,8 @@ class OpenRouterIdentityEvidence(_FrozenOpenRouterContract):
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> "OpenRouterIdentityEvidence":
+        source_fields = _canonical_strings(self.source_fields, "source_fields")
+        object.__setattr__(self, "source_fields", source_fields)
         actual = (
             self.actual_router_id,
             self.actual_model_id,
@@ -1069,6 +1152,14 @@ class OpenRouterIdentityEvidence(_FrozenOpenRouterContract):
                 )
             ):
                 raise ContractValidationError("unknown identity cannot be verified")
+            if (
+                self.source_raw_response_sha256 is not None
+                or source_fields
+                or self.fallback_used is not None
+            ):
+                raise ContractValidationError(
+                    "NOT_ESTABLISHED identity cannot claim raw-source metadata"
+                )
         else:
             expected = (
                 self.requested_router_id,
@@ -1095,6 +1186,18 @@ class OpenRouterIdentityEvidence(_FrozenOpenRouterContract):
                 raise ContractValidationError("identity_match must combine exact matches")
             if self.exact_router_model_configuration_verified is not self.identity_match:
                 raise ContractValidationError("matching synthetic identity must be verified")
+            if self.source_raw_response_sha256 is None:
+                raise ContractValidationError(
+                    "synthetic identity requires source raw-response digest"
+                )
+            if source_fields != OPENROUTER_IDENTITY_SOURCE_FIELDS:
+                raise ContractValidationError(
+                    "synthetic identity requires every frozen raw source field"
+                )
+            if self.fallback_used is None:
+                raise ContractValidationError(
+                    "synthetic identity requires a typed fallback result"
+                )
         _freeze_id(
             self,
             field_name="identity_evidence_id",
@@ -1109,9 +1212,19 @@ class OpenRouterUsageEvidence(_FrozenOpenRouterContract):
         USAGE_EVIDENCE_SCHEMA_VERSION
     ] = USAGE_EVIDENCE_SCHEMA_VERSION
     usage_evidence_id: Optional[str] = None
-    evidence_state: OpenRouterEvidenceState
+    evidence_state: Literal[
+        OpenRouterEvidenceState.NOT_ESTABLISHED,
+        OpenRouterEvidenceState.SYNTHETIC_ONLY,
+    ]
     token_completeness: OpenRouterUsageCompleteness
     token_policy: OpenRouterTokenPolicy
+    usage_source: OpenRouterUsageSource = OpenRouterUsageSource.UNKNOWN
+    source_raw_response_sha256: Optional[str] = Field(
+        default=None, pattern=_HEX64_PATTERN
+    )
+    raw_source_fields: Tuple[str, ...] = ()
+    locally_derived_fields: Tuple[str, ...] = ()
+    derivation_rule_id: Optional[str] = None
     input_tokens: Optional[int] = Field(
         default=None, ge=0, le=MAX_SIGNED_64, strict=True
     )
@@ -1121,14 +1234,17 @@ class OpenRouterUsageEvidence(_FrozenOpenRouterContract):
     total_tokens: Optional[int] = Field(
         default=None, ge=0, le=MAX_SIGNED_64, strict=True
     )
-    cost_state: OpenRouterEvidenceState = OpenRouterEvidenceState.NOT_ESTABLISHED
+    cost_state: Literal[
+        OpenRouterEvidenceState.NOT_ESTABLISHED,
+        OpenRouterEvidenceState.SYNTHETIC_ONLY,
+    ] = OpenRouterEvidenceState.NOT_ESTABLISHED
     cost_bound_id: Optional[str] = None
     cost_microusd: Optional[int] = Field(
         default=None, ge=0, le=MAX_SIGNED_64, strict=True
     )
     live_authorization_allowed: Literal[False] = False
 
-    @field_validator("cost_bound_id")
+    @field_validator("cost_bound_id", "derivation_rule_id")
     @classmethod
     def optional_cost_bound_nonblank(cls, value: Optional[str]) -> Optional[str]:
         if value is not None:
@@ -1137,12 +1253,31 @@ class OpenRouterUsageEvidence(_FrozenOpenRouterContract):
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> "OpenRouterUsageEvidence":
+        source_fields = _canonical_strings(
+            self.raw_source_fields, "raw_source_fields"
+        )
+        derived_fields = _canonical_strings(
+            self.locally_derived_fields, "locally_derived_fields"
+        )
+        object.__setattr__(self, "raw_source_fields", source_fields)
+        object.__setattr__(self, "locally_derived_fields", derived_fields)
         token_values = (self.input_tokens, self.output_tokens, self.total_tokens)
         if self.evidence_state is OpenRouterEvidenceState.NOT_ESTABLISHED:
             if self.token_completeness is not OpenRouterUsageCompleteness.UNKNOWN:
                 raise ContractValidationError("unknown usage must use UNKNOWN completeness")
             if any(value is not None for value in token_values):
                 raise ContractValidationError("unknown usage cannot contain token counts")
+            if self.usage_source is not OpenRouterUsageSource.UNKNOWN:
+                raise ContractValidationError("unknown usage must retain UNKNOWN source")
+            if (
+                self.source_raw_response_sha256 is not None
+                or source_fields
+                or derived_fields
+                or self.derivation_rule_id is not None
+            ):
+                raise ContractValidationError(
+                    "unknown usage cannot claim raw or derived source fields"
+                )
         else:
             if self.token_completeness is not OpenRouterUsageCompleteness.COMPLETE:
                 raise ContractValidationError("synthetic usage must be complete")
@@ -1158,6 +1293,39 @@ class OpenRouterUsageEvidence(_FrozenOpenRouterContract):
                 raise ContractValidationError("synthetic input usage exceeds payload bound")
             if output_tokens > self.token_policy.max_output_tokens:
                 raise ContractValidationError("synthetic output usage exceeds output cap")
+            if self.source_raw_response_sha256 is None:
+                raise ContractValidationError(
+                    "synthetic usage requires source raw-response digest"
+                )
+            if self.usage_source is OpenRouterUsageSource.PROVIDER_REPORTED:
+                if source_fields != OPENROUTER_PROVIDER_REPORTED_USAGE_SOURCE_FIELDS:
+                    raise ContractValidationError(
+                        "provider-reported usage requires every frozen raw source field"
+                    )
+                if derived_fields or self.derivation_rule_id is not None:
+                    raise ContractValidationError(
+                        "provider-reported usage cannot claim local derivation"
+                    )
+            elif self.usage_source is OpenRouterUsageSource.LOCALLY_DERIVED:
+                if source_fields != OPENROUTER_LOCALLY_DERIVED_USAGE_SOURCE_FIELDS:
+                    raise ContractValidationError(
+                        "locally derived usage requires input/output raw source fields"
+                    )
+                if derived_fields != OPENROUTER_LOCALLY_DERIVED_USAGE_FIELDS:
+                    raise ContractValidationError(
+                        "locally derived usage must identify total_tokens"
+                    )
+                if (
+                    self.derivation_rule_id
+                    != OPENROUTER_USAGE_TOTAL_DERIVATION_RULE_ID
+                ):
+                    raise ContractValidationError(
+                        "locally derived usage requires the frozen derivation rule"
+                    )
+            else:
+                raise ContractValidationError(
+                    "synthetic usage source must be provider-reported or locally derived"
+                )
         if self.cost_state is OpenRouterEvidenceState.NOT_ESTABLISHED:
             if self.cost_bound_id is not None or self.cost_microusd is not None:
                 raise ContractValidationError("unknown cost cannot contain ID or numeric zero")
@@ -1197,6 +1365,7 @@ class OpenRouterCannedResponseEnvelope(_FrozenOpenRouterContract):
     actual_configuration_digest: Optional[str] = Field(
         default=None, pattern=_HEX64_PATTERN
     )
+    finish_reason: Optional[OpenRouterFinishReason] = None
     fallback_used: Literal[False] = False
     explicit_retry_count: Literal[0] = 0
     adapter_retry_count: Literal[0] = 0
@@ -1252,6 +1421,13 @@ class OpenRouterCannedResponseEnvelope(_FrozenOpenRouterContract):
                 raise ContractValidationError("delivered identity must be synthetic-only")
             if not identity.exact_router_model_configuration_verified:
                 raise ContractValidationError("delivered identity must be exactly verified")
+            if (
+                identity.source_raw_response_sha256
+                != self.raw_response.reported_sha256
+            ):
+                raise ContractValidationError(
+                    "identity source digest does not match raw response"
+                )
             actual = (
                 identity.actual_router_id,
                 identity.actual_model_id,
@@ -1269,6 +1445,13 @@ class OpenRouterCannedResponseEnvelope(_FrozenOpenRouterContract):
             object.__setattr__(self, "actual_configuration_digest", actual[2])
             if self.usage_evidence.evidence_state is not OpenRouterEvidenceState.SYNTHETIC_ONLY:
                 raise ContractValidationError("delivered usage must be synthetic-only")
+            if (
+                self.usage_evidence.source_raw_response_sha256
+                != self.raw_response.reported_sha256
+            ):
+                raise ContractValidationError(
+                    "usage source digest does not match raw response"
+                )
             raw_bytes = self.raw_response.raw_bytes
             if raw_bytes is None:
                 raise ContractValidationError("delivered envelope requires raw bytes")
@@ -1320,7 +1503,21 @@ class OpenRouterCannedResponseEnvelope(_FrozenOpenRouterContract):
             choice = choices[0]
             if not isinstance(choice, dict) or set(choice) != {"finish_reason", "message"}:
                 raise ContractValidationError("canned completion choice shape is invalid")
-            if choice.get("finish_reason") != "stop":
+            try:
+                raw_finish_reason = OpenRouterFinishReason(choice.get("finish_reason"))
+            except (TypeError, ValueError) as exc:
+                raise ContractValidationError(
+                    "canned finish reason must be a supported typed value"
+                ) from exc
+            if (
+                self.finish_reason is not None
+                and self.finish_reason is not raw_finish_reason
+            ):
+                raise ContractValidationError(
+                    "finish reason does not match raw response"
+                )
+            object.__setattr__(self, "finish_reason", raw_finish_reason)
+            if raw_finish_reason is not OpenRouterFinishReason.STOP:
                 raise ContractValidationError("canned finish reason must be stop")
             message = choice.get("message")
             if not isinstance(message, dict) or set(message) != {"role", "content"}:
@@ -1347,6 +1544,17 @@ class OpenRouterCannedResponseEnvelope(_FrozenOpenRouterContract):
                 raise ContractValidationError(
                     "raw response usage does not match usage evidence"
                 )
+            if identity.fallback_used is not parsed.get("fallback_used"):
+                raise ContractValidationError(
+                    "identity fallback result does not match raw response"
+                )
+            if (
+                self.usage_evidence.usage_source
+                is not OpenRouterUsageSource.PROVIDER_REPORTED
+            ):
+                raise ContractValidationError(
+                    "complete canned usage must be classified provider-reported"
+                )
         else:
             if self.raw_response is not None or self.identity_evidence is not None or self.usage_evidence is not None:
                 raise ContractValidationError(
@@ -1362,6 +1570,10 @@ class OpenRouterCannedResponseEnvelope(_FrozenOpenRouterContract):
             ):
                 raise ContractValidationError(
                     "failed envelope cannot fabricate actual identity"
+                )
+            if self.finish_reason is not None:
+                raise ContractValidationError(
+                    "failed transport envelope cannot fabricate finish reason"
                 )
             if self.transport_error_code is None:
                 raise ContractValidationError("failed envelope requires typed error code")
@@ -1385,6 +1597,70 @@ class OpenRouterCannedResponseEnvelope(_FrozenOpenRouterContract):
         return self
 
 
+_RESPONSE_VALIDATION_RANK = {
+    OpenRouterResponseValidationState.NO_TRANSPORT_BYTES: 0,
+    OpenRouterResponseValidationState.TRANSPORT_BYTES_CAPTURED: 1,
+    OpenRouterResponseValidationState.IDENTITY_DERIVED: 2,
+    OpenRouterResponseValidationState.USAGE_DERIVED: 3,
+    OpenRouterResponseValidationState.ADAPTER_RESPONSE_VALIDATED: 4,
+}
+_FAILURE_MAX_VALIDATION_STATE = {
+    "CANNED_TRANSPORT_ERROR": OpenRouterResponseValidationState.NO_TRANSPORT_BYTES,
+    "TRANSPORT_TIMEOUT": OpenRouterResponseValidationState.NO_TRANSPORT_BYTES,
+    "MISSING_RAW_RESPONSE": OpenRouterResponseValidationState.NO_TRANSPORT_BYTES,
+    "RAW_DIGEST_OR_LENGTH_MISMATCH": OpenRouterResponseValidationState.TRANSPORT_BYTES_CAPTURED,
+    "MALFORMED_RESPONSE_ENVELOPE": OpenRouterResponseValidationState.TRANSPORT_BYTES_CAPTURED,
+    "ACTUAL_PROVIDER_MISMATCH": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "ACTUAL_MODEL_MISSING": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "ACTUAL_MODEL_MISMATCH": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "ACTUAL_CONFIGURATION_MISMATCH": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "FALLBACK_ACTIVATED": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "RETRY_ACTIVATED": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "STREAMING_RESPONSE_DETECTED": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "TOOL_ACTIVATED": OpenRouterResponseValidationState.IDENTITY_DERIVED,
+    "USAGE_INCOMPLETE": OpenRouterResponseValidationState.USAGE_DERIVED,
+    "USAGE_INCONSISTENT": OpenRouterResponseValidationState.USAGE_DERIVED,
+    "REPORTED_USAGE_EXCEEDS_BOUND": OpenRouterResponseValidationState.USAGE_DERIVED,
+    "CANNED_INVOCATION_COUNT_MISMATCH": OpenRouterResponseValidationState.USAGE_DERIVED,
+    "WORKER_NOT_TERMINATED": OpenRouterResponseValidationState.USAGE_DERIVED,
+    "LATE_MUTATION_DETECTED": OpenRouterResponseValidationState.USAGE_DERIVED,
+    "RECEIPT_MISMATCH": OpenRouterResponseValidationState.USAGE_DERIVED,
+}
+
+
+def _canonical_raw_response_mapping(
+    raw_response: OpenRouterRawResponseEvidence,
+) -> Optional[dict[str, object]]:
+    raw_bytes = raw_response.raw_bytes
+    if raw_bytes is None:
+        return None
+    try:
+        raw_text = raw_bytes.decode("utf-8")
+        parsed = json.loads(raw_text)
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(parsed, dict) or canonical_json(parsed) != raw_text:
+        return None
+    return parsed
+
+
+def _raw_finish_reason(
+    parsed: Optional[dict[str, object]],
+) -> Optional[OpenRouterFinishReason]:
+    if parsed is None:
+        return None
+    choices = parsed.get("choices")
+    if not isinstance(choices, list) or len(choices) != 1:
+        return None
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        return None
+    try:
+        return OpenRouterFinishReason(choice.get("finish_reason"))
+    except (TypeError, ValueError):
+        return None
+
+
 class OpenRouterAttemptReceipt(_FrozenOpenRouterContract):
     schema_version: Literal[
         ATTEMPT_RECEIPT_SCHEMA_VERSION
@@ -1399,6 +1675,8 @@ class OpenRouterAttemptReceipt(_FrozenOpenRouterContract):
     raw_response: Optional[OpenRouterRawResponseEvidence] = None
     identity_evidence: Optional[OpenRouterIdentityEvidence] = None
     usage_evidence: Optional[OpenRouterUsageEvidence] = None
+    finish_reason: Optional[OpenRouterFinishReason] = None
+    response_validation_state: Optional[OpenRouterResponseValidationState] = None
     canned_transport_invocations: int = Field(ge=0, le=1, strict=True)
     application_fallback_used: Optional[bool] = Field(default=None, strict=True)
     provider_fallback_used: Literal[None] = None
@@ -1497,6 +1775,24 @@ class OpenRouterAttemptReceipt(_FrozenOpenRouterContract):
                 raise ContractValidationError("direct HTTP adapter has no SDK retry layer")
             if self.stream_used is not False or self.tool_calls != 0:
                 raise ContractValidationError("captured receipt requires no stream or tools")
+            if (
+                self.identity_evidence.source_raw_response_sha256
+                != self.raw_response.reported_sha256
+                or self.usage_evidence.source_raw_response_sha256
+                != self.raw_response.reported_sha256
+            ):
+                raise ContractValidationError(
+                    "captured derived evidence must link to raw response digest"
+                )
+            finish_reason = envelope.finish_reason
+            if finish_reason is None:
+                raise ContractValidationError("captured receipt requires finish reason")
+            if self.finish_reason is not None and self.finish_reason is not finish_reason:
+                raise ContractValidationError(
+                    "receipt finish reason does not match canned envelope"
+                )
+            object.__setattr__(self, "finish_reason", finish_reason)
+            validation_state = OpenRouterResponseValidationState.ADAPTER_RESPONSE_VALIDATED
         else:
             if self.failure_code is None:
                 raise ContractValidationError("failed receipt requires a typed failure code")
@@ -1506,6 +1802,170 @@ class OpenRouterAttemptReceipt(_FrozenOpenRouterContract):
                     raise ContractValidationError("failed envelope/body link does not match")
                 if envelope.transport_status is OpenRouterTransportStatus.DELIVERED:
                     raise ContractValidationError("failed receipt cannot contain delivered envelope")
+                if any(
+                    evidence is not None
+                    for evidence in (
+                        self.raw_response,
+                        self.identity_evidence,
+                        self.usage_evidence,
+                    )
+                ):
+                    raise ContractValidationError(
+                        "failed transport envelope cannot carry derived response evidence"
+                    )
+            if self.raw_response is None:
+                if self.identity_evidence is not None or self.usage_evidence is not None:
+                    raise ContractValidationError(
+                        "failed receipt cannot fabricate identity or usage without raw bytes"
+                    )
+                parsed = None
+                validation_state = OpenRouterResponseValidationState.NO_TRANSPORT_BYTES
+            else:
+                if (
+                    self.raw_response.transport_status
+                    is not OpenRouterTransportStatus.DELIVERED
+                    or self.raw_response.raw_bytes is None
+                ):
+                    raise ContractValidationError(
+                        "captured failure raw evidence must retain delivered bytes"
+                    )
+                parsed = _canonical_raw_response_mapping(self.raw_response)
+                validation_state = (
+                    OpenRouterResponseValidationState.TRANSPORT_BYTES_CAPTURED
+                )
+            if self.identity_evidence is not None:
+                if parsed is None:
+                    raise ContractValidationError(
+                        "failed identity evidence requires canonical captured raw bytes"
+                    )
+                identity = self.identity_evidence
+                raw_fallback = parsed.get("fallback_used")
+                if (
+                    identity.evidence_state
+                    is not OpenRouterEvidenceState.SYNTHETIC_ONLY
+                    or not identity.exact_router_model_configuration_verified
+                    or identity.requested_configuration_digest
+                    != capability.control_policy.control_policy_id.split("_", 1)[-1]
+                    or identity.source_raw_response_sha256
+                    != self.raw_response.reported_sha256
+                    or type(raw_fallback) is not bool
+                    or identity.fallback_used is not raw_fallback
+                    or (
+                        identity.actual_router_id,
+                        identity.actual_model_id,
+                        identity.actual_configuration_digest,
+                    )
+                    != (
+                        parsed.get("provider"),
+                        parsed.get("model"),
+                        parsed.get("configuration_digest"),
+                    )
+                ):
+                    raise ContractValidationError(
+                        "failed identity evidence is not derived from captured raw bytes"
+                    )
+                validation_state = OpenRouterResponseValidationState.IDENTITY_DERIVED
+            if self.usage_evidence is not None:
+                if self.identity_evidence is None or parsed is None:
+                    raise ContractValidationError(
+                        "failed usage evidence requires linked derived identity"
+                    )
+                usage = self.usage_evidence
+                raw_usage = parsed.get("usage")
+                if (
+                    usage.evidence_state
+                    is not OpenRouterEvidenceState.SYNTHETIC_ONLY
+                    or usage.source_raw_response_sha256
+                    != self.raw_response.reported_sha256
+                    or usage.token_policy != token_policy
+                    or not isinstance(raw_usage, dict)
+                    or set(raw_usage)
+                    != {"input_tokens", "output_tokens", "total_tokens"}
+                    or any(type(value) is not int for value in raw_usage.values())
+                    or (
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        usage.total_tokens,
+                    )
+                    != (
+                        raw_usage.get("input_tokens"),
+                        raw_usage.get("output_tokens"),
+                        raw_usage.get("total_tokens"),
+                    )
+                ):
+                    raise ContractValidationError(
+                        "failed usage evidence is not derived from captured raw bytes"
+                    )
+                validation_state = OpenRouterResponseValidationState.USAGE_DERIVED
+            maximum_state = _FAILURE_MAX_VALIDATION_STATE.get(
+                self.failure_code,
+                OpenRouterResponseValidationState.NO_TRANSPORT_BYTES,
+            )
+            if (
+                _RESPONSE_VALIDATION_RANK[validation_state]
+                > _RESPONSE_VALIDATION_RANK[maximum_state]
+            ):
+                raise ContractValidationError(
+                    "failure code cannot claim evidence beyond its derivation stage"
+                )
+            finish_reason = _raw_finish_reason(parsed)
+            if (
+                self.finish_reason is not None
+                and self.finish_reason is not finish_reason
+            ):
+                raise ContractValidationError(
+                    "failed receipt finish reason is not derived from raw bytes"
+                )
+            object.__setattr__(self, "finish_reason", finish_reason)
+        if (
+            self.response_validation_state is not None
+            and self.response_validation_state is not validation_state
+        ):
+            raise ContractValidationError(
+                "response validation state does not match retained evidence"
+            )
+        object.__setattr__(self, "response_validation_state", validation_state)
+        if self.usage_evidence is not None:
+            if self.usage_evidence.cost_state is OpenRouterEvidenceState.SYNTHETIC_ONLY:
+                pricing = capability.pricing_record
+                input_rate = pricing.input_microusd_per_million_tokens
+                output_rate = pricing.output_microusd_per_million_tokens
+                fixed_cost = pricing.fixed_non_token_microusd
+                input_tokens = self.usage_evidence.input_tokens
+                output_tokens = self.usage_evidence.output_tokens
+                if (
+                    input_rate is None
+                    or output_rate is None
+                    or fixed_cost is None
+                    or input_tokens is None
+                    or output_tokens is None
+                ):
+                    raise ContractValidationError(
+                        "usage synthetic cost requires complete pricing and usage"
+                    )
+                exact_usage_cost = _checked_add(
+                    _checked_add(
+                        _ceil_microusd(input_tokens, input_rate),
+                        _ceil_microusd(output_tokens, output_rate),
+                        "reported token cost subtotal",
+                    ),
+                    fixed_cost,
+                    "reported total cost",
+                )
+                if (
+                    self.usage_evidence.cost_bound_id
+                    != capability.cost_bound.cost_bound_id
+                    or capability.cost_bound.cost_state
+                    is not OpenRouterEvidenceState.SYNTHETIC_ONLY
+                    or self.usage_evidence.cost_microusd is None
+                    or self.usage_evidence.cost_microusd != exact_usage_cost
+                    or capability.cost_bound.maximum_total_cost_microusd is None
+                    or self.usage_evidence.cost_microusd
+                    > capability.cost_bound.maximum_total_cost_microusd
+                ):
+                    raise ContractValidationError(
+                        "usage synthetic cost does not link to capability cost bound"
+                    )
         _freeze_id(
             self,
             field_name="attempt_receipt_id",
@@ -1535,14 +1995,19 @@ __all__ = [
     "OPENROUTER_ENDPOINT_SCHEME",
     "OPENROUTER_ENDPOINT_URL",
     "OPENROUTER_HTTP_DEPENDENCY_SPEC",
+    "OPENROUTER_IDENTITY_SOURCE_FIELDS",
     "OPENROUTER_INPUT_BOUND_METHOD",
     "OPENROUTER_IDENTITY_CANONICALIZATION_RULE_ID",
     "OPENROUTER_MAX_OUTPUT_TOKENS",
     "OPENROUTER_MODEL_ID",
+    "OPENROUTER_LOCALLY_DERIVED_USAGE_FIELDS",
+    "OPENROUTER_LOCALLY_DERIVED_USAGE_SOURCE_FIELDS",
     "OPENROUTER_PROVIDER_ID",
+    "OPENROUTER_PROVIDER_REPORTED_USAGE_SOURCE_FIELDS",
     "OPENROUTER_REFERENCE_RAW_RESPONSE_MAX_BYTES",
     "OPENROUTER_RESPONSE_FORMAT",
     "OPENROUTER_TIMEOUT_MS",
+    "OPENROUTER_USAGE_TOTAL_DERIVATION_RULE_ID",
     "MAX_SIGNED_64",
     "PREPARED_BODY_SCHEMA_VERSION",
     "PRICING_RECORD_SCHEMA_VERSION",
@@ -1559,12 +2024,16 @@ __all__ = [
     "OpenRouterCostBound",
     "OpenRouterEndpointPolicy",
     "OpenRouterEvidenceState",
+    "OpenRouterFinishReason",
     "OpenRouterIdentityEvidence",
     "OpenRouterHeaderPolicy",
     "OpenRouterPreparedBody",
+    "OpenRouterPrivacyClassification",
     "OpenRouterPricingRecord",
     "OpenRouterProxyMode",
     "OpenRouterRawResponseEvidence",
+    "OpenRouterRawRetentionState",
+    "OpenRouterResponseValidationState",
     "OpenRouterRoutePolicy",
     "OpenRouterTokenPolicy",
     "OpenRouterTransportMode",
@@ -1572,4 +2041,6 @@ __all__ = [
     "OpenRouterTransportStatus",
     "OpenRouterUsageCompleteness",
     "OpenRouterUsageEvidence",
+    "OpenRouterUsageSource",
+    "calculate_openrouter_cost_line_microusd",
 ]

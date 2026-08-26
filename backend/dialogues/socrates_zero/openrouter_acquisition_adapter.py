@@ -27,6 +27,8 @@ from .openrouter_acquisition_contracts import (
     OPENROUTER_CANNED_CLEANUP_ROUNDS,
     OPENROUTER_MODEL_ID,
     OPENROUTER_PROVIDER_ID,
+    OPENROUTER_IDENTITY_SOURCE_FIELDS,
+    OPENROUTER_PROVIDER_REPORTED_USAGE_SOURCE_FIELDS,
     OpenRouterAttemptOutcome,
     OpenRouterAttemptReceipt,
     OpenRouterCapabilitySnapshot,
@@ -39,6 +41,7 @@ from .openrouter_acquisition_contracts import (
     OpenRouterTransportStatus,
     OpenRouterUsageCompleteness,
     OpenRouterUsageEvidence,
+    OpenRouterUsageSource,
 )
 
 
@@ -758,6 +761,12 @@ def _derive_delivered_response(
             OpenRouterAcquisitionFailureCode.ACTUAL_CONFIGURATION_MISMATCH,
             raw_response=raw_response,
         )
+    raw_fallback_result = parsed.get("fallback_used")
+    if type(raw_fallback_result) is not bool:
+        _reject(
+            OpenRouterAcquisitionFailureCode.FALLBACK_ACTIVATED,
+            raw_response=raw_response,
+        )
     try:
         identity_evidence = OpenRouterIdentityEvidence(
             evidence_state=OpenRouterEvidenceState.SYNTHETIC_ONLY,
@@ -770,6 +779,9 @@ def _derive_delivered_response(
             configuration_identity_match=True,
             identity_match=True,
             exact_router_model_configuration_verified=True,
+            source_raw_response_sha256=raw_response.reported_sha256,
+            source_fields=OPENROUTER_IDENTITY_SOURCE_FIELDS,
+            fallback_used=raw_fallback_result,
         )
     except Exception:
         _reject(
@@ -820,13 +832,6 @@ def _derive_delivered_response(
             raw_response=raw_response,
             identity_evidence=identity_evidence,
         )
-    if side_identity != identity_evidence:
-        _reject(
-            OpenRouterAcquisitionFailureCode.RECEIPT_MISMATCH,
-            raw_response=raw_response,
-            identity_evidence=identity_evidence,
-        )
-
     fallback = parsed.get("fallback_used")
     if type(fallback) is not bool or fallback or returned.fallback_used is not False:
         _reject(
@@ -908,6 +913,9 @@ def _derive_delivered_response(
             evidence_state=OpenRouterEvidenceState.SYNTHETIC_ONLY,
             token_completeness=OpenRouterUsageCompleteness.COMPLETE,
             token_policy=token_policy,
+            usage_source=OpenRouterUsageSource.PROVIDER_REPORTED,
+            source_raw_response_sha256=raw_response.reported_sha256,
+            raw_source_fields=OPENROUTER_PROVIDER_REPORTED_USAGE_SOURCE_FIELDS,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
@@ -939,6 +947,13 @@ def _derive_delivered_response(
             usage_evidence=usage_evidence,
         )
     if side_usage != usage_evidence:
+        _reject(
+            OpenRouterAcquisitionFailureCode.RECEIPT_MISMATCH,
+            raw_response=raw_response,
+            identity_evidence=identity_evidence,
+            usage_evidence=usage_evidence,
+        )
+    if side_identity != identity_evidence:
         _reject(
             OpenRouterAcquisitionFailureCode.RECEIPT_MISMATCH,
             raw_response=raw_response,

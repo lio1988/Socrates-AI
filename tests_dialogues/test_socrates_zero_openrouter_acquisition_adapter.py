@@ -28,8 +28,10 @@ from backend.dialogues.socrates_zero.openrouter_acquisition_adapter import (
 )
 from backend.dialogues.socrates_zero.openrouter_acquisition_contracts import (
     OPENROUTER_ACQUISITION_ADAPTER_ID,
+    OPENROUTER_IDENTITY_SOURCE_FIELDS,
     OPENROUTER_MAX_OUTPUT_TOKENS,
     OPENROUTER_MODEL_ID,
+    OPENROUTER_PROVIDER_REPORTED_USAGE_SOURCE_FIELDS,
     OpenRouterAttemptOutcome,
     OpenRouterCapabilitySnapshot,
     OpenRouterCannedResponseEnvelope,
@@ -47,6 +49,7 @@ from backend.dialogues.socrates_zero.openrouter_acquisition_contracts import (
     OpenRouterTransportStatus,
     OpenRouterUsageCompleteness,
     OpenRouterUsageEvidence,
+    OpenRouterUsageSource,
 )
 
 
@@ -143,7 +146,10 @@ def _raw_from_payload(payload: object) -> OpenRouterRawResponseEvidence:
     )
 
 
-def _identity(control: OpenRouterControlPolicy) -> OpenRouterIdentityEvidence:
+def _identity(
+    control: OpenRouterControlPolicy,
+    raw: OpenRouterRawResponseEvidence,
+) -> OpenRouterIdentityEvidence:
     configuration = (control.control_policy_id or "").split("_", 1)[-1]
     return OpenRouterIdentityEvidence(
         evidence_state=OpenRouterEvidenceState.SYNTHETIC_ONLY,
@@ -156,12 +162,16 @@ def _identity(control: OpenRouterControlPolicy) -> OpenRouterIdentityEvidence:
         configuration_identity_match=True,
         identity_match=True,
         exact_router_model_configuration_verified=True,
+        source_raw_response_sha256=raw.reported_sha256,
+        source_fields=OPENROUTER_IDENTITY_SOURCE_FIELDS,
+        fallback_used=False,
     )
 
 
 def _usage(
     token_policy: OpenRouterTokenPolicy,
     payload: dict[str, object],
+    raw: OpenRouterRawResponseEvidence,
 ) -> OpenRouterUsageEvidence:
     values = payload["usage"]
     assert isinstance(values, dict)
@@ -169,6 +179,9 @@ def _usage(
         evidence_state=OpenRouterEvidenceState.SYNTHETIC_ONLY,
         token_completeness=OpenRouterUsageCompleteness.COMPLETE,
         token_policy=token_policy,
+        usage_source=OpenRouterUsageSource.PROVIDER_REPORTED,
+        source_raw_response_sha256=raw.reported_sha256,
+        raw_source_fields=OPENROUTER_PROVIDER_REPORTED_USAGE_SOURCE_FIELDS,
         input_tokens=values["input_tokens"],
         output_tokens=values["output_tokens"],
         total_tokens=values["total_tokens"],
@@ -183,13 +196,14 @@ def _envelope(
     content: str = "What do you mean by knowledge?",
 ) -> OpenRouterCannedResponseEnvelope:
     payload = _raw_payload(control, token_policy, content=content)
+    raw = _raw_from_payload(payload)
     return OpenRouterCannedResponseEnvelope(
         transport_attempt_id="adapter-attempt-1",
         prepared_body_id=body.prepared_body_id or "",
         transport_status=OpenRouterTransportStatus.DELIVERED,
-        raw_response=_raw_from_payload(payload),
-        identity_evidence=_identity(control),
-        usage_evidence=_usage(token_policy, payload),
+        raw_response=raw,
+        identity_evidence=_identity(control, raw),
+        usage_evidence=_usage(token_policy, payload, raw),
         timeout_fired=False,
         cancellation_requested=False,
     )
