@@ -275,7 +275,8 @@ Every commit after AUTHORITATIVE_COMMIT, classified:
 | --- | --- | --- |
 | `9f8146f` | `SOCRATES_ZERO_OPENROUTER_RAW_WIRE_MAPPING_V2.md`, branch `PRESENT.md`, evaluator test file | docs + tests |
 | `af368b3` | branch `MEMORY.md`, branch `PLAN.md` | docs |
-| `2d0c0ff` | evaluator test file, this document | docs + tests |
+| `36b0e90` | evaluator test file, this document, branch `PRESENT.md` | docs + tests |
+| _(this commit)_ | this document | docs |
 
 **Semantic S5 files changed after authoritative execution: 0.**
 
