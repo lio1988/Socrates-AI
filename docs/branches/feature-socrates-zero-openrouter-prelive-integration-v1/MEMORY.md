@@ -182,10 +182,13 @@ One live shadow call **NOT_AUTHORIZED**. Two blockers, different in kind:
 
 The *pricing* obstacle is closed by the server-enforced ceiling.
 
-The integration verdict itself is **not yet claimed**: the authoritative aggregate
-has not been run under the current case set. Do not let a future session read a
-passing dry-run, or the superseded earlier run, as either the verdict or as
-permission to call.
+The frozen-v3 authoritative aggregate is **SUPPORTED**. Its current artifact is
+`szorpreliveartifactv1_4330f2640058037e2d8d4a7df45ab4694813e485538a552a91bffe1c331f6779`
+(SHA-256 `8f457a36bf0fbfcae71e16ff708a1b6d35d96161540c35fd4520c4f769f64b9d`),
+with semantic, artifact-ID and byte-identical replay. Do not rerun it. Do not let
+a future session confuse the superseded earlier run with this result, or read
+`SUPPORTED` as permission to call: one live shadow call remains
+**NOT_AUTHORIZED**.
 
 ## Environment
 

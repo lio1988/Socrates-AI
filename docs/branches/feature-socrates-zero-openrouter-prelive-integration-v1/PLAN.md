@@ -29,34 +29,36 @@ be SUPPORTED while a live call remains NOT_AUTHORIZED.
 | 14 | privacy leakage findings | 0 |
 | 15 | external activity, every category | 0 |
 | 16 | deterministic replay | semantic, artifact-ID and byte identity |
-| 17 | frozen predecessor surfaces | all unchanged (34/34 measured) |
+| 17 | frozen predecessor files | all unchanged (742/742 measured) |
 
 ## Status
 
-Implementation, cases, evaluator, tests and documentation are complete. **The
-single authoritative run has not been made** under the current case set, so no
-verdict is claimed. Every threshold passes in dry-run and no stop condition has
-triggered.
+Implementation, cases, evaluator and the single frozen-v3 authoritative run are
+complete. The hypothesis is **SUPPORTED**: every threshold passed, and replay
+established semantic equality, artifact-ID equality and byte identity. All
+post-authoritative regression gates passed and no stop condition triggered.
 
-The live call is separately **NOT_AUTHORIZED**, and the ceiling audit reduced the
-structural blockers to one: P17.
+The live call is separately **NOT_AUTHORIZED**. P17 remains the single structural
+blocker; incomplete applicable-charge coverage from unbounded `request_usd`
+remains a separate policy gap.
 
-Freeze history, each superseded before any run consumed it: `4861c8a4` (original),
-`fd30a7fb` (rulings applied), `170124a` (price ceiling), then the current freeze,
-which splits P19 into structure / coverage / authority and closes the two
-coverage gaps. The run at `0ff79c9` is superseded and its artifacts are preserved
-in history only.
+Before frozen-v3 execution, the prior freezes were superseded unconsumed:
+`4861c8a4` (original), `fd30a7fb` (rulings applied), and `170124a` (price
+ceiling). The current freeze splits P19 into structure / coverage / authority.
+The run at `0ff79c9` is superseded and its artifacts are preserved in history
+only.
 
 ## Ordered steps
 
 1. **Initialize** branch documentation.
 2. **Implement** the causal integration contracts.
 3. **Implement** the pre-live safety, budget and one-call authorization contracts.
-4. **Freeze** fixtures and the two case sets.
+4. **Freeze** fixtures and the three case sets.
 5. **Implement** the deterministic evaluator.
 6. **Freeze** every semantic file in a commit *before* the authoritative run.
-7. **Execute** exactly one authoritative offline evaluation; persist; replay.
-8. **Document** the result and close the checkpoint.
+7. **Complete:** execute exactly one authoritative offline evaluation; persist;
+   replay.
+8. **Complete:** document the result and close the checkpoint.
 
 ## Stop conditions
 

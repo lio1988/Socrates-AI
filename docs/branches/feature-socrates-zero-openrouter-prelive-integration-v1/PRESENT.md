@@ -4,7 +4,8 @@
 
 - Branch: `feature/socrates-zero-openrouter-prelive-integration-v1`
 - Source HEAD: `1be95cfdecd9628cdf2d1ea6abdcf66ba1aa88a6`
-- Phase: **semantic experiment frozen at v3; the authoritative run has NOT been made.**
+- Freeze HEAD: `776780a1f39c36795c1204f29e95febaf144b169`
+- Phase: **authoritative frozen-v3 aggregate complete — SUPPORTED with deterministic replay.**
 
 ## A superseded earlier run
 
@@ -18,15 +19,15 @@ identities and has no `ceiling_case_set_id` field at all.
 
 ## Freeze history
 
-Each superseded before any run consumed it — which is why none of them is failed
-scientific evidence:
+Each prior freeze was superseded before any run consumed it; the current row is
+the consumed authoritative frozen-v3 state:
 
 | freeze | what it froze |
 | --- | --- |
 | `4861c8a4` | original |
 | `fd30a7fb` | S6 rulings applied |
 | `170124a` | server-enforced price ceiling |
-| **current** | **P19 split into structure / coverage / authority; both coverage gaps closed** |
+| **current authoritative** | **P19 split into structure / coverage / authority; both coverage gaps closed** |
 
 ## Corrections that mattered
 
@@ -71,7 +72,22 @@ policy gap that an operator ceiling value or first-party evidence can close.
 Integration contracts; safety and budget contracts; the additive live-request
 overlay and unit-price ceiling; the request modality proof; the three-way P19
 split; 82 frozen cases (30 integration, 26 preflight, 26 ceiling); the
-deterministic evaluator; 149 focused tests; canonical and branch documentation.
+deterministic evaluator; the single authoritative offline aggregate; persisted
+artifact, replay execution and replay lock; post-run regression gates; canonical
+and branch documentation.
+
+## Authoritative result
+
+| evidence | identity | SHA-256 |
+| --- | --- | --- |
+| artifact | `szorpreliveartifactv1_4330f2640058037e2d8d4a7df45ab4694813e485538a552a91bffe1c331f6779` | `8f457a36bf0fbfcae71e16ff708a1b6d35d96161540c35fd4520c4f769f64b9d` |
+| replay execution | `szorprelivereplayexecutionv1_7b8efdb484a2a9ce99ed9682c889e5348be10c7578dbb56252cdde85ba7cb669` | `ff40af69cccd5297c5c0b2d65c82f25448c2e16a0f8019048916d5976afb5c27` |
+| replay lock | `szorprelivereplaylockv1_acc9604c588d6015007961bef5f2e259b8f068677d34b0f00b38e753dbac5c8b` | `256bf8eefe71c0c1e6b468d090ca55997ddfc105065594c16ec0aeee3cf15c8a` |
+
+Hypothesis **SUPPORTED**; every threshold passed. Replay established semantic
+equality, artifact-ID equality and byte identity. Every measured boundary
+counter was zero. No live call, credential access, provider/model execution,
+official-source retrieval or CED application occurred.
 
 ## Tests and exact results
 
@@ -82,10 +98,11 @@ deterministic evaluator; 149 focused tests; canonical and branch documentation.
 - Manifest v1 + v2r1: **25 passed**
 - All OpenRouter modules: **728 passed, 1 skipped**
 - Full `tests_dialogues`: **3537 passed, 10 skipped, exit 0**
-- Evaluator dry-run: 30 / 26 / 26 cases, 0 unexpected, `all_thresholds_pass` True,
-  readiness `NOT_AUTHORIZED`
+- Authoritative aggregate: 30 / 26 / 26 cases, 0 unexpected,
+  `all_thresholds_pass` True, hypothesis `SUPPORTED`, readiness `NOT_AUTHORIZED`
 - `git diff --check`: clean
 - Predecessor files vs `1be95cf`: **742/742 byte-identical**
+- Known timestamp race observed post-run: **NO**
 
 ## A pre-existing intermittent failure, not ours
 
@@ -115,12 +132,14 @@ the 742/742 byte-identity gate. Filed as separate work.
 
 ## Remaining
 
-Exactly one authoritative offline evaluation, its replay, and the result
-documentation. Awaiting authorization to run it.
+No S6 execution work remains. A live call remains **NOT_AUTHORIZED**. The two
+remaining blockers retain different classifications: P17 is structural; the
+unbounded documented `request_usd` charge is a policy/coverage gap.
 
 ## Next safe step
 
-Nothing. **Stop.** The authoritative S6 aggregate must not be run without explicit
-authorization, and the branch must not be pushed.
+Review the persisted write-once evidence and documentation. Do not rerun the
+authoritative aggregate. Publication or any S7 work requires separate explicit
+authorization, and the branch must not be pushed without it.
 
 Not pushed.

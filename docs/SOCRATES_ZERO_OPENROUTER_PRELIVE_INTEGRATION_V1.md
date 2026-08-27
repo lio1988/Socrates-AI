@@ -10,7 +10,7 @@ No live call was made in this phase.
 
 | layer | status |
 | --- | --- |
-| Integration pipeline | **PENDING AUTHORITATIVE RUN** |
+| Integration pipeline | **SUPPORTED** |
 | Causal request→response binding | **ESTABLISHED** |
 | Offline shadow evidence | **AUTHORIZED** |
 | Runtime authority | **NOT AUTHORIZED** |
@@ -28,14 +28,15 @@ The two price rows are separate authorities and are never merged. A ceiling says
 *no more than*; a pricing record says *this much*. Only the ceiling is
 established, and it is enough to bound cost but not to predict it.
 
-No verdict is claimed for the integration hypothesis yet. The single
-authoritative aggregate has **not** been run under the current case set; the run
-that produced an earlier `SUPPORTED` is superseded (see *Predeclared thresholds*).
-Everything else in this document — the contracts, the audits and the budget
-statuses — is current and does not depend on that run.
+The frozen v3 authoritative aggregate returned **SUPPORTED**. Its artifact is
+`szorpreliveartifactv1_4330f2640058037e2d8d4a7df45ab4694813e485538a552a91bffe1c331f6779`
+with SHA-256
+`8f457a36bf0fbfcae71e16ff708a1b6d35d96161540c35fd4520c4f769f64b9d`.
+The earlier run at `0ff79c9` remains superseded historical evidence and is not
+the result reported here.
 
-The budget rows above are audit conclusions, not run outputs. They would not
-change if the aggregate were run tomorrow.
+The budget rows above are audit conclusions, not run outputs, and remain
+independent of the aggregate's hypothesis result.
 
 ## Hypothesis
 
@@ -48,8 +49,9 @@ change if the aggregate were run tomorrow.
 > identifies exactly which remaining conditions must be satisfied immediately
 > before one live shadow call.
 
-**Verdict withheld** until the authoritative aggregate is run. Every predeclared
-threshold currently passes in dry-run, but a dry-run is not the experiment.
+**Verdict: SUPPORTED.** Every predeclared threshold passed in the single
+authoritative frozen-v3 aggregate, with deterministic semantic, artifact-ID and
+byte-identical replay.
 
 ## Four layers, kept four
 
@@ -414,63 +416,67 @@ authorization consumption, and abort-before-dispatch on any failure.
 Declared before the authoritative run and content addressed as
 `szorprelivethresholdsv1_eca7807368ef60ef49a8218f8b24071c52afa86385c80539bb2c885a2f274f3b`.
 
-The observed column is deliberately absent: **the authoritative run has not been
-made** under this case set. An earlier run exists in history at `0ff79c9` and is
-superseded, because semantic changes followed it.
+The authoritative observed values equal every required value:
 
-| threshold | required |
-| --- | --- |
-| integration positive accepted | 12 |
-| integration adversarial rejected | 18 |
-| preflight authorized | 3 |
-| preflight refused | 23 |
-| ceiling probes holding | 26 |
-| unexpected results | 0 |
-| invalid fixture constructions | 0 |
-| guard-code mismatches | 0 |
-| privacy leakage findings | 0 |
-| external activity, every category | 0 |
-| `git diff --check` | PASS |
-| frozen predecessor surfaces | all identical |
+| threshold | required | observed |
+| --- | --- | --- |
+| integration positive accepted | 12 | 12 |
+| integration adversarial rejected | 18 | 18 |
+| preflight authorized | 3 | 3 |
+| preflight refused | 23 | 23 |
+| ceiling probes holding | 26 | 26 |
+| unexpected results | 0 | 0 |
+| invalid fixture constructions | 0 | 0 |
+| guard-code mismatches | 0 | 0 |
+| cross-request substitutions accepted | 0 | 0 |
+| request-to-response authority leaks | 0 | 0 |
+| provider-to-endpoint synthesis | 0 | 0 |
+| requested-to-actual substitutions | 0 | 0 |
+| metadata-absence cache-hit inferences | 0 | 0 |
+| authorization reuse accepted | 0 | 0 |
+| privacy leakage findings | 0 | 0 |
+| external activity, every category | 0 | 0 |
+| `git diff --check` | PASS | PASS |
+| frozen predecessor files | all identical | 742/742 identical |
 
-Frozen predecessor surfaces are measured as Git blob identity against the S5 head
-`1be95cf`: **34/34** files under `backend/dialogues/socrates_zero/` that S6 does
-not own are byte-identical, including all 17 predecessor `openrouter_*` modules.
-An earlier draft of this table quoted "19/19", a figure that does not correspond
-to any enumeration that can be reproduced; the measured counts above replace it.
-S5, S4, S3, Route Controls and Manifest v2r1 are all byte-identical.
+Frozen predecessor integrity is measured by full Git object identity against the
+S5 head `1be95cfdecd9628cdf2d1ea6abdcf66ba1aa88a6`: all 742 tracked predecessor
+files remain present at the same paths and byte-identical. S5, S4, S3, Route
+Controls and Manifest v2r1 are unchanged.
 
 ## Pre-authoritative freeze
 
-Every semantic file is committed **before** the authoritative run, with a clean
-tracked worktree. This is the step S5 omitted, and it removes the need for a
-post-run Git-object audit.
+Every semantic file was committed **before** the authoritative run, with a clean
+tracked worktree at freeze HEAD
+`776780a1f39c36795c1204f29e95febaf144b169`. A post-run Git-object audit then
+confirmed all five frozen semantic blobs remained identical.
 
 The freeze point has been superseded three times, each time before any run
 consumed it: `4861c8a4` (original), `fd30a7fb` (rulings applied), `170124a` (price
-ceiling), and the current freeze, which splits P19 and closes the two coverage
-gaps. Superseding an *unconsumed* freeze is safe; what would invalidate a result
-is a semantic change after a run, which has not happened under any case set since
-the superseded run at `0ff79c9`.
+ceiling), and the current freeze, which splits P19 into formula structure,
+applicable charge coverage and worst-case authority. Superseding an *unconsumed*
+freeze is safe. The current frozen-v3 result has had no semantic change after
+execution; the earlier run at `0ff79c9` remains superseded because semantic
+changes followed it.
 
 | frozen identity | value |
 | --- | --- |
 | integration case set | `szorintegrationcasesetv1_05922235a81b26142dd68e7a58c2c070fbae6471f97527aef70739af819d8f56` |
-| preflight case set | `szorpreflightcasesetv1_7eb946e3b93c2936a3b34e686747ef6007c4493a43cf3a9dfeb5e3845058225d` |
-| ceiling case set | `szorceilingcasesetv1_77524c3966fb469a29a4b62c73eea900c0189e9081274a50f1d2664de1212cf5` |
-| thresholds | `szorprelivethresholdsv1_ba6a47c77faf47fc51cce870af3659c570d55db3dedc65c93ee3749dc3b0bbf6` |
+| preflight case set | `szorpreflightcasesetv1_5e5136109e81b9e184fac7f521da7d5d8f2c7f2f946e7b110d17ad12429ecb15` |
+| ceiling case set | `szorceilingcasesetv1_58dccf6cf47893c178e7f39b32360d08f1fc64db53e5992f8bd6e3d100b19c51` |
+| thresholds | `szorprelivethresholdsv1_eca7807368ef60ef49a8218f8b24071c52afa86385c80539bb2c885a2f274f3b` |
 | integration guards | `szorintegrationguardsv1_4001e6a1a7a53afa24b7b1eb4eaabcbbdf701dffa6ee10d91922d143406146a5` |
 | preflight guards | `szorpreflightguardsv1_3171845ea6454a4ac3b7ea2f68c0d2c4e31fa6912a4d162a6a776ddb599773db` |
-| semantic runtime modules | 4 |
-| cases | 45 (30 integration, 15 preflight) |
+| semantic runtime modules | 5 |
+| cases | 82 (30 integration, 26 preflight, 26 price ceiling) |
 
 ## Authoritative artifact and replay
 
 | evidence | identity | SHA-256 |
 | --- | --- | --- |
-| artifact | `szorpreliveartifactv1_6ff594b31e88781f0d8aaf9705c7e1c48c8bea5965ea820c0be6af6a69f9932e` | `971921fce44ba967080b987d6ce6c646d6f6c006c9ad2f6793661d1f7038c3ea` |
-| replay execution | `szorprelivereplayexecutionv1_60968c552d5a75a9e29c9d8bb9548eec7914129b2f6f00729605345bb08bbca6` | `05e8d0d7482a306a36bfb099b2617609524d56e2d31581656d8a20ca87de4bfb` |
-| replay lock | `szorprelivereplaylockv1_1b3058cc8253bc410f7902def33f403c35c29213a949db761407662799437be6` | `42a398912e450783f762e2ffeb78c17921780c19ac502c34a2cea89958573667` |
+| artifact | `szorpreliveartifactv1_4330f2640058037e2d8d4a7df45ab4694813e485538a552a91bffe1c331f6779` | `8f457a36bf0fbfcae71e16ff708a1b6d35d96161540c35fd4520c4f769f64b9d` |
+| replay execution | `szorprelivereplayexecutionv1_7b8efdb484a2a9ce99ed9682c889e5348be10c7578dbb56252cdde85ba7cb669` | `ff40af69cccd5297c5c0b2d65c82f25448c2e16a0f8019048916d5976afb5c27` |
+| replay lock | `szorprelivereplaylockv1_acc9604c588d6015007961bef5f2e259b8f068677d34b0f00b38e753dbac5c8b` | `256bf8eefe71c0c1e6b468d090ca55997ddfc105065594c16ec0aeee3cf15c8a` |
 
 Replay: **semantic equality, artifact-ID equality and byte identity all true**,
 with zero source retrievals and zero live calls. The lock contract refuses to
@@ -482,14 +488,15 @@ refused.
 
 | gate | result |
 | --- | --- |
-| S6 focused | **84 passed** |
+| S6 focused | **149 passed** |
 | S5 mapper + evaluator | 109 passed |
-| S3 provenance + static node | 65 passed |
+| S3 provenance + static | 64 passed |
 | Route Controls focused | 103 passed |
-| v1 + v2r1 evidence | 48 passed |
-| full `tests_dialogues` | **3472 passed, 10 skipped** |
+| Manifest v1 + v2r1 | 25 passed |
+| all OpenRouter | 728 passed, 1 skipped |
+| full `tests_dialogues` | **3537 passed, 10 skipped, exit 0** |
 | `git diff --check` | PASS |
-| frozen predecessor surfaces | **19/19 identical** |
+| frozen predecessor files | **742/742 identical** |
 
 S5, S4, S3, Route Controls and Manifest v2r1 are all byte-identical.
 
