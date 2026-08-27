@@ -48,6 +48,11 @@ from backend.dialogues.socrates_zero.openrouter_provenance_boundary_v1 import (
     compare_openrouter_current_scoped_snapshots_v1,
     openrouter_provenance_record_v1,
 )
+from backend.dialogues.socrates_zero.openrouter_route_controls_evaluation import (
+    capture_openrouter_route_control_historical_scoped_snapshot_v1,
+    load_openrouter_historical_scoped_inventory_v1,
+    verify_openrouter_route_control_sealed_historical_snapshot_v1,
+)
 from backend.dialogues.socrates_zero.openrouter_route_controls_cases import (
     FROZEN_OPENROUTER_ROUTE_CONTROL_CASES_V1,
     FROZEN_OPENROUTER_ROUTE_CONTROL_THRESHOLDS_V1,
@@ -269,7 +274,9 @@ def test_historical_and_current_verification_are_separate_operations() -> None:
     historical = evaluation.load_openrouter_route_control_artifact_v1(
         SEALED_ARTIFACT_PATH
     ).scoped_before_snapshot
-    with pytest.raises(ContractValidationError, match="sealed historical"):
+    with pytest.raises(
+        ContractValidationError, match="historical snapshot contract"
+    ):
         evaluation.compare_openrouter_route_control_scoped_snapshots_v1(
             current, current
         )
@@ -277,13 +284,73 @@ def test_historical_and_current_verification_are_separate_operations() -> None:
         compare_openrouter_current_scoped_snapshots_v1(historical, historical)
 
 
-def test_sealed_v1_artifact_cannot_be_rebuilt_from_the_current_generation() -> None:
-    """The frozen artifact schema was not made permissive to fit today."""
-    with pytest.raises(ContractValidationError, match="sealed historical"):
-        evaluation._build_route_control_artifact_v1(
-            reverse_case_order=True,
-            root=ROOT,
-        )
+def test_artifact_builder_still_constructs_as_it_did_at_the_source_checkpoint() -> None:
+    """The provenance migration introduced no new failure into this callable.
+
+    At the source checkpoint `_build_route_control_artifact_v1` constructed an
+    artifact under these preconditions. It still does, through the historical
+    reconstruction path, and the frozen artifact schema was not widened to make
+    that possible.
+    """
+    artifact = evaluation._build_route_control_artifact_v1(
+        reverse_case_order=True,
+        root=ROOT,
+    )
+    assert type(artifact) is evaluation.OpenRouterRouteControlArtifactV1
+    assert artifact.hypothesis_status.value == "FALSIFIED"
+    # It reconstructs over the historical membership, not the current one.
+    assert artifact.scoped_before_snapshot.inventory_id == (
+        evaluation.FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1
+    )
+    assert type(artifact.scoped_before_snapshot) is (
+        evaluation.OpenRouterScopedPathSnapshotV1
+    )
+
+
+def test_historical_reconstruction_uses_historical_membership_only() -> None:
+    membership = load_openrouter_historical_scoped_inventory_v1()
+    assert len(membership) == (
+        evaluation.FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1
+    )
+    sealed_rows = _sealed_artifact()["scoped_before_snapshot"]["rows"]
+    assert tuple((scope.value, reference) for scope, reference in membership) == (
+        tuple((row["scope"], row["relative_path"]) for row in sealed_rows)
+    )
+    # The historical membership is exactly what the sealed experiment measured,
+    # including the two predecessor entries the current inventory no longer has.
+    historical_references = {reference for _, reference in membership}
+    assert any(
+        _FORBIDDEN_RAW_REFERENCE in reference for reference in historical_references
+    )
+    current_references = {
+        reference
+        for _, references in evaluation.FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1
+        for reference in references
+    }
+    assert not any(
+        _FORBIDDEN_RAW_REFERENCE in reference for reference in current_references
+    )
+
+
+def test_historical_inventory_evidence_record_is_hash_locked() -> None:
+    path = ROOT / evaluation.OPENROUTER_HISTORICAL_SCOPED_INVENTORY_RELATIVE_PATH_V1
+    assert path.is_file()
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+        evaluation.OPENROUTER_HISTORICAL_SCOPED_INVENTORY_SHA256_V1
+    )
+
+
+def test_historical_inventory_evidence_tampering_is_rejected(
+    tmp_path: Path,
+) -> None:
+    relative = evaluation.OPENROUTER_HISTORICAL_SCOPED_INVENTORY_RELATIVE_PATH_V1
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    record = json.loads((ROOT / relative).read_bytes())
+    record["entries"][0]["relative_path"] = "backend/dialogues/socrates_zero/other.py"
+    target.write_bytes(json.dumps(record).encode("utf-8"))
+    with pytest.raises(ContractValidationError, match="evidence changed"):
+        load_openrouter_historical_scoped_inventory_v1(tmp_path)
 
 
 # ---------------------------------- C, D, E, F: sealed historical snapshot ----
@@ -310,34 +377,69 @@ def test_sealed_artifact_recomputes_the_historical_snapshot_identity() -> None:
         )
 
 
-def test_historical_row_path_mutation_fails() -> None:
+def _tampered_sealed_artifact_bytes(mutate) -> bytes:
+    """The sealed artifact JSON with its historical snapshots mutated."""
+    payload = _sealed_artifact()
+    for field in ("scoped_before_snapshot", "scoped_after_snapshot"):
+        snapshot = payload[field]
+        snapshot.pop("snapshot_id", None)
+        mutate(snapshot)
+    payload.pop("artifact_id", None)
+    return json.dumps(payload).encode("utf-8")
+
+
+def _assert_sealed_historical_mutation_fails(mutate, tmp_path: Path) -> None:
+    payload = _historical_snapshot_payload()
+    mutate(payload)
+    snapshot = evaluation.OpenRouterScopedPathSnapshotV1.model_validate(payload)
+    with pytest.raises(
+        ContractValidationError, match="historical scoped snapshot identity changed"
+    ):
+        verify_openrouter_route_control_sealed_historical_snapshot_v1(snapshot)
+    # ... and the same mutation cannot be loaded as the authoritative artifact.
+    target = tmp_path / "tampered.json"
+    target.write_bytes(_tampered_sealed_artifact_bytes(mutate))
+    with pytest.raises((ContractValidationError, ValidationError)):
+        evaluation.load_openrouter_route_control_artifact_v1(target)
+
+
+def test_historical_row_path_mutation_fails(tmp_path: Path) -> None:
     """Proof D."""
-    payload = _historical_snapshot_payload()
-    payload["rows"][0]["relative_path"] = "backend/dialogues/socrates_zero/other.py"
-    with pytest.raises(
-        ValidationError, match="historical scoped snapshot identity changed"
-    ):
-        evaluation.OpenRouterScopedPathSnapshotV1.model_validate(payload)
+
+    def mutate(snapshot):
+        snapshot["rows"][0]["relative_path"] = (
+            "backend/dialogues/socrates_zero/other.py"
+        )
+
+    _assert_sealed_historical_mutation_fails(mutate, tmp_path)
 
 
-def test_historical_row_sha_mutation_fails() -> None:
+def test_historical_row_sha_mutation_fails(tmp_path: Path) -> None:
     """Proof E."""
-    payload = _historical_snapshot_payload()
-    payload["rows"][0]["sha256"] = "0" * 64
-    with pytest.raises(
-        ValidationError, match="historical scoped snapshot identity changed"
-    ):
-        evaluation.OpenRouterScopedPathSnapshotV1.model_validate(payload)
+
+    def mutate(snapshot):
+        snapshot["rows"][0]["sha256"] = "0" * 64
+
+    _assert_sealed_historical_mutation_fails(mutate, tmp_path)
 
 
-def test_historical_row_reordering_fails() -> None:
+def test_historical_row_reordering_fails(tmp_path: Path) -> None:
     """Proof F."""
-    payload = _historical_snapshot_payload()
-    payload["rows"] = list(reversed(payload["rows"]))
-    with pytest.raises(
-        ValidationError, match="historical scoped snapshot identity changed"
-    ):
-        evaluation.OpenRouterScopedPathSnapshotV1.model_validate(payload)
+
+    def mutate(snapshot):
+        snapshot["rows"] = list(reversed(snapshot["rows"]))
+
+    _assert_sealed_historical_mutation_fails(mutate, tmp_path)
+
+
+def test_supplied_historical_rows_recompute_the_exact_frozen_snapshot_id() -> None:
+    snapshot = evaluation.OpenRouterScopedPathSnapshotV1.model_validate(
+        _historical_snapshot_payload()
+    )
+    assert snapshot.snapshot_id == (
+        evaluation.FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1
+    )
+    verify_openrouter_route_control_sealed_historical_snapshot_v1(snapshot)
 
 
 def test_historical_row_count_mutation_fails() -> None:
@@ -356,9 +458,7 @@ def test_declared_historical_snapshot_id_is_never_trusted() -> None:
     payload["snapshot_id"] = (
         evaluation.FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1
     )
-    with pytest.raises(
-        ValidationError, match="historical scoped snapshot identity changed"
-    ):
+    with pytest.raises(ValidationError, match="scoped snapshot ID mismatch"):
         evaluation.OpenRouterScopedPathSnapshotV1.model_validate(payload)
 
     # ... and an untampered snapshot still rejects a wrong declared identity.
@@ -375,6 +475,70 @@ def test_historical_contract_rejects_the_current_inventory_id() -> None:
     )
     with pytest.raises(ValidationError):
         evaluation.OpenRouterScopedPathSnapshotV1.model_validate(payload)
+
+
+def test_current_inventory_tampering_cannot_alter_sealed_historical_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Historical validation has zero dependency on the current generation."""
+    baseline = evaluation.load_openrouter_route_control_artifact_v1(
+        SEALED_ARTIFACT_PATH
+    )
+    monkeypatch.setattr(
+        evaluation,
+        "FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1",
+        (
+            (
+                evaluation.OpenRouterRouteControlMutationScopeV1.SOURCE,
+                ("nonsense/not-a-real-path.py",),
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        evaluation,
+        "FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1",
+        "szorcurrentpathinventoryv1_" + "0" * 64,
+    )
+    monkeypatch.setattr(boundary, "FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1", ())
+    tampered = evaluation.load_openrouter_route_control_artifact_v1(
+        SEALED_ARTIFACT_PATH
+    )
+    assert tampered == baseline
+    assert tampered.artifact_id == baseline.artifact_id
+    assert tampered.scoped_before_snapshot.snapshot_id == (
+        evaluation.FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1
+    )
+    verify_openrouter_route_control_sealed_historical_snapshot_v1(
+        tampered.scoped_before_snapshot
+    )
+
+
+def test_historical_constants_cannot_alter_current_snapshot_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The current snapshot moves only through bound provenance identities."""
+    baseline = evaluation.capture_openrouter_route_control_scoped_snapshot_v1(ROOT)
+    monkeypatch.setattr(
+        evaluation,
+        "FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1",
+        "szorroutepathinventoryv1_" + "0" * 64,
+    )
+    monkeypatch.setattr(
+        evaluation,
+        "FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1",
+        "szorroutesnapshotv1_" + "0" * 64,
+    )
+    monkeypatch.setattr(
+        evaluation, "FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1", 7
+    )
+    monkeypatch.setattr(
+        evaluation,
+        "OPENROUTER_HISTORICAL_SCOPED_INVENTORY_SHA256_V1",
+        "0" * 64,
+    )
+    after = evaluation.capture_openrouter_route_control_scoped_snapshot_v1(ROOT)
+    assert after.snapshot_id == baseline.snapshot_id
+    assert after.inventory_id == baseline.inventory_id
 
 
 # ------------------------------------------ G: the current scoped snapshot ----
