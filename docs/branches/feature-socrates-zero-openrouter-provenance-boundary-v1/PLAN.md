@@ -63,6 +63,10 @@ for the full record. No stop condition was triggered.
    file, and add the adversarial suite. *(commit 3 — `526e6ca`)* **done**
 6. **Verify** the gates below. *(done — all green)*
 7. **Document** the result and close the checkpoint. *(commit 4)* **done**
+8. **Correct** the contract split after review: preserve
+   `OpenRouterScopedPathSnapshotV1` as the historical shape rather than
+   broadening it, and introduce the separate current contract in the boundary
+   module. *(commit 5)* **done**
 
 ## Validation gates
 

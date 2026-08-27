@@ -10,6 +10,13 @@ semantic IDs, artifact IDs, artifact hashes, case-set and validation-order IDs,
 sealed commit identities and Git object identities.  No raw predecessor source
 or test path appears here, and none is needed.
 
+It also defines the CURRENT scoped snapshot and mutation contracts.  These are
+deliberately separate types from the sealed historical
+``OpenRouterScopedPathSnapshotV1``: the historical contract describes what the
+frozen experiment measured and is never widened to describe the repository as it
+stands today.  Historical artifact verification and current mutation
+verification are two different operations on two different contracts.
+
 The identities below are frozen literals.  They are deliberately *not* imported
 from the predecessor modules they describe: importing predecessor semantics to
 verify provenance would reintroduce exactly the dependency this boundary
@@ -21,7 +28,7 @@ execution, tool call, or CED application.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal, Optional, Tuple
+from typing import Literal, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -32,6 +39,12 @@ OPENROUTER_PROVENANCE_RECORD_SCHEMA_V1 = (
 )
 OPENROUTER_PROVENANCE_BOUNDARY_SCHEMA_V1 = (
     "socrateszero-openrouter-provenance-boundary/v1"
+)
+OPENROUTER_CURRENT_SCOPED_SNAPSHOT_SCHEMA_V1 = (
+    "socrateszero-openrouter-current-scoped-snapshot/v1"
+)
+OPENROUTER_CURRENT_SCOPED_MUTATION_EVIDENCE_SCHEMA_V1 = (
+    "socrateszero-openrouter-current-scoped-mutation-evidence/v1"
 )
 
 OPENROUTER_PROVENANCE_PREDECESSOR_CASE_DESIGN_REFERENCE_V1 = (
@@ -172,19 +185,224 @@ OPENROUTER_PROVENANCE_REFERENCE_IDS_V1: Tuple[str, ...] = tuple(
 
 def openrouter_provenance_record_v1(
     reference_id: str,
-    records: Tuple[OpenRouterProvenanceRecordV1, ...] = (
-        FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1
-    ),
+    records: Optional[Tuple[OpenRouterProvenanceRecordV1, ...]] = None,
 ) -> Optional[OpenRouterProvenanceRecordV1]:
-    """Return the immutable record for ``reference_id``, or ``None``."""
-    for record in records:
+    """Return the immutable record for ``reference_id``, or ``None``.
+
+    The frozen boundary is resolved at call time rather than bound as a default
+    so that a single substitution is seen consistently by every reader.
+    """
+    catalogue = (
+        FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1 if records is None else records
+    )
+    for record in catalogue:
         if record.reference_id == reference_id:
             return record
     return None
 
 
+# --------------------------------------------------------------- current -----
+#
+# Everything below describes the CURRENT repository generation.  It is a
+# separate contract family from the sealed historical snapshot, with its own
+# schema versions and its own identity prefixes, and the two must never be
+# unified: the sealed generation is history, this one is today.
+
+
+class OpenRouterCurrentScopeV1(str, Enum):
+    """Mutation scope for the current generation.
+
+    Mirrors the historical scope vocabulary by value so the two generations stay
+    comparable, while remaining a distinct type so they cannot be interchanged.
+    """
+
+    SOURCE = "SOURCE"
+    SIBLING = "SIBLING"
+    PRODUCTION = "PRODUCTION"
+
+
+class OpenRouterCurrentScopedDigestV1(_FrozenProvenanceContractV1):
+    """One current scoped entry.
+
+    ``reference`` is either a repository-relative path, digested from disk, or a
+    provenance reference, digested by its immutable record identity.
+    """
+
+    scope: OpenRouterCurrentScopeV1
+    reference: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def openrouter_current_scoped_inventory_id_v1(
+    membership: Sequence[Tuple[OpenRouterCurrentScopeV1, str]],
+) -> str:
+    """Content address the current scoped membership, in order."""
+    return stable_contract_id(
+        "szorcurrentpathinventoryv1",
+        tuple(
+            {"scope": scope.value, "reference": reference}
+            for scope, reference in membership
+        ),
+    )
+
+
+class OpenRouterCurrentScopedSnapshotV1(_FrozenProvenanceContractV1):
+    """The current scoped snapshot.
+
+    Membership and order are bound to ``inventory_id`` by construction: the ID
+    is recomputed from the rows and must match, so no row may be added, removed
+    or reordered without changing it.  ``snapshot_id`` is always recomputed and
+    a caller-declared value is never trusted.
+    """
+
+    schema_version: Literal[
+        OPENROUTER_CURRENT_SCOPED_SNAPSHOT_SCHEMA_V1
+    ] = OPENROUTER_CURRENT_SCOPED_SNAPSHOT_SCHEMA_V1
+    inventory_id: str
+    rows: Tuple[OpenRouterCurrentScopedDigestV1, ...]
+    snapshot_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def identify(self) -> "OpenRouterCurrentScopedSnapshotV1":
+        membership = tuple((row.scope, row.reference) for row in self.rows)
+        if len(set(membership)) != len(membership):
+            raise ContractValidationError(
+                "current scoped snapshot has duplicate entries"
+            )
+        if self.inventory_id != openrouter_current_scoped_inventory_id_v1(membership):
+            raise ContractValidationError(
+                "current scoped snapshot membership or order changed"
+            )
+        digests = {row.reference: row.sha256 for row in self.rows}
+        for record in FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1:
+            if record.reference_id not in digests:
+                raise ContractValidationError(
+                    "current scoped snapshot is missing a provenance reference"
+                )
+            if digests[record.reference_id] != record.record_sha256:
+                raise ContractValidationError(
+                    "current scoped provenance digest is not the immutable "
+                    "record identity"
+                )
+        expected = stable_contract_id(
+            "szorcurrentsnapshotv1",
+            self.model_dump(mode="json", exclude={"snapshot_id"}),
+        )
+        if self.snapshot_id not in (None, expected):
+            raise ContractValidationError("current scoped snapshot ID mismatch")
+        object.__setattr__(self, "snapshot_id", expected)
+        return self
+
+
+class OpenRouterCurrentScopedMutationV1(_FrozenProvenanceContractV1):
+    scope: OpenRouterCurrentScopeV1
+    reference: str
+    before_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    after_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def changed(self) -> "OpenRouterCurrentScopedMutationV1":
+        if self.before_sha256 == self.after_sha256:
+            raise ContractValidationError(
+                "current scoped mutation digests must differ"
+            )
+        return self
+
+
+class OpenRouterCurrentScopedMutationEvidenceV1(_FrozenProvenanceContractV1):
+    schema_version: Literal[
+        OPENROUTER_CURRENT_SCOPED_MUTATION_EVIDENCE_SCHEMA_V1
+    ] = OPENROUTER_CURRENT_SCOPED_MUTATION_EVIDENCE_SCHEMA_V1
+    inventory_id: str
+    before_snapshot_id: str
+    after_snapshot_id: str
+    source_mutations: int = Field(ge=0)
+    sibling_mutations: int = Field(ge=0)
+    production_mutations: int = Field(ge=0)
+    changed_references: Tuple[str, ...] = ()
+    mutations: Tuple[OpenRouterCurrentScopedMutationV1, ...] = ()
+    evidence_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def identify(self) -> "OpenRouterCurrentScopedMutationEvidenceV1":
+        references = tuple(mutation.reference for mutation in self.mutations)
+        if len(set(references)) != len(references):
+            raise ContractValidationError(
+                "current scoped mutation evidence repeats a reference"
+            )
+        counts = {
+            scope: sum(mutation.scope is scope for mutation in self.mutations)
+            for scope in OpenRouterCurrentScopeV1
+        }
+        if (
+            self.changed_references != references
+            or self.source_mutations != counts[OpenRouterCurrentScopeV1.SOURCE]
+            or self.sibling_mutations != counts[OpenRouterCurrentScopeV1.SIBLING]
+            or self.production_mutations
+            != counts[OpenRouterCurrentScopeV1.PRODUCTION]
+        ):
+            raise ContractValidationError(
+                "current scoped mutation evidence is not fully derived"
+            )
+        expected = stable_contract_id(
+            "szorcurrentmutationevidencev1",
+            self.model_dump(mode="json", exclude={"evidence_id"}),
+        )
+        if self.evidence_id not in (None, expected):
+            raise ContractValidationError(
+                "current scoped mutation evidence ID mismatch"
+            )
+        object.__setattr__(self, "evidence_id", expected)
+        return self
+
+
+def compare_openrouter_current_scoped_snapshots_v1(
+    before: OpenRouterCurrentScopedSnapshotV1,
+    after: OpenRouterCurrentScopedSnapshotV1,
+) -> OpenRouterCurrentScopedMutationEvidenceV1:
+    """Current mutation verification.
+
+    Distinct from historical artifact verification, and it refuses any snapshot
+    that is not the current contract.
+    """
+    for snapshot in (before, after):
+        if type(snapshot) is not OpenRouterCurrentScopedSnapshotV1:
+            raise ContractValidationError(
+                "current scoped comparison requires the current snapshot contract"
+            )
+    if before.inventory_id != after.inventory_id:
+        raise ContractValidationError("current scoped inventory generation changed")
+    after_by_reference = {row.reference: row for row in after.rows}
+    mutations = tuple(
+        OpenRouterCurrentScopedMutationV1(
+            scope=row.scope,
+            reference=row.reference,
+            before_sha256=row.sha256,
+            after_sha256=after_by_reference[row.reference].sha256,
+        )
+        for row in before.rows
+        if row.sha256 != after_by_reference[row.reference].sha256
+    )
+    counts = {
+        scope: sum(mutation.scope is scope for mutation in mutations)
+        for scope in OpenRouterCurrentScopeV1
+    }
+    return OpenRouterCurrentScopedMutationEvidenceV1(
+        inventory_id=before.inventory_id,
+        before_snapshot_id=before.snapshot_id or "",
+        after_snapshot_id=after.snapshot_id or "",
+        source_mutations=counts[OpenRouterCurrentScopeV1.SOURCE],
+        sibling_mutations=counts[OpenRouterCurrentScopeV1.SIBLING],
+        production_mutations=counts[OpenRouterCurrentScopeV1.PRODUCTION],
+        changed_references=tuple(mutation.reference for mutation in mutations),
+        mutations=mutations,
+    )
+
+
 __all__ = [
     "FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1",
+    "OPENROUTER_CURRENT_SCOPED_MUTATION_EVIDENCE_SCHEMA_V1",
+    "OPENROUTER_CURRENT_SCOPED_SNAPSHOT_SCHEMA_V1",
     "OPENROUTER_PROVENANCE_BOUNDARY_ID_V1",
     "OPENROUTER_PROVENANCE_BOUNDARY_SCHEMA_V1",
     "OPENROUTER_PROVENANCE_PREDECESSOR_CASE_DESIGN_REFERENCE_V1",
@@ -192,7 +410,14 @@ __all__ = [
     "OPENROUTER_PROVENANCE_RECORD_SCHEMA_V1",
     "OPENROUTER_PROVENANCE_REFERENCE_IDS_V1",
     "OPENROUTER_PROVENANCE_REFERENCE_PREFIX_V1",
+    "OpenRouterCurrentScopeV1",
+    "OpenRouterCurrentScopedDigestV1",
+    "OpenRouterCurrentScopedMutationEvidenceV1",
+    "OpenRouterCurrentScopedMutationV1",
+    "OpenRouterCurrentScopedSnapshotV1",
     "OpenRouterProvenanceRecordV1",
     "OpenRouterProvenanceScientificRoleV1",
+    "compare_openrouter_current_scoped_snapshots_v1",
+    "openrouter_current_scoped_inventory_id_v1",
     "openrouter_provenance_record_v1",
 ]

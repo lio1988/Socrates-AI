@@ -15,10 +15,22 @@ Stable context. Not an action log.
    inventory identity stays exactly what it was.
 2. **No sealed artifact is regenerated.** No expected SHA constant is updated.
    No hash lock is replaced by a dynamically recomputed value.
-3. **Two versioned concepts, not one.** The historical inventory identity
-   records what the frozen experiment measured. The current provenance boundary
-   records how current runtime scientific dependencies are represented now.
-   These are permitted to differ, and the tests must express the distinction.
+3. **Two versioned concepts, and two separate contracts.** The historical
+   inventory identity records what the frozen experiment measured. The current
+   provenance boundary records how current runtime scientific dependencies are
+   represented now. These are permitted to differ, and the tests must express
+   the distinction.
+
+   `OpenRouterScopedPathSnapshotV1` is the sealed HISTORICAL contract and must
+   never be widened to also represent the current inventory: its `inventory_id`
+   stays a `Literal` of the single historical value. The current generation has
+   its own contract, `OpenRouterCurrentScopedSnapshotV1`, in the boundary module,
+   with its own schema and its own `szorcurrent*` identity namespace. Historical
+   artifact verification and current mutation verification are two separate
+   operations, and each comparison refuses the other generation's snapshot.
+
+   Neither contract trusts a caller-declared `snapshot_id`; both always recompute
+   it from the supplied rows.
 4. **No predecessor semantics are imported to verify provenance.** Immutable
    identity constants are frozen literals in the boundary module. The boundary
    module must not import predecessor case modules.
@@ -65,6 +77,8 @@ Historical Route Controls scoped identities, frozen as literals:
 | historical inventory ID | `szorroutepathinventoryv1_0ec9a8417d7cb91bb0e17fc0b402577032cf207ace89cddc32276390ec661e33` |
 | historical snapshot ID | `szorroutesnapshotv1_9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b` |
 | historical row count | 90 |
+| current inventory ID | `szorcurrentpathinventoryv1_98024a610f23a604be4aca79b0971f8898c4b7e8802737451888131222b3ce7b` |
+| provenance boundary ID | `szorprovenanceboundaryv1_50048e2921e4d6c6d978be822a21f6ffe9407e922c8450582cff7a91cbaaceaf` |
 
 ## Environment
 

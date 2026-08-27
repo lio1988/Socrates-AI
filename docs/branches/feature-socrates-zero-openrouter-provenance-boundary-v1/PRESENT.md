@@ -14,7 +14,11 @@
 | `acc0dfc` | docs: initialize OpenRouter provenance boundary v1 |
 | `661840c` | fix: separate OpenRouter historical provenance from runtime paths |
 | `526e6ca` | test: lock OpenRouter provenance boundary v1 |
-| _(this)_ | docs: complete OpenRouter provenance boundary v1 checkpoint |
+| `d4d2e0c` | docs: complete OpenRouter provenance boundary v1 checkpoint |
+| _(this)_ | refactor: split historical and current scoped snapshot contracts |
+
+The first four commits are preserved exactly as made; the correction is additive
+history, not an amendment.
 
 ## Worktree
 
@@ -24,15 +28,15 @@ reused. Its patch is preserved outside the repository only.
 
 ## Completed
 
-All seven steps of [PLAN.md](PLAN.md).
+All eight steps of [PLAN.md](PLAN.md).
 
 - Raw-path audit and AST classification: **runtime semantic dependencies = 0**.
 - Additive provenance boundary module with two content-addressed immutable
   records; boundary identity
   `szorprovenanceboundaryv1_50048e2921e4d6c6d978be822a21f6ffe9407e922c8450582cff7a91cbaaceaf`.
-- Provenance-only evaluator edits; historical and current inventory generations
-  now versioned and distinct.
-- 46 adversarial locks added; one existing inventory test adapted, not weakened.
+- Provenance-only evaluator edits. The sealed historical snapshot contract is
+  preserved as-is; the current generation has its own separate contract.
+- 58 adversarial locks added; one existing inventory test adapted, not weakened.
 - Canonical result documented in
   [docs/SOCRATES_ZERO_OPENROUTER_PROVENANCE_BOUNDARY_V1.md](../../SOCRATES_ZERO_OPENROUTER_PROVENANCE_BOUNDARY_V1.md).
 
@@ -40,9 +44,9 @@ All seven steps of [PLAN.md](PLAN.md).
 
 | file | change |
 | --- | --- |
-| `backend/dialogues/socrates_zero/openrouter_provenance_boundary_v1.py` | new, additive, import-inert |
-| `backend/dialogues/socrates_zero/openrouter_route_controls_evaluation.py` | provenance-only (+79 / -19) |
-| `tests_dialogues/test_socrates_zero_openrouter_acquisition_provenance_boundary_v1.py` | new, 46 locks |
+| `backend/dialogues/socrates_zero/openrouter_provenance_boundary_v1.py` | new, additive, import-inert; also holds the current scoped contracts |
+| `backend/dialogues/socrates_zero/openrouter_route_controls_evaluation.py` | provenance-only (+117 / -34) |
+| `tests_dialogues/test_socrates_zero_openrouter_acquisition_provenance_boundary_v1.py` | new, 58 locks |
 | `tests_dialogues/test_socrates_zero_openrouter_acquisition_route_controls_v1_evaluation.py` | one inventory test adapted |
 | `docs/SOCRATES_ZERO_OPENROUTER_PROVENANCE_BOUNDARY_V1.md` | new |
 | `docs/branches/feature-socrates-zero-openrouter-provenance-boundary-v1/*` | new, four documents |
@@ -63,13 +67,16 @@ constant was changed.
 
 ## Inventory generations
 
-| generation | inventory ID |
-| --- | --- |
-| historical | `szorroutepathinventoryv1_0ec9a8417d7cb91bb0e17fc0b402577032cf207ace89cddc32276390ec661e33` |
-| current | `szorroutepathinventoryv1_d6319893538fbd4c1d2e6e86c07c8b9330a05b28a4dc9a05abcddb4fcccb769d` |
+Two generations, two contracts, two identity namespaces:
 
-Historical snapshot identity, frozen:
-`szorroutesnapshotv1_9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b`, 90 rows.
+| | historical | current |
+| --- | --- | --- |
+| contract | `OpenRouterScopedPathSnapshotV1` | `OpenRouterCurrentScopedSnapshotV1` |
+| inventory ID | `szorroutepathinventoryv1_0ec9a8417d7cb91bb0e17fc0b402577032cf207ace89cddc32276390ec661e33` | `szorcurrentpathinventoryv1_98024a610f23a604be4aca79b0971f8898c4b7e8802737451888131222b3ce7b` |
+| snapshot ID | `szorroutesnapshotv1_9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b` (frozen, 90 rows) | `szorcurrentsnapshotv1_…` (recomputed per capture) |
+
+The sealed contract accepts only the historical inventory ID. Neither contract
+trusts a caller-declared `snapshot_id`.
 
 ## Tests and exact results
 
@@ -79,9 +86,9 @@ Historical snapshot identity, frozen:
 | exact static node, after the change | 1 passed |
 | Route Controls focused suite | 103 passed (baseline 103) |
 | v1 + v2r1 evidence suite | 48 passed (baseline 48) |
-| new provenance boundary suite | 46 passed |
+| new provenance boundary suite | 58 passed |
 | predecessor cases suite | 12 passed |
-| full `tests_dialogues` | 3261 passed, 10 skipped |
+| full `tests_dialogues` | 3273 passed, 10 skipped |
 | `git diff --check` | PASS |
 
 ## Frozen surface hashes — after

@@ -31,7 +31,13 @@ from .openrouter_provenance_boundary_v1 import (
     OPENROUTER_PROVENANCE_BOUNDARY_ID_V1,
     OPENROUTER_PROVENANCE_PREDECESSOR_CASE_DESIGN_REFERENCE_V1,
     OPENROUTER_PROVENANCE_PREDECESSOR_CASE_SUITE_REFERENCE_V1,
+    OpenRouterCurrentScopeV1,
+    OpenRouterCurrentScopedDigestV1,
+    OpenRouterCurrentScopedMutationEvidenceV1,
+    OpenRouterCurrentScopedSnapshotV1,
     OpenRouterProvenanceRecordV1,
+    compare_openrouter_current_scoped_snapshots_v1,
+    openrouter_current_scoped_inventory_id_v1,
     openrouter_provenance_record_v1,
 )
 from .openrouter_route_controls_cases import (
@@ -1691,13 +1697,18 @@ FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1: Tuple[
         ),
     ),
 )
-FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1 = stable_contract_id(
-    "szorroutepathinventoryv1",
-    tuple(
-        {"scope": scope.value, "relative_path": relative_path}
-        for scope, paths in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1
-        for relative_path in paths
-    ),
+# The identity of the CURRENT scoped inventory.  It is content addressed over
+# the current membership and order, in the current generation's own namespace,
+# so it can never be confused with the sealed historical inventory identity
+# below.
+FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1 = (
+    openrouter_current_scoped_inventory_id_v1(
+        tuple(
+            (OpenRouterCurrentScopeV1(scope.value), reference)
+            for scope, references in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1
+            for reference in references
+        )
+    )
 )
 
 # The sealed route-control experiment measured an inventory that still carried
@@ -1740,50 +1751,38 @@ class OpenRouterScopedPathDigestV1(_FrozenEvaluationContractV1):
 
 
 class OpenRouterScopedPathSnapshotV1(_FrozenEvaluationContractV1):
+    """The SEALED HISTORICAL scoped snapshot.
+
+    This contract describes the generation the frozen route-control experiment
+    measured.  It is deliberately not widened to describe the repository as it
+    stands today; the current generation has its own contract,
+    ``OpenRouterCurrentScopedSnapshotV1``.  Rows are validated without consulting
+    any live path constant: the row count is frozen, ``snapshot_id`` is always
+    recomputed from the supplied rows rather than trusted from the caller, and
+    the recomputed value must equal the frozen historical snapshot identity.
+    Any mutated path, mutated digest or reordered row changes it and fails.
+    """
+
     schema_version: Literal[
         OPENROUTER_ROUTE_CONTROL_SCOPED_SNAPSHOT_SCHEMA_V1
     ] = OPENROUTER_ROUTE_CONTROL_SCOPED_SNAPSHOT_SCHEMA_V1
     inventory_id: Literal[
-        FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1,
-        FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1,
-    ] = FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1
+        FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1
+    ] = FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1
     rows: Tuple[OpenRouterScopedPathDigestV1, ...]
     snapshot_id: Optional[str] = None
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterScopedPathSnapshotV1":
-        historical = (
-            self.inventory_id
-            == FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1
-        )
-        if historical:
-            if (
-                len(self.rows)
-                != FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1
-            ):
-                raise ContractValidationError(
-                    "historical scoped snapshot row count changed"
-                )
-        else:
-            expected_membership = tuple(
-                (scope, relative_path)
-                for scope, paths in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1
-                for relative_path in paths
+        if len(self.rows) != FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1:
+            raise ContractValidationError(
+                "historical scoped snapshot row count changed"
             )
-            observed_membership = tuple(
-                (row.scope, row.relative_path) for row in self.rows
-            )
-            if observed_membership != expected_membership:
-                raise ContractValidationError(
-                    "scoped snapshot membership or order changed"
-                )
         expected = stable_contract_id(
             "szorroutesnapshotv1",
             self.model_dump(mode="json", exclude={"snapshot_id"}),
         )
-        if historical and expected != (
-            FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1
-        ):
+        if expected != FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1:
             raise ContractValidationError(
                 "historical scoped snapshot identity changed"
             )
@@ -1956,38 +1955,56 @@ def _repository_root() -> Path:
 
 def capture_openrouter_route_control_scoped_snapshot_v1(
     root: Optional[Path] = None,
-) -> OpenRouterScopedPathSnapshotV1:
+) -> OpenRouterCurrentScopedSnapshotV1:
+    """Capture the CURRENT scoped generation.
+
+    A repository path is digested from disk; a provenance reference is digested
+    by its immutable record identity.  The returned contract binds membership
+    and order to the current inventory identity.
+    """
     repository_root = _repository_root() if root is None else Path(root)
     rows = []
-    for scope, paths in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1:
-        for relative_path in paths:
-            provenance = openrouter_provenance_record_v1(
-                relative_path,
-                FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1,
-            )
+    for scope, references in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1:
+        for reference in references:
+            provenance = openrouter_provenance_record_v1(reference)
             if provenance is None:
-                path = repository_root / relative_path
+                path = repository_root / reference
                 if not path.is_file():
                     raise ContractValidationError(
-                        f"frozen scoped path is absent: {relative_path}"
+                        f"frozen scoped path is absent: {reference}"
                     )
                 digest = _sha256_bytes(path.read_bytes())
             else:
                 digest = provenance.record_sha256
             rows.append(
-                OpenRouterScopedPathDigestV1(
-                    scope=scope,
-                    relative_path=relative_path,
+                OpenRouterCurrentScopedDigestV1(
+                    scope=OpenRouterCurrentScopeV1(scope.value),
+                    reference=reference,
                     sha256=digest,
                 )
             )
-    return OpenRouterScopedPathSnapshotV1(rows=tuple(rows))
+    return OpenRouterCurrentScopedSnapshotV1(
+        inventory_id=FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1,
+        rows=tuple(rows),
+    )
 
 
 def compare_openrouter_route_control_scoped_snapshots_v1(
     before: OpenRouterScopedPathSnapshotV1,
     after: OpenRouterScopedPathSnapshotV1,
 ) -> OpenRouterScopedMutationEvidenceV1:
+    """Historical artifact verification.
+
+    Distinct from current mutation verification, which lives in the provenance
+    boundary module.  Passing a current snapshot here is a category error and is
+    refused rather than silently compared.
+    """
+    for snapshot in (before, after):
+        if type(snapshot) is not OpenRouterScopedPathSnapshotV1:
+            raise ContractValidationError(
+                "historical scoped comparison requires the sealed historical "
+                "snapshot contract"
+            )
     before_by_path = {row.relative_path: row for row in before.rows}
     after_by_path = {row.relative_path: row for row in after.rows}
     if set(before_by_path) != set(after_by_path):
@@ -3454,6 +3471,12 @@ if __name__ == "__main__":  # pragma: no cover - explicit scientific operation
 __all__ = [
     "FROZEN_OPENROUTER_ROUTE_CONTROL_ARTIFACT_CLAIM_FIREWALL_V1",
     "FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1",
+    "OpenRouterCurrentScopeV1",
+    "OpenRouterCurrentScopedDigestV1",
+    "OpenRouterCurrentScopedMutationEvidenceV1",
+    "OpenRouterCurrentScopedSnapshotV1",
+    "compare_openrouter_current_scoped_snapshots_v1",
+    "openrouter_current_scoped_inventory_id_v1",
     "FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1",
     "FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1",
     "FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1",

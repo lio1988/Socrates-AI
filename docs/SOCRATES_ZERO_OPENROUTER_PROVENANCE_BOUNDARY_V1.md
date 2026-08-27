@@ -100,27 +100,60 @@ and is reported as a SIBLING mutation.
 ## Historical versus current inventory
 
 Because the current inventory genuinely no longer contains those two raw paths,
-its derived inventory ID genuinely changes:
+its derived inventory identity genuinely changes. That value is not forced back
+to the historical one, and the sealed contract is not stretched to cover it.
 
-| generation | inventory ID |
-| --- | --- |
-| historical (what the sealed experiment measured) | `szorroutepathinventoryv1_0ec9a8417d7cb91bb0e17fc0b402577032cf207ace89cddc32276390ec661e33` |
-| current (how runtime dependencies are represented now) | `szorroutepathinventoryv1_d6319893538fbd4c1d2e6e86c07c8b9330a05b28a4dc9a05abcddb4fcccb769d` |
+The two generations are **two separate contracts in two separate identity
+namespaces**. The sealed contract was not widened to describe both.
 
-The current value is **not** forced back to the historical one. The historical
-generation is pinned as frozen literals — inventory ID, snapshot ID
-`szorroutesnapshotv1_9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b`,
-and row count 90 — and `OpenRouterScopedPathSnapshotV1` became generation aware:
+| | historical | current |
+| --- | --- | --- |
+| contract | `OpenRouterScopedPathSnapshotV1` | `OpenRouterCurrentScopedSnapshotV1` |
+| module | `openrouter_route_controls_evaluation` | `openrouter_provenance_boundary_v1` |
+| schema | `…route-control-scoped-snapshot/v1` | `…current-scoped-snapshot/v1` |
+| row type | `OpenRouterScopedPathDigestV1` (`relative_path`) | `OpenRouterCurrentScopedDigestV1` (`reference`) |
+| inventory ID | `szorroutepathinventoryv1_0ec9a8417d7cb91bb0e17fc0b402577032cf207ace89cddc32276390ec661e33` | `szorcurrentpathinventoryv1_98024a610f23a604be4aca79b0971f8898c4b7e8802737451888131222b3ce7b` |
+| snapshot ID prefix | `szorroutesnapshotv1_` | `szorcurrentsnapshotv1_` |
+| mutation evidence | `OpenRouterScopedMutationEvidenceV1` | `OpenRouterCurrentScopedMutationEvidenceV1` |
+| comparison | `compare_openrouter_route_control_scoped_snapshots_v1` | `compare_openrouter_current_scoped_snapshots_v1` |
 
-- **historical** — rows are locked by frozen content-addressed snapshot identity
-  and row count. For that generation this is stricter than the membership tuple
-  it replaces: it pins all 90 rows including their paths and their hashes.
-- **current** — membership and order are enforced against the current inventory
-  exactly as before.
-- any other inventory ID is rejected.
+**`OpenRouterScopedPathSnapshotV1` is preserved as the historical contract
+shape.** Its `inventory_id` remains a `Literal` of exactly one value, the frozen
+historical inventory ID; it does not accept the current inventory ID. What
+changed is only that it no longer reaches for the live raw-path constant to
+validate itself. Instead it validates historical rows through:
 
-`OpenRouterScopedMutationEvidenceV1` needed no change: the sealed artifact records
-zero mutations, so its membership ranking never touches a historical row.
+- the frozen historical inventory ID (`Literal`);
+- the exact frozen historical row count, 90;
+- a **recomputed** content-addressed snapshot ID, derived from the supplied rows;
+- equality of that recomputed value with the frozen historical snapshot ID
+  `szorroutesnapshotv1_9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b`.
+
+The snapshot ID is always recomputed and a caller-declared `snapshot_id` is never
+trusted, so any mutated historical path, mutated historical digest, or reordered
+historical row changes the recomputed identity and fails — and declaring the
+correct frozen ID alongside tampered rows does not rescue them.
+
+The current contract is additive and independent. Its `inventory_id` is
+recomputed from its own rows' membership and order and must match, so no entry
+can be added, removed or reordered without detection; it excludes the two
+predecessor raw paths entirely; it requires each provenance row to carry exactly
+the immutable record content address; and its `snapshot_id` is likewise always
+recomputed.
+
+Historical artifact verification and current mutation verification are now two
+separate operations, and each comparison function refuses the other generation's
+snapshot rather than silently comparing across the boundary. A consequence,
+intended: `_build_route_control_artifact_v1` can no longer produce a v1 artifact,
+because the sealed v1 generation cannot be reconstructed from today's inventory.
+That path was already unreachable behind the exclusive-claim and
+complete-support guards, and it now fails closed with an explicit message.
+
+`OpenRouterScopedMutationEvidenceV1` is unchanged from the sealed checkpoint. Its
+ordering rank still consults the current inventory constant, which is vacuous for
+the only inputs it can now receive: the historical comparison accepts nothing but
+the sealed historical snapshots, which are byte-identical and therefore always
+yield zero mutations. This is verified, not assumed.
 
 This is the distinction the S3 audit demanded. The historical artifact records
 what was frozen then; the current boundary records how runtime scientific
@@ -139,6 +172,9 @@ dependencies are represented now. Neither is rewritten to match the other.
 - No parser, renderer, cases, contracts, production adapter, CED, SearchState,
   Projection, Value, Policy, search strategy, Manifest v1 or Manifest v2r1 code
   was touched.
+- The frozen Route Controls artifact schema was **not** made more permissive to
+  accommodate the current inventory. `scoped_before_snapshot` and
+  `scoped_after_snapshot` remain typed to the historical contract alone.
 
 ## Mutation protection
 
@@ -160,7 +196,7 @@ value is what the sealed experiment recorded, not what the file says today.
 | exact static node, after | **1 passed**, genuinely |
 | Route Controls focused suite | **103 passed** (baseline 103) |
 | v1 + v2r1 evidence suite | **48 passed** (baseline 48) |
-| new provenance boundary suite | **46 passed** |
+| new provenance boundary suite | **58 passed** |
 | predecessor cases suite | **12 passed** |
 | full `tests_dialogues` | **3261 passed, 10 skipped** |
 | `git diff --check` | PASS |
@@ -185,7 +221,7 @@ performed.
 | --- | --- |
 | `backend/dialogues/socrates_zero/openrouter_provenance_boundary_v1.py` | new, additive |
 | `backend/dialogues/socrates_zero/openrouter_route_controls_evaluation.py` | provenance-only |
-| `tests_dialogues/test_socrates_zero_openrouter_acquisition_provenance_boundary_v1.py` | new, 46 locks |
+| `tests_dialogues/test_socrates_zero_openrouter_acquisition_provenance_boundary_v1.py` | new, 58 locks |
 | `tests_dialogues/test_socrates_zero_openrouter_acquisition_route_controls_v1_evaluation.py` | one inventory test adapted, not weakened |
 | `docs/SOCRATES_ZERO_OPENROUTER_PROVENANCE_BOUNDARY_V1.md` and four branch documents | documentation |
 

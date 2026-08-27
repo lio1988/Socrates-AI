@@ -372,21 +372,21 @@ def test_scoped_inventory_is_complete_and_current() -> None:
     file_rows = tuple(
         row
         for row in snapshot.rows
-        if openrouter_provenance_record_v1(row.relative_path) is None
+        if openrouter_provenance_record_v1(row.reference) is None
     )
     provenance_rows = tuple(
         row
         for row in snapshot.rows
-        if openrouter_provenance_record_v1(row.relative_path) is not None
+        if openrouter_provenance_record_v1(row.reference) is not None
     )
     assert len(provenance_rows) == len(FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1)
     assert len(file_rows) + len(provenance_rows) == expected_count
-    assert all(row.sha256 == hashlib.sha256((ROOT / row.relative_path).read_bytes()).hexdigest() for row in file_rows)
+    assert all(row.sha256 == hashlib.sha256((ROOT / row.reference).read_bytes()).hexdigest() for row in file_rows)
     assert all(
-        row.sha256 == openrouter_provenance_record_v1(row.relative_path).record_sha256
+        row.sha256 == openrouter_provenance_record_v1(row.reference).record_sha256
         for row in provenance_rows
     )
-    inventoried = {row.relative_path for row in snapshot.rows}
+    inventoried = {row.reference for row in snapshot.rows}
     assert {
         "backend/dialogues/socrates_zero/baseline.py",
         "backend/dialogues/socrates_zero/puct.py",
