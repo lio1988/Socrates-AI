@@ -9,9 +9,16 @@ S7A reuses retained repository evidence only. It performs no fresh retrieval.
 | sealed S6 request modality proof | historical text-only evidence; candidate-v2 proof must bind new bytes |
 | S5 mapper identity | future response-mapping dependency |
 | S6 integration identity | future causal-integration dependency |
+| local claim-store-readiness contract | binds one path-derived store identity and required trusted durable non-rollback semantics; does not prove physical realization |
 
 Any current first-party model-limit value required for P17 remains a future JIT
 fact and must be acquired before credential-dependent dispatch in S7B.
+
+Production component prices and the operator total-spend ceiling likewise
+require explicit operator grants. A live claim store requires scope-correct
+`szorclaimstoregrantv1_...` evidence. The physical
+`ATOMIC_CREATE_NEW_TRUSTED_DURABLE_NON_ROLLBACK` store realization is an S7B JIT
+fact; a filesystem path or its content ID is not evidence of those properties.
 
 ## P17 retained source authority
 
@@ -84,3 +91,65 @@ The following remain rejected:
 
 No retained pre-call token-count facility or acceptable exact-tokenizer path was
 found. No current limit value is asserted here.
+
+## Implemented local evidence bindings
+
+The local architecture is complete for:
+
+- a source-bound exact-model P17 record and request-bound P17 proof;
+- a v2 rendered request containing explicit prompt, completion and request
+  price ceilings;
+- a request-bound text-only modality proof and established 256-token output cap;
+- a complete P19 component tuple and exact integer-picodollar total;
+- an operator total-spend ceiling separate from component ceilings;
+- one-call authorization, one-shot transport, deterministic preflight and
+  consume-before-network semantics;
+- an explicit claim-store-readiness attestation bound into authorization,
+  preflight and consumption.
+
+Production request identity, current P17 record, all price grants, total-spend
+grant and live store grant remain `JIT_PENDING`/`OPERATOR_REQUIRED` and must be
+established before credential-dependent dispatch.
+
+## Synthetic fixture separation
+
+The test fixture is identified by:
+
+- request ID:
+  `szorrenderedliverequestv2_4d1b04a731f98462a8d349611c105fe818fae18c1a1a3de8c2b02dfb835c00a2`;
+- body SHA-256:
+  `9ba640bf29bf6ad77c2a6dd0b4b038fbe4567aa51146b0e2699ea49a2ee0b8a8`;
+- body length: 512 bytes.
+
+Its 4096-token limit, USD 1/million prompt ceiling, USD 2/million completion
+ceiling, USD 0.000001 request ceiling and 4,609,000,000-picodollar total are
+synthetic test values only. Synthetic price, total and
+`szorclaimstorefixturev1_...` evidence cannot be promoted to live operator
+authority.
+
+## Pre-freeze evidence ledger
+
+- Case set:
+  `szorlivesafetycasesetv1_21ab3255104dbb5fe0ca5e2255a2f4d205c7f2d6364a67588e2c39b69c9eba01`.
+- Thresholds:
+  `szorlivesafetythresholdsv1_ccc445fda16e9022f40ed0a3d133365d823b1cbe0f844803926c8564502ecec9`.
+- Cases: 73 = 20 positive/property + 53 adversarial.
+- Gates: S7A 106; S6 149; S5 109; S3 64; route 103; manifest 25; final
+  all OpenRouter 835 passed/1 skipped; full `tests_dialogues` 3643 passed/10 skipped;
+  predecessor 742/742; S6 semantic/artifact surfaces 8/8 unchanged.
+
+An earlier pre-S7 all-OpenRouter run is recorded as `KNOWN PRE-EXISTING
+INTERMITTENT PREDECESSOR FAILURE`: exactly
+`test_one_shot_offline_acquisition_publishes_complete_derived_log` failed, with
+1 failed/728 passed/1 skipped/2817 deselected; its isolated rerun passed 1/1.
+No S7A fix was made. The final pre-freeze all-OpenRouter gate was clean.
+
+One full case pass and three in-memory builder checks were non-authoritative and
+non-persisted. The stale development artifact ID
+`szorlivesafetyartifactv1_8e0d9fb1f77d065a9ccf2222a18df0d519f2e9cc65974c95854a18058b9ac003`
+and its 51,938-byte render predate later semantic hardening and MUST NOT be used
+as authoritative evidence.
+
+The authoritative artifact, replay execution and replay lock paths remain
+absent. The next step is the explicit semantic freeze commit, then exactly one
+designated persisted aggregate and deterministic replay.
