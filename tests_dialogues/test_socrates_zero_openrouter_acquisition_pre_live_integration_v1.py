@@ -738,3 +738,326 @@ def test_live_readiness_is_not_authorized_while_p17_or_p18_is_structural() -> No
     )
 
     assert _live_readiness_v1() is OpenRouterLiveReadinessV1.NOT_AUTHORIZED
+
+
+# ------------------------------------------- server-enforced price ceiling ---
+
+_SOURCES = (
+    ROOT
+    / "docs/branches/feature-socrates-zero-openrouter-wire-spec-evidence-v2r1"
+    / "evidence/sources"
+)
+
+
+def test_max_price_components_and_units_match_the_retained_schema() -> None:
+    """Every component is the retained one, in the retained unit. No invention."""
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        FROZEN_OPENROUTER_MAX_PRICE_COMPONENTS_V1,
+    )
+
+    openapi = (_SOURCES / "openapi.yaml").read_text(encoding="utf-8")
+    assert FROZEN_OPENROUTER_MAX_PRICE_COMPONENTS_V1 == (
+        ("prompt", "USD per million prompt tokens"),
+        ("completion", "USD per million completion tokens"),
+        ("request", "USD per request"),
+        ("image", "USD per image"),
+        ("audio", "USD per audio unit"),
+    )
+    for _, unit in FROZEN_OPENROUTER_MAX_PRICE_COMPONENTS_V1:
+        assert "Maximum price in " + unit in openapi
+
+
+def test_each_routing_semantic_is_carried_by_retained_evidence() -> None:
+    """A-E were proved separately; each keeps its own sentence in the sources."""
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1,
+    )
+
+    guide = (_SOURCES / "provider-selection.mdx").read_text(encoding="utf-8")
+    assert dict(FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1) == {
+        "EXCLUDED_BEFORE_SELECTION": "ESTABLISHED",
+        "ONLY_LIST_CANNOT_OVERRIDE_CEILING": "ESTABLISHED",
+        "UNSATISFIABLE_CEILING_FAILS_REQUEST": "ESTABLISHED",
+        "FALLBACK_POLICY_CANNOT_OVERRIDE_CEILING": "ESTABLISHED",
+        "INDEPENDENT_OF_RESPONSE_DISPLAY_GRANULARITY": "ESTABLISHED",
+    }
+    # A: the ceiling decides the route, so it acts before selection.
+    assert "will route to any provider with a price of" in guide
+    # B: restrictions compose by narrowing, and an empty intersection 404s.
+    assert "both restrictions apply" in guide
+    assert "the request fails with a 404" in guide
+    # C: an unsatisfiable ceiling stops the request rather than relaxing.
+    assert (
+        "This is different than `max_price`, which will prevent your request "
+        "from running" in guide
+    )
+    # D: fallbacks are a narrowing switch, never a re-admission.
+    assert "you can disable fallbacks" in guide
+
+
+def test_the_three_max_price_senses_are_kept_apart() -> None:
+    """The retained spec spends the name `max_price` three times.
+
+    Only ProviderPreferences.max_price is the request-side ceiling. The Pareto
+    plugin field is a float that caps input price alone and is enforced against
+    its own price_source; the listing query parameter is a catalogue filter.
+    Reading either one as the ceiling would import semantics the audited schema
+    does not carry.
+    """
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        FROZEN_OPENROUTER_MAX_PRICE_NAME_SENSES_V1,
+    )
+
+    openapi = (_SOURCES / "openapi.yaml").read_text(encoding="utf-8")
+    used = [s for s in FROZEN_OPENROUTER_MAX_PRICE_NAME_SENSES_V1 if s[1] == "USED"]
+    assert len(used) == 1
+    assert used[0][0] == "ProviderPreferences.max_price"
+
+    # Sense 1: the plugin field is a float capping input price only.
+    assert "Maximum input price in USD per million tokens" in openapi
+    assert "'pareto-router'" in openapi
+    # price_source belongs to that plugin, and says so in its own description.
+    assert "Price source for the Pareto frontier cost axis" in openapi
+
+    # Sense 2: the audited ceiling is an object of decimal strings.
+    assert (
+        "The object specifying the maximum price you want to pay for this request"
+        in openapi
+    )
+
+    # Sense 3: a listing filter, described in $/M rather than USD components.
+    assert "Maximum prompt price in $/M tokens." in openapi
+
+    # The ceiling module names price_source exactly once: in the description of
+    # the sense it refuses to use.  No contract carries it as a field.
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        OpenRouterMaxPricePolicyV1,
+        OpenRouterUnitPriceCeilingV1,
+    )
+
+    overlay_source = (
+        ROOT / "backend/dialogues/socrates_zero/openrouter_live_request_overlay_v1.py"
+    ).read_text(encoding="utf-8")
+    assert overlay_source.count("price_source") == 1
+    assert "enforced against price_source" in overlay_source
+    assert "price_source" not in OpenRouterMaxPricePolicyV1.model_fields
+    assert "price_source" not in OpenRouterUnitPriceCeilingV1.model_fields
+
+
+@pytest.mark.parametrize(
+    ("per_million", "expected_picodollars_per_token"),
+    [("1", 1_000_000), ("2", 2_000_000), ("0.5", 500_000), ("0.0000001", 1)],
+)
+def test_per_million_conversion_is_exact_and_rounds_up(
+    per_million: str, expected_picodollars_per_token: int
+) -> None:
+    """A factor of a million is not a rounding error; a fraction rounds upward."""
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        OpenRouterMaxPricePolicyV1,
+    )
+
+    policy = OpenRouterMaxPricePolicyV1(
+        prompt_usd_per_million_tokens=per_million,
+        completion_usd_per_million_tokens=per_million,
+    )
+    assert policy.prompt_picodollars_per_token == expected_picodollars_per_token
+
+
+def test_sealed_request_never_gains_a_max_price_field() -> None:
+    """The historical Route Controls evidence stays exactly as sealed."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OPENROUTER_SEALED_REQUEST_BODY_BYTES_V1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_route_controls_contracts import (
+        OpenRouterDeferredStatusV1,
+    )
+
+    assert (
+        OpenRouterDeferredStatusV1.DEFERRED_NOT_RENDERED.value
+        == "DEFERRED_NOT_RENDERED"
+    )
+    assert INTENT_A.max_price_status is OpenRouterDeferredStatusV1.DEFERRED_NOT_RENDERED
+    # The sealed body is byte-identical to what was sealed: nothing was added.
+    assert INTENT_A.body_length == OPENROUTER_SEALED_REQUEST_BODY_BYTES_V1 == 447
+    assert INTENT_A.body_sha256 == (
+        "35a119b1e35f9f8ce05baf57009d787358bf086aaae4055ef56fcfedade514a1"
+    )
+
+
+def test_overlay_is_a_new_request_identity_not_an_edit_of_history() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        OVERLAY_A,
+        OVERLAY_B,
+    )
+
+    assert (
+        OVERLAY_A.live_request_identity != OVERLAY_A.sealed_request_intent_receipt_id
+    )
+    assert OVERLAY_A.live_request_identity != OVERLAY_B.live_request_identity
+    assert OVERLAY_A.live_request_identity.startswith("szorliverequestoverlayv1_")
+
+
+def test_overlay_preserves_every_frozen_route_control() -> None:
+    """The overlay adds a ceiling and relaxes nothing."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import OVERLAY_A
+
+    assert OVERLAY_A.allow_fallbacks is False
+    assert OVERLAY_A.require_parameters is True
+    assert OVERLAY_A.stream is False
+    assert OVERLAY_A.tools_enabled is False
+    assert OVERLAY_A.response_cache_requested is False
+    assert OVERLAY_A.max_output_tokens == OPENROUTER_SEALED_MAX_OUTPUT_TOKENS_V1
+    assert OVERLAY_A.provider_only == (OVERLAY_A.exact_endpoint_selector,)
+    assert OVERLAY_A.provider_order == (OVERLAY_A.exact_endpoint_selector,)
+
+
+def test_float_money_is_refused_as_a_ceiling_authority() -> None:
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        OpenRouterMaxPricePolicyV1,
+    )
+
+    with pytest.raises(ValidationError, match="float money is not an authority"):
+        OpenRouterMaxPricePolicyV1(prompt_usd_per_million_tokens=1.0)
+
+
+@pytest.mark.parametrize("bad", ["", "  ", "-1", "abc", "NaN", "Infinity"])
+def test_ceiling_refuses_unsafe_decimal_strings(bad: str) -> None:
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        OpenRouterMaxPricePolicyV1,
+    )
+
+    with pytest.raises(ValidationError):
+        OpenRouterMaxPricePolicyV1(
+            prompt_usd_per_million_tokens=bad,
+            completion_usd_per_million_tokens="1",
+        )
+
+
+def test_ceiling_and_actual_pricing_record_stay_separate_authorities() -> None:
+    """A ceiling says 'no more than'; a pricing record says 'this much'."""
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        OpenRouterUnitPriceCeilingV1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        CEILING_A,
+        PRICING_TRUSTED,
+    )
+
+    assert isinstance(CEILING_A, OpenRouterUnitPriceCeilingV1)
+    assert isinstance(PRICING_TRUSTED, OpenRouterTrustedPricingRecordV1)
+    # Distinct identity namespaces: neither can be passed off as the other.
+    assert CEILING_A.ceiling_id.startswith("szorunitpriceceilingv1_")
+    assert not PRICING_TRUSTED.record_id.startswith("szorunitpriceceilingv1_")
+    # The ceiling carries no route identity or granularity at all.
+    assert "route_identity" not in OpenRouterUnitPriceCeilingV1.model_fields
+
+
+def test_ceiling_bounds_cost_without_reading_any_actual_price() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        CEILING_A,
+        INPUT_BOUND_HYPOTHETICAL,
+        OUTPUT_BOUND_ESTABLISHED,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        compute_openrouter_ceiling_cost_bound_v1,
+    )
+
+    bound = compute_openrouter_ceiling_cost_bound_v1(
+        INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_A
+    )
+    assert bound.status is OpenRouterBoundStatusV1.ESTABLISHED
+    assert bound.price_authority == "SERVER_ENFORCED_CEILING"
+    assert bound.price_authority_id == CEILING_A.ceiling_id
+    expected = (
+        INPUT_BOUND_HYPOTHETICAL.max_input_tokens
+        * CEILING_A.prompt_picodollars_per_token
+        + OUTPUT_BOUND_ESTABLISHED.max_output_tokens
+        * CEILING_A.completion_picodollars_per_token
+    )
+    assert bound.max_total_cost_picodollars == expected
+
+
+def test_ceiling_still_cannot_bound_cost_while_p17_is_unresolved() -> None:
+    """A ceiling caps the rate. It says nothing about how many tokens are billed."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        CEILING_A,
+        INPUT_BOUND_UNESTABLISHED,
+        OUTPUT_BOUND_ESTABLISHED,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        compute_openrouter_ceiling_cost_bound_v1,
+    )
+
+    bound = compute_openrouter_ceiling_cost_bound_v1(
+        INPUT_BOUND_UNESTABLISHED, OUTPUT_BOUND_ESTABLISHED, CEILING_A
+    )
+    assert bound.status is OpenRouterBoundStatusV1.NOT_ESTABLISHED
+    assert bound.max_total_cost_picodollars is None
+
+
+def test_an_absent_ceiling_is_not_established() -> None:
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        OpenRouterCeilingStatusV1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        CEILING_ABSENT,
+    )
+
+    assert CEILING_ABSENT.status is OpenRouterCeilingStatusV1.NOT_ESTABLISHED
+    assert CEILING_ABSENT.prompt_picodollars_per_token is None
+
+
+@pytest.mark.parametrize(
+    ("prompt_price", "completion_price", "eligible"),
+    [
+        (1_000_000, 2_000_000, True),
+        (1_000_001, 2_000_000, False),
+        (1_000_000, 2_000_001, False),
+    ],
+)
+def test_exceeding_either_component_makes_an_endpoint_ineligible(
+    prompt_price: int, completion_price: int, eligible: bool
+) -> None:
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        endpoint_is_price_eligible_v1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import CEILING_A
+
+    assert (
+        endpoint_is_price_eligible_v1(CEILING_A, prompt_price, completion_price)
+        is eligible
+    )
+
+
+def test_ceiling_case_set_is_locked() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        FROZEN_OPENROUTER_CEILING_CASES_V1,
+        OPENROUTER_CEILING_CASE_SET_ID_V1,
+    )
+
+    assert len(FROZEN_OPENROUTER_CEILING_CASES_V1) == 16
+    ids = [c.case_id for c in FROZEN_OPENROUTER_CEILING_CASES_V1]
+    assert len(set(ids)) == 16
+    assert OPENROUTER_CEILING_CASE_SET_ID_V1.startswith("szorceilingcasesetv1_")
+
+
+def test_every_ceiling_case_holds_as_declared() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        FROZEN_OPENROUTER_CEILING_CASES_V1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
+        evaluate_ceiling_case_v1,
+    )
+
+    for case in FROZEN_OPENROUTER_CEILING_CASES_V1:
+        result = evaluate_ceiling_case_v1(case)
+        assert result.result_matches_expectation, (case.case_id, result.detail)
+
+
+def test_trusted_ceiling_does_not_promote_p18_actual_pricing() -> None:
+    """The ceiling is established; actual endpoint pricing is still unavailable."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1,
+    )
+
+    assert OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 == "BROAD_PROVIDER_ONLY"

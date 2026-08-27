@@ -40,8 +40,15 @@ from .openrouter_pre_live_cases_v1 import (
     INPUT_BOUND_BYTE_CAP_EXCEEDED,
     INPUT_BOUND_HYPOTHETICAL,
     INPUT_BOUND_UNESTABLISHED,
+    CEILING_A,
+    CEILING_ABSENT,
+    CEILING_B,
+    FROZEN_OPENROUTER_CEILING_CASES_V1,
+    OPENROUTER_CEILING_CASE_SET_ID_V1,
     OPENROUTER_INTEGRATION_CASE_SET_ID_V1,
     OPENROUTER_PREFLIGHT_CASE_SET_ID_V1,
+    OVERLAY_A,
+    OVERLAY_B,
     OUTPUT_BOUND_ESTABLISHED,
     OUTPUT_BOUND_MISSING,
     OUTPUT_BOUND_WRONG_VALUE,
@@ -56,6 +63,7 @@ from .openrouter_pre_live_cases_v1 import (
     PRICING_WRONG_MODEL,
     OpenRouterIntegrationCaseKindV1,
     OpenRouterIntegrationCaseV1,
+    OpenRouterCeilingCaseV1,
     OpenRouterIntegrationExpectedOutcomeV1,
     OpenRouterPreflightCaseV1,
 )
@@ -75,8 +83,17 @@ from .openrouter_pre_live_safety_v1 import (
     OpenRouterPreLiveSafetyContractV1,
     OpenRouterPreflightFailureCodeV1,
     OpenRouterPreflightVerdictV1,
+    compute_openrouter_ceiling_cost_bound_v1,
     compute_openrouter_cost_bound_v1,
     evaluate_live_preflight_v1,
+)
+from .openrouter_live_request_overlay_v1 import (
+    FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1,
+    OpenRouterCeilingStatusV1,
+    OpenRouterLiveRequestSafetyOverlayV1,
+    OpenRouterMaxPricePolicyV1,
+    OpenRouterUnitPriceCeilingV1,
+    endpoint_is_price_eligible_v1,
 )
 from .openrouter_raw_wire_mapping_v2 import (
     OPENROUTER_WIRE_MAPPING_SOURCE_MANIFEST_ID_V2,
@@ -158,6 +175,7 @@ class OpenRouterPreLiveThresholdsV1(_FrozenPreLiveContractV1):
     required_integration_adversarial_rejected: int = 18
     required_preflight_authorized: int = 3
     required_preflight_refused: int = 22
+    required_ceiling_probes_holding: int = 16
     required_unexpected_results: int = 0
     required_invalid_fixture_constructions: int = 0
     maximum_cross_request_substitutions_accepted: int = 0
@@ -216,6 +234,16 @@ class OpenRouterPreflightCaseResultV1(_FrozenPreLiveContractV1):
     result_matches_expectation: bool
 
 
+class OpenRouterCeilingCaseResultV1(_FrozenPreLiveContractV1):
+    case_id: str
+    case_fingerprint: str
+    probe: str
+    expected_outcome: str
+    actual_outcome: str
+    detail: Optional[str] = None
+    result_matches_expectation: bool
+
+
 class OpenRouterPreLiveMetricsV1(_FrozenPreLiveContractV1):
     integration_cases: int = Field(ge=0)
     integration_positive_accepted: int = Field(ge=0)
@@ -223,6 +251,8 @@ class OpenRouterPreLiveMetricsV1(_FrozenPreLiveContractV1):
     preflight_cases: int = Field(ge=0)
     preflight_authorized: int = Field(ge=0)
     preflight_refused: int = Field(ge=0)
+    ceiling_cases: int = Field(ge=0)
+    ceiling_probes_holding: int = Field(ge=0)
     unexpected_results: int = Field(ge=0)
     invalid_fixture_constructions: int = Field(ge=0)
     guard_code_mismatches: int = Field(ge=0)
@@ -250,6 +280,7 @@ class OpenRouterPreLiveIntegrationArtifactV1(_FrozenPreLiveContractV1):
     ] = OPENROUTER_WIRE_MAPPING_SOURCE_MANIFEST_SHA256_V2
     integration_case_set_id: str
     preflight_case_set_id: str
+    ceiling_case_set_id: str
     safety_contract_id: str
     integration_guard_order_id: Literal[
         OPENROUTER_INTEGRATION_GUARD_ORDER_ID_V1
@@ -262,6 +293,7 @@ class OpenRouterPreLiveIntegrationArtifactV1(_FrozenPreLiveContractV1):
     boundary_counters: OpenRouterPreLiveBoundaryCountersV1
     integration_results: Tuple[OpenRouterIntegrationCaseResultV1, ...]
     preflight_results: Tuple[OpenRouterPreflightCaseResultV1, ...]
+    ceiling_results: Tuple[OpenRouterCeilingCaseResultV1, ...]
     metrics: OpenRouterPreLiveMetricsV1
 
     # --- standing epistemic states, unchanged by integration
@@ -273,6 +305,7 @@ class OpenRouterPreLiveIntegrationArtifactV1(_FrozenPreLiveContractV1):
     pricing_endpoint_granularity: Literal[
         "BROAD_PROVIDER_ONLY"
     ] = "BROAD_PROVIDER_ONLY"
+    trusted_unit_price_ceiling: Literal["ESTABLISHED"] = "ESTABLISHED"
     p19_cost_formula: Literal["READY"] = "READY"
     p19_total_cost_bound: Literal["NOT_ESTABLISHED"] = "NOT_ESTABLISHED"
     output_token_bound: Literal["ESTABLISHED"] = "ESTABLISHED"
@@ -290,10 +323,15 @@ class OpenRouterPreLiveIntegrationArtifactV1(_FrozenPreLiveContractV1):
             raise ContractValidationError("artifact integration case-set changed")
         if self.preflight_case_set_id != OPENROUTER_PREFLIGHT_CASE_SET_ID_V1:
             raise ContractValidationError("artifact preflight case-set changed")
+        if self.ceiling_case_set_id != OPENROUTER_CEILING_CASE_SET_ID_V1:
+            raise ContractValidationError("artifact ceiling case-set changed")
         if self.safety_contract_id != OPENROUTER_PRE_LIVE_SAFETY_CONTRACT_ID_V1:
             raise ContractValidationError("artifact safety contract changed")
         expected_metrics = _derive_metrics_v1(
-            self.integration_results, self.preflight_results, self.metrics.privacy_leakage_findings
+            self.integration_results,
+            self.preflight_results,
+            self.metrics.privacy_leakage_findings,
+            self.ceiling_results,
         )
         if self.metrics != expected_metrics:
             raise ContractValidationError("artifact metrics are not fully derived")
@@ -333,6 +371,175 @@ _CROSS_REQUEST_CASE_IDS = frozenset(
         "orintegv1-x17-mapping-header-provenance-mismatch",
     }
 )
+
+
+
+def _ceiling_probe_holds(probe: str) -> Tuple[bool, str]:
+    """Run one ceiling probe.  ``True`` means the property holds as declared."""
+    from .openrouter_pre_live_cases_v1 import (
+        INPUT_BOUND_HYPOTHETICAL,
+        INTENT_A,
+        OUTPUT_BOUND_ESTABLISHED,
+    )
+
+    def refuses(build) -> Tuple[bool, str]:
+        try:
+            build()
+        except Exception as exc:  # noqa: BLE001 - any refusal counts
+            return True, type(exc).__name__
+        return False, "accepted"
+
+    if probe == "CEILING_ESTABLISHED":
+        return (
+            CEILING_A.status is OpenRouterCeilingStatusV1.ESTABLISHED
+            and CEILING_A.prompt_picodollars_per_token == 1_000_000
+            and CEILING_A.completion_picodollars_per_token == 2_000_000
+        ), "1 USD/M -> 1000000 picodollars/token"
+    if probe == "OVERLAY_PRESERVES_CONTROLS":
+        return (
+            OVERLAY_A.exact_model == "openai/gpt-4.1-mini"
+            and OVERLAY_A.exact_endpoint_selector == "azure/swedencentral"
+            and OVERLAY_A.provider_only == ("azure/swedencentral",)
+            and OVERLAY_A.provider_order == ("azure/swedencentral",)
+            and OVERLAY_A.allow_fallbacks is False
+            and OVERLAY_A.require_parameters is True
+            and OVERLAY_A.stream is False
+            and OVERLAY_A.tools_enabled is False
+            and OVERLAY_A.metadata_enabled is True
+            and OVERLAY_A.response_cache_requested is False
+            and OVERLAY_A.max_output_tokens == 256
+        ), "every frozen control restated"
+    if probe == "OVERLAY_IDENTITY_IS_NEW":
+        return (
+            OVERLAY_A.live_request_identity != INTENT_A.receipt_id
+            and OVERLAY_A.sealed_request_intent_receipt_id == INTENT_A.receipt_id
+        ), "new identity, sealed receipt referenced not replaced"
+    if probe == "ACTUAL_UNKNOWN_CEILING_KNOWN":
+        bound = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_A
+        )
+        return (
+            bound.status is OpenRouterBoundStatusV1.ESTABLISHED
+            and bound.price_authority == "SERVER_ENFORCED_CEILING"
+            and bound.pricing_record_id is None
+        ), "bounded by ceiling with no actual price"
+
+    if probe == "CEILING_ABSENT":
+        bound = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_ABSENT
+        )
+        return (
+            CEILING_ABSENT.status is OpenRouterCeilingStatusV1.NOT_ESTABLISHED
+            and bound.status is OpenRouterBoundStatusV1.NOT_ESTABLISHED
+        ), "no ceiling, no bound"
+    if probe == "CEILING_MALFORMED":
+        return refuses(
+            lambda: OpenRouterMaxPricePolicyV1(
+                prompt_usd_per_million_tokens="abc",
+                completion_usd_per_million_tokens="2",
+            )
+        )
+    if probe == "CEILING_NEGATIVE":
+        return refuses(
+            lambda: OpenRouterMaxPricePolicyV1(
+                prompt_usd_per_million_tokens="-1",
+                completion_usd_per_million_tokens="2",
+            )
+        )
+    if probe == "CEILING_FLOAT":
+        return refuses(
+            lambda: OpenRouterMaxPricePolicyV1(
+                prompt_usd_per_million_tokens=1.5,
+                completion_usd_per_million_tokens="2",
+            )
+        )
+    if probe == "CEILING_NON_FINITE":
+        first, _ = refuses(
+            lambda: OpenRouterMaxPricePolicyV1(
+                prompt_usd_per_million_tokens="NaN",
+                completion_usd_per_million_tokens="2",
+            )
+        )
+        second, _ = refuses(
+            lambda: OpenRouterMaxPricePolicyV1(
+                prompt_usd_per_million_tokens="Infinity",
+                completion_usd_per_million_tokens="2",
+            )
+        )
+        return (first and second), "NaN and Infinity both refused"
+    if probe == "INPUT_PRICE_ABOVE_CEILING":
+        ineligible = not endpoint_is_price_eligible_v1(
+            CEILING_A, 1_000_001, 2_000_000
+        )
+        semantics = ("EXCLUDED_BEFORE_SELECTION", "ESTABLISHED") in (
+            FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1
+        )
+        return (ineligible and semantics), "prompt price above ceiling is excluded"
+    if probe == "OUTPUT_PRICE_ABOVE_CEILING":
+        ineligible = not endpoint_is_price_eligible_v1(
+            CEILING_A, 1_000_000, 2_000_001
+        )
+        return ineligible, "completion price above ceiling is excluded"
+    if probe == "ONLY_DOES_NOT_OVERRIDE":
+        semantics = ("ONLY_LIST_CANNOT_OVERRIDE_CEILING", "ESTABLISHED") in (
+            FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1
+        )
+        # The sole permitted endpoint, priced above the ceiling, stays ineligible.
+        ineligible = not endpoint_is_price_eligible_v1(
+            CEILING_A, 5_000_000, 5_000_000
+        )
+        return (
+            semantics and ineligible and OVERLAY_A.provider_only == (
+                "azure/swedencentral",
+            )
+        ), "a single-entry only list cannot re-admit"
+    if probe == "FALLBACK_DOES_NOT_OVERRIDE":
+        semantics = ("FALLBACK_POLICY_CANNOT_OVERRIDE_CEILING", "ESTABLISHED") in (
+            FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1
+        )
+        return (
+            semantics
+            and OVERLAY_A.allow_fallbacks is False
+            and not endpoint_is_price_eligible_v1(CEILING_A, 9_000_000, 9_000_000)
+        ), "disabling fallbacks narrows, never re-admits"
+    if probe == "DISPLAY_LABEL_NOT_SELECTOR":
+        return (
+            "Azure" != OVERLAY_A.exact_endpoint_selector
+            and "/" not in "Azure"
+        ), "a display label is not the exact selector"
+    if probe == "CEILING_IDENTITY_MISMATCH":
+        payload = CEILING_A.model_dump(mode="json")
+        payload["ceiling_id"] = "szorunitpriceceilingv1_" + "0" * 64
+        return refuses(lambda: OpenRouterUnitPriceCeilingV1.model_validate(payload))
+    if probe == "SIBLING_OVERLAY_SUBSTITUTION":
+        return (
+            CEILING_B.overlay_live_request_identity
+            != CEILING_A.overlay_live_request_identity
+            and OVERLAY_B.sealed_request_intent_receipt_id
+            != OVERLAY_A.sealed_request_intent_receipt_id
+        ), "chain B's ceiling is bound to chain B's request only"
+    raise ContractValidationError(f"unknown ceiling probe: {probe}")
+
+
+def evaluate_ceiling_case_v1(
+    case: OpenRouterCeilingCaseV1,
+) -> OpenRouterCeilingCaseResultV1:
+    if type(case) is not OpenRouterCeilingCaseV1:
+        raise ContractValidationError("evaluation requires the exact frozen case type")
+    holds, detail = _ceiling_probe_holds(case.probe)
+    actual = "HOLDS" if holds else "DID_NOT_HOLD"
+    if case.expected_outcome == "REFUSED":
+        # A refusal probe "holds" when the refusal actually happened.
+        actual = "REFUSED" if holds else "NOT_REFUSED"
+    return OpenRouterCeilingCaseResultV1(
+        case_id=case.case_id,
+        case_fingerprint=case.case_fingerprint or "",
+        probe=case.probe,
+        expected_outcome=case.expected_outcome,
+        actual_outcome=actual,
+        detail=detail,
+        result_matches_expectation=(actual == case.expected_outcome),
+    )
 
 
 def evaluate_integration_case_v1(
@@ -565,6 +772,7 @@ def _derive_metrics_v1(
     integration_results: Tuple[OpenRouterIntegrationCaseResultV1, ...],
     preflight_results: Tuple[OpenRouterPreflightCaseResultV1, ...],
     privacy_findings: int,
+    ceiling_results: Tuple[OpenRouterCeilingCaseResultV1, ...] = (),
 ) -> OpenRouterPreLiveMetricsV1:
     thresholds = FROZEN_OPENROUTER_PRE_LIVE_THRESHOLDS_V1
     positive_accepted = sum(
@@ -592,9 +800,11 @@ def _derive_metrics_v1(
         and r.actual_verdict == "AUTHORIZED_FOR_ONE_CALL"
         for r in preflight_results
     )
-    unexpected = sum(
-        not r.result_matches_expectation for r in integration_results
-    ) + sum(not r.result_matches_expectation for r in preflight_results)
+    unexpected = (
+        sum(not r.result_matches_expectation for r in integration_results)
+        + sum(not r.result_matches_expectation for r in preflight_results)
+        + sum(not r.result_matches_expectation for r in ceiling_results)
+    )
     values = {
         "integration_cases": len(integration_results),
         "integration_positive_accepted": positive_accepted,
@@ -603,6 +813,10 @@ def _derive_metrics_v1(
         "preflight_authorized": authorized,
         "preflight_refused": sum(
             r.actual_verdict == "REFUSED" for r in preflight_results
+        ),
+        "ceiling_cases": len(ceiling_results),
+        "ceiling_probes_holding": sum(
+            r.result_matches_expectation for r in ceiling_results
         ),
         "unexpected_results": unexpected,
         "invalid_fixture_constructions": sum(
@@ -648,6 +862,8 @@ def _derive_metrics_v1(
         == thresholds.required_integration_adversarial_rejected
         and values["preflight_authorized"] == thresholds.required_preflight_authorized
         and values["preflight_refused"] == thresholds.required_preflight_refused
+        and values["ceiling_probes_holding"]
+        == thresholds.required_ceiling_probes_holding
         and values["unexpected_results"] == thresholds.required_unexpected_results
         and values["invalid_fixture_constructions"]
         == thresholds.required_invalid_fixture_constructions
@@ -691,6 +907,7 @@ def scan_artifact_privacy_v1(payload: str) -> int:
 def evaluate_openrouter_pre_live_v1() -> Tuple[
     Tuple[OpenRouterIntegrationCaseResultV1, ...],
     Tuple[OpenRouterPreflightCaseResultV1, ...],
+    Tuple[OpenRouterCeilingCaseResultV1, ...],
 ]:
     return (
         tuple(
@@ -701,29 +918,34 @@ def evaluate_openrouter_pre_live_v1() -> Tuple[
             evaluate_preflight_case_v1(case)
             for case in FROZEN_OPENROUTER_PREFLIGHT_CASES_V1
         ),
+        tuple(
+            evaluate_ceiling_case_v1(case)
+            for case in FROZEN_OPENROUTER_CEILING_CASES_V1
+        ),
     )
 
 
 def _live_readiness_v1() -> OpenRouterLiveReadinessV1:
     """The layered live decision, derived rather than declared.
 
-    Pending-JIT is available only when every structural bound is already defined
-    and the sole remaining item is a fresh observation such as a price.  Two
-    structural gaps stand in the way here, and neither is a fetchable fact:
+    The server-enforced unit-price ceiling removes the *pricing* obstacle to a
+    bounded worst-case cost: a ceiling says "no more than", which is what an
+    upper bound needs, and it does not require reading any endpoint's actual
+    price at a granularity the retained schema cannot express.
 
-    * no pinned tokenizer, so no input token bound (P17); and
-    * the retained first-party pricing schema is BROAD_PROVIDER_ONLY, so a price
-      cannot be bound to the exact request selector (P18).
-
-    Either alone forces NOT_AUTHORIZED.
+    What remains is P17.  A price ceiling caps the rate; it says nothing about
+    how many input tokens are billed, and without a pinned tokenizer there is no
+    trustworthy pre-call input token bound.  That is a structural gap, not a
+    fetchable fact, so pending-JIT would be hiding unresolved architecture.
     """
     input_ready = (
         INPUT_BOUND_UNESTABLISHED.status is OpenRouterBoundStatusV1.ESTABLISHED
     )
-    pricing_ready = OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 == (
-        "EXACT_SELECTOR_BINDABLE"
+    cost_authority_available = (
+        CEILING_A.status is OpenRouterCeilingStatusV1.ESTABLISHED
+        or OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 == "EXACT_SELECTOR_BINDABLE"
     )
-    if input_ready and pricing_ready:
+    if input_ready and cost_authority_available:
         return OpenRouterLiveReadinessV1.AUTHORIZED_PENDING_JIT_PREFLIGHT
     return OpenRouterLiveReadinessV1.NOT_AUTHORIZED
 
@@ -731,7 +953,11 @@ def _live_readiness_v1() -> OpenRouterLiveReadinessV1:
 def build_openrouter_pre_live_artifact_v1() -> OpenRouterPreLiveIntegrationArtifactV1:
     """Build the authoritative artifact.  Requires an active boundary tripwire."""
     snapshot = require_clean_acquisition_boundary_tripwire_v0()
-    integration_results, preflight_results = evaluate_openrouter_pre_live_v1()
+    (
+        integration_results,
+        preflight_results,
+        ceiling_results,
+    ) = evaluate_openrouter_pre_live_v1()
     counters = OpenRouterPreLiveBoundaryCountersV1(
         external_network_attempts=snapshot.external_network_attempts,
         credential_access_attempts=snapshot.credential_access_attempts,
@@ -742,15 +968,18 @@ def build_openrouter_pre_live_artifact_v1() -> OpenRouterPreLiveIntegrationArtif
         canonical_application_calls=snapshot.canonical_application_calls,
         official_source_retrievals=0,
     )
-    provisional = _derive_metrics_v1(integration_results, preflight_results, 0)
+    provisional = _derive_metrics_v1(
+        integration_results, preflight_results, 0, ceiling_results
+    )
     draft = {
         "integration_results": [r.model_dump(mode="json") for r in integration_results],
         "preflight_results": [r.model_dump(mode="json") for r in preflight_results],
+        "ceiling_results": [r.model_dump(mode="json") for r in ceiling_results],
         "metrics": provisional.model_dump(mode="json"),
     }
     privacy_findings = scan_artifact_privacy_v1(canonical_json(draft))
     metrics = _derive_metrics_v1(
-        integration_results, preflight_results, privacy_findings
+        integration_results, preflight_results, privacy_findings, ceiling_results
     )
     zeros = {name: 0 for name in OpenRouterPreLiveBoundaryCountersV1.model_fields}
     supported = metrics.all_thresholds_pass and counters.model_dump(
@@ -759,12 +988,14 @@ def build_openrouter_pre_live_artifact_v1() -> OpenRouterPreLiveIntegrationArtif
     return OpenRouterPreLiveIntegrationArtifactV1(
         integration_case_set_id=OPENROUTER_INTEGRATION_CASE_SET_ID_V1,
         preflight_case_set_id=OPENROUTER_PREFLIGHT_CASE_SET_ID_V1,
+        ceiling_case_set_id=OPENROUTER_CEILING_CASE_SET_ID_V1,
         safety_contract_id=OPENROUTER_PRE_LIVE_SAFETY_CONTRACT_ID_V1 or "",
         thresholds=FROZEN_OPENROUTER_PRE_LIVE_THRESHOLDS_V1,
         thresholds_id=OPENROUTER_PRE_LIVE_THRESHOLDS_ID_V1 or "",
         boundary_counters=counters,
         integration_results=integration_results,
         preflight_results=preflight_results,
+        ceiling_results=ceiling_results,
         metrics=metrics,
         one_live_shadow_call=_live_readiness_v1(),
         hypothesis_status=(
@@ -926,10 +1157,12 @@ __all__ = [
     "OpenRouterPreLiveReplayExecutionV1",
     "OpenRouterPreLiveReplayLockV1",
     "OpenRouterPreLiveThresholdsV1",
+    "OpenRouterCeilingCaseResultV1",
     "OpenRouterPreflightCaseResultV1",
     "build_openrouter_pre_live_artifact_v1",
     "evaluate_integration_case_v1",
     "evaluate_openrouter_pre_live_v1",
+    "evaluate_ceiling_case_v1",
     "evaluate_preflight_case_v1",
     "load_openrouter_pre_live_artifact_v1",
     "render_openrouter_pre_live_artifact_v1",

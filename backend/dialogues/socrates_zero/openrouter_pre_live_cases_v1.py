@@ -44,6 +44,11 @@ from .openrouter_pre_live_safety_v1 import (
     OpenRouterTokenizerBindingV1,
     OpenRouterTrustedPricingRecordV1,
 )
+from .openrouter_live_request_overlay_v1 import (
+    OpenRouterLiveRequestSafetyOverlayV1,
+    OpenRouterMaxPricePolicyV1,
+    derive_openrouter_unit_price_ceiling_v1,
+)
 from .openrouter_route_controls_contracts import OpenRouterRequestIntentReceiptV1
 
 OPENROUTER_INTEGRATION_CASE_SCHEMA_V1 = (
@@ -1041,7 +1046,185 @@ OPENROUTER_PREFLIGHT_CASE_SET_ID_V1 = stable_contract_id(
 )
 
 
+# ----------------------------------------------------------- ceiling family --
+
+
+OPENROUTER_CEILING_CASE_SCHEMA_V1 = "socrateszero-openrouter-ceiling-case/v1"
+
+MAX_PRICE_POLICY = OpenRouterMaxPricePolicyV1(
+    prompt_usd_per_million_tokens="1",
+    completion_usd_per_million_tokens="2",
+)
+OVERLAY_A = OpenRouterLiveRequestSafetyOverlayV1(
+    sealed_request_intent_receipt_id=INTENT_A.receipt_id or "",
+    sealed_body_sha256=_A_BODY_SHA,
+    sealed_semantic_headers_sha256=_A_HEADERS_SHA,
+    max_price_policy=MAX_PRICE_POLICY,
+)
+OVERLAY_B = OpenRouterLiveRequestSafetyOverlayV1(
+    sealed_request_intent_receipt_id=INTENT_B.receipt_id or "",
+    sealed_body_sha256=_B_BODY_SHA,
+    sealed_semantic_headers_sha256=_B_HEADERS_SHA,
+    max_price_policy=MAX_PRICE_POLICY,
+)
+CEILING_A = derive_openrouter_unit_price_ceiling_v1(OVERLAY_A)
+CEILING_B = derive_openrouter_unit_price_ceiling_v1(OVERLAY_B)
+
+#: A policy that caps nothing: no token component is set.
+MAX_PRICE_POLICY_ABSENT = OpenRouterMaxPricePolicyV1()
+OVERLAY_NO_CEILING = OpenRouterLiveRequestSafetyOverlayV1(
+    sealed_request_intent_receipt_id=INTENT_A.receipt_id or "",
+    sealed_body_sha256=_A_BODY_SHA,
+    sealed_semantic_headers_sha256=_A_HEADERS_SHA,
+    max_price_policy=MAX_PRICE_POLICY_ABSENT,
+)
+CEILING_ABSENT = derive_openrouter_unit_price_ceiling_v1(OVERLAY_NO_CEILING)
+
+
+class OpenRouterCeilingCaseV1(_FrozenCaseContractV1):
+    """One frozen probe of the server-enforced price-ceiling path."""
+
+    schema_version: Literal[
+        OPENROUTER_CEILING_CASE_SCHEMA_V1
+    ] = OPENROUTER_CEILING_CASE_SCHEMA_V1
+    case_id: str
+    description: str
+    probe: str
+    expected_outcome: str
+    case_fingerprint: Optional[str] = None
+
+    @model_validator(mode="after")
+    def identify(self) -> "OpenRouterCeilingCaseV1":
+        if self.expected_outcome not in ("HOLDS", "REFUSED"):
+            raise ContractValidationError("ceiling case outcome must be declared")
+        expected = stable_contract_id(
+            "szorceilingcasev1",
+            self.model_dump(mode="json", exclude={"case_fingerprint"}),
+        )
+        if self.case_fingerprint not in (None, expected):
+            raise ContractValidationError("ceiling case fingerprint mismatch")
+        object.__setattr__(self, "case_fingerprint", expected)
+        return self
+
+
+def _cc(case_id, description, probe, outcome="REFUSED"):
+    return OpenRouterCeilingCaseV1(
+        case_id=case_id, description=description, probe=probe, expected_outcome=outcome
+    )
+
+
+FROZEN_OPENROUTER_CEILING_CASES_V1: Tuple[OpenRouterCeilingCaseV1, ...] = tuple(
+    sorted(
+        (
+            _cc(
+                "orceilingv1-p01-ceiling-established-from-policy",
+                "A policy capping both token prices yields an established ceiling.",
+                "CEILING_ESTABLISHED",
+                "HOLDS",
+            ),
+            _cc(
+                "orceilingv1-p02-overlay-preserves-every-frozen-control",
+                "The overlay restates every frozen control and adds only the price "
+                "ceiling.",
+                "OVERLAY_PRESERVES_CONTROLS",
+                "HOLDS",
+            ),
+            _cc(
+                "orceilingv1-p03-overlay-identity-differs-from-sealed-receipt",
+                "The overlay mints a new live request identity, not an edit.",
+                "OVERLAY_IDENTITY_IS_NEW",
+                "HOLDS",
+            ),
+            _cc(
+                "orceilingv1-p04-actual-pricing-unknown-while-ceiling-known",
+                "An unknown actual price does not prevent a ceiling-based bound.",
+                "ACTUAL_UNKNOWN_CEILING_KNOWN",
+                "HOLDS",
+            ),
+            _cc(
+                "orceilingv1-x01-price-ceiling-absent",
+                "A policy that caps no token price establishes no ceiling.",
+                "CEILING_ABSENT",
+            ),
+            _cc(
+                "orceilingv1-x02-malformed-ceiling",
+                "A non-decimal ceiling string is refused.",
+                "CEILING_MALFORMED",
+            ),
+            _cc(
+                "orceilingv1-x03-negative-ceiling",
+                "A negative ceiling is refused.",
+                "CEILING_NEGATIVE",
+            ),
+            _cc(
+                "orceilingv1-x04-float-monetary-authority-rejected",
+                "Binary float money is refused as an authority.",
+                "CEILING_FLOAT",
+            ),
+            _cc(
+                "orceilingv1-x05-non-finite-ceiling",
+                "NaN and Infinity are refused.",
+                "CEILING_NON_FINITE",
+            ),
+            _cc(
+                "orceilingv1-x06-input-price-above-ceiling-ineligible",
+                "The documented filter excludes an endpoint above the prompt ceiling.",
+                "INPUT_PRICE_ABOVE_CEILING",
+            ),
+            _cc(
+                "orceilingv1-x07-output-price-above-ceiling-ineligible",
+                "The documented filter excludes an endpoint above the completion "
+                "ceiling.",
+                "OUTPUT_PRICE_ABOVE_CEILING",
+            ),
+            _cc(
+                "orceilingv1-x08-provider-only-does-not-override-ceiling",
+                "A single-entry provider.only cannot re-admit an excluded endpoint.",
+                "ONLY_DOES_NOT_OVERRIDE",
+            ),
+            _cc(
+                "orceilingv1-x09-fallback-policy-does-not-override-ceiling",
+                "allow_fallbacks=false narrows and cannot re-admit.",
+                "FALLBACK_DOES_NOT_OVERRIDE",
+            ),
+            _cc(
+                "orceilingv1-x10-display-label-cannot-substitute-for-selector",
+                "A broad provider display label is not the exact selector.",
+                "DISPLAY_LABEL_NOT_SELECTOR",
+            ),
+            _cc(
+                "orceilingv1-x11-ceiling-identity-mismatch",
+                "A tampered ceiling identity is refused.",
+                "CEILING_IDENTITY_MISMATCH",
+            ),
+            _cc(
+                "orceilingv1-x12-sibling-overlay-substitution",
+                "Chain B's overlay cannot price chain A's request.",
+                "SIBLING_OVERLAY_SUBSTITUTION",
+            ),
+        ),
+        key=lambda case: case.case_id,
+    )
+)
+
+OPENROUTER_CEILING_CASE_SET_ID_V1 = stable_contract_id(
+    "szorceilingcasesetv1",
+    [case.case_fingerprint for case in FROZEN_OPENROUTER_CEILING_CASES_V1],
+)
+
+
 __all__ = [
+    "OpenRouterCeilingCaseV1",
+    "OVERLAY_NO_CEILING",
+    "OVERLAY_B",
+    "OVERLAY_A",
+    "OPENROUTER_CEILING_CASE_SET_ID_V1",
+    "OPENROUTER_CEILING_CASE_SCHEMA_V1",
+    "MAX_PRICE_POLICY",
+    "FROZEN_OPENROUTER_CEILING_CASES_V1",
+    "CEILING_B",
+    "CEILING_ABSENT",
+    "CEILING_A",
     "HYPOTHETICAL_COST_PICODOLLARS",
     "CEILING_ONE_UNIT_BELOW",
     "CEILING_EQUAL_BOUNDARY",

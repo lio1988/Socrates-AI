@@ -414,6 +414,10 @@ class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
         OPENROUTER_COST_BOUND_SCHEMA_V1
     ] = OPENROUTER_COST_BOUND_SCHEMA_V1
     status: OpenRouterBoundStatusV1
+    price_authority: Optional[
+        Literal["ACTUAL_PRICING_RECORD", "SERVER_ENFORCED_CEILING"]
+    ] = None
+    price_authority_id: Optional[str] = None
     formula_ready: Literal[True] = True
     formula: Literal[
         "max_input_tokens * prompt_price + max_output_tokens * completion_price"
@@ -429,9 +433,13 @@ class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
         established = self.status is OpenRouterBoundStatusV1.ESTABLISHED
         if established != (self.max_total_cost_picodollars is not None):
             raise ContractValidationError("cost bound status disagrees with its value")
-        if established and not self.pricing_record_id:
+        if established and not (self.pricing_record_id or self.price_authority_id):
             raise ContractValidationError(
-                "an established cost bound requires a trusted pricing record"
+                "an established cost bound requires a price authority"
+            )
+        if established and self.price_authority is None:
+            raise ContractValidationError(
+                "an established cost bound must name its price authority"
             )
         expected = stable_contract_id(
             "szorcostboundv1", self.model_dump(mode="json", exclude={"bound_id"})
@@ -472,9 +480,58 @@ def compute_openrouter_cost_bound_v1(
         raise ContractValidationError("cost bound exceeds the safe arithmetic domain")
     return OpenRouterCostBoundV1(
         status=OpenRouterBoundStatusV1.ESTABLISHED,
+        price_authority="ACTUAL_PRICING_RECORD",
+        price_authority_id=pricing.record_id,
         input_bound_evidence_id=input_bound.evidence_id or "",
         output_bound_evidence_id=output_bound.evidence_id or "",
         pricing_record_id=pricing.record_id,
+        max_total_cost_picodollars=total,
+    )
+
+
+def compute_openrouter_ceiling_cost_bound_v1(
+    input_bound: OpenRouterInputBoundEvidenceV1,
+    output_bound: OpenRouterOutputBoundEvidenceV1,
+    ceiling,
+) -> OpenRouterCostBoundV1:
+    """Worst-case cost from a server-enforced unit-price ceiling.
+
+    A ceiling says "no more than", which is exactly what an upper bound needs.
+    It does not say what the call will actually cost, and this function never
+    pretends otherwise: the authority is recorded as SERVER_ENFORCED_CEILING.
+
+    Still requires an input token bound.  A price ceiling caps the rate; it says
+    nothing about how many tokens are billed.
+    """
+    from .openrouter_live_request_overlay_v1 import OpenRouterCeilingStatusV1
+
+    unusable = (
+        input_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED
+        or output_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED
+        or ceiling is None
+        or ceiling.status is not OpenRouterCeilingStatusV1.ESTABLISHED
+    )
+    if unusable:
+        return OpenRouterCostBoundV1(
+            status=OpenRouterBoundStatusV1.NOT_ESTABLISHED,
+            input_bound_evidence_id=input_bound.evidence_id or "",
+            output_bound_evidence_id=output_bound.evidence_id or "",
+        )
+    total = (
+        (input_bound.max_input_tokens or 0)
+        * (ceiling.prompt_picodollars_per_token or 0)
+        + (output_bound.max_output_tokens or 0)
+        * (ceiling.completion_picodollars_per_token or 0)
+        + (ceiling.request_picodollars or 0)
+    )
+    if total < 0 or total > 10**24:
+        raise ContractValidationError("cost bound exceeds the safe arithmetic domain")
+    return OpenRouterCostBoundV1(
+        status=OpenRouterBoundStatusV1.ESTABLISHED,
+        price_authority="SERVER_ENFORCED_CEILING",
+        price_authority_id=ceiling.ceiling_id,
+        input_bound_evidence_id=input_bound.evidence_id or "",
+        output_bound_evidence_id=output_bound.evidence_id or "",
         max_total_cost_picodollars=total,
     )
 
@@ -841,6 +898,7 @@ __all__ = [
     "OpenRouterPricingSourceV1",
     "OpenRouterTokenizerBindingV1",
     "OpenRouterTrustedPricingRecordV1",
+    "compute_openrouter_ceiling_cost_bound_v1",
     "compute_openrouter_cost_bound_v1",
     "evaluate_live_preflight_v1",
 ]
