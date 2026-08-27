@@ -15,8 +15,8 @@ be SUPPORTED while a live call remains NOT_AUTHORIZED.
 | 1 | integration positive cases accepted | 12 |
 | 2 | integration adversarial cases rejected | 18 |
 | 3 | preflight authorized cases | 3 |
-| 4 | preflight refused cases | 22 |
-| 4b | ceiling probes holding | 16 |
+| 4 | preflight refused cases | 23 |
+| 4b | ceiling probes holding | 26 |
 | 5 | unexpected results | 0 |
 | 6 | invalid fixture constructions | 0 |
 | 7 | guard-code mismatches | 0 |
@@ -42,9 +42,10 @@ The live call is separately **NOT_AUTHORIZED**, and the ceiling audit reduced th
 structural blockers to one: P17.
 
 Freeze history, each superseded before any run consumed it: `4861c8a4` (original),
-`fd30a7fb` (rulings applied), then the current freeze adding the price-ceiling
-semantics. The run at `0ff79c9` is superseded and its artifacts are preserved in
-history only.
+`fd30a7fb` (rulings applied), `170124a` (price ceiling), then the current freeze,
+which splits P19 into structure / coverage / authority and closes the two
+coverage gaps. The run at `0ff79c9` is superseded and its artifacts are preserved
+in history only.
 
 ## Ordered steps
 

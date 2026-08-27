@@ -19,7 +19,8 @@ No live call was made in this phase.
 | P18 actual endpoint pricing | **NOT_ESTABLISHED** |
 | Pricing endpoint granularity | **BROAD_PROVIDER_ONLY** |
 | Trusted unit-price ceiling | **ESTABLISHED** |
-| P19 formula | **READY** |
+| P19 formula structure | **READY** |
+| P19 applicable charge coverage | **INCOMPLETE** |
 | P19 worst-case cost authority | **NOT_ESTABLISHED** |
 | **One live shadow call** | **NOT_AUTHORIZED** |
 
@@ -210,8 +211,62 @@ Established only when both token bounds and the price are themselves trusted and
 bounded. P17 is not, so P19 is not.
 
 `max_price` bounds unit price rather than total spend — and that is exactly the
-factor P19 was missing. Multiplied by bounded token counts it yields a bounded
-total. See **Request-side price ceiling** below. What remains missing is P17.
+factor P19 was missing for the token classes. See **Request-side price ceiling**
+below. Two things still stand in the way: P17, and the per-request fee.
+
+### P19 is three states, not one
+
+Collapsing them would let a token-only sum pass for a complete worst-case total.
+So they are recorded separately, and the contract enforces the relationship:
+
+| state | value | meaning |
+| --- | --- | --- |
+| `p19_formula_structure` | **READY** | the arithmetic is defined and exact |
+| `p19_applicable_charge_coverage` | **INCOMPLETE** | a documented class that can apply here is unbounded |
+| `p19_worst_case_cost_authority` | **NOT_ESTABLISHED** | so no total may be claimed |
+
+The symbolic total covers every **applicable** documented class:
+
+```
+max_total_cost = max_input_tokens  x prompt_price_ceiling
+               + max_output_tokens x completion_price_ceiling
+               + request_fee_ceiling
+```
+
+For this exact request `image` and `audio` are **NOT_APPLICABLE**, and that is
+proven rather than assumed - see below. `request` is applicable, documented, and
+currently **unbounded**, which is why coverage is INCOMPLETE.
+
+**No hidden term, by construction.** The formula string is rendered from the very
+component list the code sums, and a total is produced *only* when every applicable
+class is bounded. A term cannot be in the arithmetic and missing from the formula,
+or the reverse; a test asserts the rendered sum equals the applicable class set and
+that the value equals those terms computed independently.
+
+**An omitted fee is unknown, never zero.** `request_usd = None` yields
+`request_picodollars = None` and the state `UNBOUNDED`. Only an explicit `"0"`
+is a bound of zero, and it produces a different policy identity.
+
+**Closing it.** S7 or the operator may supply a request-fee ceiling, or
+first-party evidence may establish the fee is zero. S6 chooses neither: it
+defines the mechanism and refuses to invent a monetary policy.
+
+### Modality is proven from the request's own bytes
+
+`image` and `audio` are not dismissed by convention. The sealed request's exact
+canonical body is parsed, its content parts counted, and the result content
+addressed together with the body digest:
+
+```
+szorrequestmodalityv1_4769e106...   text_only=True  images=0  audio=0
+body_sha256 = 35a119b1...   body_length = 447   messages = 2
+```
+
+The digest is the sealed request's own, so no other request can borrow the proof:
+a synthetic image-bearing body derives a different proof, and under it the `image`
+class becomes UNBOUNDED rather than NOT_APPLICABLE. An unrecognized content part
+type is refused outright - a modality nobody has classified cannot be proven
+harmless.
 
 ### Request-side price ceiling: ESTABLISHED
 
@@ -281,8 +336,9 @@ longer a structural blocker to safe live cost bounding**. It remains
 NOT_ESTABLISHED for anything that needs the *actual* price.
 
 **What this does not change.** A ceiling caps the rate. It says nothing about how
-many tokens are billed. P17 is untouched, and so P19's worst-case cost authority
-stays NOT_ESTABLISHED.
+many tokens are billed, and a token-price ceiling alone leaves the documented
+per-request fee uncapped. P17 is untouched and charge coverage is INCOMPLETE, so
+P19's worst-case cost authority stays NOT_ESTABLISHED.
 
 **No monetary value is chosen here.** S6 defines the mechanism and the arithmetic;
 the operator authorizes actual ceiling values before S7.
@@ -323,13 +379,19 @@ again.
 fresh external fact resolvable inside the S7 preflight, with no structural
 P17/P19 ambiguity.
 
-The price obstacle is now gone: the server-enforced ceiling is a valid price
-authority, needs no retrieval, and is bounded before dispatch. **P17 is the sole
-remaining structural blocker.** Closing it needs either a pinned
-officially-supported tokenizer or a first-party token-count facility, and adding
-either is a structural change to the repository, not a fact to be fetched.
-Without an input bound there is no bounded worst-case cost, so P19's authority
-stays open even with the ceiling in hand.
+The *pricing* obstacle is gone: the server-enforced ceiling is a valid price
+authority, needs no retrieval, and is bounded before dispatch. Two blockers
+remain, and they are different in kind.
+
+**P17 is structural.** Closing it needs either a pinned officially-supported
+tokenizer or a first-party token-count facility, and adding either is a change to
+the repository, not a fact to be fetched.
+
+**Charge coverage is a policy gap, not a structural one.** The documented
+per-request fee is simply not capped by the current policy. An operator ceiling
+value, or first-party evidence that the fee is zero, closes it - which is exactly
+the kind of thing S7 may supply. It is listed honestly rather than rounded to
+zero.
 
 Calling this pending-JIT would use the status to hide unresolved architecture,
 which the phase rules explicitly forbid. The honest answer is NOT_AUTHORIZED.
@@ -350,7 +412,7 @@ authorization consumption, and abort-before-dispatch on any failure.
 ## Predeclared thresholds
 
 Declared before the authoritative run and content addressed as
-`szorprelivethresholdsv1_ba6a47c77faf47fc51cce870af3659c570d55db3dedc65c93ee3749dc3b0bbf6`.
+`szorprelivethresholdsv1_eca7807368ef60ef49a8218f8b24071c52afa86385c80539bb2c885a2f274f3b`.
 
 The observed column is deliberately absent: **the authoritative run has not been
 made** under this case set. An earlier run exists in history at `0ff79c9` and is
@@ -361,8 +423,8 @@ superseded, because semantic changes followed it.
 | integration positive accepted | 12 |
 | integration adversarial rejected | 18 |
 | preflight authorized | 3 |
-| preflight refused | 22 |
-| ceiling probes holding | 16 |
+| preflight refused | 23 |
+| ceiling probes holding | 26 |
 | unexpected results | 0 |
 | invalid fixture constructions | 0 |
 | guard-code mismatches | 0 |
@@ -384,11 +446,12 @@ Every semantic file is committed **before** the authoritative run, with a clean
 tracked worktree. This is the step S5 omitted, and it removes the need for a
 post-run Git-object audit.
 
-The freeze point has been superseded twice, each time before any run consumed it:
-`4861c8a4` (original), `fd30a7fb` (rulings applied), and the current freeze, which
-adds the price-ceiling semantics. Superseding an *unconsumed* freeze is safe; what
-would invalidate a result is a semantic change after a run, which has not
-happened under the current case set.
+The freeze point has been superseded three times, each time before any run
+consumed it: `4861c8a4` (original), `fd30a7fb` (rulings applied), `170124a` (price
+ceiling), and the current freeze, which splits P19 and closes the two coverage
+gaps. Superseding an *unconsumed* freeze is safe; what would invalidate a result
+is a semantic change after a run, which has not happened under any case set since
+the superseded run at `0ff79c9`.
 
 | frozen identity | value |
 | --- | --- |
@@ -439,8 +502,9 @@ tripwire, not asserted.
 ## What S7 must do, in order
 
 1. carry an operator-authorized `provider.max_price` policy in the additive live
-   request overlay — no retrieval needed, and the router enforces it;
-2. establish an input token bound — **the sole structural blocker above**;
+   request overlay, **including a request-fee ceiling**, or establish from
+   first-party evidence that the request fee is zero;
+2. establish an input token bound — **the structural blocker above**;
 3. compute the deterministic worst-case cost in integer picodollars from the
    ceiling, recording `price_authority = SERVER_ENFORCED_CEILING`;
 4. compare against the operator-authorized spend ceiling;

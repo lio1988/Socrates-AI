@@ -103,6 +103,52 @@ so none can be quietly relaxed. Body stays 447 bytes, digest `35a119b1…`.
 **No monetary value is chosen in S6.** Mechanism and arithmetic only; the operator
 authorizes actual ceiling values before S7.
 
+## P19 is three states, never one
+
+`P19_FORMULA_STRUCTURE` (READY), `P19_APPLICABLE_CHARGE_COVERAGE`
+(COMPLETE/INCOMPLETE) and `P19_WORST_CASE_COST_AUTHORITY`
+(ESTABLISHED/NOT_ESTABLISHED) are separate fields and must stay separate. A
+token-only sum is not a complete worst-case total while a documented per-request
+fee is unbounded.
+
+Currently: structure READY, coverage **INCOMPLETE** (`request_usd` unbounded),
+authority NOT_ESTABLISHED.
+
+**The formula cannot drift from the arithmetic.** Both come from one component
+list: the rendered formula names every *applicable* class, and a total is
+computed only when every one of them is bounded. There is therefore no state in
+which a term is summed but unnamed, or named but unsummed.
+
+**An omitted fee is unknown, not zero.** `request_usd = None` gives
+`request_picodollars = None` and state UNBOUNDED. Only an explicit `"0"` bounds
+it at zero, and it yields a different policy identity. Never let an omission
+become an authoritative zero.
+
+**Image and audio are NOT_APPLICABLE by proof, not convention.**
+`OpenRouterRequestModalityProofV1` parses the sealed request's exact canonical
+body, counts content parts, and content addresses the result with the body
+digest. The proof is bound to *those bytes*: a synthetic image-bearing request
+derives its own proof and gets UNBOUNDED, not NOT_APPLICABLE. An unclassified
+content part type is refused rather than assumed harmless.
+
+Do not close coverage by inventing a request-fee ceiling. The operator or S7
+supplies one, or first-party evidence establishes the fee is zero.
+
+## Three max_price paths, refused by path
+
+`build_openrouter_max_price_policy_v1(schema_path, ...)` refuses
+`components.schemas.ParetoRouterPlugin.max_price` and the `/models` listing
+filter *by name*, with well-formed decimal values, so the refusal is attributable
+to the contract path rather than incidentally to the float or decimal guards.
+Only `components.schemas.ProviderPreferences.max_price` is the ceiling authority.
+
+## String equality is not identity-namespace authority
+
+`PRICING_BROAD_AT_EXACT_SELECTOR` spells `azure/swedencentral` exactly and still
+declares BROAD_PROVIDER_ONLY granularity, so `PRICING_SELECTOR_MISMATCH` passes
+and `PRICING_GRANULARITY_INSUFFICIENT` is the guard that fires. Guard order was
+not touched to make coverage easier.
+
 ## Money
 
 Integer picodollars (1e-12 USD), parsed from official decimal strings via
@@ -127,10 +173,14 @@ in its own source if it scans itself. Assemble them from fragments.
 
 ## Outcome
 
-One live shadow call **NOT_AUTHORIZED**. After the ceiling audit, **P17 is the
-sole remaining structural blocker** — the price obstacle is closed. P17 is
-structural, not a missing fresh fact: closing it needs a pinned tokenizer or a
-first-party token-count facility.
+One live shadow call **NOT_AUTHORIZED**. Two blockers, different in kind:
+
+* **P17** — structural. Needs a pinned tokenizer or a first-party token-count
+  facility; a change to the repository, not a fact to fetch.
+* **Charge coverage** — a policy gap. The documented per-request fee is simply
+  not capped. An operator ceiling value or first-party evidence closes it.
+
+The *pricing* obstacle is closed by the server-enforced ceiling.
 
 The integration verdict itself is **not yet claimed**: the authoritative aggregate
 has not been run under the current case set. Do not let a future session read a
