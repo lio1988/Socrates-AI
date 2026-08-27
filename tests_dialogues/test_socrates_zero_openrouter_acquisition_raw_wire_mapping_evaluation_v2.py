@@ -208,32 +208,52 @@ def test_building_outside_a_tripwire_is_refused() -> None:
 
 
 def test_s5_modules_are_import_inert(tmp_path: Path) -> None:
-    """Re-import every S5 module under the live tripwire.
+    """Execute every S5 module body again under the live tripwire.
 
-    Any filesystem write, network access, credential lookup, provider call,
-    model execution, tool call or CED application performed at import time would
-    trip the boundary rather than pass quietly.
+    The module is executed into a throwaway namespace rather than reloaded, so
+    the installed module objects and their classes stay identical - reloading
+    would rebind every contract class and quietly break identity checks in every
+    test that runs afterwards.
+
+    Any filesystem write, network access, credential lookup, provider call, model
+    execution, tool call or CED application performed at import time trips the
+    boundary rather than passing quietly.
     """
-    import importlib
+    import importlib.util
 
-    from backend.dialogues.socrates_zero import (
-        acquisition_tripwires,
-        openrouter_raw_wire_mapping_cases_v2,
-        openrouter_raw_wire_mapping_evaluation_v2,
-        openrouter_raw_wire_mapping_v2,
-    )
+    from backend.dialogues.socrates_zero import acquisition_tripwires
 
+    runtime_dir = ROOT / "backend" / "dialogues" / "socrates_zero"
     before = acquisition_tripwires.active_acquisition_boundary_tripwire_v0().snapshot()
-    for module in (
-        openrouter_raw_wire_mapping_v2,
-        openrouter_raw_wire_mapping_cases_v2,
-        openrouter_raw_wire_mapping_evaluation_v2,
+    for name in (
+        "openrouter_raw_wire_mapping_v2",
+        "openrouter_raw_wire_mapping_cases_v2",
+        "openrouter_raw_wire_mapping_evaluation_v2",
     ):
-        importlib.reload(module)
+        # Package-qualified probe name so relative imports resolve and the
+        # spec parent matches; never inserted into sys.modules.
+        spec = importlib.util.spec_from_file_location(
+            f"backend.dialogues.socrates_zero._inertness_probe_{name}",
+            runtime_dir / f"{name}.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
     after = acquisition_tripwires.active_acquisition_boundary_tripwire_v0().assert_clean()
     assert after.total_forbidden_attempts == before.total_forbidden_attempts == 0
     assert after.hits == ()
     assert list(tmp_path.iterdir()) == []
+
+
+def test_installed_s5_classes_are_not_rebound_by_the_inertness_probe() -> None:
+    """The probe above must not replace the canonical contract classes."""
+    from backend.dialogues.socrates_zero import openrouter_raw_wire_mapping_v2 as live
+
+    from backend.dialogues.socrates_zero.openrouter_raw_wire_mapping_v2 import (
+        OpenRouterRawWireObservationV2 as imported,
+    )
+
+    assert live.OpenRouterRawWireObservationV2 is imported
 
 
 def test_no_s5_module_writes_at_import_time() -> None:
