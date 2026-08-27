@@ -20,16 +20,22 @@ fact is finite and obtained before any future network dispatch.
 Additive S7A contracts, frozen cases, deterministic evaluator, tests,
 documentation, one authoritative artifact, replay execution and replay lock.
 
-## Pre-authoritative freeze state
+## Final result
 
-Implementation and pre-run gates are complete. P17 proof architecture,
-request-overlay v2, complete P19 arithmetic, one-call authorization and
-consumption, deterministic preflight, and the explicit claim-store-readiness
-contract are implemented. The frozen inventory is 73 cases (20
-positive/property and 53 adversarial), with case-set ID
+`OPENROUTER LIVE-SAFETY CLOSURE v1 SUPPORTED` at freeze HEAD
+`dca2f2d97b1eeba9626ec9490edf722b64681ef5`.
+
+The one designated authoritative aggregate passed all thresholds: 73 cases,
+20 positive/property accepted, 53 adversarial rejected, 0 unexpected, every
+zero-hazard metric 0, external activity 0 and S6 predecessor surfaces 8/8
+unchanged. The frozen case-set ID is
 `szorlivesafetycasesetv1_21ab3255104dbb5fe0ca5e2255a2f4d205c7f2d6364a67588e2c39b69c9eba01`
 and thresholds ID
 `szorlivesafetythresholdsv1_ccc445fda16e9022f40ed0a3d133365d823b1cbe0f844803926c8564502ecec9`.
+
+Artifact ID:
+`szorlivesafetyartifactv1_237286af63bc509db7fe2cbd4e40a78150d36213ec162a2a745494eeeeed70b3`.
+Replay semantic equality, artifact-ID equality and byte identity are all true.
 
 Production request identity, P17 fact, component prices, total-spend ceiling and
 physical trusted durable non-rollback claim store remain
@@ -48,12 +54,14 @@ Pre-freeze gates are clean: S7A 106; S6 149; S5 109; S3 64; route 103;
 manifest 25; final all OpenRouter 835 passed/1 skipped; full `tests_dialogues` 3643
 passed/10 skipped; predecessor 742/742; S6 surfaces 8/8 unchanged. The canonical
 result document records the earlier known intermittent predecessor failure and
-its passing isolated rerun.
+its passing isolated rerun. Post-authoritative gates were identical, diff check
+passed and the known race did not recur.
 
-All three predeclared authoritative paths are absent. The next step is the
-semantic freeze commit, followed by exactly one designated persisted aggregate
-and deterministic replay. Earlier in-memory development checks are disclosed in
-the canonical result document and are not authoritative evidence.
+The write-once artifact, replay execution and replay lock now exist in
+`artifacts/`. Earlier in-memory development checks remain disclosed in the
+canonical result document and are not authoritative evidence. The final state
+is `AUTHORIZED_PENDING_JIT_PREFLIGHT`; the next phase is S7B, not a second S7A
+aggregate.
 
 ## Non-goals
 

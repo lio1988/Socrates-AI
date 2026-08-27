@@ -7,11 +7,14 @@ completed S6 checkpoint
 
 ## Status
 
-The additive implementation, adversarial audit and pre-authoritative regression
-gates are complete. The semantic freeze commit and designated authoritative
-execution have not occurred. No S7A authoritative artifact or replay evidence
-exists, no live call is authorized, and no credential, provider, model, CED or
-network activity is permitted in this phase.
+`OPENROUTER LIVE-SAFETY CLOSURE v1 SUPPORTED`.
+
+Semantics were frozen at
+`dca2f2d97b1eeba9626ec9490edf722b64681ef5`. The one designated authoritative
+offline aggregate and deterministic replay completed once, produced write-once
+evidence, passed every threshold and preserved all eight S6 predecessor
+surfaces. Runtime and CED authority remain disabled; no credential, provider,
+model or live OpenRouter request was executed.
 
 ## Hypothesis
 
@@ -22,9 +25,9 @@ network activity is permitted in this phase.
 > ceiling, and create a single-use live authorization that can later be consumed
 > only after a finite JIT preflight and exactly one network dispatch.
 
-The result will be either `OPENROUTER LIVE-SAFETY CLOSURE v1 SUPPORTED` or
-`OPENROUTER LIVE-SAFETY CLOSURE v1 FALSIFIED` after a semantic freeze and exactly
-one authoritative offline aggregate.
+The frozen experiment supports the hypothesis. This result establishes the
+local safety architecture and reduces the future live call to finite JIT facts;
+it does not itself authorize runtime or execute that call.
 
 ## Sealed predecessor
 
@@ -51,7 +54,7 @@ CED authority.
   rollback-resistant storage. S7A requires an explicit readiness attestation;
   physical realization of the trusted store is an S7B JIT fact.
 
-## Implemented pre-freeze architecture
+## Supported architecture
 
 The following additive surfaces are implemented and locked by focused tests.
 
@@ -206,10 +209,10 @@ malformed, non-integral, stale, mismatched, aliased-without-authority or
 semantically ambiguous record fails before inference dispatch. No production
 limit value is invented in S7A.
 
-## Frozen case contract and pre-run gates
+## Frozen case contract and authoritative metrics
 
-The declarative case inventory is complete but has not yet been used for the
-designated authoritative persisted experiment.
+The designated persisted experiment evaluated the frozen inventory exactly
+once at freeze HEAD `dca2f2d97b1eeba9626ec9490edf722b64681ef5`.
 
 - Case-set ID:
   `szorlivesafetycasesetv1_21ab3255104dbb5fe0ca5e2255a2f4d205c7f2d6364a67588e2c39b69c9eba01`.
@@ -217,8 +220,33 @@ designated authoritative persisted experiment.
   `szorlivesafetythresholdsv1_ccc445fda16e9022f40ed0a3d133365d823b1cbe0f844803926c8564502ecec9`.
 - Total: 73 cases = 20 positive/property cases + 53 adversarial cases.
 - Numbered Sections 35–40 requirements covered: 73/73.
+- Positive accepted: 20/20.
+- Adversarial rejected: 53/53.
+- Unexpected results: 0.
+- All thresholds pass: true.
+- S6 semantic/artifact predecessor surfaces: 8/8 unchanged.
+- External activity: 0.
 
-Recorded pre-freeze regression gates:
+Every zero-hazard metric is 0:
+
+- `unexpected_results`;
+- `invalid_fixture_constructions`;
+- `guard_code_mismatches`;
+- `heuristic_p17_authority_accepted`;
+- `byte_to_token_substitutions_accepted`;
+- `incomplete_charge_coverage_accepted`;
+- `request_fee_omission_to_zero`;
+- `hidden_monetary_terms`;
+- `cross_request_substitutions_accepted`;
+- `authorization_reuse_accepted`;
+- `consumption_rollback_accepted`;
+- `credential_leakage_findings`;
+- `test_fixture_promotions`;
+- `external_activity`.
+
+## Regression gates
+
+The post-authoritative gates reproduced the pre-freeze results:
 
 | gate | result |
 | --- | --- |
@@ -228,10 +256,11 @@ Recorded pre-freeze regression gates:
 | sealed S3 | 64 passed |
 | route controls | 103 passed |
 | retained manifest | 25 passed |
-| all OpenRouter tests, final pre-freeze run | 835 passed, 1 skipped |
+| all OpenRouter tests, post-authoritative run | 835 passed, 1 skipped |
 | full `tests_dialogues` | 3643 passed, 10 skipped |
 | predecessor regression gate | 742/742 passed |
 | S6 semantic/artifact predecessor surfaces | 8/8 unchanged |
+| diff check | passed |
 
 ### Known pre-existing intermittent predecessor failure
 
@@ -240,7 +269,8 @@ An earlier pre-S7 all-OpenRouter gate recorded exactly one failure:
 `1 failed, 728 passed, 1 skipped, 2817 deselected`. Its isolated rerun passed
 1/1. This is classified as `KNOWN PRE-EXISTING INTERMITTENT PREDECESSOR
 FAILURE`; S7A made no fix. The final pre-freeze all-OpenRouter gate was clean at
-835 passed and 1 skipped.
+835 passed and 1 skipped. The known race did not recur in the post-authoritative
+gates.
 
 ## Non-authoritative development-check disclosure
 
@@ -263,22 +293,61 @@ activity. Semantic changes followed those observations, including strengthened
 consumption revalidation, explicit claim-store readiness binding and the scoped
 S38.12 rollback contract. Therefore the development artifact ID and 51,938-byte
 render are stale historical observations and MUST NOT be used as freeze or
-authoritative identities. These checks do not replace or consume the single
-designated post-freeze authoritative execution.
+authoritative identities. They are retained only as a sequencing disclosure and
+are superseded by the designated persisted evidence below.
 
-## Authoritative evidence state and next step
+## Authoritative evidence and replay
 
-The following write-once paths are predeclared and currently absent:
+The three write-once files now exist:
 
 - `docs/branches/feature-socrates-zero-openrouter-live-safety-closure-v1/artifacts/socrateszero_openrouter_live_safety_closure_v1.json`;
 - `docs/branches/feature-socrates-zero-openrouter-live-safety-closure-v1/artifacts/socrateszero_openrouter_live_safety_closure_replay_execution_v1.json`;
 - `docs/branches/feature-socrates-zero-openrouter-live-safety-closure-v1/artifacts/socrateszero_openrouter_live_safety_closure_replay_lock_v1.json`.
 
-The next step is an explicit semantic freeze commit. Only after that commit may
-the designated process execute exactly one persisted authoritative aggregate
-and its deterministic replay, write the three paths once, verify semantic
-equality, artifact-ID equality and byte identity, and record the result without
-repair-and-rerun semantics.
+| evidence | content identity | file SHA-256 | bytes |
+| --- | --- | --- | ---: |
+| authoritative artifact | `szorlivesafetyartifactv1_237286af63bc509db7fe2cbd4e40a78150d36213ec162a2a745494eeeeed70b3` | `9bdc7f58ca1e29a9ed082a863a6bc4487f9687c564207887b226953cc6f95a01` | 52,053 |
+| replay execution | `szorlivesafetyreplayexecutionv1_0292ea7f00e670fdf9c4d6254b4ebeca4d0b1e97744e5a0a7b294254b7f151da` | `3a5cb6cacc85e3c8a842bade1e0ac279929682c4db547cdd16dc9eed22454d2e` | 740 |
+| replay lock | `szorlivesafetyreplaylockv1_116f9049f8495ad63276973a4d0e09815ead6435bddb45ccaf319a2d8e964dc6` | `6c66d96527e271efef5dd0ec8de139ebb8f96f44dce79490a783ae69f9b3f675` | 655 |
+
+Replay semantic equality, artifact-ID equality and byte identity are all true.
+
+## Final decision and S7B boundary
+
+- Architecture: `SUPPORTED`.
+- P17 proof architecture: `READY`.
+- P17 current authority: `JIT_PENDING`.
+- Output-token bound: `ESTABLISHED = 256`.
+- P18 actual pricing: `NOT_ESTABLISHED`; granularity remains
+  `BROAD_PROVIDER_ONLY`.
+- Server-enforced prompt/completion/request ceiling coverage: `COMPLETE`.
+- P19 formula structure: `READY`.
+- P19 applicable charge coverage: `COMPLETE`.
+- P19 current authority: `JIT_PENDING`.
+- Claim-store-readiness contract: `READY`; physical realization:
+  `S7B_JIT_PENDING`.
+- One-call authorization: `READY`.
+- JIT preflight: `READY`.
+- Runtime authority: `NOT_AUTHORIZED`.
+- Live OpenRouter: `NOT_EXECUTED`.
+- One live shadow call: `AUTHORIZED_PENDING_JIT_PREFLIGHT`.
+
+The exact remaining JIT facts are:
+
+1. one exact first-party model-limit record for the requested model and same
+   preflight;
+2. explicit operator prompt, completion and request price ceilings;
+3. an explicit operator total-spend ceiling;
+4. credential-presence attestation without credential material entering any
+   scientific identity;
+5. one-shot transport-readiness attestation;
+6. physical realization of the trusted durable non-rollback claim store plus
+   scope-correct live `szorclaimstoregrantv1_...` evidence.
+
+Because the price values are operator-required, the production request ID, body
+SHA-256 and byte length remain `JIT_PENDING`. The 512-byte synthetic fixture
+above remains test authority only and is not the production request. The next
+phase is Phase 8.5D-S7B — JIT Preflight + ONE Live OpenRouter Shadow Call.
 
 ## Non-goals
 
