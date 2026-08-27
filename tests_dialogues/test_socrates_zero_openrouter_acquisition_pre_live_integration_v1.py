@@ -141,7 +141,7 @@ def test_case_set_shape_is_frozen() -> None:
     assert len(cases) == 30
     assert sum(c.kind is OpenRouterIntegrationCaseKindV1.POSITIVE for c in cases) == 12
     assert sum(c.kind is OpenRouterIntegrationCaseKindV1.ADVERSARIAL for c in cases) == 18
-    assert len(FROZEN_OPENROUTER_PREFLIGHT_CASES_V1) == 15
+    assert len(FROZEN_OPENROUTER_PREFLIGHT_CASES_V1) == 25
     assert OPENROUTER_INTEGRATION_CASE_SET_ID_V1.startswith("szorintegrationcasesetv1_")
     assert OPENROUTER_PREFLIGHT_CASE_SET_ID_V1.startswith("szorpreflightcasesetv1_")
 
@@ -538,114 +538,203 @@ def test_s6_modules_do_not_reimplement_predecessor_contracts() -> None:
     assert ".openrouter_acquisition_evaluation" not in integration
 
 
-# ------------------------------------------------------- authoritative evidence
+# ------------------------------------------------- ruling-mandated locks -----
 
 
-AUTHORITATIVE_ARTIFACT_ID = (
-    "szorpreliveartifactv1_"
-    "6ff594b31e88781f0d8aaf9705c7e1c48c8bea5965ea820c0be6af6a69f9932e"
-)
-AUTHORITATIVE_ARTIFACT_SHA256 = (
-    "971921fce44ba967080b987d6ce6c646d6f6c006c9ad2f6793661d1f7038c3ea"
-)
-
-
-def _artifact_paths():
-    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
-        OPENROUTER_PRE_LIVE_ARTIFACT_RELATIVE_PATH_V1,
-        OPENROUTER_PRE_LIVE_REPLAY_EXECUTION_RELATIVE_PATH_V1,
-        OPENROUTER_PRE_LIVE_REPLAY_LOCK_RELATIVE_PATH_V1,
+def test_output_bound_is_recorded_separately_from_p17() -> None:
+    """max_tokens 256 is the OUTPUT bound. It is never called P17."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        OUTPUT_BOUND_ESTABLISHED,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OPENROUTER_SEALED_MAX_OUTPUT_TOKENS_V1,
+        OpenRouterOutputBoundEvidenceV1,
     )
 
-    return (
-        ROOT / OPENROUTER_PRE_LIVE_ARTIFACT_RELATIVE_PATH_V1,
-        ROOT / OPENROUTER_PRE_LIVE_REPLAY_EXECUTION_RELATIVE_PATH_V1,
-        ROOT / OPENROUTER_PRE_LIVE_REPLAY_LOCK_RELATIVE_PATH_V1,
+    assert OUTPUT_BOUND_ESTABLISHED.status is OpenRouterBoundStatusV1.ESTABLISHED
+    assert OUTPUT_BOUND_ESTABLISHED.max_output_tokens == 256
+    assert OPENROUTER_SEALED_MAX_OUTPUT_TOKENS_V1 == 256
+    # The output bound contract has no input-token field at all.
+    assert "input" not in " ".join(OpenRouterOutputBoundEvidenceV1.model_fields)
+
+
+def test_output_bound_must_equal_the_sealed_value() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterOutputBoundEvidenceV1,
+    )
+
+    with pytest.raises(ValidationError, match="sealed in the request body"):
+        OpenRouterOutputBoundEvidenceV1(
+            status=OpenRouterBoundStatusV1.ESTABLISHED,
+            max_output_tokens=4096,
+            bound_request_body_sha256="a" * 64,
+        )
+
+
+def test_tokenizer_family_label_is_not_a_tokenizer_identity() -> None:
+    """ModelGroup names a lineage, not a pinned vocabulary."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        FROZEN_OPENROUTER_TOKENIZER_FAMILY_LABELS_V1,
+        OpenRouterTokenizerBindingV1,
+    )
+
+    assert "GPT" in FROZEN_OPENROUTER_TOKENIZER_FAMILY_LABELS_V1
+    with pytest.raises(ValidationError, match="family label is not a tokenizer"):
+        OpenRouterInputBoundEvidenceV1(
+            status=OpenRouterBoundStatusV1.NOT_ESTABLISHED,
+            basis=OpenRouterInputBoundBasisV1.NO_PINNED_TOKENIZER_AVAILABLE,
+            request_body_byte_cap=447,
+            bound_request_body_sha256="a" * 64,
+            tokenizer_binding=OpenRouterTokenizerBindingV1.FAMILY_LABEL_ONLY,
+            tokenizer_identity="GPT",
+        )
+
+
+def test_a_token_count_cannot_be_claimed_without_pinned_tokenizer_evidence() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterTokenizerBindingV1,
+    )
+
+    # Basis says tokenizer, but nothing is pinned.
+    with pytest.raises(ValidationError, match="pinned implementation"):
+        OpenRouterInputBoundEvidenceV1(
+            status=OpenRouterBoundStatusV1.ESTABLISHED,
+            basis=OpenRouterInputBoundBasisV1.PINNED_OFFICIAL_TOKENIZER,
+            max_input_tokens=128,
+            request_body_byte_cap=447,
+            bound_request_body_sha256="a" * 64,
+            chat_framing_overhead_bounded=True,
+            tokenizer_binding=OpenRouterTokenizerBindingV1.ABSENT,
+        )
+    # Pinned binding but no identity or authoritative model→tokenizer source.
+    with pytest.raises(ValidationError, match="identity and an"):
+        OpenRouterInputBoundEvidenceV1(
+            status=OpenRouterBoundStatusV1.ESTABLISHED,
+            basis=OpenRouterInputBoundBasisV1.PINNED_OFFICIAL_TOKENIZER,
+            max_input_tokens=128,
+            request_body_byte_cap=447,
+            bound_request_body_sha256="a" * 64,
+            chat_framing_overhead_bounded=True,
+            tokenizer_binding=OpenRouterTokenizerBindingV1.PINNED_IMPLEMENTATION,
+        )
+
+
+def test_pricing_granularity_audit_is_broad_provider_only() -> None:
+    """The retained first-party schema cannot name the exact request selector."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1,
+    )
+
+    assert OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 == "BROAD_PROVIDER_ONLY"
+
+    openapi = (
+        ROOT
+        / "docs/branches/feature-socrates-zero-openrouter-wire-spec-evidence-v2r1"
+        / "evidence/sources/openapi.yaml"
+    ).read_text(encoding="utf-8")
+    # The endpoint record carries a broad provider display name and an
+    # undocumented tag; no retained example carries a compound provider/region.
+    assert "provider_name: 'OpenAI'" in openapi
+    assert "tag: 'openai'" in openapi
+    assert "provider_name: 'azure/swedencentral'" not in openapi
+    assert "tag: 'azure/swedencentral'" not in openapi
+
+
+def test_broad_provider_pricing_cannot_stand_for_the_exact_selector() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        PRICING_BROAD_PROVIDER,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterPricingGranularityV1,
+    )
+
+    assert PRICING_BROAD_PROVIDER.route_identity == "Azure"
+    assert PRICING_BROAD_PROVIDER.route_identity_granularity is (
+        OpenRouterPricingGranularityV1.BROAD_PROVIDER_ONLY
+    )
+    # And it cannot produce a cost bound.
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        INPUT_BOUND_HYPOTHETICAL,
+        OUTPUT_BOUND_ESTABLISHED,
+    )
+
+    bound = compute_openrouter_cost_bound_v1(
+        INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, PRICING_BROAD_PROVIDER
+    )
+    assert bound.status is OpenRouterBoundStatusV1.NOT_ESTABLISHED
+
+
+def test_p19_formula_is_ready_while_its_authority_is_not() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        INPUT_BOUND_UNESTABLISHED,
+        OUTPUT_BOUND_ESTABLISHED,
+        PRICING_TRUSTED,
+    )
+
+    bound = compute_openrouter_cost_bound_v1(
+        INPUT_BOUND_UNESTABLISHED, OUTPUT_BOUND_ESTABLISHED, PRICING_TRUSTED
+    )
+    assert bound.formula_ready is True
+    assert bound.formula == (
+        "max_input_tokens * prompt_price + max_output_tokens * completion_price"
+    )
+    assert bound.status is OpenRouterBoundStatusV1.NOT_ESTABLISHED
+    assert bound.max_total_cost_picodollars is None
+
+
+def test_exponent_form_price_equals_plain_decimal_exactly() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        PRICING_EXPONENT_FORM,
+        PRICING_TRUSTED,
+    )
+
+    assert (
+        PRICING_EXPONENT_FORM.prompt_price_picodollars
+        == PRICING_TRUSTED.prompt_price_picodollars
+        == 400000
+    )
+    assert (
+        PRICING_EXPONENT_FORM.completion_price_picodollars
+        == PRICING_TRUSTED.completion_price_picodollars
+        == 1600000
     )
 
 
-def test_authoritative_artifact_is_canonical_and_supported() -> None:
+def test_operator_ceiling_boundary_is_inclusive_and_one_unit_below_refuses() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        HYPOTHETICAL_COST_PICODOLLARS,
+        INPUT_BOUND_HYPOTHETICAL,
+        OUTPUT_BOUND_ESTABLISHED,
+        PRICING_TRUSTED,
+    )
+
+    bound = compute_openrouter_cost_bound_v1(
+        INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, PRICING_TRUSTED
+    )
+    assert bound.max_total_cost_picodollars == HYPOTHETICAL_COST_PICODOLLARS
+    # The equality and one-below cases are exercised end to end in the case set.
+    ids = {c.case_id for c in FROZEN_OPENROUTER_PREFLIGHT_CASES_V1}
+    assert "orpreflightv1-p02-operator-ceiling-equality-boundary" in ids
+    assert "orpreflightv1-x18-operator-ceiling-one-unit-below" in ids
+
+
+def test_cost_overflow_is_refused_not_wrapped() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        INPUT_BOUND_HYPOTHETICAL,
+        OUTPUT_BOUND_ESTABLISHED,
+        PRICING_OVERFLOW,
+    )
+
+    with pytest.raises(ContractValidationError, match="safe arithmetic domain"):
+        compute_openrouter_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, PRICING_OVERFLOW
+        )
+
+
+def test_live_readiness_is_not_authorized_while_p17_or_p18_is_structural() -> None:
     from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
         OpenRouterLiveReadinessV1,
-        OpenRouterPreLiveHypothesisStatusV1,
-        load_openrouter_pre_live_artifact_v1,
-        render_openrouter_pre_live_artifact_v1,
+        _live_readiness_v1,
     )
 
-    artifact_path, _, _ = _artifact_paths()
-    assert artifact_path.is_file()
-    artifact = load_openrouter_pre_live_artifact_v1(artifact_path)
-    assert artifact_path.read_bytes() == render_openrouter_pre_live_artifact_v1(artifact)
-    assert artifact.artifact_id == AUTHORITATIVE_ARTIFACT_ID
-    assert (
-        hashlib.sha256(artifact_path.read_bytes()).hexdigest()
-        == AUTHORITATIVE_ARTIFACT_SHA256
-    )
-    assert artifact.hypothesis_status is OpenRouterPreLiveHypothesisStatusV1.SUPPORTED
-    assert artifact.metrics.all_thresholds_pass is True
-    assert artifact.one_live_shadow_call is OpenRouterLiveReadinessV1.NOT_AUTHORIZED
-
-
-def test_artifact_preserves_every_standing_blocker() -> None:
-    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
-        load_openrouter_pre_live_artifact_v1,
-    )
-
-    artifact_path, _, _ = _artifact_paths()
-    artifact = load_openrouter_pre_live_artifact_v1(artifact_path)
-    assert artifact.p17_input_token_bound == "NOT_ESTABLISHED"
-    assert artifact.p18_pricing_record == "NOT_ESTABLISHED"
-    assert artifact.p19_total_cost_bound == "NOT_ESTABLISHED"
-    assert artifact.output_token_bound == "ESTABLISHED"
-    assert artifact.runtime_authority == "NOT_AUTHORIZED"
-    assert artifact.live_openrouter_execution == "NOT_AUTHORIZED"
-    assert artifact.exact_endpoint_response_identity_status == (
-        "UNAVAILABLE_BY_DOCUMENTED_CONTRACT"
-    )
-    assert set(artifact.boundary_counters.model_dump(mode="python").values()) == {0}
-
-
-def test_artifact_contains_no_credential_or_raw_body() -> None:
-    artifact_path, _, _ = _artifact_paths()
-    payload = artifact_path.read_text(encoding="utf-8")
-    for marker in ("Authorization", "Bearer ", "sk-or-", "scaffolding"):
-        assert marker not in payload, marker
-    assert RESPONSE_A.decode("utf-8") not in payload
-    assert RESPONSE_B.decode("utf-8") not in payload
-    assert "Ask one concise opening Socratic question" not in payload
-
-
-def test_replay_evidence_is_deterministic() -> None:
-    _, execution_path, lock_path = _artifact_paths()
-    execution = json.loads(execution_path.read_bytes())
-    lock = json.loads(lock_path.read_bytes())
-    assert execution["semantic_equality"] is True
-    assert execution["artifact_id_equality"] is True
-    assert execution["byte_identity"] is True
-    assert execution["official_source_retrievals"] == 0
-    assert execution["live_openrouter_calls"] == 0
-    assert lock["artifact_sha256"] == AUTHORITATIVE_ARTIFACT_SHA256
-
-
-def test_rebuilding_reproduces_the_artifact_byte_for_byte() -> None:
-    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
-        build_openrouter_pre_live_artifact_v1,
-        render_openrouter_pre_live_artifact_v1,
-    )
-
-    artifact_path, _, _ = _artifact_paths()
-    rebuilt = build_openrouter_pre_live_artifact_v1()
-    assert render_openrouter_pre_live_artifact_v1(rebuilt) == artifact_path.read_bytes()
-
-
-def test_artifact_metrics_must_be_derived() -> None:
-    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
-        OpenRouterPreLiveIntegrationArtifactV1,
-    )
-
-    artifact_path, _, _ = _artifact_paths()
-    payload = json.loads(artifact_path.read_bytes())
-    payload.pop("artifact_id")
-    payload["metrics"]["integration_positive_accepted"] = 99
-    with pytest.raises(ValidationError, match="not fully derived"):
-        OpenRouterPreLiveIntegrationArtifactV1.model_validate(payload)
+    assert _live_readiness_v1() is OpenRouterLiveReadinessV1.NOT_AUTHORIZED

@@ -39,7 +39,9 @@ from .openrouter_pre_live_safety_v1 import (
     OpenRouterOperatorCeilingV1,
     OpenRouterOutputBoundEvidenceV1,
     OpenRouterPreflightFailureCodeV1,
+    OpenRouterPricingGranularityV1,
     OpenRouterPricingSourceV1,
+    OpenRouterTokenizerBindingV1,
     OpenRouterTrustedPricingRecordV1,
 )
 from .openrouter_route_controls_contracts import OpenRouterRequestIntentReceiptV1
@@ -726,6 +728,17 @@ INPUT_BOUND_HYPOTHETICAL = OpenRouterInputBoundEvidenceV1(
     request_body_byte_cap=OPENROUTER_SEALED_REQUEST_BODY_BYTES_V1,
     bound_request_body_sha256=_A_BODY_SHA,
     chat_framing_overhead_bounded=True,
+    tokenizer_binding=OpenRouterTokenizerBindingV1.PINNED_IMPLEMENTATION,
+    tokenizer_identity="hypothetical-pinned-tokenizer@0",
+    model_tokenizer_binding_source="hypothetical-authoritative-binding",
+)
+
+#: Same shape but with a byte cap below the sealed request size.
+INPUT_BOUND_BYTE_CAP_EXCEEDED = INPUT_BOUND_HYPOTHETICAL.model_copy(
+    update={
+        "request_body_byte_cap": OPENROUTER_SEALED_REQUEST_BODY_BYTES_V1 - 1,
+        "evidence_id": None,
+    }
 )
 
 OUTPUT_BOUND_ESTABLISHED = OpenRouterOutputBoundEvidenceV1(
@@ -737,39 +750,52 @@ OUTPUT_BOUND_MISSING = OpenRouterOutputBoundEvidenceV1(
     status=OpenRouterBoundStatusV1.NOT_ESTABLISHED,
     bound_request_body_sha256=_A_BODY_SHA,
 )
+#: An output cap that is not the sealed value. Constructed through the raw model
+#: so the fixture can exist; the preflight is what refuses it.
+OUTPUT_BOUND_WRONG_VALUE = OUTPUT_BOUND_ESTABLISHED.model_copy(
+    update={"max_output_tokens": 4096, "evidence_id": None}
+)
 
-PRICING_TRUSTED = OpenRouterTrustedPricingRecordV1(
-    source=OpenRouterPricingSourceV1.FIRST_PARTY_MODEL_ENDPOINTS,
-    source_evidence_sha256="a" * 64,
-    preflight_execution_id=PREFLIGHT_EXECUTION_ID,
-    model_id="openai/gpt-4.1-mini",
-    endpoint_scope="azure/swedencentral",
-    prompt_price_usd="0.0000004",
-    completion_price_usd="0.0000016",
+def _pricing(**overrides) -> OpenRouterTrustedPricingRecordV1:
+    """A pricing record; overrides express exactly one defect per fixture."""
+    base = dict(
+        source=OpenRouterPricingSourceV1.FIRST_PARTY_MODEL_ENDPOINTS,
+        source_evidence_sha256="a" * 64,
+        preflight_execution_id=PREFLIGHT_EXECUTION_ID,
+        model_id="openai/gpt-4.1-mini",
+        route_identity="azure/swedencentral",
+        route_identity_granularity=(
+            OpenRouterPricingGranularityV1.EXACT_SELECTOR_BINDABLE
+        ),
+        prompt_price_usd="0.0000004",
+        completion_price_usd="0.0000016",
+    )
+    base.update(overrides)
+    return OpenRouterTrustedPricingRecordV1(**base)
+
+
+#: Hypothetical only. The audited retained schema exposes BROAD_PROVIDER_ONLY, so
+#: this granularity is not currently obtainable; it exists to exercise the guards
+#: downstream of P18.
+PRICING_TRUSTED = _pricing()
+PRICING_UNTRUSTED_SOURCE = _pricing(source=OpenRouterPricingSourceV1.UNTRUSTED)
+PRICING_WRONG_MODEL = _pricing(model_id="anthropic/claude-sonnet-4")
+PRICING_STALE = _pricing(preflight_execution_id="szorpreflightexec_earlier")
+#: What the retained first-party schema actually supports today.
+PRICING_BROAD_PROVIDER = _pricing(
+    route_identity="Azure",
+    route_identity_granularity=OpenRouterPricingGranularityV1.BROAD_PROVIDER_ONLY,
 )
-PRICING_UNTRUSTED_SOURCE = OpenRouterTrustedPricingRecordV1(
-    source=OpenRouterPricingSourceV1.UNTRUSTED,
-    source_evidence_sha256="a" * 64,
-    preflight_execution_id=PREFLIGHT_EXECUTION_ID,
-    model_id="openai/gpt-4.1-mini",
-    prompt_price_usd="0.0000004",
-    completion_price_usd="0.0000016",
+PRICING_SELECTOR_MISMATCH = _pricing(route_identity="azure/eastus")
+#: Exponent-form decimal strings must parse to the same exact value.
+PRICING_EXPONENT_FORM = _pricing(
+    prompt_price_usd="4E-7", completion_price_usd="1.6E-6"
 )
-PRICING_WRONG_MODEL = OpenRouterTrustedPricingRecordV1(
-    source=OpenRouterPricingSourceV1.FIRST_PARTY_MODEL_ENDPOINTS,
-    source_evidence_sha256="a" * 64,
-    preflight_execution_id=PREFLIGHT_EXECUTION_ID,
-    model_id="anthropic/claude-sonnet-4",
-    prompt_price_usd="0.0000004",
-    completion_price_usd="0.0000016",
-)
-PRICING_STALE = OpenRouterTrustedPricingRecordV1(
-    source=OpenRouterPricingSourceV1.FIRST_PARTY_MODEL_ENDPOINTS,
-    source_evidence_sha256="a" * 64,
-    preflight_execution_id="szorpreflightexec_some_earlier_execution",
-    model_id="openai/gpt-4.1-mini",
-    prompt_price_usd="0.0000004",
-    completion_price_usd="0.0000016",
+#: Each unit price is individually representable, but 512 and 256 tokens at this
+#: rate push the *product* past the safe arithmetic domain, which is the point:
+#: overflow is refused rather than silently wrapped.
+PRICING_OVERFLOW = _pricing(
+    prompt_price_usd="10000000000", completion_price_usd="10000000000"
 )
 
 CREDENTIAL_PRESENT = OpenRouterCredentialPresenceAttestationV1(
@@ -779,10 +805,17 @@ CREDENTIAL_ABSENT = OpenRouterCredentialPresenceAttestationV1(
     credential_present=False, credential_variable_name="OPENROUTER_API_KEY"
 )
 
-#: Generous enough for the hypothetical bound.  The operator authorizes the real
-#: value before S7; S6 does not pick a monetary figure.
+#: 512 * 400000 + 256 * 1600000 picodollars.
+HYPOTHETICAL_COST_PICODOLLARS = 512 * 400000 + 256 * 1600000
+
 CEILING_AUTHORIZED = OpenRouterOperatorCeilingV1(
     authorized=True, max_spend_picodollars=10**9
+)
+CEILING_EQUAL_BOUNDARY = OpenRouterOperatorCeilingV1(
+    authorized=True, max_spend_picodollars=HYPOTHETICAL_COST_PICODOLLARS
+)
+CEILING_ONE_UNIT_BELOW = OpenRouterOperatorCeilingV1(
+    authorized=True, max_spend_picodollars=HYPOTHETICAL_COST_PICODOLLARS - 1
 )
 CEILING_TOO_LOW = OpenRouterOperatorCeilingV1(authorized=True, max_spend_picodollars=1)
 CEILING_UNAUTHORIZED = OpenRouterOperatorCeilingV1(authorized=False)
@@ -801,8 +834,8 @@ class OpenRouterPreflightCaseV1(_FrozenCaseContractV1):
     credential_present: bool = True
     request_intent_receipt_id_override: Optional[str] = None
     request_body_sha_override: Optional[str] = None
-    input_bound_established: bool = True
-    output_bound_established: bool = True
+    input_bound_variant: str = "ESTABLISHED"
+    output_bound_variant: str = "SEALED"
     pricing_variant: str = "TRUSTED"
     ceiling_variant: str = "AUTHORIZED"
     replay_consumed: bool = False
@@ -829,118 +862,173 @@ class OpenRouterPreflightCaseV1(_FrozenCaseContractV1):
 
 _P = OpenRouterPreflightFailureCodeV1
 
+
+def _pf(case_id, description, verdict="REFUSED", code=None, **kwargs):
+    return OpenRouterPreflightCaseV1(
+        case_id=case_id,
+        description=description,
+        expected_verdict=verdict,
+        expected_failure_code=code,
+        **kwargs,
+    )
+
+
 FROZEN_OPENROUTER_PREFLIGHT_CASES_V1: Tuple[OpenRouterPreflightCaseV1, ...] = tuple(
     sorted(
         (
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-p01-all-preconditions-satisfied",
-                description=(
-                    "With every precondition hypothetically satisfied, exactly one "
-                    "dispatch is authorized."
-                ),
-                expected_verdict="AUTHORIZED_FOR_ONE_CALL",
+            _pf(
+                "orpreflightv1-p01-all-preconditions-satisfied",
+                "Every precondition hypothetically satisfied: one dispatch allowed.",
+                verdict="AUTHORIZED_FOR_ONE_CALL",
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x01-safety-contract-mismatch",
-                description="A substituted structural safety contract is refused.",
+            _pf(
+                "orpreflightv1-p02-operator-ceiling-equality-boundary",
+                "Cost exactly equal to the ceiling is allowed; the test is <=.",
+                verdict="AUTHORIZED_FOR_ONE_CALL",
+                ceiling_variant="EQUAL_BOUNDARY",
+            ),
+            _pf(
+                "orpreflightv1-p03-exponent-form-price-is-the-same-value",
+                "4E-7 and 0.0000004 are the same price; exponent form is accepted.",
+                verdict="AUTHORIZED_FOR_ONE_CALL",
+                pricing_variant="EXPONENT_FORM",
+            ),
+            _pf(
+                "orpreflightv1-x01-safety-contract-mismatch",
+                "A substituted structural safety contract is refused.",
+                code=_P.SAFETY_CONTRACT_MISMATCH,
                 use_frozen_safety_contract=False,
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.SAFETY_CONTRACT_MISMATCH,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x02-transport-not-ready",
-                description="Transport is not ready for a bounded dispatch.",
+            _pf(
+                "orpreflightv1-x02-transport-not-ready",
+                "Transport is not ready for a bounded dispatch.",
+                code=_P.TRANSPORT_NOT_READY,
                 transport_ready=False,
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.TRANSPORT_NOT_READY,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x03-credential-attestation-missing",
-                description="No credential presence attestation, so no dispatch.",
+            _pf(
+                "orpreflightv1-x03-credential-attestation-missing",
+                "No credential presence attestation, so no dispatch.",
+                code=_P.CREDENTIAL_ATTESTATION_MISSING,
                 credential_present=False,
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.CREDENTIAL_ATTESTATION_MISSING,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x04-request-intent-mismatch",
-                description="The authorized request intent is not the one presented.",
+            _pf(
+                "orpreflightv1-x04-request-intent-mismatch",
+                "The authorized request intent is not the one presented.",
+                code=_P.REQUEST_INTENT_MISMATCH,
                 request_intent_receipt_id_override=(
                     "szorrouteintentreceiptv1_" + "0" * 64
                 ),
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.REQUEST_INTENT_MISMATCH,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x05-input-bound-evidence-wrong-request",
-                description="Input bound evidence was computed for another request.",
+            _pf(
+                "orpreflightv1-x05-input-bound-evidence-wrong-request",
+                "Input bound evidence was computed for another request body.",
+                code=_P.REQUEST_INTENT_MISMATCH,
                 request_body_sha_override="9" * 64,
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.REQUEST_INTENT_MISMATCH,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x06-input-bound-not-established",
-                description=(
-                    "The real current state: no pinned tokenizer, so no input bound."
-                ),
-                input_bound_established=False,
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.INPUT_BOUND_NOT_ESTABLISHED,
+            _pf(
+                "orpreflightv1-x06-input-byte-cap-exceeded",
+                "The rendered request is larger than its declared byte cap.",
+                code=_P.INPUT_BYTE_CAP_EXCEEDED,
+                input_bound_variant="BYTE_CAP_EXCEEDED",
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x07-output-bound-not-established",
-                description="Without an output cap the output cost is unbounded.",
-                output_bound_established=False,
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.OUTPUT_BOUND_NOT_ESTABLISHED,
+            _pf(
+                "orpreflightv1-x07-input-bound-not-established",
+                "The real current state: no pinned tokenizer, so no input bound.",
+                code=_P.INPUT_BOUND_NOT_ESTABLISHED,
+                input_bound_variant="UNESTABLISHED",
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x08-pricing-absent",
-                description="No pricing record at all.",
+            _pf(
+                "orpreflightv1-x08-output-bound-not-established",
+                "max_tokens absent: the output cost is unbounded.",
+                code=_P.OUTPUT_BOUND_NOT_ESTABLISHED,
+                output_bound_variant="MISSING",
+            ),
+            _pf(
+                "orpreflightv1-x09-output-bound-not-sealed-value",
+                "An output cap that is not the sealed 256 is refused.",
+                code=_P.OUTPUT_BOUND_NOT_SEALED_VALUE,
+                output_bound_variant="WRONG_VALUE",
+            ),
+            _pf(
+                "orpreflightv1-x10-pricing-absent",
+                "No pricing record at all.",
+                code=_P.PRICING_NOT_ESTABLISHED,
                 pricing_variant="ABSENT",
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.PRICING_NOT_ESTABLISHED,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x09-pricing-source-untrusted",
-                description="Only first-party pricing surfaces are acceptable.",
+            _pf(
+                "orpreflightv1-x11-pricing-source-untrusted",
+                "Only first-party pricing surfaces are acceptable.",
+                code=_P.PRICING_SOURCE_UNTRUSTED,
                 pricing_variant="UNTRUSTED",
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.PRICING_SOURCE_UNTRUSTED,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x10-pricing-model-mismatch",
-                description="A price for a different model prices nothing here.",
+            _pf(
+                "orpreflightv1-x12-pricing-model-mismatch",
+                "A price for a different model prices nothing here.",
+                code=_P.PRICING_MODEL_MISMATCH,
                 pricing_variant="WRONG_MODEL",
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.PRICING_MODEL_MISMATCH,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x11-pricing-not-jit-fresh",
-                description="A price from an earlier preflight execution is not fresh.",
+            _pf(
+                "orpreflightv1-x13-pricing-selector-mismatch",
+                "A price for a different endpoint selector is refused.",
+                code=_P.PRICING_SELECTOR_MISMATCH,
+                pricing_variant="SELECTOR_MISMATCH",
+            ),
+            _pf(
+                "orpreflightv1-x14-pricing-broad-provider-label",
+                "A broad provider display label may not stand for the exact "
+                "selector - this is the state the retained schema actually offers.",
+                code=_P.PRICING_SELECTOR_MISMATCH,
+                pricing_variant="BROAD_PROVIDER",
+            ),
+            _pf(
+                "orpreflightv1-x15-pricing-not-jit-fresh",
+                "A price from an earlier preflight execution is not fresh.",
+                code=_P.PRICING_NOT_JIT_FRESH,
                 pricing_variant="STALE",
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.PRICING_NOT_JIT_FRESH,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x12-operator-ceiling-unauthorized",
-                description="No operator spend ceiling has been authorized.",
+            _pf(
+                "orpreflightv1-x16-cost-arithmetic-overflow",
+                "A cost product outside the safe arithmetic domain is refused.",
+                code=_P.COST_ARITHMETIC_INVALID,
+                pricing_variant="OVERFLOW",
+            ),
+            _pf(
+                "orpreflightv1-x17-operator-ceiling-unauthorized",
+                "No operator spend ceiling has been authorized.",
+                code=_P.COST_EXCEEDS_OPERATOR_CEILING,
                 ceiling_variant="UNAUTHORIZED",
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.COST_EXCEEDS_OPERATOR_CEILING,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x13-cost-exceeds-operator-ceiling",
-                description="Worst-case cost is above what the operator allowed.",
+            _pf(
+                "orpreflightv1-x18-operator-ceiling-one-unit-below",
+                "One picodollar below the computed bound is still a refusal.",
+                code=_P.COST_EXCEEDS_OPERATOR_CEILING,
+                ceiling_variant="ONE_UNIT_BELOW",
+            ),
+            _pf(
+                "orpreflightv1-x19-cost-exceeds-operator-ceiling",
+                "Worst-case cost far above what the operator allowed.",
+                code=_P.COST_EXCEEDS_OPERATOR_CEILING,
                 ceiling_variant="TOO_LOW",
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.COST_EXCEEDS_OPERATOR_CEILING,
             ),
-            OpenRouterPreflightCaseV1(
-                case_id="orpreflightv1-x14-authorization-already-consumed",
-                description="A one-call authorization cannot be spent twice.",
+            _pf(
+                "orpreflightv1-x20-p19-attempted-without-p17",
+                "A cost bound cannot exist while the input bound is missing.",
+                code=_P.INPUT_BOUND_NOT_ESTABLISHED,
+                input_bound_variant="UNESTABLISHED",
+                ceiling_variant="AUTHORIZED",
+            ),
+            _pf(
+                "orpreflightv1-x21-p19-attempted-without-p18",
+                "A cost bound cannot exist while the price is missing.",
+                code=_P.PRICING_NOT_ESTABLISHED,
+                pricing_variant="ABSENT",
+                ceiling_variant="AUTHORIZED",
+            ),
+            _pf(
+                "orpreflightv1-x22-authorization-already-consumed",
+                "A one-call authorization cannot be spent twice.",
+                code=_P.AUTHORIZATION_ALREADY_CONSUMED,
                 replay_consumed=True,
-                expected_verdict="REFUSED",
-                expected_failure_code=_P.AUTHORIZATION_ALREADY_CONSUMED,
             ),
         ),
         key=lambda case: case.case_id,
@@ -954,6 +1042,15 @@ OPENROUTER_PREFLIGHT_CASE_SET_ID_V1 = stable_contract_id(
 
 
 __all__ = [
+    "HYPOTHETICAL_COST_PICODOLLARS",
+    "CEILING_ONE_UNIT_BELOW",
+    "CEILING_EQUAL_BOUNDARY",
+    "PRICING_OVERFLOW",
+    "PRICING_EXPONENT_FORM",
+    "PRICING_SELECTOR_MISMATCH",
+    "PRICING_BROAD_PROVIDER",
+    "OUTPUT_BOUND_WRONG_VALUE",
+    "INPUT_BOUND_BYTE_CAP_EXCEEDED",
     "CEILING_AUTHORIZED",
     "CEILING_TOO_LOW",
     "CEILING_UNAUTHORIZED",

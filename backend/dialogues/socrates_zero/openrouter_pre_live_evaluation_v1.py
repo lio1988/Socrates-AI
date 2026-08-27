@@ -29,19 +29,27 @@ from .acquisition_tripwires import (
 from .contracts import ContractValidationError, canonical_json, stable_contract_id
 from .openrouter_pre_live_cases_v1 import (
     CEILING_AUTHORIZED,
+    CEILING_EQUAL_BOUNDARY,
+    CEILING_ONE_UNIT_BELOW,
     CEILING_TOO_LOW,
     CEILING_UNAUTHORIZED,
     CREDENTIAL_ABSENT,
     CREDENTIAL_PRESENT,
     FROZEN_OPENROUTER_INTEGRATION_CASES_V1,
     FROZEN_OPENROUTER_PREFLIGHT_CASES_V1,
+    INPUT_BOUND_BYTE_CAP_EXCEEDED,
     INPUT_BOUND_HYPOTHETICAL,
     INPUT_BOUND_UNESTABLISHED,
     OPENROUTER_INTEGRATION_CASE_SET_ID_V1,
     OPENROUTER_PREFLIGHT_CASE_SET_ID_V1,
     OUTPUT_BOUND_ESTABLISHED,
     OUTPUT_BOUND_MISSING,
+    OUTPUT_BOUND_WRONG_VALUE,
     PREFLIGHT_EXECUTION_ID,
+    PRICING_BROAD_PROVIDER,
+    PRICING_EXPONENT_FORM,
+    PRICING_OVERFLOW,
+    PRICING_SELECTOR_MISMATCH,
     PRICING_STALE,
     PRICING_TRUSTED,
     PRICING_UNTRUSTED_SOURCE,
@@ -60,6 +68,7 @@ from .openrouter_pre_live_integration_v1 import (
 )
 from .openrouter_pre_live_safety_v1 import (
     FROZEN_OPENROUTER_PRE_LIVE_SAFETY_CONTRACT_V1,
+    OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1,
     OPENROUTER_PREFLIGHT_GUARD_ORDER_ID_V1,
     OPENROUTER_PRE_LIVE_SAFETY_CONTRACT_ID_V1,
     OpenRouterBoundStatusV1,
@@ -147,8 +156,8 @@ class OpenRouterPreLiveThresholdsV1(_FrozenPreLiveContractV1):
 
     required_integration_positive_accepted: int = 12
     required_integration_adversarial_rejected: int = 18
-    required_preflight_authorized: int = 1
-    required_preflight_refused: int = 14
+    required_preflight_authorized: int = 3
+    required_preflight_refused: int = 22
     required_unexpected_results: int = 0
     required_invalid_fixture_constructions: int = 0
     maximum_cross_request_substitutions_accepted: int = 0
@@ -261,6 +270,10 @@ class OpenRouterPreLiveIntegrationArtifactV1(_FrozenPreLiveContractV1):
     ] = "UNAVAILABLE_BY_DOCUMENTED_CONTRACT"
     p17_input_token_bound: Literal["NOT_ESTABLISHED"] = "NOT_ESTABLISHED"
     p18_pricing_record: Literal["NOT_ESTABLISHED"] = "NOT_ESTABLISHED"
+    pricing_endpoint_granularity: Literal[
+        "BROAD_PROVIDER_ONLY"
+    ] = "BROAD_PROVIDER_ONLY"
+    p19_cost_formula: Literal["READY"] = "READY"
     p19_total_cost_bound: Literal["NOT_ESTABLISHED"] = "NOT_ESTABLISHED"
     output_token_bound: Literal["ESTABLISHED"] = "ESTABLISHED"
     runtime_authority: Literal["NOT_AUTHORIZED"] = "NOT_AUTHORIZED"
@@ -422,13 +435,29 @@ _PRICING_VARIANTS = {
     "TRUSTED": PRICING_TRUSTED,
     "UNTRUSTED": PRICING_UNTRUSTED_SOURCE,
     "WRONG_MODEL": PRICING_WRONG_MODEL,
+    "SELECTOR_MISMATCH": PRICING_SELECTOR_MISMATCH,
+    "BROAD_PROVIDER": PRICING_BROAD_PROVIDER,
+    "EXPONENT_FORM": PRICING_EXPONENT_FORM,
+    "OVERFLOW": PRICING_OVERFLOW,
     "STALE": PRICING_STALE,
     "ABSENT": None,
 }
 _CEILING_VARIANTS = {
     "AUTHORIZED": CEILING_AUTHORIZED,
+    "EQUAL_BOUNDARY": CEILING_EQUAL_BOUNDARY,
+    "ONE_UNIT_BELOW": CEILING_ONE_UNIT_BELOW,
     "TOO_LOW": CEILING_TOO_LOW,
     "UNAUTHORIZED": CEILING_UNAUTHORIZED,
+}
+_INPUT_BOUND_VARIANTS = {
+    "ESTABLISHED": INPUT_BOUND_HYPOTHETICAL,
+    "UNESTABLISHED": INPUT_BOUND_UNESTABLISHED,
+    "BYTE_CAP_EXCEEDED": INPUT_BOUND_BYTE_CAP_EXCEEDED,
+}
+_OUTPUT_BOUND_VARIANTS = {
+    "SEALED": OUTPUT_BOUND_ESTABLISHED,
+    "MISSING": OUTPUT_BOUND_MISSING,
+    "WRONG_VALUE": OUTPUT_BOUND_WRONG_VALUE,
 }
 
 
@@ -446,9 +475,7 @@ def evaluate_preflight_case_v1(
             update={"contract_id": "szorprelivesafetyv1_" + "0" * 64}
         )
     )
-    input_bound = (
-        INPUT_BOUND_HYPOTHETICAL if case.input_bound_established else INPUT_BOUND_UNESTABLISHED
-    )
+    input_bound = _INPUT_BOUND_VARIANTS[case.input_bound_variant]
     if case.request_body_sha_override is not None:
         input_bound = input_bound.model_copy(
             update={
@@ -456,12 +483,26 @@ def evaluate_preflight_case_v1(
                 "evidence_id": None,
             }
         )
-    output_bound = (
-        OUTPUT_BOUND_ESTABLISHED if case.output_bound_established else OUTPUT_BOUND_MISSING
-    )
+    output_bound = _OUTPUT_BOUND_VARIANTS[case.output_bound_variant]
     pricing = _PRICING_VARIANTS[case.pricing_variant]
     ceiling = _CEILING_VARIANTS[case.ceiling_variant]
-    cost_bound = compute_openrouter_cost_bound_v1(input_bound, output_bound, pricing)
+    try:
+        cost_bound = compute_openrouter_cost_bound_v1(input_bound, output_bound, pricing)
+    except ContractValidationError:
+        # An unrepresentable cost is a refusal, not an exception that escapes.
+        return OpenRouterPreflightCaseResultV1(
+            case_id=case.case_id,
+            case_fingerprint=case.case_fingerprint or "",
+            expected_verdict=case.expected_verdict,
+            actual_verdict="REFUSED",
+            expected_failure_code=case.expected_failure_code,
+            actual_failure_code=OpenRouterPreflightFailureCodeV1.COST_ARITHMETIC_INVALID,
+            result_matches_expectation=(
+                case.expected_verdict == "REFUSED"
+                and case.expected_failure_code
+                is OpenRouterPreflightFailureCodeV1.COST_ARITHMETIC_INVALID
+            ),
+        )
 
     consumed: Tuple[str, ...] = ()
     if case.replay_consumed:
@@ -470,6 +511,7 @@ def evaluate_preflight_case_v1(
             request_intent_receipt_id=INTENT_A.receipt_id or "",
             expected_request_intent_receipt_id=INTENT_A.receipt_id or "",
             expected_request_body_sha256=INTENT_A.body_sha256,
+            expected_request_body_length=INTENT_A.body_length,
             transport_ready=True,
             credential_attestation=CREDENTIAL_PRESENT,
             input_bound=input_bound,
@@ -489,6 +531,7 @@ def evaluate_preflight_case_v1(
         ),
         expected_request_intent_receipt_id=INTENT_A.receipt_id or "",
         expected_request_body_sha256=INTENT_A.body_sha256,
+        expected_request_body_length=INTENT_A.body_length,
         transport_ready=case.transport_ready,
         credential_attestation=(
             CREDENTIAL_PRESENT if case.credential_present else CREDENTIAL_ABSENT
@@ -664,12 +707,23 @@ def evaluate_openrouter_pre_live_v1() -> Tuple[
 def _live_readiness_v1() -> OpenRouterLiveReadinessV1:
     """The layered live decision, derived rather than declared.
 
-    Structural safety being ready is not sufficient: a live call also needs a
-    bounded worst-case cost, and that needs an input token bound this repository
-    cannot currently produce.  That is a structural gap, not a fresh fact, so the
-    honest answer is NOT_AUTHORIZED rather than pending-JIT.
+    Pending-JIT is available only when every structural bound is already defined
+    and the sole remaining item is a fresh observation such as a price.  Two
+    structural gaps stand in the way here, and neither is a fetchable fact:
+
+    * no pinned tokenizer, so no input token bound (P17); and
+    * the retained first-party pricing schema is BROAD_PROVIDER_ONLY, so a price
+      cannot be bound to the exact request selector (P18).
+
+    Either alone forces NOT_AUTHORIZED.
     """
-    if INPUT_BOUND_UNESTABLISHED.status is OpenRouterBoundStatusV1.ESTABLISHED:
+    input_ready = (
+        INPUT_BOUND_UNESTABLISHED.status is OpenRouterBoundStatusV1.ESTABLISHED
+    )
+    pricing_ready = OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 == (
+        "EXACT_SELECTOR_BINDABLE"
+    )
+    if input_ready and pricing_ready:
         return OpenRouterLiveReadinessV1.AUTHORIZED_PENDING_JIT_PREFLIGHT
     return OpenRouterLiveReadinessV1.NOT_AUTHORIZED
 

@@ -61,6 +61,40 @@ OPENROUTER_SEALED_MAX_OUTPUT_TOKENS_V1 = 256
 #: a token cap: bytes are not tokens and the difference is the whole of P17.
 OPENROUTER_SEALED_REQUEST_BODY_BYTES_V1 = 447
 
+#: Pricing granularity audit, from the retained first-party endpoints schema.
+#:
+#: The request pins the exact provider selector ``azure/swedencentral``, which the
+#: retained provider-selection guide describes as an exact provider slug naming a
+#: region-specific endpoint.  The pricing-bearing endpoint record exposes
+#: ``provider_name`` (a broad display name such as "OpenAI"), ``name`` (a display
+#: string), and ``tag`` (a bare ``type: string`` with no description and no
+#: documented namespace; the only retained example is ``openai``).  No retained
+#: example anywhere carries a compound provider/region value, no endpoint-scoped
+#: slug field exists on that record, and the retained ``endpoint_id`` examples are
+#: UUIDs in a different namespace.  The documented way to obtain the exact slug is
+#: a UI copy button, not an API field.
+#:
+#: So a pricing record cannot be bound unambiguously to the exact request
+#: selector from retained evidence.  This is a structural blocker for P18, not a
+#: freshness one.
+OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 = "BROAD_PROVIDER_ONLY"
+
+#: Tokenizer family labels.  A family is not a tokenizer: it names a lineage, not
+#: a pinned vocabulary, and may never stand in for one.
+FROZEN_OPENROUTER_TOKENIZER_FAMILY_LABELS_V1: Tuple[str, ...] = (
+    "Router",
+    "Media",
+    "Other",
+    "GPT",
+    "Claude",
+    "Gemini",
+    "Gemma",
+    "Grok",
+    "Cohere",
+    "Nova",
+    "Qwen",
+)
+
 
 class OpenRouterBoundStatusV1(str, Enum):
     ESTABLISHED = "ESTABLISHED"
@@ -68,11 +102,32 @@ class OpenRouterBoundStatusV1(str, Enum):
 
 
 class OpenRouterInputBoundBasisV1(str, Enum):
-    """How an input token upper bound was obtained, if at all."""
+    """How an input token upper bound was obtained, if at all.
+
+    Byte length, character count, a chars-per-token heuristic, a tokenizer family
+    label and post-call usage are all excluded by construction: none of them is a
+    basis this enum can express.
+    """
 
     PINNED_OFFICIAL_TOKENIZER = "PINNED_OFFICIAL_TOKENIZER"
     FIRST_PARTY_TOKEN_COUNT_FACILITY = "FIRST_PARTY_TOKEN_COUNT_FACILITY"
     NO_PINNED_TOKENIZER_AVAILABLE = "NO_PINNED_TOKENIZER_AVAILABLE"
+
+
+class OpenRouterTokenizerBindingV1(str, Enum):
+    """How firmly a tokenizer is bound to the exact model."""
+
+    PINNED_IMPLEMENTATION = "PINNED_IMPLEMENTATION"
+    FAMILY_LABEL_ONLY = "FAMILY_LABEL_ONLY"
+    ABSENT = "ABSENT"
+
+
+class OpenRouterPricingGranularityV1(str, Enum):
+    """Whether a pricing record can name the exact request selector."""
+
+    EXACT_SELECTOR_BINDABLE = "EXACT_SELECTOR_BINDABLE"
+    BROAD_PROVIDER_ONLY = "BROAD_PROVIDER_ONLY"
+    NOT_ESTABLISHED = "NOT_ESTABLISHED"
 
 
 class OpenRouterPricingSourceV1(str, Enum):
@@ -100,10 +155,14 @@ class OpenRouterPreflightFailureCodeV1(str, Enum):
     CREDENTIAL_ATTESTATION_MISSING = "CREDENTIAL_ATTESTATION_MISSING"
     REQUEST_INTENT_MISMATCH = "REQUEST_INTENT_MISMATCH"
     INPUT_BOUND_NOT_ESTABLISHED = "INPUT_BOUND_NOT_ESTABLISHED"
+    INPUT_BYTE_CAP_EXCEEDED = "INPUT_BYTE_CAP_EXCEEDED"
     OUTPUT_BOUND_NOT_ESTABLISHED = "OUTPUT_BOUND_NOT_ESTABLISHED"
+    OUTPUT_BOUND_NOT_SEALED_VALUE = "OUTPUT_BOUND_NOT_SEALED_VALUE"
     PRICING_NOT_ESTABLISHED = "PRICING_NOT_ESTABLISHED"
     PRICING_SOURCE_UNTRUSTED = "PRICING_SOURCE_UNTRUSTED"
     PRICING_MODEL_MISMATCH = "PRICING_MODEL_MISMATCH"
+    PRICING_SELECTOR_MISMATCH = "PRICING_SELECTOR_MISMATCH"
+    PRICING_GRANULARITY_INSUFFICIENT = "PRICING_GRANULARITY_INSUFFICIENT"
     PRICING_NOT_JIT_FRESH = "PRICING_NOT_JIT_FRESH"
     COST_ARITHMETIC_INVALID = "COST_ARITHMETIC_INVALID"
     COST_EXCEEDS_OPERATOR_CEILING = "COST_EXCEEDS_OPERATOR_CEILING"
@@ -122,11 +181,15 @@ FROZEN_OPENROUTER_PREFLIGHT_GUARD_ORDER_V1: Tuple[
     OpenRouterPreflightFailureCodeV1.TRANSPORT_NOT_READY,
     OpenRouterPreflightFailureCodeV1.CREDENTIAL_ATTESTATION_MISSING,
     OpenRouterPreflightFailureCodeV1.REQUEST_INTENT_MISMATCH,
+    OpenRouterPreflightFailureCodeV1.INPUT_BYTE_CAP_EXCEEDED,
     OpenRouterPreflightFailureCodeV1.INPUT_BOUND_NOT_ESTABLISHED,
     OpenRouterPreflightFailureCodeV1.OUTPUT_BOUND_NOT_ESTABLISHED,
+    OpenRouterPreflightFailureCodeV1.OUTPUT_BOUND_NOT_SEALED_VALUE,
     OpenRouterPreflightFailureCodeV1.PRICING_NOT_ESTABLISHED,
     OpenRouterPreflightFailureCodeV1.PRICING_SOURCE_UNTRUSTED,
     OpenRouterPreflightFailureCodeV1.PRICING_MODEL_MISMATCH,
+    OpenRouterPreflightFailureCodeV1.PRICING_SELECTOR_MISMATCH,
+    OpenRouterPreflightFailureCodeV1.PRICING_GRANULARITY_INSUFFICIENT,
     OpenRouterPreflightFailureCodeV1.PRICING_NOT_JIT_FRESH,
     OpenRouterPreflightFailureCodeV1.COST_ARITHMETIC_INVALID,
     OpenRouterPreflightFailureCodeV1.COST_EXCEEDS_OPERATOR_CEILING,
@@ -190,6 +253,11 @@ class OpenRouterInputBoundEvidenceV1(_FrozenSafetyContractV1):
     request_body_byte_cap: int = Field(ge=0)
     bound_request_body_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     chat_framing_overhead_bounded: bool = False
+    tokenizer_binding: OpenRouterTokenizerBindingV1 = (
+        OpenRouterTokenizerBindingV1.ABSENT
+    )
+    tokenizer_identity: Optional[str] = None
+    model_tokenizer_binding_source: Optional[str] = None
     evidence_id: Optional[str] = None
 
     @model_validator(mode="after")
@@ -213,6 +281,24 @@ class OpenRouterInputBoundEvidenceV1(_FrozenSafetyContractV1):
             raise ContractValidationError(
                 "an established input bound requires a tokenizer or count facility"
             )
+        if self.tokenizer_identity in FROZEN_OPENROUTER_TOKENIZER_FAMILY_LABELS_V1:
+            raise ContractValidationError(
+                "a tokenizer family label is not a tokenizer identity"
+            )
+        if established and self.basis is (
+            OpenRouterInputBoundBasisV1.PINNED_OFFICIAL_TOKENIZER
+        ):
+            if self.tokenizer_binding is not (
+                OpenRouterTokenizerBindingV1.PINNED_IMPLEMENTATION
+            ):
+                raise ContractValidationError(
+                    "a tokenizer-based input bound requires a pinned implementation"
+                )
+            if not self.tokenizer_identity or not self.model_tokenizer_binding_source:
+                raise ContractValidationError(
+                    "a tokenizer-based input bound requires an identity and an "
+                    "authoritative model-to-tokenizer binding source"
+                )
         expected = stable_contract_id(
             "szorinputboundv1", self.model_dump(mode="json", exclude={"evidence_id"})
         )
@@ -240,6 +326,12 @@ class OpenRouterOutputBoundEvidenceV1(_FrozenSafetyContractV1):
             raise ContractValidationError(
                 "output bound status disagrees with the token maximum"
             )
+        if established and self.max_output_tokens != (
+            OPENROUTER_SEALED_MAX_OUTPUT_TOKENS_V1
+        ):
+            raise ContractValidationError(
+                "the output bound must be the value sealed in the request body"
+            )
         expected = stable_contract_id(
             "szoroutputboundv1", self.model_dump(mode="json", exclude={"evidence_id"})
         )
@@ -265,7 +357,10 @@ class OpenRouterTrustedPricingRecordV1(_FrozenSafetyContractV1):
     source_evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     preflight_execution_id: str = Field(min_length=1)
     model_id: str = Field(min_length=1)
-    endpoint_scope: Optional[str] = None
+    route_identity: Optional[str] = None
+    route_identity_granularity: OpenRouterPricingGranularityV1 = (
+        OpenRouterPricingGranularityV1.NOT_ESTABLISHED
+    )
     currency: Literal["USD"] = "USD"
     price_unit: Literal["PER_TOKEN"] = "PER_TOKEN"
     prompt_price_usd: str
@@ -319,6 +414,10 @@ class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
         OPENROUTER_COST_BOUND_SCHEMA_V1
     ] = OPENROUTER_COST_BOUND_SCHEMA_V1
     status: OpenRouterBoundStatusV1
+    formula_ready: Literal[True] = True
+    formula: Literal[
+        "max_input_tokens * prompt_price + max_output_tokens * completion_price"
+    ] = "max_input_tokens * prompt_price + max_output_tokens * completion_price"
     input_bound_evidence_id: str
     output_bound_evidence_id: str
     pricing_record_id: Optional[str] = None
@@ -354,6 +453,8 @@ def compute_openrouter_cost_bound_v1(
         or output_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED
         or pricing is None
         or not pricing.source_is_trusted
+        or pricing.route_identity_granularity
+        is not OpenRouterPricingGranularityV1.EXACT_SELECTOR_BINDABLE
     )
     if unbounded:
         return OpenRouterCostBoundV1(
@@ -567,6 +668,7 @@ def evaluate_live_preflight_v1(
     request_intent_receipt_id: str,
     expected_request_intent_receipt_id: str,
     expected_request_body_sha256: str,
+    expected_request_body_length: int,
     transport_ready: bool,
     credential_attestation: Optional[OpenRouterCredentialPresenceAttestationV1],
     input_bound: OpenRouterInputBoundEvidenceV1,
@@ -619,6 +721,11 @@ def evaluate_live_preflight_v1(
             OpenRouterPreflightFailureCodeV1.REQUEST_INTENT_MISMATCH,
             "input bound evidence was computed for a different request body",
         )
+    if input_bound.request_body_byte_cap < expected_request_body_length:
+        return refuse(
+            OpenRouterPreflightFailureCodeV1.INPUT_BYTE_CAP_EXCEEDED,
+            "the rendered request exceeds its declared byte cap",
+        )
     if input_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED:
         return refuse(
             OpenRouterPreflightFailureCodeV1.INPUT_BOUND_NOT_ESTABLISHED,
@@ -628,6 +735,11 @@ def evaluate_live_preflight_v1(
         return refuse(
             OpenRouterPreflightFailureCodeV1.OUTPUT_BOUND_NOT_ESTABLISHED,
             "output token bound is not established",
+        )
+    if output_bound.max_output_tokens != safety_contract.max_output_tokens:
+        return refuse(
+            OpenRouterPreflightFailureCodeV1.OUTPUT_BOUND_NOT_SEALED_VALUE,
+            "output bound is not the sealed request value",
         )
     if pricing is None:
         return refuse(
@@ -643,6 +755,18 @@ def evaluate_live_preflight_v1(
         return refuse(
             OpenRouterPreflightFailureCodeV1.PRICING_MODEL_MISMATCH,
             "pricing record is for a different model",
+        )
+    if pricing.route_identity != safety_contract.exact_endpoint_selector:
+        return refuse(
+            OpenRouterPreflightFailureCodeV1.PRICING_SELECTOR_MISMATCH,
+            "pricing record does not name the exact request endpoint selector",
+        )
+    if pricing.route_identity_granularity is not (
+        OpenRouterPricingGranularityV1.EXACT_SELECTOR_BINDABLE
+    ):
+        return refuse(
+            OpenRouterPreflightFailureCodeV1.PRICING_GRANULARITY_INSUFFICIENT,
+            "pricing route identity is not bindable at exact-selector granularity",
         )
     if pricing.preflight_execution_id != preflight_execution_id:
         return refuse(
@@ -711,7 +835,11 @@ __all__ = [
     "OpenRouterPreflightFailureCodeV1",
     "OpenRouterPreflightResultV1",
     "OpenRouterPreflightVerdictV1",
+    "OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1",
+    "FROZEN_OPENROUTER_TOKENIZER_FAMILY_LABELS_V1",
+    "OpenRouterPricingGranularityV1",
     "OpenRouterPricingSourceV1",
+    "OpenRouterTokenizerBindingV1",
     "OpenRouterTrustedPricingRecordV1",
     "compute_openrouter_cost_bound_v1",
     "evaluate_live_preflight_v1",
