@@ -536,3 +536,116 @@ def test_s6_modules_do_not_reimplement_predecessor_contracts() -> None:
     # And it does not reach into the predecessor evaluators.
     assert ".openrouter_route_controls_evaluation" not in integration
     assert ".openrouter_acquisition_evaluation" not in integration
+
+
+# ------------------------------------------------------- authoritative evidence
+
+
+AUTHORITATIVE_ARTIFACT_ID = (
+    "szorpreliveartifactv1_"
+    "6ff594b31e88781f0d8aaf9705c7e1c48c8bea5965ea820c0be6af6a69f9932e"
+)
+AUTHORITATIVE_ARTIFACT_SHA256 = (
+    "971921fce44ba967080b987d6ce6c646d6f6c006c9ad2f6793661d1f7038c3ea"
+)
+
+
+def _artifact_paths():
+    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
+        OPENROUTER_PRE_LIVE_ARTIFACT_RELATIVE_PATH_V1,
+        OPENROUTER_PRE_LIVE_REPLAY_EXECUTION_RELATIVE_PATH_V1,
+        OPENROUTER_PRE_LIVE_REPLAY_LOCK_RELATIVE_PATH_V1,
+    )
+
+    return (
+        ROOT / OPENROUTER_PRE_LIVE_ARTIFACT_RELATIVE_PATH_V1,
+        ROOT / OPENROUTER_PRE_LIVE_REPLAY_EXECUTION_RELATIVE_PATH_V1,
+        ROOT / OPENROUTER_PRE_LIVE_REPLAY_LOCK_RELATIVE_PATH_V1,
+    )
+
+
+def test_authoritative_artifact_is_canonical_and_supported() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
+        OpenRouterLiveReadinessV1,
+        OpenRouterPreLiveHypothesisStatusV1,
+        load_openrouter_pre_live_artifact_v1,
+        render_openrouter_pre_live_artifact_v1,
+    )
+
+    artifact_path, _, _ = _artifact_paths()
+    assert artifact_path.is_file()
+    artifact = load_openrouter_pre_live_artifact_v1(artifact_path)
+    assert artifact_path.read_bytes() == render_openrouter_pre_live_artifact_v1(artifact)
+    assert artifact.artifact_id == AUTHORITATIVE_ARTIFACT_ID
+    assert (
+        hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        == AUTHORITATIVE_ARTIFACT_SHA256
+    )
+    assert artifact.hypothesis_status is OpenRouterPreLiveHypothesisStatusV1.SUPPORTED
+    assert artifact.metrics.all_thresholds_pass is True
+    assert artifact.one_live_shadow_call is OpenRouterLiveReadinessV1.NOT_AUTHORIZED
+
+
+def test_artifact_preserves_every_standing_blocker() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
+        load_openrouter_pre_live_artifact_v1,
+    )
+
+    artifact_path, _, _ = _artifact_paths()
+    artifact = load_openrouter_pre_live_artifact_v1(artifact_path)
+    assert artifact.p17_input_token_bound == "NOT_ESTABLISHED"
+    assert artifact.p18_pricing_record == "NOT_ESTABLISHED"
+    assert artifact.p19_total_cost_bound == "NOT_ESTABLISHED"
+    assert artifact.output_token_bound == "ESTABLISHED"
+    assert artifact.runtime_authority == "NOT_AUTHORIZED"
+    assert artifact.live_openrouter_execution == "NOT_AUTHORIZED"
+    assert artifact.exact_endpoint_response_identity_status == (
+        "UNAVAILABLE_BY_DOCUMENTED_CONTRACT"
+    )
+    assert set(artifact.boundary_counters.model_dump(mode="python").values()) == {0}
+
+
+def test_artifact_contains_no_credential_or_raw_body() -> None:
+    artifact_path, _, _ = _artifact_paths()
+    payload = artifact_path.read_text(encoding="utf-8")
+    for marker in ("Authorization", "Bearer ", "sk-or-", "scaffolding"):
+        assert marker not in payload, marker
+    assert RESPONSE_A.decode("utf-8") not in payload
+    assert RESPONSE_B.decode("utf-8") not in payload
+    assert "Ask one concise opening Socratic question" not in payload
+
+
+def test_replay_evidence_is_deterministic() -> None:
+    _, execution_path, lock_path = _artifact_paths()
+    execution = json.loads(execution_path.read_bytes())
+    lock = json.loads(lock_path.read_bytes())
+    assert execution["semantic_equality"] is True
+    assert execution["artifact_id_equality"] is True
+    assert execution["byte_identity"] is True
+    assert execution["official_source_retrievals"] == 0
+    assert execution["live_openrouter_calls"] == 0
+    assert lock["artifact_sha256"] == AUTHORITATIVE_ARTIFACT_SHA256
+
+
+def test_rebuilding_reproduces_the_artifact_byte_for_byte() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
+        build_openrouter_pre_live_artifact_v1,
+        render_openrouter_pre_live_artifact_v1,
+    )
+
+    artifact_path, _, _ = _artifact_paths()
+    rebuilt = build_openrouter_pre_live_artifact_v1()
+    assert render_openrouter_pre_live_artifact_v1(rebuilt) == artifact_path.read_bytes()
+
+
+def test_artifact_metrics_must_be_derived() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_evaluation_v1 import (
+        OpenRouterPreLiveIntegrationArtifactV1,
+    )
+
+    artifact_path, _, _ = _artifact_paths()
+    payload = json.loads(artifact_path.read_bytes())
+    payload.pop("artifact_id")
+    payload["metrics"]["integration_positive_accepted"] = 99
+    with pytest.raises(ValidationError, match="not fully derived"):
+        OpenRouterPreLiveIntegrationArtifactV1.model_validate(payload)

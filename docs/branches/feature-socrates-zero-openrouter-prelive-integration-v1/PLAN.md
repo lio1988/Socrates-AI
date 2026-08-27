@@ -30,6 +30,14 @@ be SUPPORTED while a live call remains NOT_AUTHORIZED.
 | 16 | deterministic replay | semantic, artifact-ID and byte identity |
 | 17 | frozen predecessor surfaces | 19/19 unchanged |
 
+## Status
+
+All steps complete. **OPENROUTER PRE-LIVE INTEGRATION v1 SUPPORTED**, with the
+live call separately **NOT_AUTHORIZED**. Every threshold was met; no stop
+condition triggered. The pre-authoritative freeze was committed at
+`4861c8a4df3ad9e3721f9a46ac3cb3c237c54828` before the single authoritative run,
+and no semantic file changed afterwards.
+
 ## Ordered steps
 
 1. **Initialize** branch documentation.
