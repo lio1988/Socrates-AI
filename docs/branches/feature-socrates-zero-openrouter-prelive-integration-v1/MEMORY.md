@@ -46,6 +46,21 @@ cap; it bounds unit price, not total spend, so it cannot close P19 on its own.
 `PublicPricing` carries prices as **decimal strings** per token — exact integer
 arithmetic is possible without ever touching a binary float.
 
+## Pricing granularity — the audited finding
+
+`PRICING ENDPOINT GRANULARITY: BROAD_PROVIDER_ONLY`.
+
+The pricing-bearing endpoint record exposes `provider_name` (broad display name),
+`name` (display string) and `tag` (bare `type: string`, no description, no
+documented namespace, example `openai`). No endpoint-scoped slug field exists on
+it, retained `endpoint_id` examples are UUIDs in a different namespace, no
+retained example carries a compound `provider/region` value, and the documented
+route to the exact slug is a UI copy button rather than an API field.
+
+So a price cannot be bound to `azure/swedencentral`. **P18 is structurally
+blocked, not merely freshness-blocked.** Do not repeat the earlier claim that P18
+is JIT-ready.
+
 ## Money
 
 Integer picodollars (1e-12 USD), parsed from official decimal strings via
