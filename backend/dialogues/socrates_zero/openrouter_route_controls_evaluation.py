@@ -26,6 +26,14 @@ from .acquisition_tripwires import (
     require_clean_acquisition_boundary_tripwire_v0,
 )
 from .contracts import ContractValidationError, canonical_json, stable_contract_id
+from .openrouter_provenance_boundary_v1 import (
+    FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1,
+    OPENROUTER_PROVENANCE_BOUNDARY_ID_V1,
+    OPENROUTER_PROVENANCE_PREDECESSOR_CASE_DESIGN_REFERENCE_V1,
+    OPENROUTER_PROVENANCE_PREDECESSOR_CASE_SUITE_REFERENCE_V1,
+    OpenRouterProvenanceRecordV1,
+    openrouter_provenance_record_v1,
+)
 from .openrouter_route_controls_cases import (
     FIRST_ROUTE_CONTROL_GUARD_WINS_V1,
     FROZEN_OPENROUTER_ROUTE_CONTROL_CASES_V1,
@@ -1621,7 +1629,7 @@ FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1: Tuple[
             "backend/dialogues/socrates_zero/openrouter_acquisition_contracts.py",
             "backend/dialogues/socrates_zero/openrouter_acquisition_renderer.py",
             "backend/dialogues/socrates_zero/openrouter_acquisition_adapter.py",
-            "backend/dialogues/socrates_zero/openrouter_acquisition_cases.py",
+            OPENROUTER_PROVENANCE_PREDECESSOR_CASE_DESIGN_REFERENCE_V1,
             "backend/dialogues/socrates_zero/openrouter_acquisition_evaluation.py",
             OPENROUTER_SPECIFICATION_MANIFEST_RELATIVE_PATH_V1,
             "tests_dialogues/conftest.py",
@@ -1632,7 +1640,7 @@ FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1: Tuple[
             "tests_dialogues/test_socrates_zero_acquisition_isolation_evidence.py",
             "tests_dialogues/test_socrates_zero_acquisition_runtime.py",
             "tests_dialogues/test_socrates_zero_openrouter_acquisition_adapter.py",
-            "tests_dialogues/test_socrates_zero_openrouter_acquisition_cases.py",
+            OPENROUTER_PROVENANCE_PREDECESSOR_CASE_SUITE_REFERENCE_V1,
             "tests_dialogues/test_socrates_zero_openrouter_acquisition_contracts.py",
             "tests_dialogues/test_socrates_zero_openrouter_acquisition_evaluation.py",
             "tests_dialogues/test_socrates_zero_openrouter_acquisition_renderer.py",
@@ -1692,6 +1700,21 @@ FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1 = stable_contract_id(
     ),
 )
 
+# The sealed route-control experiment measured an inventory that still carried
+# two raw predecessor paths.  That generation is history and is never
+# re-derived from current code: it is pinned here as frozen literals so the
+# sealed artifact keeps validating byte-for-byte while the current inventory
+# above is free to evolve.
+FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1 = (
+    "szorroutepathinventoryv1_"
+    "0ec9a8417d7cb91bb0e17fc0b402577032cf207ace89cddc32276390ec661e33"
+)
+FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1 = (
+    "szorroutesnapshotv1_"
+    "9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b"
+)
+FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1 = 90
+
 
 _HISTORICAL_ARTIFACT_LOCKS_V1: Tuple[Tuple[str, str, str], ...] = (
     ("phase5-search-kernel", "docs/branches/feature-socrates-zero-search-v0/artifacts/socrateszero_search_kernel_benchmark_v0.json", "21aa870a790f80186c0cd2b66878fa0d6344399fdf9e5386e399c7032569886c"),
@@ -1721,29 +1744,49 @@ class OpenRouterScopedPathSnapshotV1(_FrozenEvaluationContractV1):
         OPENROUTER_ROUTE_CONTROL_SCOPED_SNAPSHOT_SCHEMA_V1
     ] = OPENROUTER_ROUTE_CONTROL_SCOPED_SNAPSHOT_SCHEMA_V1
     inventory_id: Literal[
-        FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1
+        FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1,
+        FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1,
     ] = FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1
     rows: Tuple[OpenRouterScopedPathDigestV1, ...]
     snapshot_id: Optional[str] = None
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterScopedPathSnapshotV1":
-        expected_membership = tuple(
-            (scope, relative_path)
-            for scope, paths in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1
-            for relative_path in paths
+        historical = (
+            self.inventory_id
+            == FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1
         )
-        observed_membership = tuple(
-            (row.scope, row.relative_path) for row in self.rows
-        )
-        if observed_membership != expected_membership:
-            raise ContractValidationError(
-                "scoped snapshot membership or order changed"
+        if historical:
+            if (
+                len(self.rows)
+                != FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1
+            ):
+                raise ContractValidationError(
+                    "historical scoped snapshot row count changed"
+                )
+        else:
+            expected_membership = tuple(
+                (scope, relative_path)
+                for scope, paths in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1
+                for relative_path in paths
             )
+            observed_membership = tuple(
+                (row.scope, row.relative_path) for row in self.rows
+            )
+            if observed_membership != expected_membership:
+                raise ContractValidationError(
+                    "scoped snapshot membership or order changed"
+                )
         expected = stable_contract_id(
             "szorroutesnapshotv1",
             self.model_dump(mode="json", exclude={"snapshot_id"}),
         )
+        if historical and expected != (
+            FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1
+        ):
+            raise ContractValidationError(
+                "historical scoped snapshot identity changed"
+            )
         if self.snapshot_id not in (None, expected):
             raise ContractValidationError("scoped snapshot ID mismatch")
         object.__setattr__(self, "snapshot_id", expected)
@@ -1918,16 +1961,24 @@ def capture_openrouter_route_control_scoped_snapshot_v1(
     rows = []
     for scope, paths in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1:
         for relative_path in paths:
-            path = repository_root / relative_path
-            if not path.is_file():
-                raise ContractValidationError(
-                    f"frozen scoped path is absent: {relative_path}"
-                )
+            provenance = openrouter_provenance_record_v1(
+                relative_path,
+                FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1,
+            )
+            if provenance is None:
+                path = repository_root / relative_path
+                if not path.is_file():
+                    raise ContractValidationError(
+                        f"frozen scoped path is absent: {relative_path}"
+                    )
+                digest = _sha256_bytes(path.read_bytes())
+            else:
+                digest = provenance.record_sha256
             rows.append(
                 OpenRouterScopedPathDigestV1(
                     scope=scope,
                     relative_path=relative_path,
-                    sha256=_sha256_bytes(path.read_bytes()),
+                    sha256=digest,
                 )
             )
     return OpenRouterScopedPathSnapshotV1(rows=tuple(rows))
@@ -3402,7 +3453,16 @@ if __name__ == "__main__":  # pragma: no cover - explicit scientific operation
 
 __all__ = [
     "FROZEN_OPENROUTER_ROUTE_CONTROL_ARTIFACT_CLAIM_FIREWALL_V1",
+    "FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1",
+    "FROZEN_ROUTE_CONTROL_HISTORICAL_PATH_INVENTORY_ID_V1",
+    "FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_ROW_COUNT_V1",
+    "FROZEN_ROUTE_CONTROL_HISTORICAL_SCOPED_SNAPSHOT_ID_V1",
     "FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_ID_V1",
+    "OPENROUTER_PROVENANCE_BOUNDARY_ID_V1",
+    "OPENROUTER_PROVENANCE_PREDECESSOR_CASE_DESIGN_REFERENCE_V1",
+    "OPENROUTER_PROVENANCE_PREDECESSOR_CASE_SUITE_REFERENCE_V1",
+    "OpenRouterProvenanceRecordV1",
+    "openrouter_provenance_record_v1",
     "FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1",
     "OPENROUTER_ROUTE_CONTROL_ARTIFACT_RELATIVE_PATH_V1",
     "OPENROUTER_ROUTE_CONTROL_REPLAY_EXECUTION_RELATIVE_PATH_V1",
