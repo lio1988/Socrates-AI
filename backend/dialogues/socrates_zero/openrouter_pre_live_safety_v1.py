@@ -22,6 +22,8 @@ Import-inert.  No credential is read here, and none may ever enter an identity.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, localcontext
 from enum import Enum
 from typing import Literal, Optional, Tuple
@@ -31,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .contracts import ContractValidationError, stable_contract_id
 from .openrouter_pre_live_integration_v1 import OPENROUTER_MAX_LOCAL_DISPATCHES_V1
 from .openrouter_route_controls_contracts import (
+    FROZEN_OPENROUTER_ROUTE_BODY_JSON_V1,
     OPENROUTER_EXACT_ENDPOINT_SELECTOR_V1,
     OPENROUTER_ROUTE_MODEL_V1,
 )
@@ -41,6 +44,9 @@ OPENROUTER_PRE_LIVE_SAFETY_SCHEMA_V1 = (
 OPENROUTER_INPUT_BOUND_SCHEMA_V1 = "socrateszero-openrouter-input-bound/v1"
 OPENROUTER_OUTPUT_BOUND_SCHEMA_V1 = "socrateszero-openrouter-output-bound/v1"
 OPENROUTER_PRICING_RECORD_SCHEMA_V1 = "socrateszero-openrouter-trusted-pricing/v1"
+OPENROUTER_REQUEST_MODALITY_PROOF_SCHEMA_V1 = (
+    "socrateszero-openrouter-request-modality-proof/v1"
+)
 OPENROUTER_COST_BOUND_SCHEMA_V1 = "socrateszero-openrouter-cost-bound/v1"
 OPENROUTER_OPERATOR_CEILING_SCHEMA_V1 = "socrateszero-openrouter-operator-ceiling/v1"
 OPENROUTER_CREDENTIAL_ATTESTATION_SCHEMA_V1 = (
@@ -365,8 +371,12 @@ class OpenRouterTrustedPricingRecordV1(_FrozenSafetyContractV1):
     price_unit: Literal["PER_TOKEN"] = "PER_TOKEN"
     prompt_price_usd: str
     completion_price_usd: str
+    #: Retained ``PublicPricing.request``: "Price in USD per request".  Optional
+    #: because the schema does not require it; absent means *unknown*, never zero.
+    request_price_usd: Optional[str] = None
     prompt_price_picodollars: Optional[int] = Field(default=None, ge=0)
     completion_price_picodollars: Optional[int] = Field(default=None, ge=0)
+    request_price_picodollars: Optional[int] = Field(default=None, ge=0)
     record_id: Optional[str] = None
 
     @model_validator(mode="after")
@@ -379,9 +389,18 @@ class OpenRouterTrustedPricingRecordV1(_FrozenSafetyContractV1):
             _decimal_usd(self.completion_price_usd, "completion_price_usd"),
             "completion_price_usd",
         )
+        request = (
+            _picodollars_ceiling(
+                _decimal_usd(self.request_price_usd, "request_price_usd"),
+                "request_price_usd",
+            )
+            if self.request_price_usd is not None
+            else None
+        )
         for declared, derived, field in (
             (self.prompt_price_picodollars, prompt, "prompt"),
             (self.completion_price_picodollars, completion, "completion"),
+            (self.request_price_picodollars, request, "request"),
         ):
             if declared is not None and declared != derived:
                 raise ContractValidationError(
@@ -389,6 +408,7 @@ class OpenRouterTrustedPricingRecordV1(_FrozenSafetyContractV1):
                 )
         object.__setattr__(self, "prompt_price_picodollars", prompt)
         object.__setattr__(self, "completion_price_picodollars", completion)
+        object.__setattr__(self, "request_price_picodollars", request)
         expected = stable_contract_id(
             "szorpricingrecordv1", self.model_dump(mode="json", exclude={"record_id"})
         )
@@ -402,12 +422,197 @@ class OpenRouterTrustedPricingRecordV1(_FrozenSafetyContractV1):
         return self.source in FROZEN_OPENROUTER_TRUSTED_PRICING_SOURCES_V1
 
 
+class OpenRouterChargeClassStateV1(str, Enum):
+    """What one documented charge class contributes to a worst-case total."""
+
+    INCLUDED = "INCLUDED"
+    UNBOUNDED = "UNBOUNDED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class OpenRouterChargeCoverageV1(str, Enum):
+    COMPLETE = "COMPLETE"
+    INCOMPLETE = "INCOMPLETE"
+
+
+#: Every documented ``max_price`` charge class and the symbolic term it adds to
+#: the total.  The order is frozen so the rendered formula is deterministic.
+FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1: Tuple[Tuple[str, str], ...] = (
+    ("prompt", "max_input_tokens * prompt_price_ceiling"),
+    ("completion", "max_output_tokens * completion_price_ceiling"),
+    ("request", "request_fee_ceiling"),
+    ("image", "image_fee_ceiling * image_units"),
+    ("audio", "audio_fee_ceiling * audio_units"),
+)
+
+#: Content part types that make a request carry an image or audio charge class.
+FROZEN_OPENROUTER_IMAGE_PART_TYPES_V1 = frozenset(
+    {"image_url", "image", "input_image"}
+)
+FROZEN_OPENROUTER_AUDIO_PART_TYPES_V1 = frozenset(
+    {"input_audio", "audio", "audio_url"}
+)
+FROZEN_OPENROUTER_TEXT_PART_TYPES_V1 = frozenset({"text", "input_text"})
+
+
+def render_openrouter_cost_formula_v1(
+    components: Tuple[Tuple[str, str], ...],
+) -> str:
+    """Render the canonical formula from the very components the code sums.
+
+    Every *applicable* class appears in the sum, bounded or not, so a class can
+    never be dropped silently.  When any applicable class is unbounded no total
+    is computed at all, which is what keeps the label and the arithmetic from
+    ever describing different things.
+    """
+    terms = dict(FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1)
+    applicable = [
+        name
+        for name, state in components
+        if state != OpenRouterChargeClassStateV1.NOT_APPLICABLE.value
+    ]
+    inapplicable = [
+        name
+        for name, state in components
+        if state == OpenRouterChargeClassStateV1.NOT_APPLICABLE.value
+    ]
+    states = ", ".join(f"{name}={state}" for name, state in components)
+    total = " + ".join(terms[name] for name in applicable) if applicable else "0"
+    rendered = f"max_total_cost = {total}"
+    if inapplicable:
+        rendered += f" [not applicable: {', '.join(inapplicable)}]"
+    return f"{rendered} [{states}]"
+
+
+class OpenRouterRequestModalityProofV1(_FrozenSafetyContractV1):
+    """Which charge classes an exact rendered request can incur.
+
+    Derived by counting content parts in the request bytes, never by convention.
+    A text-only request cannot incur image or audio fees, and that is a fact
+    about *these* bytes: the proof carries their digest, so a different request
+    cannot borrow it.
+    """
+
+    schema_version: Literal[
+        OPENROUTER_REQUEST_MODALITY_PROOF_SCHEMA_V1
+    ] = OPENROUTER_REQUEST_MODALITY_PROOF_SCHEMA_V1
+    body_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    body_length: int = Field(ge=0)
+    message_count: int = Field(ge=0)
+    image_parts: int = Field(ge=0)
+    audio_parts: int = Field(ge=0)
+    text_only: bool
+    proof_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def identify(self) -> "OpenRouterRequestModalityProofV1":
+        if self.text_only != (self.image_parts == 0 and self.audio_parts == 0):
+            raise ContractValidationError(
+                "text-only claim disagrees with the counted content parts"
+            )
+        expected = stable_contract_id(
+            "szorrequestmodalityv1",
+            self.model_dump(mode="json", exclude={"proof_id"}),
+        )
+        if self.proof_id not in (None, expected):
+            raise ContractValidationError("request modality proof ID mismatch")
+        object.__setattr__(self, "proof_id", expected)
+        return self
+
+
+def derive_openrouter_request_modality_proof_v1(
+    body_bytes: bytes,
+) -> OpenRouterRequestModalityProofV1:
+    """Count image and audio parts in exact rendered request bytes.
+
+    An unrecognized content part type is refused rather than assumed harmless:
+    a modality nobody has classified cannot be proven non-applicable.
+    """
+    if not isinstance(body_bytes, (bytes, bytearray)):
+        raise ContractValidationError(
+            "a modality proof requires the exact rendered request bytes"
+        )
+    try:
+        payload = json.loads(bytes(body_bytes).decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ContractValidationError("request body is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ContractValidationError("request body must be a JSON object")
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        raise ContractValidationError("request body must carry a messages array")
+    images = 0
+    audios = 0
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        if content is None or isinstance(content, str):
+            continue
+        if not isinstance(content, list):
+            raise ContractValidationError(
+                "message content must be a string or an array of parts"
+            )
+        for part in content:
+            kind = part.get("type") if isinstance(part, dict) else None
+            if kind in FROZEN_OPENROUTER_IMAGE_PART_TYPES_V1:
+                images += 1
+            elif kind in FROZEN_OPENROUTER_AUDIO_PART_TYPES_V1:
+                audios += 1
+            elif kind not in FROZEN_OPENROUTER_TEXT_PART_TYPES_V1:
+                raise ContractValidationError(
+                    f"unclassified request content part type: {kind!r}"
+                )
+    return OpenRouterRequestModalityProofV1(
+        body_sha256=hashlib.sha256(bytes(body_bytes)).hexdigest(),
+        body_length=len(body_bytes),
+        message_count=len(messages),
+        image_parts=images,
+        audio_parts=audios,
+        text_only=(images == 0 and audios == 0),
+    )
+
+
+#: The sealed request's own modality, derived from the frozen canonical body.
+OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1 = (
+    derive_openrouter_request_modality_proof_v1(
+        FROZEN_OPENROUTER_ROUTE_BODY_JSON_V1.encode("utf-8")
+    )
+)
+
+
+def _charge_class_states_v1(
+    prompt_bounded: bool,
+    completion_bounded: bool,
+    request_bounded: bool,
+    modality_proof: Optional[OpenRouterRequestModalityProofV1],
+) -> Tuple[Tuple[str, str], ...]:
+    """Decide each documented class's state; never assume non-applicability."""
+    included = OpenRouterChargeClassStateV1.INCLUDED.value
+    unbounded = OpenRouterChargeClassStateV1.UNBOUNDED.value
+    inapplicable = OpenRouterChargeClassStateV1.NOT_APPLICABLE.value
+    no_images = modality_proof is not None and modality_proof.image_parts == 0
+    no_audio = modality_proof is not None and modality_proof.audio_parts == 0
+    return (
+        ("prompt", included if prompt_bounded else unbounded),
+        ("completion", included if completion_bounded else unbounded),
+        ("request", included if request_bounded else unbounded),
+        ("image", inapplicable if no_images else unbounded),
+        ("audio", inapplicable if no_audio else unbounded),
+    )
+
+
 class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
     """P19.  Worst-case spend for one call, in whole picodollars.
 
-    ``max_input_tokens * prompt_price + max_output_tokens * completion_price``,
-    with no invented fees and none of the documented ones dropped.  Established
-    only when both token bounds and the price are themselves trusted and bounded.
+    Three separate things, deliberately not collapsed into one verdict:
+
+    * ``formula_structure_ready`` - the arithmetic is defined;
+    * ``applicable_charge_coverage`` - every documented class that *can* apply to
+      this request is bounded;
+    * ``status`` - the worst-case cost authority itself.
+
+    A token-only sum is not a complete worst-case total while a documented
+    per-request fee is unbounded, so structure can be READY while coverage is
+    INCOMPLETE and the authority stays NOT_ESTABLISHED.
     """
 
     schema_version: Literal[
@@ -418,10 +623,11 @@ class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
         Literal["ACTUAL_PRICING_RECORD", "SERVER_ENFORCED_CEILING"]
     ] = None
     price_authority_id: Optional[str] = None
-    formula_ready: Literal[True] = True
-    formula: Literal[
-        "max_input_tokens * prompt_price + max_output_tokens * completion_price"
-    ] = "max_input_tokens * prompt_price + max_output_tokens * completion_price"
+    formula_structure_ready: Literal[True] = True
+    charge_components: Tuple[Tuple[str, str], ...]
+    applicable_charge_coverage: OpenRouterChargeCoverageV1
+    formula: str
+    modality_proof_id: Optional[str] = None
     input_bound_evidence_id: str
     output_bound_evidence_id: str
     pricing_record_id: Optional[str] = None
@@ -430,6 +636,45 @@ class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterCostBoundV1":
+        expected_classes = tuple(
+            name for name, _ in FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1
+        )
+        if tuple(name for name, _ in self.charge_components) != expected_classes:
+            raise ContractValidationError(
+                "charge components must list every documented class exactly once, "
+                "in the frozen order"
+            )
+        valid_states = {state.value for state in OpenRouterChargeClassStateV1}
+        if any(state not in valid_states for _, state in self.charge_components):
+            raise ContractValidationError("unknown charge class state")
+        inapplicable = [
+            name
+            for name, state in self.charge_components
+            if state == OpenRouterChargeClassStateV1.NOT_APPLICABLE.value
+        ]
+        if inapplicable and self.modality_proof_id is None:
+            raise ContractValidationError(
+                "non-applicability of a charge class must be proven from request "
+                "content, not assumed"
+            )
+        unbounded = any(
+            state == OpenRouterChargeClassStateV1.UNBOUNDED.value
+            for _, state in self.charge_components
+        )
+        expected_coverage = (
+            OpenRouterChargeCoverageV1.INCOMPLETE
+            if unbounded
+            else OpenRouterChargeCoverageV1.COMPLETE
+        )
+        if self.applicable_charge_coverage is not expected_coverage:
+            raise ContractValidationError(
+                "applicable charge coverage disagrees with the component states"
+            )
+        rendered = render_openrouter_cost_formula_v1(self.charge_components)
+        if self.formula != rendered:
+            raise ContractValidationError(
+                "the canonical formula does not describe the summed components"
+            )
         established = self.status is OpenRouterBoundStatusV1.ESTABLISHED
         if established != (self.max_total_cost_picodollars is not None):
             raise ContractValidationError("cost bound status disagrees with its value")
@@ -441,6 +686,12 @@ class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
             raise ContractValidationError(
                 "an established cost bound must name its price authority"
             )
+        if established and (
+            self.applicable_charge_coverage is not OpenRouterChargeCoverageV1.COMPLETE
+        ):
+            raise ContractValidationError(
+                "a worst-case cost authority requires complete charge coverage"
+            )
         expected = stable_contract_id(
             "szorcostboundv1", self.model_dump(mode="json", exclude={"bound_id"})
         )
@@ -450,42 +701,109 @@ class OpenRouterCostBoundV1(_FrozenSafetyContractV1):
         return self
 
 
-def compute_openrouter_cost_bound_v1(
-    input_bound: OpenRouterInputBoundEvidenceV1,
-    output_bound: OpenRouterOutputBoundEvidenceV1,
-    pricing: Optional[OpenRouterTrustedPricingRecordV1],
+def _cost_bound_v1(
+    *,
+    price_authority: Optional[str],
+    price_authority_id: Optional[str],
+    pricing_record_id: Optional[str],
+    input_bound: "OpenRouterInputBoundEvidenceV1",
+    output_bound: "OpenRouterOutputBoundEvidenceV1",
+    modality_proof: Optional[OpenRouterRequestModalityProofV1],
+    prompt_picodollars_per_token: Optional[int],
+    completion_picodollars_per_token: Optional[int],
+    request_picodollars: Optional[int],
+    price_authority_usable: bool,
 ) -> OpenRouterCostBoundV1:
-    """Derive the worst-case cost, or report honestly that it is unbounded."""
-    unbounded = (
-        input_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED
-        or output_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED
-        or pricing is None
-        or not pricing.source_is_trusted
-        or pricing.route_identity_granularity
-        is not OpenRouterPricingGranularityV1.EXACT_SELECTOR_BINDABLE
+    """Assemble one cost bound from per-class states and the very same addends.
+
+    The sum is built by walking ``charge_components``, so no term can be present
+    in the arithmetic and absent from the formula, or the reverse.
+    """
+    bounds_ready = (
+        input_bound.status is OpenRouterBoundStatusV1.ESTABLISHED
+        and output_bound.status is OpenRouterBoundStatusV1.ESTABLISHED
     )
-    if unbounded:
-        return OpenRouterCostBoundV1(
-            status=OpenRouterBoundStatusV1.NOT_ESTABLISHED,
-            input_bound_evidence_id=input_bound.evidence_id or "",
-            output_bound_evidence_id=output_bound.evidence_id or "",
-            pricing_record_id=pricing.record_id if pricing else None,
+    usable = price_authority_usable and bounds_ready
+    components = _charge_class_states_v1(
+        prompt_bounded=usable and prompt_picodollars_per_token is not None,
+        completion_bounded=usable and completion_picodollars_per_token is not None,
+        request_bounded=usable and request_picodollars is not None,
+        modality_proof=modality_proof,
+    )
+    coverage = (
+        OpenRouterChargeCoverageV1.INCOMPLETE
+        if any(
+            state == OpenRouterChargeClassStateV1.UNBOUNDED.value
+            for _, state in components
         )
-    total = (input_bound.max_input_tokens or 0) * (
-        pricing.prompt_price_picodollars or 0
-    ) + (output_bound.max_output_tokens or 0) * (
-        pricing.completion_price_picodollars or 0
+        else OpenRouterChargeCoverageV1.COMPLETE
+    )
+    shared = dict(
+        charge_components=components,
+        applicable_charge_coverage=coverage,
+        formula=render_openrouter_cost_formula_v1(components),
+        modality_proof_id=modality_proof.proof_id if modality_proof else None,
+        input_bound_evidence_id=input_bound.evidence_id or "",
+        output_bound_evidence_id=output_bound.evidence_id or "",
+        pricing_record_id=pricing_record_id,
+    )
+    if coverage is not OpenRouterChargeCoverageV1.COMPLETE:
+        return OpenRouterCostBoundV1(
+            status=OpenRouterBoundStatusV1.NOT_ESTABLISHED, **shared
+        )
+    addends = {
+        "prompt": (input_bound.max_input_tokens or 0)
+        * (prompt_picodollars_per_token or 0),
+        "completion": (output_bound.max_output_tokens or 0)
+        * (completion_picodollars_per_token or 0),
+        "request": request_picodollars or 0,
+    }
+    total = sum(
+        addends[name]
+        for name, state in components
+        if state == OpenRouterChargeClassStateV1.INCLUDED.value
     )
     if total < 0 or total > 10**24:
         raise ContractValidationError("cost bound exceeds the safe arithmetic domain")
     return OpenRouterCostBoundV1(
         status=OpenRouterBoundStatusV1.ESTABLISHED,
-        price_authority="ACTUAL_PRICING_RECORD",
-        price_authority_id=pricing.record_id,
-        input_bound_evidence_id=input_bound.evidence_id or "",
-        output_bound_evidence_id=output_bound.evidence_id or "",
-        pricing_record_id=pricing.record_id,
+        price_authority=price_authority,
+        price_authority_id=price_authority_id,
         max_total_cost_picodollars=total,
+        **shared,
+    )
+
+
+def compute_openrouter_cost_bound_v1(
+    input_bound: OpenRouterInputBoundEvidenceV1,
+    output_bound: OpenRouterOutputBoundEvidenceV1,
+    pricing: Optional[OpenRouterTrustedPricingRecordV1],
+    modality_proof: Optional[
+        OpenRouterRequestModalityProofV1
+    ] = OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1,
+) -> OpenRouterCostBoundV1:
+    """Derive the worst-case cost from an actual price, or report it unbounded."""
+    usable = (
+        pricing is not None
+        and pricing.source_is_trusted
+        and pricing.route_identity_granularity
+        is OpenRouterPricingGranularityV1.EXACT_SELECTOR_BINDABLE
+    )
+    return _cost_bound_v1(
+        price_authority="ACTUAL_PRICING_RECORD",
+        price_authority_id=pricing.record_id if pricing else None,
+        pricing_record_id=pricing.record_id if pricing else None,
+        input_bound=input_bound,
+        output_bound=output_bound,
+        modality_proof=modality_proof,
+        prompt_picodollars_per_token=(
+            pricing.prompt_price_picodollars if pricing else None
+        ),
+        completion_picodollars_per_token=(
+            pricing.completion_price_picodollars if pricing else None
+        ),
+        request_picodollars=pricing.request_price_picodollars if pricing else None,
+        price_authority_usable=usable,
     )
 
 
@@ -493,6 +811,9 @@ def compute_openrouter_ceiling_cost_bound_v1(
     input_bound: OpenRouterInputBoundEvidenceV1,
     output_bound: OpenRouterOutputBoundEvidenceV1,
     ceiling,
+    modality_proof: Optional[
+        OpenRouterRequestModalityProofV1
+    ] = OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1,
 ) -> OpenRouterCostBoundV1:
     """Worst-case cost from a server-enforced unit-price ceiling.
 
@@ -500,39 +821,31 @@ def compute_openrouter_ceiling_cost_bound_v1(
     It does not say what the call will actually cost, and this function never
     pretends otherwise: the authority is recorded as SERVER_ENFORCED_CEILING.
 
-    Still requires an input token bound.  A price ceiling caps the rate; it says
-    nothing about how many tokens are billed.
+    Still requires an input token bound, and still requires every applicable
+    charge class to be capped.  A ceiling on token prices alone leaves a
+    documented per-request fee unbounded, and an unbounded fee means no total.
     """
     from .openrouter_live_request_overlay_v1 import OpenRouterCeilingStatusV1
 
-    unusable = (
-        input_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED
-        or output_bound.status is not OpenRouterBoundStatusV1.ESTABLISHED
-        or ceiling is None
-        or ceiling.status is not OpenRouterCeilingStatusV1.ESTABLISHED
+    usable = (
+        ceiling is not None
+        and ceiling.status is OpenRouterCeilingStatusV1.ESTABLISHED
     )
-    if unusable:
-        return OpenRouterCostBoundV1(
-            status=OpenRouterBoundStatusV1.NOT_ESTABLISHED,
-            input_bound_evidence_id=input_bound.evidence_id or "",
-            output_bound_evidence_id=output_bound.evidence_id or "",
-        )
-    total = (
-        (input_bound.max_input_tokens or 0)
-        * (ceiling.prompt_picodollars_per_token or 0)
-        + (output_bound.max_output_tokens or 0)
-        * (ceiling.completion_picodollars_per_token or 0)
-        + (ceiling.request_picodollars or 0)
-    )
-    if total < 0 or total > 10**24:
-        raise ContractValidationError("cost bound exceeds the safe arithmetic domain")
-    return OpenRouterCostBoundV1(
-        status=OpenRouterBoundStatusV1.ESTABLISHED,
+    return _cost_bound_v1(
         price_authority="SERVER_ENFORCED_CEILING",
-        price_authority_id=ceiling.ceiling_id,
-        input_bound_evidence_id=input_bound.evidence_id or "",
-        output_bound_evidence_id=output_bound.evidence_id or "",
-        max_total_cost_picodollars=total,
+        price_authority_id=ceiling.ceiling_id if ceiling else None,
+        pricing_record_id=None,
+        input_bound=input_bound,
+        output_bound=output_bound,
+        modality_proof=modality_proof,
+        prompt_picodollars_per_token=(
+            ceiling.prompt_picodollars_per_token if ceiling else None
+        ),
+        completion_picodollars_per_token=(
+            ceiling.completion_picodollars_per_token if ceiling else None
+        ),
+        request_picodollars=ceiling.request_picodollars if ceiling else None,
+        price_authority_usable=usable,
     )
 
 
@@ -898,6 +1211,13 @@ __all__ = [
     "OpenRouterPricingSourceV1",
     "OpenRouterTokenizerBindingV1",
     "OpenRouterTrustedPricingRecordV1",
+    "FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1",
+    "OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1",
+    "OpenRouterChargeClassStateV1",
+    "OpenRouterChargeCoverageV1",
+    "OpenRouterRequestModalityProofV1",
+    "derive_openrouter_request_modality_proof_v1",
+    "render_openrouter_cost_formula_v1",
     "compute_openrouter_ceiling_cost_bound_v1",
     "compute_openrouter_cost_bound_v1",
     "evaluate_live_preflight_v1",

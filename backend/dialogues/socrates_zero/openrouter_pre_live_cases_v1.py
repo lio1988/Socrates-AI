@@ -43,13 +43,19 @@ from .openrouter_pre_live_safety_v1 import (
     OpenRouterPricingSourceV1,
     OpenRouterTokenizerBindingV1,
     OpenRouterTrustedPricingRecordV1,
+    derive_openrouter_request_modality_proof_v1,
 )
 from .openrouter_live_request_overlay_v1 import (
+    OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1,
     OpenRouterLiveRequestSafetyOverlayV1,
     OpenRouterMaxPricePolicyV1,
+    build_openrouter_max_price_policy_v1,
     derive_openrouter_unit_price_ceiling_v1,
 )
-from .openrouter_route_controls_contracts import OpenRouterRequestIntentReceiptV1
+from .openrouter_route_controls_contracts import (
+    OPENROUTER_ROUTE_MODEL_V1,
+    OpenRouterRequestIntentReceiptV1,
+)
 
 OPENROUTER_INTEGRATION_CASE_SCHEMA_V1 = (
     "socrateszero-openrouter-integration-case/v1"
@@ -774,6 +780,9 @@ def _pricing(**overrides) -> OpenRouterTrustedPricingRecordV1:
         ),
         prompt_price_usd="0.0000004",
         completion_price_usd="0.0000016",
+        #: Explicitly bounded at zero so the fixtures exercise complete charge
+        #: coverage. An explicit zero is evidence; an omitted field is not.
+        request_price_usd="0",
     )
     base.update(overrides)
     return OpenRouterTrustedPricingRecordV1(**base)
@@ -792,6 +801,12 @@ PRICING_BROAD_PROVIDER = _pricing(
     route_identity_granularity=OpenRouterPricingGranularityV1.BROAD_PROVIDER_ONLY,
 )
 PRICING_SELECTOR_MISMATCH = _pricing(route_identity="azure/eastus")
+#: Spells the exact selector but declares only broad-provider granularity, so
+#: the selector guard passes and the granularity guard is the one that must fire.
+#: String equality is not identity-namespace authority.
+PRICING_BROAD_AT_EXACT_SELECTOR = _pricing(
+    route_identity_granularity=OpenRouterPricingGranularityV1.BROAD_PROVIDER_ONLY,
+)
 #: Exponent-form decimal strings must parse to the same exact value.
 PRICING_EXPONENT_FORM = _pricing(
     prompt_price_usd="4E-7", completion_price_usd="1.6E-6"
@@ -986,6 +1001,13 @@ FROZEN_OPENROUTER_PREFLIGHT_CASES_V1: Tuple[OpenRouterPreflightCaseV1, ...] = tu
                 pricing_variant="BROAD_PROVIDER",
             ),
             _pf(
+                "orpreflightv1-x23-pricing-broad-granularity-at-exact-selector",
+                "A record may spell the exact selector and still lack "
+                "exact-selector granularity; string equality is not identity.",
+                code=_P.PRICING_GRANULARITY_INSUFFICIENT,
+                pricing_variant="BROAD_AT_EXACT_SELECTOR",
+            ),
+            _pf(
                 "orpreflightv1-x15-pricing-not-jit-fresh",
                 "A price from an earlier preflight execution is not fresh.",
                 code=_P.PRICING_NOT_JIT_FRESH,
@@ -1079,6 +1101,60 @@ OVERLAY_NO_CEILING = OpenRouterLiveRequestSafetyOverlayV1(
     max_price_policy=MAX_PRICE_POLICY_ABSENT,
 )
 CEILING_ABSENT = derive_openrouter_unit_price_ceiling_v1(OVERLAY_NO_CEILING)
+
+
+def _overlay(policy: OpenRouterMaxPricePolicyV1):
+    return OpenRouterLiveRequestSafetyOverlayV1(
+        sealed_request_intent_receipt_id=INTENT_A.receipt_id or "",
+        sealed_body_sha256=_A_BODY_SHA,
+        sealed_semantic_headers_sha256=_A_HEADERS_SHA,
+        max_price_policy=policy,
+    )
+
+
+#: One picodollar expressed in USD - the smallest internal monetary unit.
+ONE_PICODOLLAR_USD = "0.000000000001"
+
+#: TEST FIXTURE VALUES. A policy that bounds every applicable class, with the
+#: request fee explicitly at zero, and its sibling one picodollar above it.
+MAX_PRICE_POLICY_FULL = build_openrouter_max_price_policy_v1(
+    OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1,
+    prompt_usd_per_million_tokens="1",
+    completion_usd_per_million_tokens="2",
+    request_usd="0",
+)
+MAX_PRICE_POLICY_FULL_PLUS_ONE = build_openrouter_max_price_policy_v1(
+    OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1,
+    prompt_usd_per_million_tokens="1",
+    completion_usd_per_million_tokens="2",
+    request_usd=ONE_PICODOLLAR_USD,
+)
+OVERLAY_FULL = _overlay(MAX_PRICE_POLICY_FULL)
+OVERLAY_FULL_PLUS_ONE = _overlay(MAX_PRICE_POLICY_FULL_PLUS_ONE)
+CEILING_FULL = derive_openrouter_unit_price_ceiling_v1(OVERLAY_FULL)
+CEILING_FULL_PLUS_ONE = derive_openrouter_unit_price_ceiling_v1(
+    OVERLAY_FULL_PLUS_ONE
+)
+
+#: A synthetic request that carries an image part. Never sent anywhere; it exists
+#: so the text-only modality proof can be shown not to transfer to it.
+SYNTHETIC_MEDIA_BODY_BYTES = canonical_json(
+    {
+        "messages": [
+            {
+                "content": [
+                    {"type": "text", "text": "describe this"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png,x"}},
+                ],
+                "role": "user",
+            }
+        ],
+        "model": OPENROUTER_ROUTE_MODEL_V1,
+    }
+).encode("utf-8")
+MEDIA_MODALITY_PROOF = derive_openrouter_request_modality_proof_v1(
+    SYNTHETIC_MEDIA_BODY_BYTES
+)
 
 
 class OpenRouterCeilingCaseV1(_FrozenCaseContractV1):
@@ -1202,6 +1278,65 @@ FROZEN_OPENROUTER_CEILING_CASES_V1: Tuple[OpenRouterCeilingCaseV1, ...] = tuple(
                 "Chain B's overlay cannot price chain A's request.",
                 "SIBLING_OVERLAY_SUBSTITUTION",
             ),
+            _cc(
+                "orceilingv1-p05-request-fee-bounded-included-exactly-once",
+                "A bounded request fee is added once, and only once, to the total.",
+                "REQUEST_FEE_BOUNDED_ONCE",
+                "HOLDS",
+            ),
+            _cc(
+                "orceilingv1-p06-request-fee-one-unit-moves-total-by-one-unit",
+                "Raising the request fee by one picodollar raises the total by "
+                "exactly one picodollar.",
+                "REQUEST_FEE_ONE_UNIT",
+                "HOLDS",
+            ),
+            _cc(
+                "orceilingv1-p07-text-only-request-proves-image-audio-inapplicable",
+                "The sealed request's own bytes prove it carries no image or audio "
+                "charge class.",
+                "TEXT_ONLY_PROVES_INAPPLICABLE",
+                "HOLDS",
+            ),
+            _cc(
+                "orceilingv1-x13-request-fee-unbounded-blocks-cost-authority",
+                "An unbounded request fee leaves coverage incomplete and the "
+                "worst-case cost authority unestablished.",
+                "REQUEST_FEE_UNBOUNDED",
+            ),
+            _cc(
+                "orceilingv1-x14-request-fee-malformed",
+                "A non-decimal request fee is refused.",
+                "REQUEST_FEE_MALFORMED",
+            ),
+            _cc(
+                "orceilingv1-x15-request-fee-negative",
+                "A negative request fee is refused.",
+                "REQUEST_FEE_NEGATIVE",
+            ),
+            _cc(
+                "orceilingv1-x16-request-fee-float-authority-rejected",
+                "Binary float money is refused for the request fee too.",
+                "REQUEST_FEE_FLOAT",
+            ),
+            _cc(
+                "orceilingv1-x17-omitted-request-fee-is-never-authoritative-zero",
+                "An omitted request fee stays UNKNOWN; it never becomes zero.",
+                "REQUEST_FEE_OMITTED_IS_NOT_ZERO",
+            ),
+            _cc(
+                "orceilingv1-x18-media-request-cannot-inherit-text-only-proof",
+                "An image-bearing request does not inherit the sealed request's "
+                "text-only non-applicability proof.",
+                "MEDIA_REQUEST_DOES_NOT_INHERIT_PROOF",
+            ),
+            _cc(
+                "orceilingv1-x19-wrong-max-price-schema-path-refused",
+                "Neither ParetoRouterPlugin.max_price nor the /models listing "
+                "filter may act as the ceiling authority, and the refusal is "
+                "attributed to the schema path.",
+                "WRONG_MAX_PRICE_SCHEMA_PATH",
+            ),
         ),
         key=lambda case: case.case_id,
     )
@@ -1225,6 +1360,16 @@ __all__ = [
     "CEILING_B",
     "CEILING_ABSENT",
     "CEILING_A",
+    "CEILING_FULL",
+    "CEILING_FULL_PLUS_ONE",
+    "MAX_PRICE_POLICY_FULL",
+    "MAX_PRICE_POLICY_FULL_PLUS_ONE",
+    "MEDIA_MODALITY_PROOF",
+    "ONE_PICODOLLAR_USD",
+    "OVERLAY_FULL",
+    "OVERLAY_FULL_PLUS_ONE",
+    "PRICING_BROAD_AT_EXACT_SELECTOR",
+    "SYNTHETIC_MEDIA_BODY_BYTES",
     "HYPOTHETICAL_COST_PICODOLLARS",
     "CEILING_ONE_UNIT_BELOW",
     "CEILING_EQUAL_BOUNDARY",

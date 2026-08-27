@@ -141,7 +141,7 @@ def test_case_set_shape_is_frozen() -> None:
     assert len(cases) == 30
     assert sum(c.kind is OpenRouterIntegrationCaseKindV1.POSITIVE for c in cases) == 12
     assert sum(c.kind is OpenRouterIntegrationCaseKindV1.ADVERSARIAL for c in cases) == 18
-    assert len(FROZEN_OPENROUTER_PREFLIGHT_CASES_V1) == 25
+    assert len(FROZEN_OPENROUTER_PREFLIGHT_CASES_V1) == 26
     assert OPENROUTER_INTEGRATION_CASE_SET_ID_V1.startswith("szorintegrationcasesetv1_")
     assert OPENROUTER_PREFLIGHT_CASE_SET_ID_V1.startswith("szorpreflightcasesetv1_")
 
@@ -664,7 +664,8 @@ def test_broad_provider_pricing_cannot_stand_for_the_exact_selector() -> None:
     assert bound.status is OpenRouterBoundStatusV1.NOT_ESTABLISHED
 
 
-def test_p19_formula_is_ready_while_its_authority_is_not() -> None:
+def test_p19_structure_coverage_and_authority_are_three_separate_states() -> None:
+    """Structure can be READY while coverage and authority are not."""
     from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
         INPUT_BOUND_UNESTABLISHED,
         OUTPUT_BOUND_ESTABLISHED,
@@ -674,10 +675,8 @@ def test_p19_formula_is_ready_while_its_authority_is_not() -> None:
     bound = compute_openrouter_cost_bound_v1(
         INPUT_BOUND_UNESTABLISHED, OUTPUT_BOUND_ESTABLISHED, PRICING_TRUSTED
     )
-    assert bound.formula_ready is True
-    assert bound.formula == (
-        "max_input_tokens * prompt_price + max_output_tokens * completion_price"
-    )
+    assert bound.formula_structure_ready is True
+    assert "max_input_tokens * prompt_price_ceiling" in bound.formula
     assert bound.status is OpenRouterBoundStatusV1.NOT_ESTABLISHED
     assert bound.max_total_cost_picodollars is None
 
@@ -838,8 +837,9 @@ def test_the_three_max_price_senses_are_kept_apart() -> None:
     overlay_source = (
         ROOT / "backend/dialogues/socrates_zero/openrouter_live_request_overlay_v1.py"
     ).read_text(encoding="utf-8")
-    assert overlay_source.count("price_source") == 1
+    assert overlay_source.count("price_source") == 2
     assert "enforced against price_source" in overlay_source
+    assert "enforced against its own price_source" in overlay_source
     assert "price_source" not in OpenRouterMaxPricePolicyV1.model_fields
     assert "price_source" not in OpenRouterUnitPriceCeilingV1.model_fields
 
@@ -954,7 +954,7 @@ def test_ceiling_and_actual_pricing_record_stay_separate_authorities() -> None:
 
 def test_ceiling_bounds_cost_without_reading_any_actual_price() -> None:
     from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
-        CEILING_A,
+        CEILING_FULL,
         INPUT_BOUND_HYPOTHETICAL,
         OUTPUT_BOUND_ESTABLISHED,
     )
@@ -963,16 +963,18 @@ def test_ceiling_bounds_cost_without_reading_any_actual_price() -> None:
     )
 
     bound = compute_openrouter_ceiling_cost_bound_v1(
-        INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_A
+        INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_FULL
     )
     assert bound.status is OpenRouterBoundStatusV1.ESTABLISHED
     assert bound.price_authority == "SERVER_ENFORCED_CEILING"
-    assert bound.price_authority_id == CEILING_A.ceiling_id
+    assert bound.price_authority_id == CEILING_FULL.ceiling_id
+    assert bound.pricing_record_id is None
     expected = (
         INPUT_BOUND_HYPOTHETICAL.max_input_tokens
-        * CEILING_A.prompt_picodollars_per_token
+        * CEILING_FULL.prompt_picodollars_per_token
         + OUTPUT_BOUND_ESTABLISHED.max_output_tokens
-        * CEILING_A.completion_picodollars_per_token
+        * CEILING_FULL.completion_picodollars_per_token
+        + CEILING_FULL.request_picodollars
     )
     assert bound.max_total_cost_picodollars == expected
 
@@ -1035,9 +1037,9 @@ def test_ceiling_case_set_is_locked() -> None:
         OPENROUTER_CEILING_CASE_SET_ID_V1,
     )
 
-    assert len(FROZEN_OPENROUTER_CEILING_CASES_V1) == 16
+    assert len(FROZEN_OPENROUTER_CEILING_CASES_V1) == 26
     ids = [c.case_id for c in FROZEN_OPENROUTER_CEILING_CASES_V1]
-    assert len(set(ids)) == 16
+    assert len(set(ids)) == 26
     assert OPENROUTER_CEILING_CASE_SET_ID_V1.startswith("szorceilingcasesetv1_")
 
 
@@ -1061,3 +1063,361 @@ def test_trusted_ceiling_does_not_promote_p18_actual_pricing() -> None:
     )
 
     assert OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 == "BROAD_PROVIDER_ONLY"
+
+
+# --------------------------------------- P19: structure, coverage, authority --
+
+
+def test_canonical_formula_describes_exactly_the_summed_components() -> None:
+    """The label and the arithmetic come from one source, so they cannot drift.
+
+    Every applicable class appears in the rendered sum; a total is produced only
+    when every one of them is bounded. So there is never a term in the code that
+    is missing from the formula, nor a term in the formula that is not summed.
+    """
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        CEILING_FULL,
+        INPUT_BOUND_HYPOTHETICAL,
+        OUTPUT_BOUND_ESTABLISHED,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1,
+        OpenRouterChargeClassStateV1,
+        compute_openrouter_ceiling_cost_bound_v1,
+        render_openrouter_cost_formula_v1,
+    )
+
+    bound = compute_openrouter_ceiling_cost_bound_v1(
+        INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_FULL
+    )
+    terms = dict(FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1)
+    states = dict(bound.charge_components)
+
+    # The formula is exactly the canonical rendering of these components.
+    assert bound.formula == render_openrouter_cost_formula_v1(bound.charge_components)
+
+    # Every applicable class contributes its term to the sum, and no other does.
+    summed = bound.formula.split(" [")[0].removeprefix("max_total_cost = ")
+    in_sum = {term.strip() for term in summed.split(" + ")}
+    applicable = {
+        terms[name]
+        for name, state in states.items()
+        if state != OpenRouterChargeClassStateV1.NOT_APPLICABLE.value
+    }
+    assert in_sum == applicable
+
+    # And the value equals the sum of exactly those terms, computed independently.
+    assert bound.max_total_cost_picodollars == (
+        INPUT_BOUND_HYPOTHETICAL.max_input_tokens
+        * CEILING_FULL.prompt_picodollars_per_token
+        + OUTPUT_BOUND_ESTABLISHED.max_output_tokens
+        * CEILING_FULL.completion_picodollars_per_token
+        + CEILING_FULL.request_picodollars
+    )
+
+
+def test_every_documented_charge_class_appears_exactly_once() -> None:
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        FROZEN_OPENROUTER_MAX_PRICE_COMPONENTS_V1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1,
+    )
+
+    classes = [name for name, _ in FROZEN_OPENROUTER_CHARGE_CLASS_TERMS_V1]
+    assert classes == [name for name, _ in FROZEN_OPENROUTER_MAX_PRICE_COMPONENTS_V1]
+    assert len(set(classes)) == len(classes) == 5
+
+
+def test_a_cost_bound_cannot_claim_authority_with_incomplete_coverage() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterChargeClassStateV1,
+        OpenRouterChargeCoverageV1,
+        OpenRouterCostBoundV1,
+        render_openrouter_cost_formula_v1,
+    )
+
+    components = (
+        ("prompt", OpenRouterChargeClassStateV1.INCLUDED.value),
+        ("completion", OpenRouterChargeClassStateV1.INCLUDED.value),
+        ("request", OpenRouterChargeClassStateV1.UNBOUNDED.value),
+        ("image", OpenRouterChargeClassStateV1.INCLUDED.value),
+        ("audio", OpenRouterChargeClassStateV1.INCLUDED.value),
+    )
+    with pytest.raises(ValidationError, match="complete charge coverage"):
+        OpenRouterCostBoundV1(
+            status=OpenRouterBoundStatusV1.ESTABLISHED,
+            price_authority="SERVER_ENFORCED_CEILING",
+            price_authority_id="szorunitpriceceilingv1_" + "0" * 64,
+            charge_components=components,
+            applicable_charge_coverage=OpenRouterChargeCoverageV1.INCOMPLETE,
+            formula=render_openrouter_cost_formula_v1(components),
+            input_bound_evidence_id="i",
+            output_bound_evidence_id="o",
+            max_total_cost_picodollars=1,
+        )
+
+
+def test_a_mislabelled_formula_is_refused() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterChargeClassStateV1,
+        OpenRouterChargeCoverageV1,
+        OpenRouterCostBoundV1,
+    )
+
+    components = tuple(
+        (name, OpenRouterChargeClassStateV1.INCLUDED.value)
+        for name in ("prompt", "completion", "request", "image", "audio")
+    )
+    with pytest.raises(ValidationError, match="does not describe the summed"):
+        OpenRouterCostBoundV1(
+            status=OpenRouterBoundStatusV1.NOT_ESTABLISHED,
+            charge_components=components,
+            applicable_charge_coverage=OpenRouterChargeCoverageV1.COMPLETE,
+            formula="max_total_cost = max_input_tokens * prompt_price_ceiling",
+            input_bound_evidence_id="i",
+            output_bound_evidence_id="o",
+        )
+
+
+def test_non_applicability_must_be_proven_not_assumed() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterChargeClassStateV1,
+        OpenRouterChargeCoverageV1,
+        OpenRouterCostBoundV1,
+        render_openrouter_cost_formula_v1,
+    )
+
+    components = (
+        ("prompt", OpenRouterChargeClassStateV1.INCLUDED.value),
+        ("completion", OpenRouterChargeClassStateV1.INCLUDED.value),
+        ("request", OpenRouterChargeClassStateV1.INCLUDED.value),
+        ("image", OpenRouterChargeClassStateV1.NOT_APPLICABLE.value),
+        ("audio", OpenRouterChargeClassStateV1.NOT_APPLICABLE.value),
+    )
+    with pytest.raises(ValidationError, match="must be proven from request"):
+        OpenRouterCostBoundV1(
+            status=OpenRouterBoundStatusV1.NOT_ESTABLISHED,
+            charge_components=components,
+            applicable_charge_coverage=OpenRouterChargeCoverageV1.COMPLETE,
+            formula=render_openrouter_cost_formula_v1(components),
+            input_bound_evidence_id="i",
+            output_bound_evidence_id="o",
+        )
+
+
+def test_an_omitted_request_fee_is_unknown_and_never_zero() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        MAX_PRICE_POLICY,
+        MAX_PRICE_POLICY_FULL,
+    )
+
+    assert MAX_PRICE_POLICY.request_usd is None
+    assert MAX_PRICE_POLICY.request_picodollars is None
+    # An explicit "0" is a bound of zero; omission is not.
+    assert MAX_PRICE_POLICY_FULL.request_usd == "0"
+    assert MAX_PRICE_POLICY_FULL.request_picodollars == 0
+    assert MAX_PRICE_POLICY.policy_id != MAX_PRICE_POLICY_FULL.policy_id
+
+
+def test_the_sealed_request_proves_its_own_modality() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1 as proof,
+    )
+
+    assert proof.text_only is True
+    assert proof.image_parts == 0 and proof.audio_parts == 0
+    assert proof.message_count == 2
+    # Bound to the exact sealed bytes, not to a convention.
+    assert proof.body_sha256 == (
+        "35a119b1e35f9f8ce05baf57009d787358bf086aaae4055ef56fcfedade514a1"
+    )
+    assert proof.body_length == 447
+
+
+def test_a_media_request_gets_its_own_proof() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        MEDIA_MODALITY_PROOF,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1 as sealed,
+    )
+
+    assert MEDIA_MODALITY_PROOF.text_only is False
+    assert MEDIA_MODALITY_PROOF.image_parts == 1
+    assert MEDIA_MODALITY_PROOF.body_sha256 != sealed.body_sha256
+    assert MEDIA_MODALITY_PROOF.proof_id != sealed.proof_id
+
+
+def test_an_unclassified_content_part_is_refused_not_ignored() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        derive_openrouter_request_modality_proof_v1,
+    )
+
+    body = json.dumps(
+        {"messages": [{"role": "user", "content": [{"type": "hologram"}]}]}
+    ).encode("utf-8")
+    with pytest.raises(ContractValidationError, match="unclassified request content"):
+        derive_openrouter_request_modality_proof_v1(body)
+
+
+def test_a_text_only_claim_cannot_contradict_the_counted_parts() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterRequestModalityProofV1,
+    )
+
+    with pytest.raises(ValidationError, match="disagrees with the counted"):
+        OpenRouterRequestModalityProofV1(
+            body_sha256="a" * 64,
+            body_length=10,
+            message_count=1,
+            image_parts=1,
+            audio_parts=0,
+            text_only=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "foreign_path",
+    [
+        "components.schemas.ParetoRouterPlugin.max_price",
+        "paths./models.get.parameters[name=max_price]",
+    ],
+)
+def test_a_foreign_max_price_path_is_refused_on_the_path(foreign_path: str) -> None:
+    """Well-formed values throughout, so only the path can be the reason."""
+    from backend.dialogues.socrates_zero.openrouter_live_request_overlay_v1 import (
+        build_openrouter_max_price_policy_v1,
+    )
+
+    with pytest.raises(ContractValidationError) as excinfo:
+        build_openrouter_max_price_policy_v1(
+            foreign_path,
+            prompt_usd_per_million_tokens="1",
+            completion_usd_per_million_tokens="2",
+        )
+    assert foreign_path in str(excinfo.value)
+
+
+def test_the_pricing_granularity_guard_is_reachable_at_the_exact_selector() -> None:
+    """String equality is not identity-namespace authority."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        PRICING_BROAD_AT_EXACT_SELECTOR,
+    )
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterPricingGranularityV1,
+    )
+
+    assert PRICING_BROAD_AT_EXACT_SELECTOR.route_identity == "azure/swedencentral"
+    assert PRICING_BROAD_AT_EXACT_SELECTOR.route_identity_granularity is (
+        OpenRouterPricingGranularityV1.BROAD_PROVIDER_ONLY
+    )
+    ids = {c.case_id for c in FROZEN_OPENROUTER_PREFLIGHT_CASES_V1}
+    assert "orpreflightv1-x23-pricing-broad-granularity-at-exact-selector" in ids
+
+
+def test_every_preflight_guard_is_exercised_by_a_frozen_case() -> None:
+    from backend.dialogues.socrates_zero.openrouter_pre_live_safety_v1 import (
+        OpenRouterPreflightFailureCodeV1,
+    )
+
+    exercised = {
+        case.expected_failure_code
+        for case in FROZEN_OPENROUTER_PREFLIGHT_CASES_V1
+        if case.expected_failure_code
+    }
+    assert set(OpenRouterPreflightFailureCodeV1) == exercised
+
+
+# ------------------------------- integration type-firewall guards ------------
+
+
+def _chain_a_arguments():
+    """The chain-A arguments a positive integration case binds successfully."""
+    from backend.dialogues.socrates_zero.openrouter_pre_live_cases_v1 import (
+        FROZEN_OPENROUTER_INTEGRATION_CASES_V1,
+    )
+
+    case = next(
+        c
+        for c in FROZEN_OPENROUTER_INTEGRATION_CASES_V1
+        if c.case_id == "orintegv1-p01-success-chain"
+    )
+    observation = build_openrouter_raw_wire_observation_v2(
+        case.observation_body, case.observation_headers
+    )
+    mapping = map_openrouter_raw_wire_v2(
+        build_openrouter_raw_wire_observation_v2(
+            case.mapping_body, case.mapping_headers
+        )
+    )
+    return [
+        case.intent,
+        case.transport,
+        observation,
+        mapping,
+        OPENROUTER_PRE_LIVE_SAFETY_CONTRACT_ID_V1,
+    ]
+
+
+@pytest.mark.parametrize("position", [0, 1, 2, 3])
+def test_integration_refuses_a_foreign_contract_type(position: int) -> None:
+    """The type firewall refuses a look-alike at every one of the four layers."""
+    args = _chain_a_arguments()
+    args[position] = object()
+    with pytest.raises(OpenRouterIntegrationError) as excinfo:
+        bind_openrouter_pre_live_integration_v1(*args)
+    assert excinfo.value.code is (
+        OpenRouterIntegrationFailureCodeV1.REQUEST_RECEIPT_INVALID
+    )
+
+
+def test_integration_refuses_an_identity_less_raw_observation() -> None:
+    args = _chain_a_arguments()
+    args[2] = args[2].model_copy(update={"observation_id": ""})
+    with pytest.raises(OpenRouterIntegrationError) as excinfo:
+        bind_openrouter_pre_live_integration_v1(*args)
+    assert excinfo.value.code is (
+        OpenRouterIntegrationFailureCodeV1.RAW_OBSERVATION_ID_MISMATCH
+    )
+
+
+def test_integration_refuses_a_mapping_bound_to_another_manifest() -> None:
+    args = _chain_a_arguments()
+    args[3] = args[3].model_copy(
+        update={"source_manifest_id": "szorwirespecmanifestv2r1_" + "0" * 64}
+    )
+    with pytest.raises(OpenRouterIntegrationError) as excinfo:
+        bind_openrouter_pre_live_integration_v1(*args)
+    assert excinfo.value.code is (
+        OpenRouterIntegrationFailureCodeV1.MAPPING_MANIFEST_MISMATCH
+    )
+
+
+def test_integration_refuses_a_mapping_whose_evidence_digests_disagree() -> None:
+    args = _chain_a_arguments()
+    args[3] = args[3].model_copy(update={"raw_body_sha256": "f" * 64})
+    with pytest.raises(OpenRouterIntegrationError) as excinfo:
+        bind_openrouter_pre_live_integration_v1(*args)
+    assert excinfo.value.code is (
+        OpenRouterIntegrationFailureCodeV1.MAPPING_PROVENANCE_MISMATCH
+    )
+
+
+def test_every_integration_guard_is_exercised_by_a_case_or_a_lock() -> None:
+    """Nine guards come from frozen cases; four are type/identity firewalls."""
+    exercised_by_cases = {
+        case.expected_failure_code
+        for case in FROZEN_OPENROUTER_INTEGRATION_CASES_V1
+        if case.expected_failure_code
+    }
+    firewall_guards = {
+        OpenRouterIntegrationFailureCodeV1.REQUEST_RECEIPT_INVALID,
+        OpenRouterIntegrationFailureCodeV1.RAW_OBSERVATION_ID_MISMATCH,
+        OpenRouterIntegrationFailureCodeV1.MAPPING_MANIFEST_MISMATCH,
+        OpenRouterIntegrationFailureCodeV1.MAPPING_PROVENANCE_MISMATCH,
+    }
+    assert len(exercised_by_cases) == 9
+    assert exercised_by_cases | firewall_guards == set(
+        OpenRouterIntegrationFailureCodeV1
+    )

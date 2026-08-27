@@ -61,6 +61,25 @@ FROZEN_OPENROUTER_MAX_PRICE_COMPONENTS_V1: Tuple[Tuple[str, str], ...] = (
     ("audio", "USD per audio unit"),
 )
 
+#: The only schema path whose ``max_price`` is this ceiling.
+OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1 = (
+    "components.schemas.ProviderPreferences.max_price"
+)
+
+#: Retained schema paths that also spell ``max_price`` and are refused by name,
+#: so a wrong-contract policy fails on the path rather than incidentally on the
+#: shape of one of its values.
+FROZEN_OPENROUTER_FOREIGN_MAX_PRICE_PATHS_V1: Tuple[Tuple[str, str], ...] = (
+    (
+        "components.schemas.ParetoRouterPlugin.max_price",
+        "a plugin cap on input price only, enforced against its own price_source",
+    ),
+    (
+        "paths./models.get.parameters[name=max_price]",
+        "a catalogue listing filter, not a request-side routing control",
+    ),
+)
+
 #: The retained spec uses the name ``max_price`` for three unrelated things.
 #: Only the middle one is the request-side ceiling audited here; the other two
 #: would silently import the wrong semantics, the wrong units, or float money.
@@ -370,6 +389,33 @@ def derive_openrouter_unit_price_ceiling_v1(
     )
 
 
+def build_openrouter_max_price_policy_v1(
+    schema_path: str, **components: object
+) -> OpenRouterMaxPricePolicyV1:
+    """Build a ceiling policy, refusing any ``max_price`` from a foreign path.
+
+    Three retained schemas spell ``max_price`` and only one is this control.  The
+    refusal is attributed to the path, so a foreign field is rejected even when
+    its value happens to be well formed.
+    """
+    if not isinstance(schema_path, str) or not schema_path.strip():
+        raise ContractValidationError(
+            "a max_price policy must declare the schema path it came from"
+        )
+    declared = schema_path.strip()
+    for foreign, reason in FROZEN_OPENROUTER_FOREIGN_MAX_PRICE_PATHS_V1:
+        if declared == foreign:
+            raise ContractValidationError(
+                f"{foreign} is not the request-side price ceiling: {reason}"
+            )
+    if declared != OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1:
+        raise ContractValidationError(
+            f"unknown max_price schema path {declared!r}; the ceiling comes from "
+            f"{OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1} only"
+        )
+    return OpenRouterMaxPricePolicyV1(**components)
+
+
 def endpoint_is_price_eligible_v1(
     ceiling: OpenRouterUnitPriceCeilingV1,
     prompt_picodollars_per_token: int,
@@ -394,7 +440,10 @@ def endpoint_is_price_eligible_v1(
 __all__ = [
     "endpoint_is_price_eligible_v1",
     "FROZEN_OPENROUTER_MAX_PRICE_COMPONENTS_V1",
+    "FROZEN_OPENROUTER_FOREIGN_MAX_PRICE_PATHS_V1",
     "FROZEN_OPENROUTER_MAX_PRICE_NAME_SENSES_V1",
+    "OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1",
+    "build_openrouter_max_price_policy_v1",
     "FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1",
     "OPENROUTER_LIVE_REQUEST_OVERLAY_SCHEMA_V1",
     "OPENROUTER_MAX_PRICE_POLICY_SCHEMA_V1",

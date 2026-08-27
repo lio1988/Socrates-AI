@@ -43,6 +43,11 @@ from .openrouter_pre_live_cases_v1 import (
     CEILING_A,
     CEILING_ABSENT,
     CEILING_B,
+    CEILING_FULL,
+    CEILING_FULL_PLUS_ONE,
+    MEDIA_MODALITY_PROOF,
+    ONE_PICODOLLAR_USD,
+    OVERLAY_FULL,
     FROZEN_OPENROUTER_CEILING_CASES_V1,
     OPENROUTER_CEILING_CASE_SET_ID_V1,
     OPENROUTER_INTEGRATION_CASE_SET_ID_V1,
@@ -53,6 +58,7 @@ from .openrouter_pre_live_cases_v1 import (
     OUTPUT_BOUND_MISSING,
     OUTPUT_BOUND_WRONG_VALUE,
     PREFLIGHT_EXECUTION_ID,
+    PRICING_BROAD_AT_EXACT_SELECTOR,
     PRICING_BROAD_PROVIDER,
     PRICING_EXPONENT_FORM,
     PRICING_OVERFLOW,
@@ -79,7 +85,10 @@ from .openrouter_pre_live_safety_v1 import (
     OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1,
     OPENROUTER_PREFLIGHT_GUARD_ORDER_ID_V1,
     OPENROUTER_PRE_LIVE_SAFETY_CONTRACT_ID_V1,
+    OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1,
     OpenRouterBoundStatusV1,
+    OpenRouterChargeClassStateV1,
+    OpenRouterChargeCoverageV1,
     OpenRouterPreLiveSafetyContractV1,
     OpenRouterPreflightFailureCodeV1,
     OpenRouterPreflightVerdictV1,
@@ -88,7 +97,10 @@ from .openrouter_pre_live_safety_v1 import (
     evaluate_live_preflight_v1,
 )
 from .openrouter_live_request_overlay_v1 import (
+    FROZEN_OPENROUTER_FOREIGN_MAX_PRICE_PATHS_V1,
     FROZEN_OPENROUTER_MAX_PRICE_SEMANTICS_V1,
+    OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1,
+    build_openrouter_max_price_policy_v1,
     OpenRouterCeilingStatusV1,
     OpenRouterLiveRequestSafetyOverlayV1,
     OpenRouterMaxPricePolicyV1,
@@ -174,8 +186,8 @@ class OpenRouterPreLiveThresholdsV1(_FrozenPreLiveContractV1):
     required_integration_positive_accepted: int = 12
     required_integration_adversarial_rejected: int = 18
     required_preflight_authorized: int = 3
-    required_preflight_refused: int = 22
-    required_ceiling_probes_holding: int = 16
+    required_preflight_refused: int = 23
+    required_ceiling_probes_holding: int = 26
     required_unexpected_results: int = 0
     required_invalid_fixture_constructions: int = 0
     maximum_cross_request_substitutions_accepted: int = 0
@@ -306,8 +318,13 @@ class OpenRouterPreLiveIntegrationArtifactV1(_FrozenPreLiveContractV1):
         "BROAD_PROVIDER_ONLY"
     ] = "BROAD_PROVIDER_ONLY"
     trusted_unit_price_ceiling: Literal["ESTABLISHED"] = "ESTABLISHED"
-    p19_cost_formula: Literal["READY"] = "READY"
-    p19_total_cost_bound: Literal["NOT_ESTABLISHED"] = "NOT_ESTABLISHED"
+    #: P19 in three parts, never collapsed: the arithmetic is defined, the
+    #: documented per-request fee is unbounded, so the authority does not hold.
+    p19_formula_structure: Literal["READY"] = "READY"
+    p19_applicable_charge_coverage: Literal["INCOMPLETE"] = "INCOMPLETE"
+    p19_worst_case_cost_authority: Literal[
+        "NOT_ESTABLISHED"
+    ] = "NOT_ESTABLISHED"
     output_token_bound: Literal["ESTABLISHED"] = "ESTABLISHED"
     runtime_authority: Literal["NOT_AUTHORIZED"] = "NOT_AUTHORIZED"
     live_openrouter_execution: Literal["NOT_AUTHORIZED"] = "NOT_AUTHORIZED"
@@ -416,13 +433,141 @@ def _ceiling_probe_holds(probe: str) -> Tuple[bool, str]:
         ), "new identity, sealed receipt referenced not replaced"
     if probe == "ACTUAL_UNKNOWN_CEILING_KNOWN":
         bound = compute_openrouter_ceiling_cost_bound_v1(
-            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_A
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_FULL
         )
         return (
             bound.status is OpenRouterBoundStatusV1.ESTABLISHED
             and bound.price_authority == "SERVER_ENFORCED_CEILING"
             and bound.pricing_record_id is None
         ), "bounded by ceiling with no actual price"
+    if probe == "REQUEST_FEE_BOUNDED_ONCE":
+        bound = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_FULL_PLUS_ONE
+        )
+        tokens_only = (INPUT_BOUND_HYPOTHETICAL.max_input_tokens or 0) * 1_000_000 + (
+            OUTPUT_BOUND_ESTABLISHED.max_output_tokens or 0
+        ) * 2_000_000
+        return (
+            bound.applicable_charge_coverage is OpenRouterChargeCoverageV1.COMPLETE
+            and bound.max_total_cost_picodollars == tokens_only + 1
+            and dict(bound.charge_components)["request"]
+            == OpenRouterChargeClassStateV1.INCLUDED.value
+        ), "the request fee is added once, not twice and not zero times"
+    if probe == "REQUEST_FEE_ONE_UNIT":
+        low = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_FULL
+        )
+        high = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_FULL_PLUS_ONE
+        )
+        delta = (high.max_total_cost_picodollars or 0) - (
+            low.max_total_cost_picodollars or 0
+        )
+        return (
+            delta == 1 and CEILING_FULL_PLUS_ONE.request_picodollars == 1
+        ), f"one picodollar of fee moves the total by {delta}"
+    if probe == "TEXT_ONLY_PROVES_INAPPLICABLE":
+        proof = OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1
+        bound = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_FULL
+        )
+        states = dict(bound.charge_components)
+        inapplicable = OpenRouterChargeClassStateV1.NOT_APPLICABLE.value
+        return (
+            proof.text_only
+            and proof.image_parts == 0
+            and proof.audio_parts == 0
+            and proof.body_sha256 == INTENT_A.body_sha256
+            and states["image"] == inapplicable
+            and states["audio"] == inapplicable
+            and bound.modality_proof_id == proof.proof_id
+        ), "the sealed bytes themselves rule out image and audio charges"
+    if probe == "REQUEST_FEE_UNBOUNDED":
+        bound = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL, OUTPUT_BOUND_ESTABLISHED, CEILING_A
+        )
+        return (
+            bound.applicable_charge_coverage is OpenRouterChargeCoverageV1.INCOMPLETE
+            and bound.status is OpenRouterBoundStatusV1.NOT_ESTABLISHED
+            and bound.max_total_cost_picodollars is None
+            and dict(bound.charge_components)["request"]
+            == OpenRouterChargeClassStateV1.UNBOUNDED.value
+            and "request_fee_ceiling" in bound.formula
+        ), "an unbounded request fee blocks the authority and is still named"
+    if probe == "REQUEST_FEE_MALFORMED":
+        return refuses(
+            lambda: build_openrouter_max_price_policy_v1(
+                OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1,
+                prompt_usd_per_million_tokens="1",
+                completion_usd_per_million_tokens="2",
+                request_usd="free",
+            )
+        )
+    if probe == "REQUEST_FEE_NEGATIVE":
+        return refuses(
+            lambda: build_openrouter_max_price_policy_v1(
+                OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1,
+                prompt_usd_per_million_tokens="1",
+                completion_usd_per_million_tokens="2",
+                request_usd="-0.01",
+            )
+        )
+    if probe == "REQUEST_FEE_FLOAT":
+        return refuses(
+            lambda: build_openrouter_max_price_policy_v1(
+                OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1,
+                prompt_usd_per_million_tokens="1",
+                completion_usd_per_million_tokens="2",
+                request_usd=0.01,
+            )
+        )
+    if probe == "REQUEST_FEE_OMITTED_IS_NOT_ZERO":
+        omitted = OVERLAY_A.max_price_policy
+        bounded_zero = OVERLAY_FULL.max_price_policy
+        return (
+            omitted.request_usd is None
+            and omitted.request_picodollars is None
+            and bounded_zero.request_picodollars == 0
+            and omitted.policy_id != bounded_zero.policy_id
+        ), "omitted stays unknown; only an explicit '0' is a bound of zero"
+    if probe == "MEDIA_REQUEST_DOES_NOT_INHERIT_PROOF":
+        sealed = OPENROUTER_SEALED_REQUEST_MODALITY_PROOF_V1
+        bound = compute_openrouter_ceiling_cost_bound_v1(
+            INPUT_BOUND_HYPOTHETICAL,
+            OUTPUT_BOUND_ESTABLISHED,
+            CEILING_FULL,
+            MEDIA_MODALITY_PROOF,
+        )
+        states = dict(bound.charge_components)
+        return (
+            MEDIA_MODALITY_PROOF.body_sha256 != sealed.body_sha256
+            and MEDIA_MODALITY_PROOF.proof_id != sealed.proof_id
+            and MEDIA_MODALITY_PROOF.text_only is False
+            and states["image"] == OpenRouterChargeClassStateV1.UNBOUNDED.value
+            and bound.applicable_charge_coverage
+            is OpenRouterChargeCoverageV1.INCOMPLETE
+        ), "an image-bearing request gets no free non-applicability"
+    if probe == "WRONG_MAX_PRICE_SCHEMA_PATH":
+        # Well-formed decimal strings throughout, so the refusal cannot be
+        # attributed to the float or decimal guards.
+        components = dict(
+            prompt_usd_per_million_tokens="1",
+            completion_usd_per_million_tokens="2",
+        )
+        for foreign, _ in FROZEN_OPENROUTER_FOREIGN_MAX_PRICE_PATHS_V1:
+            try:
+                build_openrouter_max_price_policy_v1(foreign, **components)
+            except ContractValidationError as exc:
+                if foreign not in str(exc):
+                    return False, f"refusal not attributed to {foreign}"
+            else:
+                return False, f"{foreign} was accepted as the ceiling authority"
+        accepted = build_openrouter_max_price_policy_v1(
+            OPENROUTER_MAX_PRICE_SCHEMA_PATH_V1, **components
+        )
+        return (
+            accepted.policy_id == OVERLAY_A.max_price_policy.policy_id
+        ), "only ProviderPreferences.max_price is the ceiling authority"
 
     if probe == "CEILING_ABSENT":
         bound = compute_openrouter_ceiling_cost_bound_v1(
@@ -644,6 +789,7 @@ _PRICING_VARIANTS = {
     "WRONG_MODEL": PRICING_WRONG_MODEL,
     "SELECTOR_MISMATCH": PRICING_SELECTOR_MISMATCH,
     "BROAD_PROVIDER": PRICING_BROAD_PROVIDER,
+    "BROAD_AT_EXACT_SELECTOR": PRICING_BROAD_AT_EXACT_SELECTOR,
     "EXPONENT_FORM": PRICING_EXPONENT_FORM,
     "OVERFLOW": PRICING_OVERFLOW,
     "STALE": PRICING_STALE,
@@ -933,19 +1079,30 @@ def _live_readiness_v1() -> OpenRouterLiveReadinessV1:
     upper bound needs, and it does not require reading any endpoint's actual
     price at a granularity the retained schema cannot express.
 
-    What remains is P17.  A price ceiling caps the rate; it says nothing about
+    Two things remain.  P17: a price ceiling caps the rate but says nothing about
     how many input tokens are billed, and without a pinned tokenizer there is no
-    trustworthy pre-call input token bound.  That is a structural gap, not a
-    fetchable fact, so pending-JIT would be hiding unresolved architecture.
+    trustworthy pre-call input token bound.  And charge coverage: the live policy
+    leaves the documented per-request fee unbounded, so the token-only sum is not
+    a complete worst-case total.  Neither is a fetchable fact, so pending-JIT
+    would be hiding unresolved architecture.
     """
     input_ready = (
         INPUT_BOUND_UNESTABLISHED.status is OpenRouterBoundStatusV1.ESTABLISHED
     )
-    cost_authority_available = (
+    price_authority_available = (
         CEILING_A.status is OpenRouterCeilingStatusV1.ESTABLISHED
         or OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 == "EXACT_SELECTOR_BINDABLE"
     )
-    if input_ready and cost_authority_available:
+    # A price authority is not yet a cost authority: every documented charge
+    # class that can apply to this request must also be capped.
+    live_cost_bound = compute_openrouter_ceiling_cost_bound_v1(
+        INPUT_BOUND_UNESTABLISHED, OUTPUT_BOUND_ESTABLISHED, CEILING_A
+    )
+    coverage_complete = (
+        live_cost_bound.applicable_charge_coverage
+        is OpenRouterChargeCoverageV1.COMPLETE
+    )
+    if input_ready and price_authority_available and coverage_complete:
         return OpenRouterLiveReadinessV1.AUTHORIZED_PENDING_JIT_PREFLIGHT
     return OpenRouterLiveReadinessV1.NOT_AUTHORIZED
 
