@@ -26,6 +26,10 @@ from backend.dialogues.socrates_zero.openrouter_route_controls_parser import (
     OpenRouterRouteAttestationV1,
     OpenRouterRouterMetadataReceiptV1,
 )
+from backend.dialogues.socrates_zero.openrouter_provenance_boundary_v1 import (
+    FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1,
+    openrouter_provenance_record_v1,
+)
 from backend.dialogues.socrates_zero.openrouter_route_controls_evaluation import (
     FROZEN_OPENROUTER_ROUTE_CONTROL_ARTIFACT_CLAIM_FIREWALL_V1,
     FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1,
@@ -365,7 +369,23 @@ def test_scoped_inventory_is_complete_and_current() -> None:
     snapshot = capture_openrouter_route_control_scoped_snapshot_v1(ROOT)
     expected_count = sum(len(paths) for _, paths in FROZEN_ROUTE_CONTROL_SCOPED_PATH_INVENTORY_V1)
     assert len(snapshot.rows) == expected_count
-    assert all(row.sha256 == hashlib.sha256((ROOT / row.relative_path).read_bytes()).hexdigest() for row in snapshot.rows)
+    file_rows = tuple(
+        row
+        for row in snapshot.rows
+        if openrouter_provenance_record_v1(row.relative_path) is None
+    )
+    provenance_rows = tuple(
+        row
+        for row in snapshot.rows
+        if openrouter_provenance_record_v1(row.relative_path) is not None
+    )
+    assert len(provenance_rows) == len(FROZEN_OPENROUTER_PROVENANCE_BOUNDARY_V1)
+    assert len(file_rows) + len(provenance_rows) == expected_count
+    assert all(row.sha256 == hashlib.sha256((ROOT / row.relative_path).read_bytes()).hexdigest() for row in file_rows)
+    assert all(
+        row.sha256 == openrouter_provenance_record_v1(row.relative_path).record_sha256
+        for row in provenance_rows
+    )
     inventoried = {row.relative_path for row in snapshot.rows}
     assert {
         "backend/dialogues/socrates_zero/baseline.py",
