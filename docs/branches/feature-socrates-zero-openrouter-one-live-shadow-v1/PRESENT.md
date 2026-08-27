@@ -5,15 +5,20 @@
 - Branch: `feature/socrates-zero-openrouter-one-live-shadow-v1`
 - Source HEAD: `e60856963310028bf391ac64792a9c1658f5e2c3` (S7A)
 - Pre-inference freeze: `241e9e261bb8eaa4cd3d9b0186d78109042f5efe`
-- Phase: **ABORTED_PRE_DISPATCH — P17 could not be established from live evidence.**
+- Phase: **offline correction round complete and re-frozen; awaiting a decision
+  on the P17 identity rule before any further network activity.**
 
 ## Counters
 
 ```
-jit_metadata_get_count     = 1   (permitted maximum: 1)
-live_inference_post_count  = 0   (required: 0 without authorization)
+jit_metadata_get_count     = 1   (spent in the earlier authorized attempt)
+live_inference_post_count  = 0
 local retries              = 0
+credential accesses this round = 0
 ```
+
+The GET was performed in the previous round under its own authorization; this
+correction round performed **no** network activity and read **no** credential.
 
 ## What happened
 
@@ -76,10 +81,30 @@ S7A, S6, S5, S3, Route Controls and Manifest surfaces are untouched. The known
 predecessor timestamp race was not fixed here and did not flake in the pre-freeze
 full-suite run (3672 passed, 10 skipped, exit 0).
 
+## Correction round (offline only)
+
+The live runner was hardened before any further network activity:
+
+- one sealing step, so registered bytes are the dispatched bytes;
+- request targets pinned per dispatch class, host pinned by contract;
+- semantic headers carried as evidence with their own digest, Authorization
+  excluded from every record;
+- a single credential read site, with import inertness proven in-process;
+- an offline JIT client exercised against synthetic fixtures and the retained
+  real response;
+- S5 and S6 bridges that carry the transport's own representation across without
+  reconstruction.
+
+59 offline locks, all passing. No network, no credential read.
+
 ## Next safe step
 
 Decide, as a separate authorized question, whether the frozen P17 identity rule
 should accept a dated canonical slug for the same stable model pointer. Do not
 edit the frozen contract inside this phase.
+
+If that question is answered affirmatively in a new phase, the next network
+action is exactly ONE first-party model-limit GET — which also needs fresh
+authorization, since this phase's GET budget is spent.
 
 Not pushed.

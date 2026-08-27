@@ -90,6 +90,13 @@ OPENROUTER_CREDENTIAL_VARIABLE_V1 = "OPENROUTER_API_KEY"
 #: Response bytes above this are refused rather than buffered without limit.
 OPENROUTER_MAX_LIVE_RESPONSE_BYTES_V1 = 4 * 1024 * 1024
 
+#: The only two request targets this phase may ever open, paired with the only
+#: dispatch class allowed to use each.  Anything else is refused before a socket.
+FROZEN_OPENROUTER_PERMITTED_TARGETS_V1 = {
+    "jit_metadata_get": ("GET", OPENROUTER_MODEL_DETAIL_PATH_V1),
+    "live_inference_post": ("POST", OPENROUTER_LIVE_INFERENCE_PATH_V1),
+}
+
 
 class _FrozenShadowContractV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -293,22 +300,42 @@ class OpenRouterLiveTransportRegistrationV1(_FrozenShadowContractV1):
     schema_version: Literal[
         OPENROUTER_LIVE_TRANSPORT_REGISTRATION_SCHEMA_V1
     ] = OPENROUTER_LIVE_TRANSPORT_REGISTRATION_SCHEMA_V1
+    dispatch_class: Literal["jit_metadata_get", "live_inference_post"]
     method: Literal["POST", "GET"]
     host: Literal[OPENROUTER_LIVE_API_HOST_V1] = OPENROUTER_LIVE_API_HOST_V1
     path: str = Field(min_length=1)
     body_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     body_length: int = Field(ge=0)
-    semantic_header_names: Tuple[str, ...]
+    #: The authorized non-secret headers, name and value.  Authorization is not
+    #: one of them and never becomes one: it is a dispatch-only secret.
+    semantic_headers: Tuple[Tuple[str, str], ...]
+    semantic_headers_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     bounded_timeout_seconds: int = Field(gt=0, le=120)
     registration_id: Optional[str] = None
 
+    @property
+    def semantic_header_names(self) -> Tuple[str, ...]:
+        return tuple(name for name, _ in self.semantic_headers)
+
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterLiveTransportRegistrationV1":
-        if any(
-            name.lower() == "authorization" for name in self.semantic_header_names
-        ):
+        if any(name.lower() == "authorization" for name, _ in self.semantic_headers):
             raise ContractValidationError(
                 "the Authorization header is never semantic evidence"
+            )
+        permitted = FROZEN_OPENROUTER_PERMITTED_TARGETS_V1.get(self.dispatch_class)
+        if permitted is None or (self.method, self.path) != permitted:
+            raise ContractValidationError(
+                f"{self.dispatch_class} may only address "
+                f"{permitted[0]} {permitted[1]}"
+                if permitted
+                else "unknown dispatch class"
+            )
+        if _header_evidence_digest_v1(self.semantic_headers) != (
+            self.semantic_headers_sha256
+        ):
+            raise ContractValidationError(
+                "semantic header digest does not describe the headers"
             )
         expected = stable_contract_id(
             "szorlivetransportregistrationv1",
@@ -365,6 +392,8 @@ class OpenRouterLiveTransportCompletionV1(_FrozenShadowContractV1):
 class OpenRouterRawHttpResultV1:
     """Raw evidence from one dispatch.  Not a contract; not persisted as-is."""
 
+    registration: OpenRouterLiveTransportRegistrationV1
+    dispatched_body: bytes
     completion: OpenRouterLiveTransportCompletionV1
     raw_response_body: bytes
     response_headers: Tuple[Tuple[str, str], ...]
@@ -424,17 +453,24 @@ def _dispatch_once_v1(
     still consumes the budget.  Under-execution is the safe direction: a second
     attempt could double-charge and would destroy the one-shot claim.
     """
+    # One sealing step.  ``sealed_body`` is the object whose digest is recorded
+    # and the object handed to the client: there is no second serialization
+    # between identity and the socket, so they cannot diverge.
+    sealed_body: Optional[bytes] = None if body is None else bytes(body)
+    ordered_headers = tuple(sorted((str(k), str(v)) for k, v in semantic_headers.items()))
     registration = OpenRouterLiveTransportRegistrationV1(
+        dispatch_class=kind,
         method=method,
         path=path,
-        body_sha256=hashlib.sha256(body or b"").hexdigest(),
-        body_length=len(body or b""),
-        semantic_header_names=tuple(sorted(semantic_headers)),
+        body_sha256=hashlib.sha256(sealed_body or b"").hexdigest(),
+        body_length=len(sealed_body or b""),
+        semantic_headers=ordered_headers,
+        semantic_headers_sha256=_header_evidence_digest_v1(ordered_headers),
         bounded_timeout_seconds=bounded_timeout_seconds,
     )
     OPENROUTER_DISPATCH_LATCH_V1.claim(kind, 1)
 
-    headers = dict(semantic_headers)
+    headers = dict(ordered_headers)
     # Injected at the boundary only; never recorded anywhere below.
     headers["Authorization"] = f"Bearer {bearer_credential}"
 
@@ -444,7 +480,7 @@ def _dispatch_once_v1(
         context=ssl.create_default_context(),
     )
     try:
-        connection.request(method, path, body=body, headers=headers)
+        connection.request(method, path, body=sealed_body, headers=headers)
         response = connection.getresponse()
         raw = response.read(OPENROUTER_MAX_LIVE_RESPONSE_BYTES_V1 + 1)
         if len(raw) > OPENROUTER_MAX_LIVE_RESPONSE_BYTES_V1:
@@ -464,6 +500,8 @@ def _dispatch_once_v1(
             ),
         )
         return OpenRouterRawHttpResultV1(
+            registration=registration,
+            dispatched_body=sealed_body or b"",
             completion=completion,
             raw_response_body=raw,
             response_headers=response_headers,
@@ -475,7 +513,11 @@ def _dispatch_once_v1(
             failure_class=type(exc).__name__,
         )
         return OpenRouterRawHttpResultV1(
-            completion=completion, raw_response_body=b"", response_headers=()
+            registration=registration,
+            dispatched_body=sealed_body or b"",
+            completion=completion,
+            raw_response_body=b"",
+            response_headers=(),
         )
     finally:
         connection.close()
@@ -530,6 +572,7 @@ def dispatch_openrouter_one_live_inference_v1(
 
 __all__ = [
     "FROZEN_OPENROUTER_CLAIM_STORE_THREATS_EXCLUDED_V1",
+    "FROZEN_OPENROUTER_PERMITTED_TARGETS_V1",
     "FROZEN_OPENROUTER_CLAIM_STORE_THREATS_INCLUDED_V1",
     "OPENROUTER_CLAIM_STORE_TRUST_MODEL_V1",
     "OPENROUTER_CREDENTIAL_VARIABLE_V1",

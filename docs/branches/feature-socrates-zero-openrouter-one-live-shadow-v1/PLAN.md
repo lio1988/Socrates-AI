@@ -46,6 +46,23 @@ CED mutation.
 | `git diff --check` | PASS | **PASS** |
 | inference POSTs before authorization | 0 | **0** |
 
+### Correction round (offline only)
+
+| gate | required | observed |
+| --- | --- | --- |
+| S7B focused | all pass | **59 passed** |
+| request byte preservation | registered == dispatched | **PASS** |
+| one-byte mutation | digest must differ | **PASS** |
+| semantic-header preservation | exact | **PASS** |
+| Authorization excluded from evidence | absent everywhere | **PASS** |
+| wrong host / path / method | refused pre-socket | **PASS** |
+| credential read sites | exactly 1 | **1** |
+| import inertness | 0 reads, 0 writes | **PASS** |
+| JIT client offline | synthetic + retained fixtures | **PASS** |
+| S5 compatibility | no reconstruction | **PASS** |
+| S6 compatibility | no reconstruction | **PASS** |
+| network this round | 0 | **0** |
+
 ## Stop conditions
 
 Inference POST count stays 0 and the phase halts if: the credential is absent;

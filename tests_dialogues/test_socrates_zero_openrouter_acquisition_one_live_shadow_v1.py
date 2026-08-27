@@ -134,13 +134,18 @@ def test_a_grant_cannot_silently_drop_a_declared_threat() -> None:
 
 
 def test_registration_refuses_the_authorization_header_as_evidence() -> None:
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    headers = (("Content-Type", "application/json"), ("Authorization", "Bearer x"))
     with pytest.raises(ValidationError, match="never semantic evidence"):
         OpenRouterLiveTransportRegistrationV1(
+            dispatch_class="live_inference_post",
             method="POST",
             path=OPENROUTER_LIVE_INFERENCE_PATH_V1,
             body_sha256="a" * 64,
             body_length=10,
-            semantic_header_names=("Content-Type", "Authorization"),
+            semantic_headers=headers,
+            semantic_headers_sha256=module._header_evidence_digest_v1(headers),
             bounded_timeout_seconds=30,
         )
 
@@ -609,3 +614,405 @@ def test_a_cost_over_the_operator_ceiling_refuses_the_preflight(
         synthetic_fixture_id="s7b-offline-over-ceiling-limit",
     )
     assert not bundle.authorized
+
+
+# ------------------------------------- byte and header preservation, exact ---
+
+
+def test_registered_bytes_are_the_dispatched_bytes_byte_for_byte(monkeypatch) -> None:
+    """The digest that goes into evidence describes the bytes on the wire."""
+    import hashlib
+
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    body = b'{"model":"openai/gpt-4.1-mini","max_tokens":256,"stream":false}'
+    monkeypatch.setattr(module.http.client, "HTTPSConnection", _RecordingConnection)
+    monkeypatch.setattr(module, "_read_bearer_credential_v1", lambda: "synthetic")
+    monkeypatch.setattr(module, "OPENROUTER_DISPATCH_LATCH_V1", module._DispatchLatch())
+
+    result = module.dispatch_openrouter_one_live_inference_v1(
+        body_bytes=body,
+        semantic_headers={"Content-Type": "application/json"},
+        bounded_timeout_seconds=30,
+    )
+    wire = _RecordingConnection.last["body"]
+
+    assert wire == body == result.dispatched_body
+    assert result.registration.body_sha256 == hashlib.sha256(wire).hexdigest()
+    assert result.registration.body_length == len(wire)
+
+    # A single flipped byte must not reproduce the registered digest.
+    mutated = bytearray(body)
+    mutated[-2] ^= 0x01
+    assert hashlib.sha256(bytes(mutated)).hexdigest() != result.registration.body_sha256
+
+
+def test_semantic_headers_are_preserved_and_digested(monkeypatch) -> None:
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-OpenRouter-Cache": "false",
+        "X-OpenRouter-Metadata": "enabled",
+    }
+    monkeypatch.setattr(module.http.client, "HTTPSConnection", _RecordingConnection)
+    monkeypatch.setattr(module, "_read_bearer_credential_v1", lambda: "synthetic")
+    monkeypatch.setattr(module, "OPENROUTER_DISPATCH_LATCH_V1", module._DispatchLatch())
+
+    result = module.dispatch_openrouter_one_live_inference_v1(
+        body_bytes=b'{"a":1}',
+        semantic_headers=headers,
+        bounded_timeout_seconds=30,
+    )
+    sent = _RecordingConnection.last["headers"]
+    for name, value in headers.items():
+        assert sent[name] == value
+        assert (name, value) in result.registration.semantic_headers
+    # Authorization reached the wire but is absent from every record.
+    assert "Authorization" in sent
+    assert "Authorization" not in dict(result.registration.semantic_headers)
+    expected = module._header_evidence_digest_v1(result.registration.semantic_headers)
+    assert result.registration.semantic_headers_sha256 == expected
+
+
+def test_a_mutated_header_changes_the_evidence_digest() -> None:
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    base = (("Content-Type", "application/json"),)
+    mutated = (("Content-Type", "application/json "),)
+    assert module._header_evidence_digest_v1(base) != module._header_evidence_digest_v1(
+        mutated
+    )
+
+
+@pytest.mark.parametrize(
+    ("dispatch_class", "method", "path"),
+    [
+        ("live_inference_post", "POST", "/api/v1/completions"),
+        ("live_inference_post", "GET", "/api/v1/chat/completions"),
+        ("jit_metadata_get", "GET", "/api/v1/model/openai/gpt-4o"),
+        ("jit_metadata_get", "POST", "/api/v1/model/openai/gpt-4.1-mini"),
+    ],
+)
+def test_a_wrong_target_is_refused_before_any_socket(
+    dispatch_class: str, method: str, path: str
+) -> None:
+    """Endpoint and method are pinned per dispatch class."""
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    with pytest.raises(ValidationError, match="may only address"):
+        module.OpenRouterLiveTransportRegistrationV1(
+            dispatch_class=dispatch_class,
+            method=method,
+            path=path,
+            body_sha256="a" * 64,
+            body_length=1,
+            semantic_headers=(),
+            semantic_headers_sha256=module._header_evidence_digest_v1(()),
+            bounded_timeout_seconds=30,
+        )
+
+
+def test_the_host_is_pinned_by_the_contract() -> None:
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    with pytest.raises(ValidationError):
+        module.OpenRouterLiveTransportRegistrationV1(
+            dispatch_class="live_inference_post",
+            method="POST",
+            host="evil.example.com",
+            path=OPENROUTER_LIVE_INFERENCE_PATH_V1,
+            body_sha256="a" * 64,
+            body_length=1,
+            semantic_headers=(),
+            semantic_headers_sha256=module._header_evidence_digest_v1(()),
+            bounded_timeout_seconds=30,
+        )
+
+
+def test_response_evidence_is_captured_exactly(monkeypatch) -> None:
+    import hashlib
+
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    monkeypatch.setattr(module.http.client, "HTTPSConnection", _RecordingConnection)
+    monkeypatch.setattr(module, "_read_bearer_credential_v1", lambda: "synthetic")
+    monkeypatch.setattr(module, "OPENROUTER_DISPATCH_LATCH_V1", module._DispatchLatch())
+
+    result = module.dispatch_openrouter_one_live_inference_v1(
+        body_bytes=b'{"a":1}',
+        semantic_headers={"Content-Type": "application/json"},
+        bounded_timeout_seconds=30,
+    )
+    raw = result.raw_response_body
+    assert raw == b'{"ok":true}'
+    assert result.completion.response_body_sha256 == hashlib.sha256(raw).hexdigest()
+    assert result.completion.response_body_length == len(raw)
+    assert result.completion.response_header_count == len(result.response_headers)
+
+
+# ---------------------------------------------- JIT metadata, offline only ---
+
+
+def _fake_result(body: bytes, status: int = 200, completed: bool = True):
+    import hashlib
+
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    headers = (("Content-Type", "application/json"),)
+    accept = (("Accept", "application/json"),)
+    registration = module.OpenRouterLiveTransportRegistrationV1(
+        dispatch_class="jit_metadata_get",
+        method="GET",
+        path=module.OPENROUTER_MODEL_DETAIL_PATH_V1,
+        body_sha256=hashlib.sha256(b"").hexdigest(),
+        body_length=0,
+        semantic_headers=accept,
+        semantic_headers_sha256=module._header_evidence_digest_v1(accept),
+        bounded_timeout_seconds=30,
+    )
+    completion = module.OpenRouterLiveTransportCompletionV1(
+        registration_id=registration.registration_id or "",
+        completed=completed,
+        http_status=status if completed else None,
+        response_body_sha256=hashlib.sha256(body).hexdigest() if completed else None,
+        response_body_length=len(body) if completed else None,
+        response_header_count=len(headers) if completed else None,
+        response_header_evidence_sha256=(
+            module._header_evidence_digest_v1(headers) if completed else None
+        ),
+        failure_class=None if completed else "TimeoutError",
+    )
+    return module.OpenRouterRawHttpResultV1(
+        registration=registration,
+        dispatched_body=b"",
+        completion=completion,
+        raw_response_body=body if completed else b"",
+        response_headers=headers if completed else (),
+    )
+
+
+def _model_detail_bytes(**overrides) -> bytes:
+    from backend.dialogues.socrates_zero.contracts import canonical_json
+
+    data = {
+        "alias_target": None,
+        "canonical_slug": "openai/gpt-4.1-mini",
+        "context_length": 1_047_576,
+        "id": "openai/gpt-4.1-mini",
+        "per_request_limits": None,
+    }
+    data.update(overrides)
+    return canonical_json({"data": data}).encode("utf-8")
+
+
+def _parse(result):
+    from backend.dialogues.socrates_zero.openrouter_one_live_shadow_runner_v1 import (
+        parse_openrouter_model_detail_result_v1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_trusted_input_bound_v1 import (
+        OpenRouterInputLimitSourceScopeV1,
+    )
+
+    return parse_openrouter_model_detail_result_v1(
+        result,
+        preflight_execution_id="s7b-offline",
+        source_scope=OpenRouterInputLimitSourceScopeV1.SYNTHETIC_TEST_ONLY,
+        synthetic_fixture_id="s7b-offline-fixture",
+    )
+
+
+def test_the_jit_client_accepts_a_conforming_synthetic_response() -> None:
+    record = _parse(_fake_result(_model_detail_bytes()))
+    # per_request_limits is absent, so the conservative context fallback applies.
+    assert record.limit_tokens == 1_047_576
+    assert record.observed_max_prompt_tokens is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"id": "openai/gpt-4o"},
+        {"canonical_slug": "openai/gpt-4.1-mini-2025-04-14"},
+        {"alias_target": "openai/gpt-4.1-mini"},
+    ],
+)
+def test_the_jit_client_rejects_a_non_exact_model(overrides) -> None:
+    with pytest.raises(ContractValidationError):
+        _parse(_fake_result(_model_detail_bytes(**overrides)))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"", b"not json", b"[]", b'{"data":null}', b'{"data":{}}'],
+)
+def test_the_jit_client_rejects_malformed_metadata(body: bytes) -> None:
+    with pytest.raises(ContractValidationError):
+        _parse(_fake_result(body))
+
+
+@pytest.mark.parametrize("status", [301, 400, 401, 404, 429, 500])
+def test_the_jit_client_rejects_a_non_200_status(status: int) -> None:
+    with pytest.raises(ContractValidationError, match="not 200"):
+        _parse(_fake_result(_model_detail_bytes(), status=status))
+
+
+def test_the_jit_client_rejects_an_incomplete_dispatch() -> None:
+    with pytest.raises(ContractValidationError, match="did not complete"):
+        _parse(_fake_result(b"", completed=False))
+
+
+def test_the_retained_live_response_still_fails_the_frozen_identity_rule() -> None:
+    """The real captured response is kept as a regression fixture.
+
+    It documents why S7B aborted: the live canonical_slug is a dated build, so
+    the frozen identity rule refuses it. No network is touched to check this.
+    """
+    retained = (
+        ROOT
+        / "docs/branches/feature-socrates-zero-openrouter-one-live-shadow-v1"
+        / "evidence/s7b_model_detail_response_v1.json"
+    ).read_bytes()
+    payload = json.loads(retained.decode("utf-8"))["data"]
+    assert payload["id"] == "openai/gpt-4.1-mini"
+    assert payload["canonical_slug"] == "openai/gpt-4.1-mini-2025-04-14"
+    assert payload["per_request_limits"] is None
+    assert payload["context_length"] == 1_047_576
+    with pytest.raises(ContractValidationError, match="canonical_slug"):
+        _parse(_fake_result(retained))
+
+
+# ------------------------------------------------- S5 / S6 compatibility ---
+
+
+def _sample_chat_completion_bytes() -> bytes:
+    from backend.dialogues.socrates_zero.contracts import canonical_json
+
+    return canonical_json(
+        {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "index": 0,
+                    "message": {"content": "A question.", "role": "assistant"},
+                }
+            ],
+            "created": 1,
+            "id": "gen-offline",
+            "model": "openai/gpt-4.1-mini",
+            "object": "chat.completion",
+            "usage": {"completion_tokens": 3, "prompt_tokens": 5, "total_tokens": 8},
+        }
+    ).encode("utf-8")
+
+
+def test_s5_consumes_the_transport_representation_without_reconstruction() -> None:
+    """S5 takes the transport's exact raw bytes and headers as they are."""
+    from backend.dialogues.socrates_zero.openrouter_one_live_shadow_runner_v1 import (
+        s5_observation_from_live_v1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_raw_wire_mapping_v2 import (
+        map_openrouter_raw_wire_v2,
+    )
+
+    body = _sample_chat_completion_bytes()
+    result = _fake_result(body)
+    observation = s5_observation_from_live_v1(result)
+
+    # The observation's digests are the transport's, not recomputed differently.
+    assert observation.raw_body_sha256 == result.completion.response_body_sha256
+    mapping = map_openrouter_raw_wire_v2(observation)
+    assert mapping.raw_body_sha256 == observation.raw_body_sha256
+
+
+def test_s6_binds_the_transport_record_without_adapter_reconstruction() -> None:
+    """Every S6 transport field is carried across, not rebuilt."""
+    from backend.dialogues.socrates_zero.openrouter_one_live_shadow_runner_v1 import (
+        s6_transport_record_from_live_v1,
+    )
+
+    result = _fake_result(_sample_chat_completion_bytes())
+    record = s6_transport_record_from_live_v1(result)
+
+    assert record.registered_body_sha256 == result.registration.body_sha256
+    assert record.registered_body_length == result.registration.body_length
+    assert record.registered_semantic_headers_sha256 == (
+        result.registration.semantic_headers_sha256
+    )
+    assert record.local_dispatch_count == 1
+    assert record.response_body_sha256 == result.completion.response_body_sha256
+    assert record.response_body_length == result.completion.response_body_length
+    assert record.response_header_evidence_sha256 == (
+        result.completion.response_header_evidence_sha256
+    )
+    assert record.response_header_count == result.completion.response_header_count
+
+
+# ------------------------------------------------------- import inertness ---
+
+
+def test_the_s7b_modules_are_import_inert() -> None:
+    """Executing the module bodies reads no credential and writes no file.
+
+    Runs in-process against throwaway namespaces: the acquisition tripwire
+    forbids subprocess, and spawning one would only move the question somewhere
+    the tripwire cannot watch.
+    """
+    import builtins
+    import os
+    import sys as _sys
+
+    reads: list = []
+    writes: list = []
+    real_get = os.environ.get
+    real_open = builtins.open
+
+    def watched_get(key, default=None):
+        reads.append(key)
+        return real_get(key, default)
+
+    def watched_open(file, mode="r", *args, **kwargs):
+        if any(flag in mode for flag in ("w", "a", "x", "+")):
+            writes.append((str(file), mode))
+        return real_open(file, mode, *args, **kwargs)
+
+    package = "backend.dialogues.socrates_zero"
+    names = (
+        "openrouter_one_live_shadow_v1",
+        "openrouter_one_live_shadow_runner_v1",
+    )
+    sources = [
+        (ROOT / "backend/dialogues/socrates_zero" / f"{name}.py").read_text(
+            encoding="utf-8"
+        )
+        for name in names
+    ]
+
+    os.environ.get = watched_get
+    builtins.open = watched_open
+    try:
+        for index, source in enumerate(sources):
+            key = f"{package}._s7b_inertness_probe_{index}"
+            shim = type(_sys)(key)
+            shim.__package__ = package
+            shim.__file__ = key
+            _sys.modules[key] = shim
+            try:
+                exec(compile(source, key, "exec"), shim.__dict__)
+            finally:
+                _sys.modules.pop(key, None)
+    finally:
+        os.environ.get = real_get
+        builtins.open = real_open
+
+    assert "OPENROUTER_API_KEY" not in reads
+    assert writes == []
+
+
+def test_importing_does_not_create_the_claim_store_directory() -> None:
+    """No filesystem side effect at import time."""
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    source = Path(module.__file__).read_text(encoding="utf-8")
+    # mkdir appears nowhere; the store directory is the operator's to create.
+    assert "mkdir" not in source

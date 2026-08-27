@@ -307,4 +307,91 @@ __all__ = [
     "build_s7b_preflight_v1",
     "consume_then_dispatch_s7b_v1",
     "live_wire_payload_v1",
+    "parse_openrouter_model_detail_result_v1",
+    "s5_observation_from_live_v1",
+    "s6_transport_record_from_live_v1",
 ]
+
+
+# ------------------------------------------- JIT parsing and S5/S6 bridges ---
+
+
+def parse_openrouter_model_detail_result_v1(
+    result,
+    *,
+    preflight_execution_id: str,
+    source_scope: OpenRouterInputLimitSourceScopeV1,
+    synthetic_fixture_id: Optional[str] = None,
+):
+    """Strict status handling, then the frozen S7A parser decides.
+
+    A non-200, an incomplete dispatch or an empty body is refused here; the
+    model identity and limit semantics are judged by S7A, not by this function.
+    """
+    completion = result.completion
+    if not completion.completed:
+        raise ContractValidationError(
+            f"model-detail dispatch did not complete: {completion.failure_class}"
+        )
+    if completion.http_status != 200:
+        raise ContractValidationError(
+            f"model-detail responded {completion.http_status}, not 200"
+        )
+    if not result.raw_response_body:
+        raise ContractValidationError("model-detail returned an empty body")
+    return build_trusted_model_input_limit_record_from_response_v1(
+        raw_response_bytes=result.raw_response_body,
+        preflight_execution_id=preflight_execution_id,
+        source_scope=source_scope,
+        synthetic_fixture_id=synthetic_fixture_id,
+    )
+
+
+def s6_transport_record_from_live_v1(result):
+    """Carry the live transport evidence into S6 without reconstructing it.
+
+    Every field is copied straight across from the registration and completion
+    records. Nothing is recomputed from the response, so an S6 binding failure
+    means the evidence really disagrees rather than that an adapter rebuilt it.
+    """
+    from .openrouter_pre_live_integration_v1 import (
+        OpenRouterTransportCompletionStateV1,
+        OpenRouterTransportExecutionRecordV1,
+        OpenRouterTransportRegistrationStateV1,
+    )
+
+    registration = result.registration
+    completion = result.completion
+    return OpenRouterTransportExecutionRecordV1(
+        registration_state=OpenRouterTransportRegistrationStateV1.REGISTERED,
+        registered_body_sha256=registration.body_sha256,
+        registered_body_length=registration.body_length,
+        registered_semantic_headers_sha256=registration.semantic_headers_sha256,
+        registered_semantic_headers_length=len(registration.semantic_headers),
+        local_dispatch_count=completion.local_dispatch_count,
+        completion_state=(
+            OpenRouterTransportCompletionStateV1.COMPLETED
+            if completion.completed
+            else OpenRouterTransportCompletionStateV1.FAILED
+        ),
+        response_present=completion.completed,
+        response_body_sha256=completion.response_body_sha256,
+        response_body_length=completion.response_body_length,
+        response_header_evidence_sha256=(
+            completion.response_header_evidence_sha256
+        ),
+        response_header_count=completion.response_header_count,
+        timeout_fired=False,
+        worker_terminated=True,
+    )
+
+
+def s5_observation_from_live_v1(result):
+    """Hand S5 the exact raw bytes and headers, in its own representation."""
+    from .openrouter_raw_wire_mapping_v2 import (
+        build_openrouter_raw_wire_observation_v2,
+    )
+
+    return build_openrouter_raw_wire_observation_v2(
+        result.raw_response_body, result.response_headers
+    )

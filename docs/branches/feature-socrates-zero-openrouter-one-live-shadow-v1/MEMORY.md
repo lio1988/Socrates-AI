@@ -87,3 +87,40 @@ Repository `C:\Users\spirc\Desktop\Socrates-AI-OpenRouter-v2r1-publish`;
 interpreter `C:\Users\spirc\Desktop\Socrates-AI-OpenRouter\.venv\Scripts\python.exe`
 (Python 3.12.10, the environment that produced S7A); `PYTHONPATH` at the
 repository root. `.gitignore` ignores `*.md` and `*.json`, so use `git add -f`.
+
+## Transport invariants locked in the correction round
+
+**One sealing step.** ``_dispatch_once_v1`` binds ``sealed_body`` once; that same
+object is digested into the registration and handed to ``connection.request``.
+There is no second serialization between identity and the socket, so they cannot
+diverge. The offline lock asserts registered == dispatched byte-for-byte and
+that a one-byte flip breaks the digest.
+
+**Targets are pinned per dispatch class.**
+``FROZEN_OPENROUTER_PERMITTED_TARGETS_V1`` maps ``jit_metadata_get`` to
+``GET /api/v1/model/openai/gpt-4.1-mini`` and ``live_inference_post`` to
+``POST /api/v1/chat/completions``. Host is a ``Literal``. A wrong method, path or
+host is refused by the registration contract before a socket is opened.
+
+**Semantic headers are evidence; Authorization is not.** The registration carries
+the authorized header pairs and their digest. Authorization is injected into a
+local dict at dispatch and appears in no record, no return value, no exception
+and no artifact.
+
+**One credential read site.** ``_read_bearer_credential_v1`` is the only place
+that touches ``os.environ``. Offline tests inject there. Import inertness is
+proven by executing both module bodies in throwaway namespaces with
+``os.environ.get`` and ``builtins.open`` instrumented: zero credential reads,
+zero writes.
+
+**S5/S6 take the transport's own representation.**
+``s5_observation_from_live_v1`` hands S5 the exact raw bytes and header pairs;
+``s6_transport_record_from_live_v1`` copies every S6 transport field straight
+across from the registration and completion records. Nothing is rebuilt, so a
+binding failure would mean the evidence really disagrees.
+
+## The retained live response is now a regression fixture
+
+The real captured model-detail response is kept under ``evidence/`` and an
+offline test asserts it still fails the frozen identity rule. That keeps the
+abort reason reproducible without any network.
