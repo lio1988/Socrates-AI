@@ -125,14 +125,26 @@ validate itself. Instead it validates historical rows through:
 
 - the frozen historical inventory ID (`Literal`);
 - the exact frozen historical row count, 90;
-- a **recomputed** content-addressed snapshot ID, derived from the supplied rows;
-- equality of that recomputed value with the frozen historical snapshot ID
-  `szorroutesnapshotv1_9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b`.
+- entry uniqueness;
+- a **recomputed** content-addressed snapshot ID, derived from the supplied rows.
 
 The snapshot ID is always recomputed and a caller-declared `snapshot_id` is never
-trusted, so any mutated historical path, mutated historical digest, or reordered
-historical row changes the recomputed identity and fails — and declaring the
-correct frozen ID alongside tampered rows does not rescue them.
+trusted.
+
+The *sealed*-identity lock lives one level up, in
+`verify_openrouter_route_control_sealed_historical_snapshot_v1`, which recomputes
+the identity from the supplied rows and requires it to equal
+`szorroutesnapshotv1_9ee38a257c992778102ca9b176e5ea99831aaae70ffbf4b016f2a3dbb7c4417b`.
+`load_openrouter_route_control_artifact_v1` applies it to both snapshots of the
+authoritative artifact. So a mutated historical path, a mutated historical digest
+or a reordered historical row all fail, and declaring the correct frozen ID
+alongside tampered rows does not rescue them.
+
+That separation matters, and the differential audit below is why: the frozen
+identity belongs to the *sealed* snapshot, not to every snapshot of the
+historical generation. A freshly reconstructed historical snapshot legitimately
+differs from the sealed one, and pinning the frozen ID inside the contract itself
+broke reconstruction.
 
 The current contract is additive and independent. Its `inventory_id` is
 recomputed from its own rows' membership and order and must match, so no entry
@@ -141,19 +153,70 @@ predecessor raw paths entirely; it requires each provenance row to carry exactly
 the immutable record content address; and its `snapshot_id` is likewise always
 recomputed.
 
-Historical artifact verification and current mutation verification are now two
+Historical artifact verification and current mutation verification are two
 separate operations, and each comparison function refuses the other generation's
-snapshot rather than silently comparing across the boundary. A consequence,
-intended: `_build_route_control_artifact_v1` can no longer produce a v1 artifact,
-because the sealed v1 generation cannot be reconstructed from today's inventory.
-That path was already unreachable behind the exclusive-claim and
-complete-support guards, and it now fails closed with an explicit message.
+snapshot rather than silently comparing across the boundary.
 
-`OpenRouterScopedMutationEvidenceV1` is unchanged from the sealed checkpoint. Its
-ordering rank still consults the current inventory constant, which is vacuous for
-the only inputs it can now receive: the historical comparison accepts nothing but
-the sealed historical snapshots, which are byte-identical and therefore always
-yield zero mutations. This is verified, not assumed.
+`OpenRouterScopedMutationEvidenceV1` no longer ranks its mutations against the
+current inventory. Historical ordering derives from the historical snapshot's own
+row order, which `compare_openrouter_route_control_scoped_snapshots_v1` preserves
+explicitly, and the evidence contract validates uniqueness and full derivation
+only. An AST scan over every historical node — the snapshot, digest, mutation and
+evidence contracts, the historical loader, the historical capture, the sealed
+verification and the historical comparison — reports **zero** references to the
+current inventory, the current inventory ID, the current snapshot contract, or
+any current provenance constant. A test loads the sealed artifact with the
+current inventory, the current inventory ID and the whole provenance boundary
+monkeypatched to nonsense, and gets a bit-identical artifact back.
+
+## Historical reconstruction
+
+The historical membership lives in an explicitly historical immutable evidence
+record, `docs/branches/feature-socrates-zero-openrouter-provenance-boundary-v1/evidence/openrouter_historical_scoped_inventory_v1.json`,
+generated from the sealed artifact's own snapshot rows so it cannot drift from
+what the experiment measured. It is hash locked in runtime code by a frozen
+SHA-256 (`b17ca9e4df2d4dd5d540474aa375b7708bbed7234ff0dbc9fd06827be2e598bc`) and
+must re-derive the frozen historical inventory identity.
+
+`capture_openrouter_route_control_historical_scoped_snapshot_v1` reads membership
+from that record and digests from the target tree;
+`_build_route_control_artifact_v1` reconstructs through it. This is the only
+place the historical membership is materialised at runtime, and it is the only
+place the two predecessor raw paths appear — as historical evidence data, outside
+runtime Python. The current provenance inventory still excludes them, and the
+canonical static node still passes.
+
+## Builder differential audit
+
+`_build_route_control_artifact_v1` was audited against a clean, unmodified
+worktree of `0d09822048d4f7c34cf234342ec4c36ef3db0ead`, under identical
+preconditions with the acquisition boundary tripwire active.
+
+| probe | source `0d09822` | current | equivalent |
+| --- | --- | --- | --- |
+| `reverse_case_order=True`, no claim | CONSTRUCTED, FALSIFIED | CONSTRUCTED, FALSIFIED | yes |
+| `reverse_case_order=False`, no claim | raises `forward authoritative aggregate requires an exclusive claim` | same | yes |
+| snapshot stage reached (probe A / B) | yes / no | yes / no | yes |
+
+Reachability: the builder is private (not in `__all__`) but reachable through the
+`_artifact_command` CLI path and through `build_independent_reverse_replay_v1`.
+Successful construction was a supported callable contract at source, so it had to
+remain one. Two tests exercise it; neither reaches the snapshot stage, both being
+stopped by upstream guards.
+
+Equivalence is proven rather than argued: the current code, run against the
+untouched source worktree, reproduces the source builder's artifact identity
+`szorroutecontrolartifactv1_4fed5904faefa0da09acd4a0a5099a42381cc94f1cca7f72b42b3b6cbb129a8e`
+and snapshot identity
+`szorroutesnapshotv1_485f155088bcc51153bd5eaa3fef0615cc40654fb6ff82a5b0a8bd60e21d2350`
+exactly.
+
+The audit also surfaced why the first correction was over-tight. At source, a
+fresh capture yields `485f1550…`, **not** the sealed `9ee38a25…` — 23 of the 90
+rows have drifted since the seal (six route-control documents, two SocratesZero
+siblings, fifteen production modules). The source contract checked membership and
+order but never digests, so it accepted both. Historical reconstruction is
+therefore **preserved**, not proven unreachable.
 
 This is the distinction the S3 audit demanded. The historical artifact records
 what was frozen then; the current boundary records how runtime scientific
@@ -196,9 +259,9 @@ value is what the sealed experiment recorded, not what the file says today.
 | exact static node, after | **1 passed**, genuinely |
 | Route Controls focused suite | **103 passed** (baseline 103) |
 | v1 + v2r1 evidence suite | **48 passed** (baseline 48) |
-| new provenance boundary suite | **58 passed** |
+| new provenance boundary suite | **64 passed** |
 | predecessor cases suite | **12 passed** |
-| full `tests_dialogues` | **3261 passed, 10 skipped** |
+| full `tests_dialogues` | **3279 passed, 10 skipped** |
 | `git diff --check` | PASS |
 
 All 15 frozen scientific surfaces re-hashed after the change and compared to the
@@ -221,8 +284,9 @@ performed.
 | --- | --- |
 | `backend/dialogues/socrates_zero/openrouter_provenance_boundary_v1.py` | new, additive |
 | `backend/dialogues/socrates_zero/openrouter_route_controls_evaluation.py` | provenance-only |
-| `tests_dialogues/test_socrates_zero_openrouter_acquisition_provenance_boundary_v1.py` | new, 58 locks |
+| `tests_dialogues/test_socrates_zero_openrouter_acquisition_provenance_boundary_v1.py` | new, 64 locks |
 | `tests_dialogues/test_socrates_zero_openrouter_acquisition_route_controls_v1_evaluation.py` | one inventory test adapted, not weakened |
+| `docs/branches/…-provenance-boundary-v1/evidence/openrouter_historical_scoped_inventory_v1.json` | new, historical evidence record |
 | `docs/SOCRATES_ZERO_OPENROUTER_PROVENANCE_BOUNDARY_V1.md` and four branch documents | documentation |
 
 ## What this unlocks, and what it does not

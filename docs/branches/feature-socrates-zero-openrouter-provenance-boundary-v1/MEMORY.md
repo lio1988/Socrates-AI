@@ -31,7 +31,27 @@ Stable context. Not an action log.
 
    Neither contract trusts a caller-declared `snapshot_id`; both always recompute
    it from the supplied rows.
-4. **No predecessor semantics are imported to verify provenance.** Immutable
+
+   The isolation is one-directional and total: no historical contract, loader,
+   capture, verification or comparison may reference the current inventory, the
+   current inventory ID, the current snapshot contract or any current provenance
+   constant. An AST scan enforces this.
+
+4. **Historical reconstruction stays possible, through historical evidence only.**
+   `_build_route_control_artifact_v1` constructed an artifact at the source
+   checkpoint, so it must keep doing so. It reconstructs through
+   `openrouter_historical_scoped_inventory_v1.json`, an immutable evidence record
+   generated from the sealed artifact's own rows, hash locked in runtime code.
+   That record is the only runtime materialisation of the historical membership
+   and the only place the two predecessor raw paths appear. Do not move them back
+   into the current provenance inventory.
+
+   The frozen *sealed* snapshot identity is not a property of every historical
+   snapshot: a freshly reconstructed one legitimately differs. At the source
+   checkpoint a fresh capture yields `485f1550…`, not the sealed `9ee38a25…`,
+   because 23 of the 90 rows drifted after the seal. Pin the sealed identity in
+   the sealed verification path, never in the snapshot contract.
+5. **No predecessor semantics are imported to verify provenance.** Immutable
    identity constants are frozen literals in the boundary module. The boundary
    module must not import predecessor case modules.
 

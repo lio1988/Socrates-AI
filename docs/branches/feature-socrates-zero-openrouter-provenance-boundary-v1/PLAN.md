@@ -67,6 +67,10 @@ for the full record. No stop condition was triggered.
    `OpenRouterScopedPathSnapshotV1` as the historical shape rather than
    broadening it, and introduce the separate current contract in the boundary
    module. *(commit 5)* **done**
+9. **Isolate** the historical generation completely after review: remove the last
+   historical → current dependency, and restore historical reconstruction through
+   a historical-evidence-only path after a differential audit against the source
+   checkpoint proved a builder regression. *(commits 6 and 7)* **done**
 
 ## Validation gates
 
