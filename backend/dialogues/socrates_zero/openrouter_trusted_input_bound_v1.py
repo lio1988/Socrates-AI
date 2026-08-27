@@ -131,6 +131,43 @@ FROZEN_OPENROUTER_P17_RETAINED_SOURCES_V1: Tuple[
 )
 
 # The one allowed first-party JIT value source.
+#: The single canonical model this experiment may accept behind the requested
+#: alias, and the exact retained first-party observation that authorizes it.
+#: This is one explicit pair, not a rule: there is no prefix match, no suffix
+#: stripping and no resolver.  A different date, a different model, or a
+#: different response body is refused.
+OPENROUTER_P17_OBSERVED_CANONICAL_MODEL_V1 = "openai/gpt-4.1-mini-2025-04-14"
+OPENROUTER_P17_OBSERVED_ALIAS_EVIDENCE_SHA256_V1 = (
+    "728a7bfe823bf86c4cf8689fdd6535b5870cc4c7f4b628e982292cc29592e290"
+)
+FROZEN_OPENROUTER_P17_AUTHORIZED_ALIAS_BINDINGS_V1: Tuple[
+    Tuple[str, str, str], ...
+] = (
+    (
+        OPENROUTER_P17_EXACT_MODEL_V1,
+        OPENROUTER_P17_OBSERVED_CANONICAL_MODEL_V1,
+        OPENROUTER_P17_OBSERVED_ALIAS_EVIDENCE_SHA256_V1,
+    ),
+)
+
+
+def openrouter_p17_alias_binding_is_authorized_v1(
+    *, requested_model: str, canonical_model: str, evidence_sha256: str
+) -> bool:
+    """Whether this exact triple is the one authorized alias binding.
+
+    Membership in a frozen tuple of exact triples.  Deliberately not a pattern:
+    the requested alias, the canonical model *and* the observation digest must
+    all match an authorized entry, so the binding cannot outlive the evidence
+    that justified it.
+    """
+    return (
+        requested_model,
+        canonical_model,
+        evidence_sha256,
+    ) in FROZEN_OPENROUTER_P17_AUTHORIZED_ALIAS_BINDINGS_V1
+
+
 OPENROUTER_P17_MODEL_DETAIL_METHOD_V1 = "GET"
 OPENROUTER_P17_MODEL_DETAIL_PATH_V1 = (
     "/api/v1/model/openai/gpt-4.1-mini"
@@ -162,6 +199,13 @@ class OpenRouterInputLimitObservationStatusV1(str, Enum):
 
 class OpenRouterInputLimitAliasStateV1(str, Enum):
     EXACT_MODEL_NOT_ALIAS = "EXACT_MODEL_NOT_ALIAS"
+    #: The requested slug and the canonical slug differ, and that difference is
+    #: itself first-party evidence from the retained observation.  It is a
+    #: binding between two distinct identities, never a claim that they are the
+    #: same string.
+    FIRST_PARTY_OBSERVED_ALIAS_TO_CANONICAL_BINDING = (
+        "FIRST_PARTY_OBSERVED_ALIAS_TO_CANONICAL_BINDING"
+    )
 
 
 class OpenRouterInputLimitKindV1(str, Enum):
@@ -283,9 +327,9 @@ class TrustedModelInputLimitRecordV1(_FrozenInputBoundContractV1):
     ] = OPENROUTER_P17_EXACT_MODEL_V1
     returned_model_id: str = Field(min_length=1)
     canonical_model_id: str = Field(min_length=1)
-    alias_state: Literal[
+    alias_state: OpenRouterInputLimitAliasStateV1 = (
         OpenRouterInputLimitAliasStateV1.EXACT_MODEL_NOT_ALIAS
-    ] = OpenRouterInputLimitAliasStateV1.EXACT_MODEL_NOT_ALIAS
+    )
 
     observed_max_prompt_tokens: Optional[int] = Field(
         default=None, strict=True, gt=0
@@ -360,10 +404,33 @@ class TrustedModelInputLimitRecordV1(_FrozenInputBoundContractV1):
             raise ContractValidationError(
                 "input-limit response model does not equal the exact requested model"
             )
-        if self.canonical_model_id != self.exact_model_id:
-            raise ContractValidationError(
-                "input-limit canonical model does not equal the exact requested model"
-            )
+        if self.canonical_model_id == self.exact_model_id:
+            if self.alias_state is not (
+                OpenRouterInputLimitAliasStateV1.EXACT_MODEL_NOT_ALIAS
+            ):
+                raise ContractValidationError(
+                    "an identical canonical model is not an alias binding"
+                )
+        else:
+            # The two identities differ.  That is permitted only for the one
+            # authorized triple, and only for the observation that produced it.
+            if self.alias_state is not (
+                OpenRouterInputLimitAliasStateV1
+                .FIRST_PARTY_OBSERVED_ALIAS_TO_CANONICAL_BINDING
+            ):
+                raise ContractValidationError(
+                    "a differing canonical model requires the observed alias "
+                    "binding state"
+                )
+            if not openrouter_p17_alias_binding_is_authorized_v1(
+                requested_model=self.exact_model_id,
+                canonical_model=self.canonical_model_id,
+                evidence_sha256=self.source_evidence_digest,
+            ):
+                raise ContractValidationError(
+                    "input-limit canonical model is not the authorized "
+                    "first-party alias binding for this exact observation"
+                )
 
         if self.observed_max_prompt_tokens is not None:
             expected_kind = OpenRouterInputLimitKindV1.MAX_PROMPT_TOKENS
@@ -435,6 +502,7 @@ def _build_trusted_model_input_limit_record_from_parsed_v1(
     source_response_body_length: int,
     returned_model_id: str,
     canonical_model_id: str,
+    alias_state: OpenRouterInputLimitAliasStateV1,
     observed_max_prompt_tokens: Optional[int] = None,
     observed_model_context_length: Optional[int] = None,
     synthetic_fixture_id: Optional[str] = None,
@@ -498,6 +566,7 @@ def _build_trusted_model_input_limit_record_from_parsed_v1(
         source_response_body_length=source_response_body_length,
         returned_model_id=returned_model_id,
         canonical_model_id=canonical_model_id,
+        alias_state=alias_state,
         observed_max_prompt_tokens=observed_max_prompt_tokens,
         observed_model_context_length=observed_model_context_length,
         limit_kind=limit_kind,
@@ -627,9 +696,22 @@ def build_trusted_model_input_limit_record_from_response_v1(
             "model-detail raw response data.canonical_slug must be a string"
         )
     canonical_model_id = data["canonical_slug"]
-    if canonical_model_id != OPENROUTER_P17_EXACT_MODEL_V1:
+    evidence_digest = hashlib.sha256(raw_response_bytes).hexdigest()
+    if canonical_model_id == OPENROUTER_P17_EXACT_MODEL_V1:
+        alias_state = OpenRouterInputLimitAliasStateV1.EXACT_MODEL_NOT_ALIAS
+    elif openrouter_p17_alias_binding_is_authorized_v1(
+        requested_model=OPENROUTER_P17_EXACT_MODEL_V1,
+        canonical_model=canonical_model_id,
+        evidence_sha256=evidence_digest,
+    ):
+        alias_state = (
+            OpenRouterInputLimitAliasStateV1
+            .FIRST_PARTY_OBSERVED_ALIAS_TO_CANONICAL_BINDING
+        )
+    else:
         raise ContractValidationError(
-            "model-detail raw response canonical_slug is not the exact model"
+            "model-detail raw response canonical_slug is not the exact model "
+            "and is not the authorized first-party alias binding"
         )
     if data.get("alias_target") is not None:
         raise ContractValidationError(
@@ -673,10 +755,11 @@ def build_trusted_model_input_limit_record_from_response_v1(
     return _build_trusted_model_input_limit_record_from_parsed_v1(
         source_scope=source_scope,
         preflight_execution_id=preflight_execution_id,
-        source_evidence_digest=hashlib.sha256(raw_response_bytes).hexdigest(),
+        source_evidence_digest=evidence_digest,
         source_response_body_length=len(raw_response_bytes),
         returned_model_id=returned_model_id,
         canonical_model_id=canonical_model_id,
+        alias_state=alias_state,
         observed_max_prompt_tokens=observed_max_prompt_tokens,
         observed_model_context_length=observed_model_context_length,
         synthetic_fixture_id=synthetic_fixture_id,

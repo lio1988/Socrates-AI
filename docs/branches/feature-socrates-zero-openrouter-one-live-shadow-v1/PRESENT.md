@@ -5,8 +5,8 @@
 - Branch: `feature/socrates-zero-openrouter-one-live-shadow-v1`
 - Source HEAD: `e60856963310028bf391ac64792a9c1658f5e2c3` (S7A)
 - Pre-inference freeze: `241e9e261bb8eaa4cd3d9b0186d78109042f5efe`
-- Phase: **offline correction round complete and re-frozen; awaiting a decision
-  on the P17 identity rule before any further network activity.**
+- Phase: **P17 established from the retained observation; preflight AUTHORIZED;
+  awaiting the final human authorization for exactly one inference POST.**
 
 ## Counters
 
@@ -36,7 +36,7 @@ The frozen S7A parser then **refused** it:
 model-detail raw response canonical_slug is not the exact model
 ```
 
-## The finding
+## The finding, and how it was resolved
 
 The live first-party response carries:
 
@@ -54,26 +54,30 @@ stable pointer, `openai/gpt-4.1-mini-2025-04-14` is the build it currently
 resolves to. `alias_target` is null, so this is not an alias — it is exactly the
 "sibling version" case the phase rules say must not be silently accepted.
 
-The frozen proof contract requires *both* identity fields to equal the exact
-model, so P17 stays `NOT_ESTABLISHED` and the phase halts before dispatch.
+The original contract required *both* identity fields to equal the exact model,
+so P17 was `NOT_ESTABLISHED` and the phase halted before dispatch.
 
-**The parser was not weakened.** Relaxing `canonical_slug`, or substituting
-`data.id` for it, would have produced a live result by changing the standard that
-was frozen precisely to prevent that. Whether a stable pointer and its dated
-build may be treated as the same model for input-bound purposes is a scientific
-question for a new phase with explicit authorization.
+**Resolved by operator ruling** with one narrow, additive correction: a single
+authorized triple (requested alias, canonical model, observation digest). No
+prefix match, no date tolerance, no suffix stripping, no resolver. The two
+identities remain distinct and the wire still carries the requested alias.
 
-Had the parser accepted, the arithmetic was ready and under ceiling: the
-conservative fallback bound of 1,047,576 tokens gives
-`1047576 x 500000 + 256 x 2000000 + 0 = 524,300,000,000` picodollars = **$0.5243**,
-within the operator's **$0.60** ceiling. That number is *not* a result; it is
-what the preflight would have reported had P17 held.
+**The parser was not weakened unilaterally.** In the abort round I refused to
+relax it, because doing so would have manufactured a live result by moving the
+standard. The change came from an explicit operator ruling, is bound to one
+observation digest, and is proven by nine locks including source-level proof that
+no heuristic was introduced.
+
+The arithmetic now runs for real: the conservative fallback bound of 1,047,576
+tokens gives `1047576 x 500000 + 256 x 2000000 + 0 = 524,300,000,000`
+picodollars = **$0.5243**, within the operator's **$0.60** ceiling.
 
 ## Budget consequence
 
-The metadata GET budget is consumed. A future attempt needs a new GET, which
-needs new authorization. No inference authorization was minted and none was
-consumed: the claim store contains no consumption record for this phase.
+The metadata GET budget is consumed and was **not** spent again: P17 is
+established from the already-retained response. An authorization has been minted
+inside the preflight but **not consumed** — the claim store holds zero
+consumption records, and no inference request has been made.
 
 ## Predecessor integrity
 
@@ -99,12 +103,9 @@ The live runner was hardened before any further network activity:
 
 ## Next safe step
 
-Decide, as a separate authorized question, whether the frozen P17 identity rule
-should accept a dated canonical slug for the same stable model pointer. Do not
-edit the frozen contract inside this phase.
-
-If that question is answered affirmatively in a new phase, the next network
-action is exactly ONE first-party model-limit GET — which also needs fresh
-authorization, since this phase's GET budget is spent.
+Nothing without explicit human authorization. The preflight is AUTHORIZED and
+the next network action would be exactly ONE inference POST, which requires the
+operator's explicit `AUTHORIZE ONE LIVE SHADOW CALL` referring to this exact
+preflight.
 
 Not pushed.

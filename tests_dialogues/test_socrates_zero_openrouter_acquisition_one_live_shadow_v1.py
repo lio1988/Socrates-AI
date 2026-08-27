@@ -862,11 +862,13 @@ def test_the_jit_client_rejects_an_incomplete_dispatch() -> None:
         _parse(_fake_result(b"", completed=False))
 
 
-def test_the_retained_live_response_still_fails_the_frozen_identity_rule() -> None:
-    """The real captured response is kept as a regression fixture.
+def test_the_retained_live_response_shape_is_pinned() -> None:
+    """The real captured response is pinned as a regression fixture.
 
-    It documents why S7B aborted: the live canonical_slug is a dated build, so
-    the frozen identity rule refuses it. No network is touched to check this.
+    Under the original exact-string rule this response was refused, which is why
+    S7B aborted. The ruling replaced that rule with one explicit alias binding,
+    so the same bytes now establish P17 - see the alias-binding locks below.
+    The shape itself is pinned here so a future change to the fixture is visible.
     """
     retained = (
         ROOT
@@ -878,8 +880,8 @@ def test_the_retained_live_response_still_fails_the_frozen_identity_rule() -> No
     assert payload["canonical_slug"] == "openai/gpt-4.1-mini-2025-04-14"
     assert payload["per_request_limits"] is None
     assert payload["context_length"] == 1_047_576
-    with pytest.raises(ContractValidationError, match="canonical_slug"):
-        _parse(_fake_result(retained))
+    # alias_target is absent from the live response, not present-and-null.
+    assert "alias_target" not in payload
 
 
 # ------------------------------------------------- S5 / S6 compatibility ---
@@ -1076,3 +1078,174 @@ def test_a_missing_p17_proof_cannot_reach_preflight_authorization() -> None:
     # Fail closed: a refusal verdict with no authorization, not an exception.
     assert result.verdict is OpenRouterOneLiveCallVerdictV1.REFUSED
     assert result.authorization is None
+
+
+# ------------------------------- the one authorized alias->canonical binding ---
+
+
+def _retained_jit_bytes() -> bytes:
+    return (
+        ROOT
+        / "docs/branches/feature-socrates-zero-openrouter-one-live-shadow-v1"
+        / "evidence/s7b_model_detail_response_v1.json"
+    ).read_bytes()
+
+
+def _limit_record_from(raw: bytes):
+    from backend.dialogues.socrates_zero.openrouter_trusted_input_bound_v1 import (
+        OpenRouterInputLimitSourceScopeV1,
+        build_trusted_model_input_limit_record_from_response_v1,
+    )
+
+    return build_trusted_model_input_limit_record_from_response_v1(
+        raw_response_bytes=raw,
+        preflight_execution_id="s7b-alias-lock",
+        source_scope=OpenRouterInputLimitSourceScopeV1.LIVE_JIT_SAME_PREFLIGHT,
+    )
+
+
+def test_the_retained_observation_establishes_p17_via_the_alias_binding() -> None:
+    """The exact observed pair is accepted, and only from that observation."""
+    from backend.dialogues.socrates_zero.openrouter_trusted_input_bound_v1 import (
+        OpenRouterInputLimitAliasStateV1,
+        OpenRouterInputLimitKindV1,
+    )
+
+    record = _limit_record_from(_retained_jit_bytes())
+
+    assert record.alias_state is (
+        OpenRouterInputLimitAliasStateV1.FIRST_PARTY_OBSERVED_ALIAS_TO_CANONICAL_BINDING
+    )
+    assert record.limit_kind is OpenRouterInputLimitKindV1.MODEL_CONTEXT_LIMIT
+    assert record.limit_tokens == 1_047_576
+
+
+def test_p17_evidence_carries_both_identities_distinctly() -> None:
+    """Two identities, never collapsed into one string."""
+    record = _limit_record_from(_retained_jit_bytes())
+
+    assert record.exact_model_id == "openai/gpt-4.1-mini"
+    assert record.returned_model_id == "openai/gpt-4.1-mini"
+    assert record.canonical_model_id == "openai/gpt-4.1-mini-2025-04-14"
+    # The requested alias is not rewritten into the canonical model anywhere.
+    assert record.exact_model_id != record.canonical_model_id
+
+
+def _mutated_jit(**data_overrides) -> bytes:
+    payload = json.loads(_retained_jit_bytes().decode("utf-8"))
+    payload["data"].update(data_overrides)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    "canonical",
+    [
+        "openai/gpt-4.1-mini-2025-04-15",  # wrong date
+        "openai/gpt-4.1-mini-2024-04-14",  # wrong year
+        "openai/gpt-4.1-mini-preview",  # prefix match only
+        "openai/gpt-4.1-mini-2025-04-14-extra",  # longer, still prefixed
+        "openai/gpt-4o-2025-04-14",  # sibling model
+        "openai/gpt-4.1",  # shorter sibling
+    ],
+)
+def test_only_the_exact_canonical_pair_is_accepted(canonical: str) -> None:
+    """No prefix match, no date tolerance, no sibling model."""
+    with pytest.raises(ContractValidationError, match="alias binding"):
+        _limit_record_from(_mutated_jit(canonical_slug=canonical))
+
+
+def test_a_mutated_requested_alias_is_rejected() -> None:
+    with pytest.raises(ContractValidationError):
+        _limit_record_from(_mutated_jit(id="openai/gpt-4.1-mini-2025-04-14"))
+
+
+def test_a_mutated_retained_response_breaks_the_binding() -> None:
+    """The binding is tied to the observation digest, not just to the strings.
+
+    Re-serializing the same semantic content changes the bytes, so the digest no
+    longer matches the authorized triple and the alias is refused. The binding
+    cannot outlive the evidence that justified it.
+    """
+    import hashlib
+
+    reserialized = _mutated_jit()
+    assert hashlib.sha256(reserialized).hexdigest() != hashlib.sha256(
+        _retained_jit_bytes()
+    ).hexdigest()
+    with pytest.raises(ContractValidationError, match="alias binding"):
+        _limit_record_from(reserialized)
+
+
+def test_the_binding_is_an_exact_triple_not_a_pattern() -> None:
+    """Structural proof that no heuristic resolver was introduced."""
+    from backend.dialogues.socrates_zero.openrouter_trusted_input_bound_v1 import (
+        FROZEN_OPENROUTER_P17_AUTHORIZED_ALIAS_BINDINGS_V1 as bindings,
+        openrouter_p17_alias_binding_is_authorized_v1 as authorized,
+    )
+
+    assert len(bindings) == 1
+    requested, canonical, digest = bindings[0]
+    assert requested == "openai/gpt-4.1-mini"
+    assert canonical == "openai/gpt-4.1-mini-2025-04-14"
+    assert authorized(
+        requested_model=requested, canonical_model=canonical, evidence_sha256=digest
+    )
+    # Any one component wrong and the triple is not authorized.
+    assert not authorized(
+        requested_model=requested, canonical_model=canonical, evidence_sha256="0" * 64
+    )
+    assert not authorized(
+        requested_model=canonical, canonical_model=canonical, evidence_sha256=digest
+    )
+    assert not authorized(
+        requested_model=requested,
+        canonical_model="openai/gpt-4.1-mini-2025-04-15",
+        evidence_sha256=digest,
+    )
+
+
+def test_no_prefix_or_suffix_heuristic_exists_in_the_binding_source() -> None:
+    """The acceptance path uses tuple membership, never string surgery."""
+    import backend.dialogues.socrates_zero.openrouter_trusted_input_bound_v1 as module
+
+    source = Path(module.__file__).read_text(encoding="utf-8")
+    start = source.index("def openrouter_p17_alias_binding_is_authorized_v1")
+    end = source.index("OPENROUTER_P17_MODEL_DETAIL_METHOD_V1", start)
+    body = source[start:end]
+    for banned in ("startswith", "endswith", "removesuffix", "removeprefix", "rsplit"):
+        assert banned not in body
+    assert "in FROZEN_OPENROUTER_P17_AUTHORIZED_ALIAS_BINDINGS_V1" in body
+
+
+def test_the_production_request_still_carries_the_requested_alias(
+    tmp_path: Path,
+) -> None:
+    """The alias binding changes what P17 accepts, not what is sent."""
+    from backend.dialogues.socrates_zero.openrouter_one_live_shadow_runner_v1 import (
+        build_s7b_preflight_v1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_trusted_input_bound_v1 import (
+        OpenRouterInputLimitSourceScopeV1,
+    )
+
+    store = tmp_path / "store"
+    store.mkdir()
+    price, total = _operator_grants()
+    bundle = build_s7b_preflight_v1(
+        model_detail_bytes=_retained_jit_bytes(),
+        preflight_execution_id="s7b-alias-request-lock",
+        repository_root=ROOT,
+        claim_directory=store,
+        price_grant=price,
+        total_grant=total,
+        claim_store_evidence_id="szorclaimstorefixturev1_" + "2" * 64,
+        credential_present=True,
+        mode=OpenRouterLiveSafetyModeV1.SYNTHETIC_OFFLINE,
+        source_scope=OpenRouterInputLimitSourceScopeV1.SYNTHETIC_TEST_ONLY,
+        synthetic_fixture_id="s7b-alias-request-lock-limit",
+    )
+    body = json.loads(bundle.rendered_request.canonical_body_json)
+    assert body["model"] == "openai/gpt-4.1-mini"
+    assert "2025-04-14" not in bundle.rendered_request.canonical_body_json
+    # P17 nonetheless bound the canonical identity behind it.
+    assert bundle.p17_proof is not None

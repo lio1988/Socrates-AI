@@ -63,6 +63,26 @@ CED mutation.
 | S6 compatibility | no reconstruction | **PASS** |
 | network this round | 0 | **0** |
 
+### P17 alias-binding correction (offline, operator-ruled)
+
+| gate | required | observed |
+| --- | --- | --- |
+| exact observed pair accepted | yes | **PASS** |
+| wrong canonical date rejected | yes | **PASS** |
+| sibling model rejected | yes | **PASS** |
+| arbitrary prefix match rejected | yes | **PASS** |
+| suffix stripping unused | source-level proof | **PASS** |
+| requested alias mutation rejected | yes | **PASS** |
+| retained response digest mutation rejected | yes | **PASS** |
+| production request keeps the alias | `openai/gpt-4.1-mini` | **PASS** |
+| both identities carried distinctly | yes | **PASS** |
+| S7B focused | all pass | **74 passed** |
+| P17 | ESTABLISHED | **LIVE_JIT_ESTABLISHED** |
+| P19 | <= $0.60 | **$0.5243** |
+| preflight verdict | — | **AUTHORIZED_FOR_ONE_CALL** |
+| authorization consumed | 0 | **0** |
+| inference POSTs | 0 | **0** |
+
 ## Stop conditions
 
 Inference POST count stays 0 and the phase halts if: the credential is absent;

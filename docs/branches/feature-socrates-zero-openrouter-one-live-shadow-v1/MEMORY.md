@@ -139,3 +139,34 @@ Rule: **do not patch global interpreter state to prove inertness.** The probe no
 patches nothing and simply executes the module bodies inside the tripwire, which
 already aborts on credential, network, provider and tool seams. Filesystem
 inertness is proven by an AST check over module-level statements instead.
+
+## The P17 alias binding — one exact pair, bound to one observation
+
+The original rule required ``data.canonical_slug == "openai/gpt-4.1-mini"`` by
+string equality. The live first-party API returns
+``openai/gpt-4.1-mini-2025-04-14``, so P17 could not be established and S7B
+aborted. The operator ruled that too strict for the observed contract and
+authorized one narrow correction.
+
+``FROZEN_OPENROUTER_P17_AUTHORIZED_ALIAS_BINDINGS_V1`` holds exactly one triple:
+
+    ("openai/gpt-4.1-mini",
+     "openai/gpt-4.1-mini-2025-04-14",
+     "728a7bfe823bf86c4cf8689fdd6535b5870cc4c7f4b628e982292cc29592e290")
+
+Acceptance is tuple membership over all three components. There is no prefix
+match, no date tolerance, no suffix stripping and no resolver, and a source-level
+test asserts none of those appear in the acceptance path. Re-serializing the same
+semantic content changes the digest and the binding is refused: **the binding
+cannot outlive the evidence that justified it.**
+
+**The two identities stay distinct.** ``exact_model_id`` remains the requested
+alias, ``canonical_model_id`` the canonical build, and ``alias_state`` names the
+relation ``FIRST_PARTY_OBSERVED_ALIAS_TO_CANONICAL_BINDING``. Neither value is
+rewritten into the other, and no string identity is claimed.
+
+**The wire is unchanged.** The production request still carries
+``model: "openai/gpt-4.1-mini"``; the date never appears in the request body.
+
+Correction to an earlier report: ``alias_target`` is **absent** from the live
+response, not present-and-null. The parser treats absent as acceptable.
