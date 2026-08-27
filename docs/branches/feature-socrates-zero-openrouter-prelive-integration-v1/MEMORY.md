@@ -68,6 +68,12 @@ the throwaway key, or pydantic cannot resolve the annotations.
 A static scanner that looks for marker literals must not contain those literals
 in its own source if it scans itself. Assemble them from fragments.
 
+## Outcome
+
+Integration SUPPORTED; one live shadow call NOT_AUTHORIZED. The blocker is P17
+and it is structural, not a missing fresh fact. Do not let a future session read
+"integration supported" as permission to call.
+
 ## Environment
 
 Repository `C:\Users\spirc\Desktop\Socrates-AI-OpenRouter-v2r1-publish`;
