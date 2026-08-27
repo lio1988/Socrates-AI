@@ -232,6 +232,70 @@ The artifact's zero claims are cross-checked against live tripwire
 instrumentation rather than trusted, and building outside an active tripwire is
 refused.
 
+## Procedural deviation and post-run integrity audit
+
+Pre-authoritative semantic freeze was established in memory/worktree but was not
+committed before the first authoritative execution. The authoritative
+implementation/evaluator was committed immediately afterward. A post-run
+Git-object audit proved zero semantic S5 mutations between the authoritative
+evidence commit and final HEAD.
+
+This is recorded rather than hidden: the freeze should have been a commit before
+the aggregate ran, and it was not. What follows is the evidence that the omission
+did not affect the result.
+
+**AUTHORITATIVE_COMMIT** — `abd761f590b0fdb27f831ddad7b354bab0810d6c`
+(*feat: add deterministic OpenRouter wire-mapping v2 evaluator*), the commit that
+first recorded the evaluator implementation, the authoritative artifact, the
+replay execution and the replay lock together.
+
+Git blob identities, authoritative commit versus final HEAD — compared as Git
+objects, not working-tree bytes, so no newline assumption is involved:
+
+| file | blob | status |
+| --- | --- | --- |
+| `openrouter_raw_wire_mapping_v2.py` | `9f17fd999d4269a7d7ca3b56fda760b9cf98e545` | IDENTICAL |
+| `openrouter_raw_wire_mapping_cases_v2.py` | `577fa35ac3c27de2a2720c8fa99cb8c662fb917a` | IDENTICAL |
+| `openrouter_raw_wire_mapping_evaluation_v2.py` | `311edc88e7131b2b44f7c651a83d9ece06a0b3b8` | IDENTICAL |
+| `socrateszero_openrouter_raw_wire_mapping_v2.json` | `93f1ee099eec61b22851d027f259ea66530ba378` | IDENTICAL |
+| `…_replay_execution_v2.json` | `3adcd6515e30f17739d84691fde9389e39f369c4` | IDENTICAL |
+| `…_replay_lock_v2.json` | `384dda32da7cb6c9035e4af67577a67e1db89e79` | IDENTICAL |
+
+Those three modules carry every frozen case definition, the thresholds, the
+case-set identity and the evaluator/schema versions, so the audit covers all four
+categories the integrity check requires.
+
+Stronger than required: each semantic file appears in exactly **one** commit in
+this branch's history, and its blob at that first commit equals its blob at HEAD.
+They were never modified at all, not merely never modified after the aggregate.
+
+Every commit after AUTHORITATIVE_COMMIT, classified:
+
+| commit | changed paths | classification |
+| --- | --- | --- |
+| `9f8146f` | `SOCRATES_ZERO_OPENROUTER_RAW_WIRE_MAPPING_V2.md`, branch `PRESENT.md`, evaluator test file | docs + tests |
+| `af368b3` | branch `MEMORY.md`, branch `PLAN.md` | docs |
+| `2d0c0ff` | evaluator test file, this document | docs + tests |
+
+**Semantic S5 files changed after authoritative execution: 0.**
+
+### Artifact experiment binding
+
+The authoritative artifact binds the frozen experiment completely:
+
+| identity | present |
+| --- | --- |
+| case-set ID | yes — `szorwirecasesetv2_87e7e264…` |
+| exact case count | yes — `metrics.total_cases` 60, with 60 case results |
+| evaluator/schema version | yes — evaluation and case-result schema versions |
+| predeclared thresholds identity | yes — ID plus the embedded thresholds object |
+| Manifest v2r1 ID and SHA | yes — both |
+| provenance identities | yes — guard-order ID, per-case fingerprint and raw observation ID on all 60 |
+| external activity counters | yes — all eight zero |
+| result metrics | yes |
+
+No critical experiment identity is absent. Binding: **COMPLETE**.
+
 ## Test gates
 
 | gate | result |

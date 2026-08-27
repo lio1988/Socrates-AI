@@ -72,6 +72,21 @@ Markers are now assembled from fragments and import analysis was added as the
 authoritative signal. Fixed before the authoritative aggregate ran; nothing was
 patched afterwards.
 
+## Authoritative integrity
+
+AUTHORITATIVE_COMMIT `abd761f590b0fdb27f831ddad7b354bab0810d6c`.
+
+Semantic S5 files changed after authoritative execution: **0**, proven by Git
+blob comparison. Each semantic file appears in exactly one commit and its blob
+there equals its blob at HEAD. All post-run changes are documentation and tests.
+
+Pre-authoritative semantic freeze was established in memory/worktree but not
+committed before the first authoritative execution; the implementation and
+evaluator were committed immediately afterward. The deviation is documented in
+the canonical result document together with the audit that closes it.
+
+Artifact experiment binding: **COMPLETE**.
+
 ## Predecessor integrity
 
 16/16 frozen surfaces byte-identical, including the sealed Route Controls

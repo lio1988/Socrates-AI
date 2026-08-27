@@ -15,7 +15,9 @@ import pytest
 from pydantic import ValidationError
 
 from backend.dialogues.socrates_zero.acquisition_tripwires import (
+    AcquisitionBoundaryTripwireV0,
     AcquisitionBoundaryViolation,
+    active_acquisition_boundary_tripwire_v0,
 )
 from backend.dialogues.socrates_zero.contracts import ContractValidationError
 from backend.dialogues.socrates_zero.openrouter_raw_wire_mapping_cases_v2 import (
@@ -243,6 +245,36 @@ def test_s5_modules_are_import_inert(tmp_path: Path) -> None:
     assert after.total_forbidden_attempts == before.total_forbidden_attempts == 0
     assert after.hits == ()
     assert list(tmp_path.iterdir()) == []
+
+
+def test_inertness_probe_actually_detects_import_time_activity(
+    tmp_path: Path,
+) -> None:
+    """The probe must not be able to pass vacuously.
+
+    A synthetic module that touches a credential seam at import time is executed
+    through the same mechanism; the boundary has to fire. If this ever stops
+    raising, the inertness lock above is proving nothing.
+    """
+    import importlib.util
+
+    probe_source = tmp_path / "import_time_offender.py"
+    probe_source.write_text(
+        "import os\nos.getenv('OPENROUTER_API_KEY')\n", encoding="utf-8"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "backend.dialogues.socrates_zero._inertness_offender", probe_source
+    )
+    module = importlib.util.module_from_spec(spec)
+    # Nested in its own tripwire so the deliberate violation is recorded there
+    # and the session-level boundary this test runs under stays clean.
+    with pytest.raises(AcquisitionBoundaryViolation):
+        with AcquisitionBoundaryTripwireV0():
+            spec.loader.exec_module(module)
+
+    outer = active_acquisition_boundary_tripwire_v0().assert_clean()
+    assert outer.credential_access_attempts == 0
+    assert outer.total_forbidden_attempts == 0
 
 
 def test_installed_s5_classes_are_not_rebound_by_the_inertness_probe() -> None:
