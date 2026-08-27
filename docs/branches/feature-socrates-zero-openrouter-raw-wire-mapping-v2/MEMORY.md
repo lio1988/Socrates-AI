@@ -69,6 +69,15 @@ Cache headers: `X-OpenRouter-Cache-Status` (HIT|MISS), `-Age` (HIT only),
 `-TTL` (remaining on HIT, full on MISS), `-Source-Id` (HIT only),
 `X-Generation-Id` (every response).
 
+## Two traps for a future session
+
+`importlib.reload` on any of these modules rebinds every contract class, so
+`type(x) is Contract` fails everywhere afterwards. To prove import inertness,
+execute the module body into a throwaway package-qualified namespace instead.
+
+A static scanner that looks for marker literals must not contain those literals
+in its own source if it scans itself. Assemble them from fragments.
+
 ## Environment
 
 - Repository: `C:\Users\spirc\Desktop\Socrates-AI-OpenRouter-v2r1-publish`

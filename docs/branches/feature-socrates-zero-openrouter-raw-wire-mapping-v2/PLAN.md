@@ -28,6 +28,19 @@ afterwards.
 
 Any essential safety invariant failing means FALSIFIED.
 
+## Status
+
+All steps complete. Result: **OPENROUTER RAW WIRE-MAPPING v2 SUPPORTED**, with
+runtime authority and live execution both NOT AUTHORIZED. Every predeclared
+threshold was met; see [PRESENT.md](PRESENT.md) and the
+[canonical result document](../../SOCRATES_ZERO_OPENROUTER_RAW_WIRE_MAPPING_V2.md).
+
+Two defects were found and fixed, both before they could contaminate a
+conclusion: the static dependency detector matched its own marker literals
+(before the authoritative aggregate), and the import-inertness test used
+`importlib.reload` and broke class identity for later tests (after the aggregate,
+in test code only, with no effect on the artifact). No stop condition triggered.
+
 ## Ordered steps
 
 1. **Initialize** branch documentation. *(commit 1)*
