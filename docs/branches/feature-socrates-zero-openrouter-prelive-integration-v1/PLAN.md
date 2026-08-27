@@ -14,8 +14,9 @@ be SUPPORTED while a live call remains NOT_AUTHORIZED.
 | --- | --- | --- |
 | 1 | integration positive cases accepted | 12 |
 | 2 | integration adversarial cases rejected | 18 |
-| 3 | preflight authorized cases | 1 |
-| 4 | preflight refused cases | 14 |
+| 3 | preflight authorized cases | 3 |
+| 4 | preflight refused cases | 22 |
+| 4b | ceiling probes holding | 16 |
 | 5 | unexpected results | 0 |
 | 6 | invalid fixture constructions | 0 |
 | 7 | guard-code mismatches | 0 |
@@ -28,15 +29,22 @@ be SUPPORTED while a live call remains NOT_AUTHORIZED.
 | 14 | privacy leakage findings | 0 |
 | 15 | external activity, every category | 0 |
 | 16 | deterministic replay | semantic, artifact-ID and byte identity |
-| 17 | frozen predecessor surfaces | 19/19 unchanged |
+| 17 | frozen predecessor surfaces | all unchanged (34/34 measured) |
 
 ## Status
 
-All steps complete. **OPENROUTER PRE-LIVE INTEGRATION v1 SUPPORTED**, with the
-live call separately **NOT_AUTHORIZED**. Every threshold was met; no stop
-condition triggered. The pre-authoritative freeze was committed at
-`4861c8a4df3ad9e3721f9a46ac3cb3c237c54828` before the single authoritative run,
-and no semantic file changed afterwards.
+Implementation, cases, evaluator, tests and documentation are complete. **The
+single authoritative run has not been made** under the current case set, so no
+verdict is claimed. Every threshold passes in dry-run and no stop condition has
+triggered.
+
+The live call is separately **NOT_AUTHORIZED**, and the ceiling audit reduced the
+structural blockers to one: P17.
+
+Freeze history, each superseded before any run consumed it: `4861c8a4` (original),
+`fd30a7fb` (rulings applied), then the current freeze adding the price-ceiling
+semantics. The run at `0ff79c9` is superseded and its artifacts are preserved in
+history only.
 
 ## Ordered steps
 

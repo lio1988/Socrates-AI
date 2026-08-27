@@ -10,18 +10,31 @@ No live call was made in this phase.
 
 | layer | status |
 | --- | --- |
-| Integration pipeline | **SUPPORTED** |
+| Integration pipeline | **PENDING AUTHORITATIVE RUN** |
 | Causal request→response binding | **ESTABLISHED** |
 | Offline shadow evidence | **AUTHORIZED** |
 | Runtime authority | **NOT AUTHORIZED** |
 | P17 input token bound | **NOT_ESTABLISHED** |
-| Output token bound | **ESTABLISHED** |
-| P18 trusted pricing | **NOT_ESTABLISHED** |
-| P19 total cost bound | **NOT_ESTABLISHED** |
+| Output token bound | **ESTABLISHED** (256) |
+| P18 actual endpoint pricing | **NOT_ESTABLISHED** |
+| Pricing endpoint granularity | **BROAD_PROVIDER_ONLY** |
+| Trusted unit-price ceiling | **ESTABLISHED** |
+| P19 formula | **READY** |
+| P19 worst-case cost authority | **NOT_ESTABLISHED** |
 | **One live shadow call** | **NOT_AUTHORIZED** |
 
-`OPENROUTER PRE-LIVE INTEGRATION v1 SUPPORTED` — the integration hypothesis held.
-That is a statement about the pipeline, not permission to call anything.
+The two price rows are separate authorities and are never merged. A ceiling says
+*no more than*; a pricing record says *this much*. Only the ceiling is
+established, and it is enough to bound cost but not to predict it.
+
+No verdict is claimed for the integration hypothesis yet. The single
+authoritative aggregate has **not** been run under the current case set; the run
+that produced an earlier `SUPPORTED` is superseded (see *Predeclared thresholds*).
+Everything else in this document — the contracts, the audits and the budget
+statuses — is current and does not depend on that run.
+
+The budget rows above are audit conclusions, not run outputs. They would not
+change if the aggregate were run tomorrow.
 
 ## Hypothesis
 
@@ -34,7 +47,8 @@ That is a statement about the pipeline, not permission to call anything.
 > identifies exactly which remaining conditions must be satisfied immediately
 > before one live shadow call.
 
-**SUPPORTED.**
+**Verdict withheld** until the authoritative aggregate is run. Every predeclared
+threshold currently passes in dry-run, but a dry-run is not the experiment.
 
 ## Four layers, kept four
 
@@ -131,7 +145,7 @@ Structural safety, provable offline now:
 | CED authority | disabled |
 
 Contract identity
-`szorprelivesafetyv1_b9312bcd9d326c01ed514868a423af13fcc1e871f74ca4ea58daba7831afabf5`.
+`szorprelivesafetyv1_bcddf7aa135057449ed6df90a3f9cdad8de2e0ac9d0e584015da052306e9a316`.
 
 ## Budget audit
 
@@ -157,18 +171,32 @@ an input bound may be called established.
 `max_tokens: 256` is already pinned in the sealed Route Controls request body. No
 sealed byte was modified to obtain this.
 
-### P18 — trusted pricing: NOT_ESTABLISHED, but JIT-reachable
+### P18 — actual endpoint pricing: NOT_ESTABLISHED, structurally
 
 No price was fetched. The contract is defined and the source authority is
 identified: `GET /models` and `GET /models/{author}/{slug}/endpoints`, both
 documented in the retained OpenAPI. `PublicPricing` carries per-token prices as
-**decimal strings**, so exact arithmetic is possible. Endpoint-scoped pricing is
-preferred because the request pins a single provider endpoint and pricing may
-differ by route.
-
-Freshness is structural rather than wall-clock: a pricing record must carry the
-same `preflight_execution_id` as the preflight consuming it, so a price from an
+**decimal strings**, so exact arithmetic is possible, and freshness is structural
+rather than wall-clock: a pricing record must carry the same
+`preflight_execution_id` as the preflight consuming it, so a price from an
 earlier execution is refused and offline replay stays deterministic.
+
+That machinery is sound and still cannot be used, because of **granularity**. The
+request pins the exact endpoint selector `azure/swedencentral`. The retained
+endpoint record exposes `provider_name` (`"OpenAI"`), a display `name`
+(`"OpenAI: GPT-4"`) and an undocumented `tag` (bare `type: 'string'`, no
+description, example `'openai'`). No retained example carries a compound
+`provider/region` value, `endpoint_id` examples are opaque, and the documented
+route to the exact slug is a UI copy button. So no retained first-party field
+binds a price to the selector the request actually pins.
+
+Recorded as `OPENROUTER_PRICING_ENDPOINT_GRANULARITY_V1 = "BROAD_PROVIDER_ONLY"`.
+Mapping a broad display name onto the exact selector would be a synthesis, and
+the contract refuses it.
+
+*Correction.* An earlier draft of this document called P18 "JIT-reachable". That
+was wrong at the granularity the request requires. It is a structural blocker,
+not a freshness one.
 
 ### P19 — total cost bound: NOT_ESTABLISHED
 
@@ -181,9 +209,99 @@ malformed price strings are refused.
 Established only when both token bounds and the price are themselves trusted and
 bounded. P17 is not, so P19 is not.
 
-`max_price` cannot substitute: the retained provider-selection guide documents it
-as a *per-token unit price* filter that refuses to run above the cap. It bounds
-unit price, not total spend.
+`max_price` bounds unit price rather than total spend — and that is exactly the
+factor P19 was missing. Multiplied by bounded token counts it yields a bounded
+total. See **Request-side price ceiling** below. What remains missing is P17.
+
+### Request-side price ceiling: ESTABLISHED
+
+Actual endpoint pricing is unavailable at the required selector granularity. A
+*ceiling* does not need it. `provider.max_price` is a first-party request-side
+control the router enforces before it selects a route, so it bounds unit price
+without reading any endpoint's price.
+
+**Components and exact units**, verbatim from the retained OpenAPI
+(`ProviderPreferences.max_price`, all five `type: 'string'`):
+
+| component | unit | bounds |
+| --- | --- | --- |
+| `prompt` | USD per **million** prompt tokens | input unit price |
+| `completion` | USD per **million** completion tokens | output unit price |
+| `request` | USD per request | per-request fee |
+| `image` | USD per image | image fee |
+| `audio` | USD per audio unit | audio fee |
+
+Every documented charge class in the retained contract has its own component;
+there is no sixth. The prompt and completion components bound input and output
+unit price **independently** — each is its own cap, not a shared budget.
+
+**The unit trap.** `max_price.prompt` is USD per *million* tokens; the catalogue
+`PublicPricing.prompt` is USD per *token*. A factor of 10⁶ separates them. The
+conversion is explicit, uses `Decimal` at 60 digits of precision, and rounds
+**up** into integer picodollars, so a ceiling may overstate and never understate:
+
+```
+picodollars_per_token = ceil(usd_per_million × 10¹² ÷ 10⁶)
+```
+
+`$1/M` becomes 1 000 000 picodollars per token; `$2/M` becomes 2 000 000. Float
+money is refused at the contract boundary — a `float` ceiling is not an authority.
+
+**Three unrelated things share the name `max_price`** in the retained spec, and
+only one is this control:
+
+| sense | used | why not |
+| --- | --- | --- |
+| `ParetoRouterPlugin.max_price` | no | a plugin field: a `double`, **input price only**, enforced against its own `price_source` |
+| `ProviderPreferences.max_price` | **yes** | the request-side ceiling audited here |
+| models-listing `max_price` query parameter | no | a catalogue browse filter, not a request control |
+
+The `price_source` description — "catalog list price (`endpoint.pricing.prompt`)"
+— belongs to the **plugin**, not to `ProviderPreferences`. Citing it as ceiling
+behaviour would import a claim the audited schema does not make.
+
+**Routing semantics**, each proved separately against retained evidence:
+
+| # | statement | verdict | evidence |
+| --- | --- | --- | --- |
+| A | over-ceiling endpoints are excluded *before* selection | ESTABLISHED | the guide states a request "will route to any provider with a price of `<= $1/m` prompt tokens, and `<= $2/m` completion tokens or less" — the cap decides the route |
+| B | `provider.only` cannot re-admit an excluded endpoint | ESTABLISHED | restrictions compose by narrowing: "both restrictions apply… If no provider satisfies both, the request fails with a 404" |
+| C | an unsatisfiable ceiling fails the request rather than relaxing | ESTABLISHED | "This is different than `max_price`, which will prevent your request from running if the price is not available" |
+| D | `allow_fallbacks: false` does not bypass the ceiling | ESTABLISHED | fallbacks are a narrowing switch ("you can disable fallbacks"); nothing in the retained contract lets one re-admit a filtered endpoint |
+| E | the ceiling is independent of response display-name granularity | ESTABLISHED | it is a request-side control enforced before dispatch; it never requires reading a provider name back |
+
+B, D and E are each *narrowing* arguments: no retained mechanism widens a filtered
+candidate set. That is what makes the ceiling safe to rely on — it can only ever
+reduce what is reachable.
+
+**What this changes.** Exact actual endpoint pricing remains unavailable at the
+required selector granularity, but a first-party server-enforced unit-price
+ceiling provides an independent pre-dispatch upper bound. P18 is therefore **no
+longer a structural blocker to safe live cost bounding**. It remains
+NOT_ESTABLISHED for anything that needs the *actual* price.
+
+**What this does not change.** A ceiling caps the rate. It says nothing about how
+many tokens are billed. P17 is untouched, and so P19's worst-case cost authority
+stays NOT_ESTABLISHED.
+
+**No monetary value is chosen here.** S6 defines the mechanism and the arithmetic;
+the operator authorizes actual ceiling values before S7.
+
+### The sealed request is not modified
+
+The sealed Route Controls request does not render `max_price`; its receipt records
+`max_price_status: DEFERRED_NOT_RENDERED`, and the Route Controls case set already
+refuses a guessed one (`orroutev1-or19-guessed-max-price`). That evidence is
+historical and stays byte-identical: body 447 bytes, digest `35a119b1…`.
+
+The ceiling is therefore **additive**. `OpenRouterLiveRequestSafetyOverlayV1`
+carries the sealed receipt identity plus a price policy and derives a **new**
+future-live request identity, which the contract refuses to let equal the sealed
+receipt identity. Every frozen control is restated as a `Literal` so the overlay
+cannot quietly relax one: exact model, exact endpoint selector, `provider.only`
+and `provider.order` singletons, `allow_fallbacks: false`, `require_parameters:
+true`, `stream: false`, tools disabled, metadata enabled, cache not requested, and
+`max_tokens: 256`. The only addition is the documented price-ceiling field.
 
 ### Operator ceiling
 
@@ -203,17 +321,22 @@ again.
 
 `AUTHORIZED_PENDING_JIT_PREFLIGHT` requires that every remaining blocker be a
 fresh external fact resolvable inside the S7 preflight, with no structural
-P17/P19 ambiguity. P18 qualifies — a first-party price is exactly such a fact.
-**P17 does not.** Closing it needs either a pinned officially-supported tokenizer
-or a first-party token-count facility, and adding either is a structural change
-to the repository, not a fact to be fetched. Without an input bound there is no
-bounded worst-case cost, so P19 stays open too.
+P17/P19 ambiguity.
+
+The price obstacle is now gone: the server-enforced ceiling is a valid price
+authority, needs no retrieval, and is bounded before dispatch. **P17 is the sole
+remaining structural blocker.** Closing it needs either a pinned
+officially-supported tokenizer or a first-party token-count facility, and adding
+either is a structural change to the repository, not a fact to be fetched.
+Without an input bound there is no bounded worst-case cost, so P19's authority
+stays open even with the ceiling in hand.
 
 Calling this pending-JIT would use the status to hide unresolved architecture,
 which the phase rules explicitly forbid. The honest answer is NOT_AUTHORIZED.
 
-**Smallest structural blocker:** a trustworthy deterministic pre-call input token
-upper bound for `openai/gpt-4.1-mini`. Two candidate routes, both structural:
+**The single remaining structural blocker:** a trustworthy deterministic pre-call
+input token upper bound for `openai/gpt-4.1-mini`. Two candidate routes, both
+structural:
 
 1. pin an officially-supported tokenizer and prove the bound, including chat
    framing overhead; or
@@ -227,39 +350,54 @@ authorization consumption, and abort-before-dispatch on any failure.
 ## Predeclared thresholds
 
 Declared before the authoritative run and content addressed as
-`szorprelivethresholdsv1_c975efcef4785a948059f7db0d95894b7098499f6b7c1688c9820055d8b1d436`.
+`szorprelivethresholdsv1_ba6a47c77faf47fc51cce870af3659c570d55db3dedc65c93ee3749dc3b0bbf6`.
 
-| threshold | required | observed |
-| --- | --- | --- |
-| integration positive accepted | 12 | **12** |
-| integration adversarial rejected | 18 | **18** |
-| preflight authorized | 1 | **1** |
-| preflight refused | 14 | **14** |
-| unexpected results | 0 | **0** |
-| invalid fixture constructions | 0 | **0** |
-| guard-code mismatches | 0 | **0** |
-| cross-request substitutions accepted | 0 | **0** |
-| request→response authority leaks | 0 | **0** |
-| provider→endpoint synthesis | 0 | **0** |
-| requested→actual substitutions | 0 | **0** |
-| metadata-absence→cache-hit inferences | 0 | **0** |
-| authorization reuse accepted | 0 | **0** |
-| privacy leakage findings | 0 | **0** |
-| external activity, all categories | 0 | **0** |
+The observed column is deliberately absent: **the authoritative run has not been
+made** under this case set. An earlier run exists in history at `0ff79c9` and is
+superseded, because semantic changes followed it.
+
+| threshold | required |
+| --- | --- |
+| integration positive accepted | 12 |
+| integration adversarial rejected | 18 |
+| preflight authorized | 3 |
+| preflight refused | 22 |
+| ceiling probes holding | 16 |
+| unexpected results | 0 |
+| invalid fixture constructions | 0 |
+| guard-code mismatches | 0 |
+| privacy leakage findings | 0 |
+| external activity, every category | 0 |
+| `git diff --check` | PASS |
+| frozen predecessor surfaces | all identical |
+
+Frozen predecessor surfaces are measured as Git blob identity against the S5 head
+`1be95cf`: **34/34** files under `backend/dialogues/socrates_zero/` that S6 does
+not own are byte-identical, including all 17 predecessor `openrouter_*` modules.
+An earlier draft of this table quoted "19/19", a figure that does not correspond
+to any enumeration that can be reproduced; the measured counts above replace it.
+S5, S4, S3, Route Controls and Manifest v2r1 are all byte-identical.
 
 ## Pre-authoritative freeze
 
-Every semantic file was committed **before** the authoritative run, at
-`4861c8a4df3ad9e3721f9a46ac3cb3c237c54828`, with a clean tracked worktree. This
-is the step S5 omitted, and it removes the need for a post-run Git-object audit.
+Every semantic file is committed **before** the authoritative run, with a clean
+tracked worktree. This is the step S5 omitted, and it removes the need for a
+post-run Git-object audit.
+
+The freeze point has been superseded twice, each time before any run consumed it:
+`4861c8a4` (original), `fd30a7fb` (rulings applied), and the current freeze, which
+adds the price-ceiling semantics. Superseding an *unconsumed* freeze is safe; what
+would invalidate a result is a semantic change after a run, which has not
+happened under the current case set.
 
 | frozen identity | value |
 | --- | --- |
 | integration case set | `szorintegrationcasesetv1_05922235a81b26142dd68e7a58c2c070fbae6471f97527aef70739af819d8f56` |
-| preflight case set | `szorpreflightcasesetv1_aeb2db1215e4e4e604f026419b3933a6b3e1fb5379c23db829943abcd3ec5c3b` |
-| thresholds | `szorprelivethresholdsv1_c975efcef4785a948059f7db0d95894b7098499f6b7c1688c9820055d8b1d436` |
+| preflight case set | `szorpreflightcasesetv1_7eb946e3b93c2936a3b34e686747ef6007c4493a43cf3a9dfeb5e3845058225d` |
+| ceiling case set | `szorceilingcasesetv1_77524c3966fb469a29a4b62c73eea900c0189e9081274a50f1d2664de1212cf5` |
+| thresholds | `szorprelivethresholdsv1_ba6a47c77faf47fc51cce870af3659c570d55db3dedc65c93ee3749dc3b0bbf6` |
 | integration guards | `szorintegrationguardsv1_4001e6a1a7a53afa24b7b1eb4eaabcbbdf701dffa6ee10d91922d143406146a5` |
-| preflight guards | `szorpreflightguardsv1_8320906244ee2e3b9f564c0f5067f1e32d85ee13f6bed9824904e8aeafe517b7` |
+| preflight guards | `szorpreflightguardsv1_3171845ea6454a4ac3b7ea2f68c0d2c4e31fa6912a4d162a6a776ddb599773db` |
 | semantic runtime modules | 4 |
 | cases | 45 (30 integration, 15 preflight) |
 
@@ -300,14 +438,16 @@ tripwire, not asserted.
 
 ## What S7 must do, in order
 
-1. obtain a first-party price record for the exact model and endpoint scope;
-2. verify source authority, model and endpoint scope, and JIT freshness;
-3. establish an input token bound — **the structural blocker above**;
-4. compute the deterministic worst-case cost in integer picodollars;
-5. compare against the operator-authorized ceiling;
-6. check credential presence at the final boundary only;
-7. consume the one-call authorization;
-8. dispatch exactly once, or abort before touching the network.
+1. carry an operator-authorized `provider.max_price` policy in the additive live
+   request overlay — no retrieval needed, and the router enforces it;
+2. establish an input token bound — **the sole structural blocker above**;
+3. compute the deterministic worst-case cost in integer picodollars from the
+   ceiling, recording `price_authority = SERVER_ENFORCED_CEILING`;
+4. compare against the operator-authorized spend ceiling;
+5. check credential presence at the final boundary only;
+6. consume the one-call authorization;
+7. dispatch exactly once, or abort before touching the network.
 
-Steps 1, 2 and 4 through 8 are built and tested. Step 3 is not, and it is why
-this phase does not authorize a call.
+Steps 1 and 3 through 7 are built and tested. Step 2 is not, and it is why this
+phase does not authorize a call. Obtaining an *actual* price record remains
+optional and, at the required selector granularity, still unavailable.

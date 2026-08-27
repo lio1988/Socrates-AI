@@ -26,8 +26,11 @@ The integration receipt is evidence *about* the chain and never replaces it.
 ## Scope
 
 Additive only: `openrouter_pre_live_integration_v1`, `…_safety_v1`, `…_cases_v1`,
-`…_evaluation_v1`, focused tests, branch documentation, one authoritative
-artifact with replay execution and lock.
+`…_evaluation_v1`, `openrouter_live_request_overlay_v1`, focused tests, branch
+documentation, one authoritative artifact with replay execution and lock.
+
+The overlay is strictly additive: it never modifies the sealed Route Controls
+request, and produces a separate future-live request identity instead.
 
 ## Non-goals
 
