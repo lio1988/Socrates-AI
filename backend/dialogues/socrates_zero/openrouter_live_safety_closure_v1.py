@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from enum import Enum
 from pathlib import Path
 from typing import Literal, Optional, Tuple
@@ -81,6 +82,12 @@ OPENROUTER_ONE_CALL_AUTHORIZATION_SCHEMA_V1 = (
 )
 OPENROUTER_ONE_CALL_CONSUMPTION_SCHEMA_V1 = (
     "socrateszero-openrouter-one-call-consumption/v1"
+)
+OPENROUTER_CLAIM_STORE_SEMANTICS_V1 = (
+    "ATOMIC_CREATE_NEW_TRUSTED_DURABLE_NON_ROLLBACK"
+)
+OPENROUTER_CLAIM_STORE_READINESS_SCHEMA_V1 = (
+    "socrateszero-openrouter-claim-store-readiness/v1"
 )
 OPENROUTER_ONE_LIVE_CALL_PREFLIGHT_RESULT_SCHEMA_V1 = (
     "socrateszero-openrouter-one-live-call-preflight-result/v1"
@@ -169,12 +176,34 @@ class OpenRouterOneLiveCallFailureCodeV1(str, Enum):
     S5_MAPPER_UNAVAILABLE = "S5_MAPPER_UNAVAILABLE"
     S6_INTEGRATION_UNAVAILABLE = "S6_INTEGRATION_UNAVAILABLE"
     CED_AUTHORITY_ENABLED = "CED_AUTHORITY_ENABLED"
+    CLAIM_STORE_UNAVAILABLE = "CLAIM_STORE_UNAVAILABLE"
     AUTHORIZATION_ALREADY_CONSUMED = "AUTHORIZATION_ALREADY_CONSUMED"
 
 
 FROZEN_OPENROUTER_ONE_LIVE_CALL_GUARD_ORDER_V1: Tuple[
     OpenRouterOneLiveCallFailureCodeV1, ...
-] = tuple(OpenRouterOneLiveCallFailureCodeV1)
+] = (
+    OpenRouterOneLiveCallFailureCodeV1.SAFETY_CONTRACT_MISMATCH,
+    OpenRouterOneLiveCallFailureCodeV1.REQUEST_IDENTITY_MISMATCH,
+    OpenRouterOneLiveCallFailureCodeV1.MODALITY_PROOF_MISMATCH,
+    OpenRouterOneLiveCallFailureCodeV1.P17_NOT_JIT_FRESH,
+    OpenRouterOneLiveCallFailureCodeV1.P17_SOURCE_UNTRUSTED,
+    OpenRouterOneLiveCallFailureCodeV1.P17_NOT_ESTABLISHED,
+    OpenRouterOneLiveCallFailureCodeV1.OUTPUT_BOUND_NOT_ESTABLISHED,
+    OpenRouterOneLiveCallFailureCodeV1.PRICE_POLICY_NOT_AUTHORIZED,
+    OpenRouterOneLiveCallFailureCodeV1.PRICE_POLICY_MISMATCH,
+    OpenRouterOneLiveCallFailureCodeV1.COST_BOUND_MISMATCH,
+    OpenRouterOneLiveCallFailureCodeV1.TOTAL_SPEND_CEILING_MISSING,
+    OpenRouterOneLiveCallFailureCodeV1.COST_EXCEEDS_TOTAL_SPEND_CEILING,
+    OpenRouterOneLiveCallFailureCodeV1.CREDENTIAL_ATTESTATION_MISSING,
+    OpenRouterOneLiveCallFailureCodeV1.TRANSPORT_NOT_READY,
+    OpenRouterOneLiveCallFailureCodeV1.TRANSPORT_DISPATCH_CAP_INVALID,
+    OpenRouterOneLiveCallFailureCodeV1.S5_MAPPER_UNAVAILABLE,
+    OpenRouterOneLiveCallFailureCodeV1.S6_INTEGRATION_UNAVAILABLE,
+    OpenRouterOneLiveCallFailureCodeV1.CED_AUTHORITY_ENABLED,
+    OpenRouterOneLiveCallFailureCodeV1.CLAIM_STORE_UNAVAILABLE,
+    OpenRouterOneLiveCallFailureCodeV1.AUTHORIZATION_ALREADY_CONSUMED,
+)
 OPENROUTER_ONE_LIVE_CALL_GUARD_ORDER_ID_V1 = stable_contract_id(
     "szorlivepreflightguardsv1",
     tuple(code.value for code in FROZEN_OPENROUTER_ONE_LIVE_CALL_GUARD_ORDER_V1),
@@ -209,6 +238,11 @@ def _checked_product(quantity: int, unit_price: int, label: str) -> int:
         raise ContractValidationError(f"{label} requires exact integer arithmetic")
     if quantity < 0 or unit_price < 0:
         raise ContractValidationError(f"{label} cannot be negative")
+    if (
+        quantity > OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+        or unit_price > OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    ):
+        raise ContractValidationError(f"{label} exceeds the safe arithmetic domain")
     if quantity and unit_price > OPENROUTER_MAX_SAFE_PICODOLLARS_V1 // quantity:
         raise ContractValidationError(f"{label} exceeds the safe arithmetic domain")
     return quantity * unit_price
@@ -231,7 +265,10 @@ class OpenRouterOperatorTotalSpendCeilingV1(_FrozenLiveSafetyContractV1):
     ] = OPENROUTER_OPERATOR_TOTAL_SPEND_SCHEMA_V1
     operator_scope: OpenRouterOperatorScopeV1
     authorized: bool
-    authorization_evidence_id: Optional[str] = Field(default=None, min_length=1)
+    authorization_evidence_id: Optional[str] = Field(
+        default=None,
+        pattern=r"^szoroperatortotalgrantv1_[0-9a-f]{64}$",
+    )
     rendered_request_id: str = Field(
         pattern=r"^szorrenderedliverequestv2_[0-9a-f]{64}$"
     )
@@ -242,7 +279,9 @@ class OpenRouterOperatorTotalSpendCeilingV1(_FrozenLiveSafetyContractV1):
     )
     currency: Literal["USD"] = "USD"
     unit: Literal["PICODOLLAR"] = "PICODOLLAR"
-    max_spend_picodollars: int = Field(strict=True, ge=0)
+    max_spend_picodollars: int = Field(
+        strict=True, ge=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
     ceiling_id: Optional[str] = Field(
         default=None, pattern=r"^szoroperatortotalspendv1_[0-9a-f]{64}$"
     )
@@ -329,12 +368,22 @@ class OpenRouterP19CostComponentV1(_FrozenLiveSafetyContractV1):
     ] = OPENROUTER_P19_COST_COMPONENT_SCHEMA_V1
     charge_class: Literal["prompt", "completion", "request", "image", "audio"]
     state: OpenRouterChargeClassStateV1
-    quantity: Optional[int] = Field(default=None, strict=True, ge=0)
+    quantity: Optional[int] = Field(
+        default=None, strict=True, ge=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
     quantity_unit: Optional[Literal["TOKEN", "REQUEST"]] = None
     ceiling_picodollars_per_unit: Optional[int] = Field(
-        default=None, strict=True, ge=0
+        default=None,
+        strict=True,
+        ge=0,
+        le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1,
     )
-    subtotal_picodollars: Optional[int] = Field(default=None, strict=True, ge=0)
+    subtotal_picodollars: Optional[int] = Field(
+        default=None,
+        strict=True,
+        ge=0,
+        le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1,
+    )
     non_applicability_proof_id: Optional[str] = None
     component_id: Optional[str] = Field(
         default=None, pattern=r"^szorp19componentv1_[0-9a-f]{64}$"
@@ -416,11 +465,13 @@ def render_openrouter_p19_formula_v1(
             "text-only P19 requires prompt/completion/request included and "
             "image/audio proven non-applicable"
         )
-    return (
-        "max_total_cost = max_input_tokens * prompt_price_ceiling + "
-        "256 * completion_price_ceiling + request_fee_ceiling "
-        "[image=NOT_APPLICABLE, audio=NOT_APPLICABLE]"
+    terms = dict(FROZEN_OPENROUTER_P19_FORMULA_TERMS_V1)
+    arithmetic = " + ".join(terms[component.charge_class] for component in components[:3])
+    not_applicable = ", ".join(
+        f"{component.charge_class}={terms[component.charge_class]}"
+        for component in components[3:]
     )
+    return f"max_total_cost = {arithmetic} [{not_applicable}]"
 
 
 class OpenRouterWorstCaseCostBoundV1(_FrozenLiveSafetyContractV1):
@@ -454,17 +505,45 @@ class OpenRouterWorstCaseCostBoundV1(_FrozenLiveSafetyContractV1):
     ] = OpenRouterChargeCoverageV1.COMPLETE
     charge_components: Tuple[OpenRouterP19CostComponentV1, ...]
     formula: str
-    max_input_tokens: int = Field(strict=True, gt=0)
+    max_input_tokens: int = Field(
+        strict=True, gt=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
     max_output_tokens: Literal[OPENROUTER_MAX_OUTPUT_TOKENS_LIVE_V1] = (
         OPENROUTER_MAX_OUTPUT_TOKENS_LIVE_V1
     )
-    max_total_cost_picodollars: int = Field(strict=True, ge=0)
-    operator_total_spend_picodollars: int = Field(strict=True, ge=0)
+    prompt_price_ceiling_picodollars_per_token: int = Field(
+        strict=True, ge=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
+    completion_price_ceiling_picodollars_per_token: int = Field(
+        strict=True, ge=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
+    request_fee_ceiling_picodollars: int = Field(
+        strict=True, ge=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
+    max_total_cost_picodollars: int = Field(
+        strict=True, ge=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
+    operator_total_spend_picodollars: int = Field(
+        strict=True, ge=0, le=OPENROUTER_MAX_SAFE_PICODOLLARS_V1
+    )
     within_operator_ceiling: bool
     authority: OpenRouterP19AuthorityV1
     bound_id: Optional[str] = Field(
         default=None, pattern=r"^szorlivecostboundv1_[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_comparison_type(cls, data):
+        if (
+            isinstance(data, dict)
+            and "within_operator_ceiling" in data
+            and type(data["within_operator_ceiling"]) is not bool
+        ):
+            raise ContractValidationError(
+                "within_operator_ceiling must be an exact boolean"
+            )
+        return data
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> "OpenRouterWorstCaseCostBoundV1":
@@ -479,6 +558,45 @@ class OpenRouterWorstCaseCostBoundV1(_FrozenLiveSafetyContractV1):
             raise ContractValidationError(
                 "P19 formula disagrees with the canonical component set"
             )
+        prompt, completion, request, image, audio = self.charge_components
+        expected_arithmetic = (
+            (
+                prompt,
+                self.max_input_tokens,
+                "TOKEN",
+                self.prompt_price_ceiling_picodollars_per_token,
+            ),
+            (
+                completion,
+                self.max_output_tokens,
+                "TOKEN",
+                self.completion_price_ceiling_picodollars_per_token,
+            ),
+            (
+                request,
+                1,
+                "REQUEST",
+                self.request_fee_ceiling_picodollars,
+            ),
+        )
+        for component, quantity, unit, ceiling in expected_arithmetic:
+            if (
+                component.state is not OpenRouterChargeClassStateV1.INCLUDED
+                or component.quantity != quantity
+                or component.quantity_unit != unit
+                or component.ceiling_picodollars_per_unit != ceiling
+            ):
+                raise ContractValidationError(
+                    f"{component.charge_class} component disagrees with P19 authority"
+                )
+        for component in (image, audio):
+            if (
+                component.state is not OpenRouterChargeClassStateV1.NOT_APPLICABLE
+                or component.non_applicability_proof_id != self.modality_binding_id
+            ):
+                raise ContractValidationError(
+                    f"{component.charge_class} non-applicability is not request-bound"
+                )
         included = tuple(
             component
             for component in self.charge_components
@@ -558,6 +676,12 @@ def compute_openrouter_worst_case_cost_bound_v1(
         )
     ):
         raise ContractValidationError("P19 evidence is bound to a sibling request")
+    if (
+        p17.live_request_overlay_id != request.live_request_overlay_id
+        or output.live_request_overlay_id != request.live_request_overlay_id
+        or modality.live_request_overlay_id != request.live_request_overlay_id
+    ):
+        raise ContractValidationError("P19 evidence is bound to a sibling overlay")
     if any(
         candidate != request.price_policy_id
         for candidate in (
@@ -576,8 +700,23 @@ def compute_openrouter_worst_case_cost_bound_v1(
         or output.body_length != request.body_length
         or modality.body_sha256 != request.body_sha256
         or modality.body_length != request.body_length
+        or ceiling.body_sha256 != request.body_sha256
+        or ceiling.body_length != request.body_length
     ):
         raise ContractValidationError("P19 evidence does not bind the exact body bytes")
+    if (
+        p17.output_bound_evidence_id != output.output_bound_evidence_id
+        or p17.modality_binding_id != modality.modality_binding_id
+        or p17.request_modality_proof_id != modality.request_modality_proof_id
+        or modality.request_modality_proof_id != request.request_modality_proof_id
+    ):
+        raise ContractValidationError("P19 bound proofs disagree with the request")
+    if (
+        p17.exact_model != request.exact_model
+        or output.exact_model != request.exact_model
+        or modality.exact_model != request.exact_model
+    ):
+        raise ContractValidationError("P19 evidence is bound to another model")
     if p17.max_output_tokens != output.max_output_tokens or (
         output.max_output_tokens != OPENROUTER_MAX_OUTPUT_TOKENS_LIVE_V1
     ):
@@ -592,6 +731,10 @@ def compute_openrouter_worst_case_cost_bound_v1(
         )
     if not ceiling.authorized:
         raise ContractValidationError("P19 requires an authorized total-spend ceiling")
+    if request.live_request_overlay.operator_price_ceiling != policy:
+        raise ContractValidationError(
+            "P19 price policy is not the one rendered into the request"
+        )
     live = policy.operator_scope is OpenRouterOperatorScopeV1.LIVE_OPERATOR
     if ceiling.operator_scope is not policy.operator_scope:
         raise ContractValidationError("P19 operator scopes disagree")
@@ -666,6 +809,9 @@ def compute_openrouter_worst_case_cost_bound_v1(
         charge_components=components,
         formula=render_openrouter_p19_formula_v1(components),
         max_input_tokens=p17.max_input_tokens,
+        prompt_price_ceiling_picodollars_per_token=prompt_price,
+        completion_price_ceiling_picodollars_per_token=completion_price,
+        request_fee_ceiling_picodollars=request_fee,
         max_total_cost_picodollars=total,
         operator_total_spend_picodollars=ceiling.max_spend_picodollars,
         within_operator_ceiling=within,
@@ -704,6 +850,30 @@ class OpenRouterOneShotTransportPolicyV1(_FrozenLiveSafetyContractV1):
     policy_id: Optional[str] = Field(
         default=None, pattern=r"^szoroneshottransportv1_[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_transport_types(cls, data):
+        if isinstance(data, dict):
+            cap = data.get(
+                "maximum_local_dispatches",
+                OPENROUTER_MAX_AUTHORIZED_DISPATCHES_V1,
+            )
+            if type(cap) is not int or cap != 1:
+                raise ContractValidationError(
+                    "maximum_local_dispatches must be exact integer one"
+                )
+            for field_name in (
+                "automatic_retries",
+                "retry_after_failure",
+                "worker_termination_enforced",
+                "raw_response_capture_required",
+            ):
+                if field_name in data and type(data[field_name]) is not bool:
+                    raise ContractValidationError(
+                        f"{field_name} must be an exact boolean"
+                    )
+        return data
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterOneShotTransportPolicyV1":
@@ -758,8 +928,26 @@ class OpenRouterTransportReadinessAttestationV1(_FrozenLiveSafetyContractV1):
     @model_validator(mode="before")
     @classmethod
     def strict_ready(cls, data):
-        if isinstance(data, dict) and "ready" in data and type(data["ready"]) is not bool:
-            raise ContractValidationError("transport readiness must be an exact boolean")
+        if isinstance(data, dict):
+            if "ready" in data and type(data["ready"]) is not bool:
+                raise ContractValidationError(
+                    "transport readiness must be an exact boolean"
+                )
+            cap = data.get(
+                "maximum_local_dispatches",
+                OPENROUTER_MAX_AUTHORIZED_DISPATCHES_V1,
+            )
+            if type(cap) is not int or cap != 1:
+                raise ContractValidationError(
+                    "readiness dispatch cap must be exact integer one"
+                )
+            if (
+                "automatic_retries" in data
+                and type(data["automatic_retries"]) is not bool
+            ):
+                raise ContractValidationError(
+                    "readiness automatic_retries must be an exact boolean"
+                )
         return data
 
     @model_validator(mode="after")
@@ -817,6 +1005,79 @@ class OpenRouterJitCredentialPresenceAttestationV1(_FrozenLiveSafetyContractV1):
         return self
 
 
+class OpenRouterClaimStoreReadinessAttestationV1(_FrozenLiveSafetyContractV1):
+    """JIT assertion that one bound store satisfies the required semantics.
+
+    The record makes the trust dependency explicit; it does not infer durable
+    or rollback-resistant storage merely from a filesystem path.  A future
+    live preflight must obtain the live operator/store evidence before minting
+    or consuming an authorization.  Synthetic evidence has test authority
+    only.
+    """
+
+    schema_version: Literal[
+        OPENROUTER_CLAIM_STORE_READINESS_SCHEMA_V1
+    ] = OPENROUTER_CLAIM_STORE_READINESS_SCHEMA_V1
+    preflight_execution_id: str = Field(min_length=1)
+    mode: OpenRouterLiveSafetyModeV1
+    claim_store_id: str = Field(pattern=r"^szorclaimstorev1_[0-9a-f]{64}$")
+    required_semantics: Literal[
+        OPENROUTER_CLAIM_STORE_SEMANTICS_V1
+    ] = OPENROUTER_CLAIM_STORE_SEMANTICS_V1
+    ready: bool
+    authorization_evidence_id: Optional[str] = Field(
+        default=None,
+        pattern=(
+            r"^szorclaimstore(?:fixture|grant)v1_[0-9a-f]{64}$"
+        ),
+    )
+    attestation_id: Optional[str] = Field(
+        default=None, pattern=r"^szorclaimstorereadinessv1_[0-9a-f]{64}$"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_ready(cls, data):
+        if isinstance(data, dict) and "ready" in data and type(data["ready"]) is not bool:
+            raise ContractValidationError(
+                "claim-store readiness must be an exact boolean"
+            )
+        return data
+
+    @model_validator(mode="after")
+    def validate_and_identify(
+        self,
+    ) -> "OpenRouterClaimStoreReadinessAttestationV1":
+        _nonblank(self.preflight_execution_id, "claim-store preflight execution")
+        if not self.ready:
+            if self.authorization_evidence_id is not None:
+                raise ContractValidationError(
+                    "an unavailable claim store cannot carry authorization evidence"
+                )
+        else:
+            evidence = _nonblank(
+                self.authorization_evidence_id,
+                "claim-store readiness authorization",
+            )
+            expected_prefix = (
+                "szorclaimstoregrantv1_"
+                if self.mode is OpenRouterLiveSafetyModeV1.LIVE_JIT
+                else "szorclaimstorefixturev1_"
+            )
+            if not evidence.startswith(expected_prefix):
+                raise ContractValidationError(
+                    "claim-store readiness evidence has the wrong authority scope"
+                )
+        expected = stable_contract_id(
+            "szorclaimstorereadinessv1",
+            self.model_dump(mode="json", exclude={"attestation_id"}),
+        )
+        if self.attestation_id not in (None, expected):
+            raise ContractValidationError("claim-store readiness ID mismatch")
+        object.__setattr__(self, "attestation_id", expected)
+        return self
+
+
 class OpenRouterS5MapperCapabilityV1(_FrozenLiveSafetyContractV1):
     schema_version: Literal[
         OPENROUTER_S5_MAPPER_CAPABILITY_SCHEMA_V1
@@ -837,6 +1098,13 @@ class OpenRouterS5MapperCapabilityV1(_FrozenLiveSafetyContractV1):
     capability_id: Optional[str] = Field(
         default=None, pattern=r"^szors5mapperbindingv1_[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_available(cls, data):
+        if isinstance(data, dict) and "available" in data and type(data["available"]) is not bool:
+            raise ContractValidationError("S5 availability must be an exact boolean")
+        return data
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterS5MapperCapabilityV1":
@@ -876,6 +1144,13 @@ class OpenRouterS6IntegrationCapabilityV1(_FrozenLiveSafetyContractV1):
     capability_id: Optional[str] = Field(
         default=None, pattern=r"^szors6integrationbindingv1_[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_available(cls, data):
+        if isinstance(data, dict) and "available" in data and type(data["available"]) is not bool:
+            raise ContractValidationError("S6 availability must be an exact boolean")
+        return data
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterS6IntegrationCapabilityV1":
@@ -942,6 +1217,13 @@ class OpenRouterOneCallAuthorizationV1(_FrozenLiveSafetyContractV1):
     operator_grant_binding_id: str = Field(
         pattern=r"^szoroperatorgrantbindingv1_[0-9a-f]{64}$"
     )
+    claim_store_id: str = Field(pattern=r"^szorclaimstorev1_[0-9a-f]{64}$")
+    claim_store_readiness_attestation_id: str = Field(
+        pattern=r"^szorclaimstorereadinessv1_[0-9a-f]{64}$"
+    )
+    claim_store_semantics: Literal[
+        OPENROUTER_CLAIM_STORE_SEMANTICS_V1
+    ] = OPENROUTER_CLAIM_STORE_SEMANTICS_V1
     allowed_local_dispatches: Literal[
         OPENROUTER_MAX_AUTHORIZED_DISPATCHES_V1
     ] = OPENROUTER_MAX_AUTHORIZED_DISPATCHES_V1
@@ -952,6 +1234,29 @@ class OpenRouterOneCallAuthorizationV1(_FrozenLiveSafetyContractV1):
     authorization_id: Optional[str] = Field(
         default=None, pattern=r"^szoronecallauthorizationv1_[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_authorization_types(cls, data):
+        if isinstance(data, dict):
+            cap = data.get(
+                "allowed_local_dispatches",
+                OPENROUTER_MAX_AUTHORIZED_DISPATCHES_V1,
+            )
+            if type(cap) is not int or cap != 1:
+                raise ContractValidationError(
+                    "allowed_local_dispatches must be exact integer one"
+                )
+            for field_name in (
+                "automatic_retries",
+                "ced_authority_enabled",
+                "runtime_authority_enabled",
+            ):
+                if field_name in data and type(data[field_name]) is not bool:
+                    raise ContractValidationError(
+                        f"{field_name} must be an exact boolean"
+                    )
+        return data
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterOneCallAuthorizationV1":
@@ -975,11 +1280,13 @@ def mint_openrouter_one_call_authorization_v1(
     p17_proof: OpenRouterP17InputBoundProofV1,
     output_bound: OpenRouterOutputBoundEvidenceV2,
     price_policy: OpenRouterOperatorPriceCeilingV1,
+    modality_binding: OpenRouterLiveRequestModalityBindingV1,
     cost_bound: OpenRouterWorstCaseCostBoundV1,
     total_spend_ceiling: OpenRouterOperatorTotalSpendCeilingV1,
     transport_policy: OpenRouterOneShotTransportPolicyV1,
     s5_mapper: OpenRouterS5MapperCapabilityV1,
     s6_integration: OpenRouterS6IntegrationCapabilityV1,
+    claim_store_readiness: OpenRouterClaimStoreReadinessAttestationV1,
 ) -> OpenRouterOneCallAuthorizationV1:
     request = _exact_contract(
         rendered_request, OpenRouterRenderedLiveRequestV2, "rendered request"
@@ -990,6 +1297,11 @@ def mint_openrouter_one_call_authorization_v1(
     )
     policy = _exact_contract(
         price_policy, OpenRouterOperatorPriceCeilingV1, "price policy"
+    )
+    modality = _exact_contract(
+        modality_binding,
+        OpenRouterLiveRequestModalityBindingV1,
+        "modality binding",
     )
     cost = _exact_contract(
         cost_bound, OpenRouterWorstCaseCostBoundV1, "P19 cost bound"
@@ -1006,8 +1318,21 @@ def mint_openrouter_one_call_authorization_v1(
     integration = _exact_contract(
         s6_integration, OpenRouterS6IntegrationCapabilityV1, "S6 integration"
     )
+    store_readiness = _exact_contract(
+        claim_store_readiness,
+        OpenRouterClaimStoreReadinessAttestationV1,
+        "claim-store readiness",
+    )
     if type(mode) is not OpenRouterLiveSafetyModeV1:
         raise ContractValidationError("authorization mode must use the exact enum")
+    if (
+        store_readiness.mode is not mode
+        or store_readiness.preflight_execution_id != preflight_execution_id
+        or not store_readiness.ready
+    ):
+        raise ContractValidationError(
+            "authorization requires matching ready claim-store evidence"
+        )
     if p17.preflight_execution_id != preflight_execution_id:
         raise ContractValidationError("P17 proof belongs to another preflight")
     request_id = request.rendered_request_id or ""
@@ -1016,6 +1341,7 @@ def mint_openrouter_one_call_authorization_v1(
         for candidate in (
             p17.rendered_request_id,
             output.rendered_request_id,
+            modality.rendered_request_id,
             cost.rendered_request_id,
             total_ceiling.rendered_request_id,
             transport.rendered_request_id,
@@ -1036,12 +1362,35 @@ def mint_openrouter_one_call_authorization_v1(
         cost.output_bound_evidence_id != output.output_bound_evidence_id
     ):
         raise ContractValidationError("authorization cost evidence is mismatched")
+    if cost.modality_binding_id != modality.modality_binding_id:
+        raise ContractValidationError("authorization modality evidence is mismatched")
     if cost.operator_total_spend_ceiling_id != total_ceiling.ceiling_id:
         raise ContractValidationError("authorization total-spend evidence is mismatched")
     if not (mapper.available and integration.available):
         raise ContractValidationError("authorization requires S5 and S6 capabilities")
     if not cost.within_operator_ceiling:
         raise ContractValidationError("authorization cost exceeds operator total spend")
+    expected_cost = compute_openrouter_worst_case_cost_bound_v1(
+        request,
+        p17,
+        output,
+        policy,
+        modality,
+        total_ceiling,
+    )
+    if expected_cost != cost:
+        raise ContractValidationError(
+            "authorization cost bound is not derived from the supplied authorities"
+        )
+    if (
+        transport.body_sha256 != request.body_sha256
+        or transport.body_length != request.body_length
+        or transport.semantic_headers_sha256 != request.semantic_headers_sha256
+        or transport.semantic_headers_length != request.semantic_headers_length
+    ):
+        raise ContractValidationError(
+            "authorization transport policy does not bind the exact request bytes"
+        )
     live = mode is OpenRouterLiveSafetyModeV1.LIVE_JIT
     if live:
         if not (
@@ -1090,6 +1439,10 @@ def mint_openrouter_one_call_authorization_v1(
         s5_mapper_capability_id=mapper.capability_id or "",
         s6_integration_capability_id=integration.capability_id or "",
         operator_grant_binding_id=grant_binding_id,
+        claim_store_id=store_readiness.claim_store_id,
+        claim_store_readiness_attestation_id=(
+            store_readiness.attestation_id or ""
+        ),
     )
 
 
@@ -1113,6 +1466,13 @@ class OpenRouterOneCallConsumptionV1(_FrozenLiveSafetyContractV1):
     operator_grant_binding_id: str = Field(
         pattern=r"^szoroperatorgrantbindingv1_[0-9a-f]{64}$"
     )
+    claim_store_id: str = Field(pattern=r"^szorclaimstorev1_[0-9a-f]{64}$")
+    claim_store_readiness_attestation_id: str = Field(
+        pattern=r"^szorclaimstorereadinessv1_[0-9a-f]{64}$"
+    )
+    claim_store_semantics: Literal[
+        OPENROUTER_CLAIM_STORE_SEMANTICS_V1
+    ] = OPENROUTER_CLAIM_STORE_SEMANTICS_V1
     dispatch_ordinal: Literal[1] = 1
     consumed_before_network: Literal[True] = True
     failed_call_does_not_restore_authorization: Literal[True] = True
@@ -1120,6 +1480,25 @@ class OpenRouterOneCallConsumptionV1(_FrozenLiveSafetyContractV1):
     consumption_id: Optional[str] = Field(
         default=None, pattern=r"^szoronecallconsumptionv1_[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_consumption_types(cls, data):
+        if isinstance(data, dict):
+            ordinal = data.get("dispatch_ordinal", 1)
+            if type(ordinal) is not int or ordinal != 1:
+                raise ContractValidationError(
+                    "dispatch_ordinal must be exact integer one"
+                )
+            for field_name in (
+                "consumed_before_network",
+                "failed_call_does_not_restore_authorization",
+            ):
+                if field_name in data and type(data[field_name]) is not bool:
+                    raise ContractValidationError(
+                        f"{field_name} must be an exact boolean"
+                    )
+        return data
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterOneCallConsumptionV1":
@@ -1140,6 +1519,53 @@ def render_openrouter_one_call_consumption_v1(
         consumption, OpenRouterOneCallConsumptionV1, "consumption record"
     )
     return canonical_json(record.model_dump(mode="json")).encode("utf-8") + b"\n"
+
+
+def openrouter_claim_store_id_v1(claim_directory: Path) -> str:
+    """Bind authorization to one exact durable claim-store location.
+
+    Only the content ID is retained in authorization/artifacts; the local path
+    itself never becomes provider-visible or artifact payload.  S7B must place
+    this directory on trusted durable, non-rollback storage.
+    """
+
+    try:
+        resolved = Path(claim_directory).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ContractValidationError("claim-store location is unavailable") from exc
+    canonical = resolved.as_posix()
+    if os.name == "nt":
+        canonical = canonical.casefold()
+    return stable_contract_id(
+        "szorclaimstorev1",
+        {
+            "canonical_location": canonical,
+            "semantics": OPENROUTER_CLAIM_STORE_SEMANTICS_V1,
+        },
+    )
+
+
+def attest_openrouter_claim_store_readiness_v1(
+    claim_directory: Path,
+    *,
+    preflight_execution_id: str,
+    mode: OpenRouterLiveSafetyModeV1,
+    ready: bool,
+    authorization_evidence_id: Optional[str],
+) -> OpenRouterClaimStoreReadinessAttestationV1:
+    """Bind an explicit store-readiness assertion to one exact location."""
+
+    if type(mode) is not OpenRouterLiveSafetyModeV1:
+        raise ContractValidationError(
+            "claim-store readiness mode must use the exact enum"
+        )
+    return OpenRouterClaimStoreReadinessAttestationV1(
+        preflight_execution_id=preflight_execution_id,
+        mode=mode,
+        claim_store_id=openrouter_claim_store_id_v1(Path(claim_directory)),
+        ready=ready,
+        authorization_evidence_id=authorization_evidence_id,
+    )
 
 
 def openrouter_authorization_claim_path_v1(
@@ -1166,9 +1592,21 @@ def openrouter_authorization_is_consumed_v1(
 def consume_openrouter_one_call_authorization_v1(
     authorization: OpenRouterOneCallAuthorizationV1,
     *,
+    preflight_result: "OpenRouterOneLiveCallPreflightResultV1",
     claim_directory: Path,
     rendered_request: OpenRouterRenderedLiveRequestV2,
+    p17_proof: OpenRouterP17InputBoundProofV1,
+    output_bound: OpenRouterOutputBoundEvidenceV2,
+    price_policy: OpenRouterOperatorPriceCeilingV1,
+    modality_binding: OpenRouterLiveRequestModalityBindingV1,
+    cost_bound: OpenRouterWorstCaseCostBoundV1,
+    total_spend_ceiling: OpenRouterOperatorTotalSpendCeilingV1,
+    credential_presence: OpenRouterJitCredentialPresenceAttestationV1,
     transport_policy: OpenRouterOneShotTransportPolicyV1,
+    transport_readiness: OpenRouterTransportReadinessAttestationV1,
+    s5_mapper: OpenRouterS5MapperCapabilityV1,
+    s6_integration: OpenRouterS6IntegrationCapabilityV1,
+    claim_store_readiness: OpenRouterClaimStoreReadinessAttestationV1,
 ) -> OpenRouterOneCallConsumptionV1:
     """Atomically burn one authorization before any future network attempt.
 
@@ -1180,6 +1618,53 @@ def consume_openrouter_one_call_authorization_v1(
     auth = _exact_contract(
         authorization, OpenRouterOneCallAuthorizationV1, "authorization"
     )
+    preflight = _exact_contract(
+        preflight_result,
+        OpenRouterOneLiveCallPreflightResultV1,
+        "authorized preflight result",
+    )
+    if (
+        preflight.verdict is not OpenRouterOneLiveCallVerdictV1.AUTHORIZED_FOR_ONE_CALL
+        or preflight.authorization != auth
+        or preflight.authorization_id != auth.authorization_id
+    ):
+        raise ContractValidationError(
+            "consumption requires the exact authorizing preflight result"
+        )
+    # A content-addressed result is constructible data, not evaluator
+    # provenance.  Re-run every preflight guard from the exact authorities at
+    # the consumption boundary; only the evaluator's identical result may be
+    # burned.  This also closes a direct forged authorization + forged result
+    # path while preserving deterministic, credential-value-free semantics.
+    reevaluated = evaluate_one_live_call_preflight_v1(
+        mode=preflight.mode,
+        preflight_execution_id=preflight.preflight_execution_id,
+        rendered_request=rendered_request,
+        p17_proof=p17_proof,
+        output_bound=output_bound,
+        price_policy=price_policy,
+        modality_binding=modality_binding,
+        cost_bound=cost_bound,
+        total_spend_ceiling=total_spend_ceiling,
+        credential_presence=credential_presence,
+        transport_policy=transport_policy,
+        transport_readiness=transport_readiness,
+        s5_mapper=s5_mapper,
+        s6_integration=s6_integration,
+        claim_store_readiness=claim_store_readiness,
+        claim_directory=claim_directory,
+        ced_authority_enabled=False,
+        runtime_authority_enabled=False,
+    )
+    if (
+        reevaluated.verdict
+        is not OpenRouterOneLiveCallVerdictV1.AUTHORIZED_FOR_ONE_CALL
+        or reevaluated != preflight
+        or reevaluated.authorization != auth
+    ):
+        raise ContractValidationError(
+            "consumption authority was not reproduced by the full preflight"
+        )
     request = _exact_contract(
         rendered_request, OpenRouterRenderedLiveRequestV2, "rendered request"
     )
@@ -1197,6 +1682,20 @@ def consume_openrouter_one_call_authorization_v1(
         or transport.rendered_request_id != request.rendered_request_id
     ):
         raise ContractValidationError("authorization cannot consume sibling transport")
+    if (
+        transport.body_sha256 != request.body_sha256
+        or transport.body_length != request.body_length
+        or transport.semantic_headers_sha256 != request.semantic_headers_sha256
+        or transport.semantic_headers_length != request.semantic_headers_length
+    ):
+        raise ContractValidationError(
+            "consumption transport does not bind the exact request bytes"
+        )
+    actual_claim_store_id = openrouter_claim_store_id_v1(Path(claim_directory))
+    if auth.claim_store_id != actual_claim_store_id:
+        raise ContractValidationError(
+            "authorization cannot be consumed in a different claim store"
+        )
     record = OpenRouterOneCallConsumptionV1(
         authorization_id=auth.authorization_id or "",
         rendered_request_id=auth.rendered_request_id,
@@ -1204,6 +1703,10 @@ def consume_openrouter_one_call_authorization_v1(
         transport_policy_id=auth.transport_policy_id,
         p19_cost_bound_id=auth.p19_cost_bound_id,
         operator_grant_binding_id=auth.operator_grant_binding_id,
+        claim_store_id=auth.claim_store_id,
+        claim_store_readiness_attestation_id=(
+            auth.claim_store_readiness_attestation_id
+        ),
     )
     target = openrouter_authorization_claim_path_v1(
         Path(claim_directory), auth.authorization_id or ""
@@ -1213,6 +1716,8 @@ def consume_openrouter_one_call_authorization_v1(
     try:
         with target.open("xb") as handle:
             handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
     except FileExistsError as exc:
         raise ContractValidationError(
             "authorization already consumed; no automatic retry is allowed"
@@ -1234,6 +1739,17 @@ class OpenRouterOneLiveCallPreflightResultV1(_FrozenLiveSafetyContractV1):
     result_id: Optional[str] = Field(
         default=None, pattern=r"^szoronecallpreflightresultv1_[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def strict_network_counter(cls, data):
+        if isinstance(data, dict):
+            value = data.get("network_dispatches", 0)
+            if type(value) is not int or value != 0:
+                raise ContractValidationError(
+                    "preflight network_dispatches must be exact integer zero"
+                )
+        return data
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> "OpenRouterOneLiveCallPreflightResultV1":
@@ -1302,6 +1818,7 @@ def evaluate_one_live_call_preflight_v1(
     transport_readiness: OpenRouterTransportReadinessAttestationV1,
     s5_mapper: OpenRouterS5MapperCapabilityV1,
     s6_integration: OpenRouterS6IntegrationCapabilityV1,
+    claim_store_readiness: OpenRouterClaimStoreReadinessAttestationV1,
     claim_directory: Path,
     ced_authority_enabled: bool = False,
     runtime_authority_enabled: bool = False,
@@ -1315,6 +1832,15 @@ def evaluate_one_live_call_preflight_v1(
     if type(mode) is not OpenRouterLiveSafetyModeV1:
         raise ContractValidationError("preflight mode must use the exact enum")
     _nonblank(preflight_execution_id, "preflight execution")
+    if (
+        type(ced_authority_enabled) is not bool
+        or type(runtime_authority_enabled) is not bool
+    ):
+        return _refused_preflight_v1(
+            preflight_execution_id,
+            mode,
+            OpenRouterOneLiveCallFailureCodeV1.SAFETY_CONTRACT_MISMATCH,
+        )
     exact_inputs = (
         (rendered_request, OpenRouterRenderedLiveRequestV2),
         (p17_proof, OpenRouterP17InputBoundProofV1),
@@ -1328,6 +1854,7 @@ def evaluate_one_live_call_preflight_v1(
         (transport_readiness, OpenRouterTransportReadinessAttestationV1),
         (s5_mapper, OpenRouterS5MapperCapabilityV1),
         (s6_integration, OpenRouterS6IntegrationCapabilityV1),
+        (claim_store_readiness, OpenRouterClaimStoreReadinessAttestationV1),
     )
     if any(type(value) is not expected for value, expected in exact_inputs):
         return _refused_preflight_v1(
@@ -1379,6 +1906,11 @@ def evaluate_one_live_call_preflight_v1(
         )
         integration = _exact_contract(
             s6_integration, OpenRouterS6IntegrationCapabilityV1, "S6 integration"
+        )
+        store_readiness = _exact_contract(
+            claim_store_readiness,
+            OpenRouterClaimStoreReadinessAttestationV1,
+            "claim-store readiness",
         )
     except (ContractValidationError, ValueError, TypeError):
         return _refused_preflight_v1(
@@ -1483,6 +2015,27 @@ def evaluate_one_live_call_preflight_v1(
             mode,
             OpenRouterOneLiveCallFailureCodeV1.COST_BOUND_MISMATCH,
         )
+    try:
+        recomputed_cost = compute_openrouter_worst_case_cost_bound_v1(
+            request,
+            p17,
+            output,
+            policy,
+            modality,
+            total_ceiling,
+        )
+    except ContractValidationError:
+        return _refused_preflight_v1(
+            preflight_execution_id,
+            mode,
+            OpenRouterOneLiveCallFailureCodeV1.COST_BOUND_MISMATCH,
+        )
+    if recomputed_cost != cost:
+        return _refused_preflight_v1(
+            preflight_execution_id,
+            mode,
+            OpenRouterOneLiveCallFailureCodeV1.COST_BOUND_MISMATCH,
+        )
     if not total_ceiling.authorized or total_ceiling.operator_scope is not expected_scope:
         return _refused_preflight_v1(
             preflight_execution_id,
@@ -1514,6 +2067,17 @@ def evaluate_one_live_call_preflight_v1(
             mode,
             OpenRouterOneLiveCallFailureCodeV1.TRANSPORT_NOT_READY,
         )
+    if (
+        transport.body_sha256 != request.body_sha256
+        or transport.body_length != request.body_length
+        or transport.semantic_headers_sha256 != request.semantic_headers_sha256
+        or transport.semantic_headers_length != request.semantic_headers_length
+    ):
+        return _refused_preflight_v1(
+            preflight_execution_id,
+            mode,
+            OpenRouterOneLiveCallFailureCodeV1.TRANSPORT_NOT_READY,
+        )
     if transport.maximum_local_dispatches != 1 or transport.automatic_retries:
         return _refused_preflight_v1(
             preflight_execution_id,
@@ -1536,17 +2100,30 @@ def evaluate_one_live_call_preflight_v1(
             mode,
             OpenRouterOneLiveCallFailureCodeV1.S6_INTEGRATION_UNAVAILABLE,
         )
-    if type(ced_authority_enabled) is not bool or type(runtime_authority_enabled) is not bool:
-        return _refused_preflight_v1(
-            preflight_execution_id,
-            mode,
-            OpenRouterOneLiveCallFailureCodeV1.SAFETY_CONTRACT_MISMATCH,
-        )
     if ced_authority_enabled or runtime_authority_enabled:
         return _refused_preflight_v1(
             preflight_execution_id,
             mode,
             OpenRouterOneLiveCallFailureCodeV1.CED_AUTHORITY_ENABLED,
+        )
+    try:
+        claim_store_id = openrouter_claim_store_id_v1(Path(claim_directory))
+    except (ContractValidationError, OSError, RuntimeError, TypeError, ValueError):
+        return _refused_preflight_v1(
+            preflight_execution_id,
+            mode,
+            OpenRouterOneLiveCallFailureCodeV1.CLAIM_STORE_UNAVAILABLE,
+        )
+    if (
+        not store_readiness.ready
+        or store_readiness.mode is not mode
+        or store_readiness.preflight_execution_id != preflight_execution_id
+        or store_readiness.claim_store_id != claim_store_id
+    ):
+        return _refused_preflight_v1(
+            preflight_execution_id,
+            mode,
+            OpenRouterOneLiveCallFailureCodeV1.CLAIM_STORE_UNAVAILABLE,
         )
     try:
         authorization = mint_openrouter_one_call_authorization_v1(
@@ -1556,11 +2133,13 @@ def evaluate_one_live_call_preflight_v1(
             p17_proof=p17,
             output_bound=output,
             price_policy=policy,
+            modality_binding=modality,
             cost_bound=cost,
             total_spend_ceiling=total_ceiling,
             transport_policy=transport,
             s5_mapper=mapper,
             s6_integration=integration,
+            claim_store_readiness=store_readiness,
         )
     except ContractValidationError:
         return _refused_preflight_v1(
@@ -1568,9 +2147,17 @@ def evaluate_one_live_call_preflight_v1(
             mode,
             OpenRouterOneLiveCallFailureCodeV1.SAFETY_CONTRACT_MISMATCH,
         )
-    if openrouter_authorization_is_consumed_v1(
-        Path(claim_directory), authorization.authorization_id or ""
-    ):
+    try:
+        already_consumed = openrouter_authorization_is_consumed_v1(
+            Path(claim_directory), authorization.authorization_id or ""
+        )
+    except OSError:
+        return _refused_preflight_v1(
+            preflight_execution_id,
+            mode,
+            OpenRouterOneLiveCallFailureCodeV1.CLAIM_STORE_UNAVAILABLE,
+        )
+    if already_consumed:
         return _refused_preflight_v1(
             preflight_execution_id,
             mode,
@@ -1592,6 +2179,8 @@ __all__ = [
     "FROZEN_OPENROUTER_S5_MAPPER_CAPABILITY_V1",
     "FROZEN_OPENROUTER_S6_INTEGRATION_CAPABILITY_V1",
     "OPENROUTER_JIT_CREDENTIAL_PRESENCE_SCHEMA_V1",
+    "OPENROUTER_CLAIM_STORE_SEMANTICS_V1",
+    "OPENROUTER_CLAIM_STORE_READINESS_SCHEMA_V1",
     "OPENROUTER_MAX_AUTHORIZED_DISPATCHES_V1",
     "OPENROUTER_MAX_OUTPUT_TOKENS_LIVE_V1",
     "OPENROUTER_ONE_CALL_AUTHORIZATION_SCHEMA_V1",
@@ -1610,6 +2199,7 @@ __all__ = [
     "OPENROUTER_S6_SOURCE_HEAD_V1",
     "OPENROUTER_TRANSPORT_READINESS_SCHEMA_V1",
     "OpenRouterAuthorizationScopeV1",
+    "OpenRouterClaimStoreReadinessAttestationV1",
     "OpenRouterCredentialAvailabilityV1",
     "OpenRouterJitCredentialPresenceAttestationV1",
     "OpenRouterLiveSafetyModeV1",
@@ -1627,6 +2217,7 @@ __all__ = [
     "OpenRouterTransportReadinessAttestationV1",
     "OpenRouterWorstCaseCostBoundV1",
     "attest_openrouter_transport_readiness_v1",
+    "attest_openrouter_claim_store_readiness_v1",
     "build_openrouter_one_shot_transport_policy_v1",
     "build_openrouter_operator_total_spend_ceiling_v1",
     "compute_openrouter_worst_case_cost_bound_v1",
@@ -1635,6 +2226,7 @@ __all__ = [
     "mint_openrouter_one_call_authorization_v1",
     "openrouter_authorization_claim_path_v1",
     "openrouter_authorization_is_consumed_v1",
+    "openrouter_claim_store_id_v1",
     "render_openrouter_one_call_consumption_v1",
     "render_openrouter_p19_formula_v1",
 ]

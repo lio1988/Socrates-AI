@@ -267,7 +267,10 @@ class OpenRouterOperatorPriceCeilingV1(_FrozenLiveRequestContractV2):
     ] = OPENROUTER_OPERATOR_PRICE_CEILING_SCHEMA_V1
     operator_scope: OpenRouterOperatorScopeV1
     authorized: bool
-    authorization_evidence_id: Optional[str] = Field(default=None, min_length=1)
+    authorization_evidence_id: Optional[str] = Field(
+        default=None,
+        pattern=r"^szoroperatorpricegrantv1_[0-9a-f]{64}$",
+    )
 
     parent_prepared_request_id: str = Field(
         pattern=r"^szorpreparedroutev1_[0-9a-f]{64}$"
