@@ -16,7 +16,17 @@ Decide one question, and change no behaviour while deciding it.
 
 ## Result
 
-**WIRE-MAPPING v2 IMPLEMENTATION EARNED.**
+| layer | status |
+| --- | --- |
+| Parser boundary specifiable | **YES** |
+| Offline wire-mapping v2 implementation attempt | **AUTHORIZED / JUSTIFIED** |
+| Runtime authority | **NOT AUTHORIZED** |
+| Live OpenRouter execution | **NOT AUTHORIZED** |
+| P17 / P18 / P19 | **NOT_ESTABLISHED** |
+
+`WIRE-MAPPING v2 IMPLEMENTATION EARNED` is retained only as the legacy gate
+shorthand, defined as: *one bounded offline implementation attempt is authorized;
+no runtime or live authority is granted.*
 
 This authorizes exactly one bounded, offline, raw-bytes-first implementation
 attempt — Phase 8.5D-S5. It authorizes nothing else.

@@ -18,9 +18,13 @@ Stable context. Not an action log.
    NOT_ESTABLISHED, so the live pilot remains NOT EARNED. Never conflate them.
 3. **Request intent is not response identity.** The repository knows the endpoint
    it intends to request. Exact endpoint *response* identity is
-   `UNAVAILABLE_BY_DOCUMENTED_CONTRACT` and must stay NOT_ESTABLISHED. Provider
-   label is `HUMAN_DISPLAY_NAME` granularity and must never be promoted to
-   endpoint identity.
+   `UNAVAILABLE_BY_DOCUMENTED_CONTRACT`, meaning the retained official response
+   contract does not provide an authoritative exact endpoint selector or ID. The
+   mapper must emit an epistemic status carrying **no endpoint value**, and must
+   never infer or synthesize the endpoint — not from the provider label, not from
+   the request-side selector, not from endpoint candidate records, not from a
+   single-element `provider.only`. Provider label is `HUMAN_DISPLAY_NAME`
+   granularity and must never be promoted to endpoint identity.
 4. **Absence is never evidence of a value.** Metadata absence on cache hit does
    not prove a cache hit; only `X-OpenRouter-Cache-Status` does. Missing fields
    are preserved as ABSENT, never synthesized.
@@ -49,8 +53,23 @@ constant rather than trying and failing to resolve it.
 
 ## Decision
 
-**WIRE-MAPPING v2 IMPLEMENTATION EARNED**, authorizing exactly one bounded
-attempt (Phase 8.5D-S5) under the parser boundary predeclared in
+Layered, and to be quoted in layers:
+
+| layer | status |
+| --- | --- |
+| Parser boundary specifiable | YES |
+| Offline wire-mapping v2 implementation attempt | AUTHORIZED / JUSTIFIED |
+| Runtime authority | NOT AUTHORIZED |
+| Live OpenRouter execution | NOT AUTHORIZED |
+| P17 / P18 / P19 | NOT_ESTABLISHED |
+
+`WIRE-MAPPING v2 IMPLEMENTATION EARNED` survives only as legacy shorthand for
+*one bounded offline implementation attempt is authorized; no runtime or live
+authority is granted.* Do not let a future session read the shorthand as runtime
+or live authorization; that is the exact misreading the layering exists to
+prevent.
+
+The bounded attempt is Phase 8.5D-S5, under the parser boundary predeclared in
 [PLAN.md](PLAN.md) and the canonical gate document.
 
 ## Environment

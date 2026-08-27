@@ -4,7 +4,15 @@
 
 - Branch: `feature/socrates-zero-openrouter-wire-mapping-v2-authorization-gate`
 - Source HEAD: `ae8b3ec17810deb0c8523c78a541d032994fb408`
-- Decision: **WIRE-MAPPING v2 IMPLEMENTATION EARNED**
+- Decision, in layers:
+  - Parser boundary specifiable: **YES**
+  - Offline wire-mapping v2 implementation attempt: **AUTHORIZED / JUSTIFIED**
+  - Runtime authority: **NOT AUTHORIZED**
+  - Live OpenRouter execution: **NOT AUTHORIZED**
+  - P17 / P18 / P19: **NOT_ESTABLISHED**
+  - Legacy shorthand: `WIRE-MAPPING v2 IMPLEMENTATION EARNED`, defined as *one
+    bounded offline implementation attempt is authorized; no runtime or live
+    authority is granted*
 - Phase: complete. Documentation only. Not pushed.
 
 ## Worktree
@@ -21,8 +29,10 @@ parser boundary, read-only provenance and test gates, and the decision.
 ## Response-wire audit summary
 
 15 of 16 concerns ESTABLISHED. The sixteenth, exact endpoint response identity,
-is `UNAVAILABLE_BY_DOCUMENTED_CONTRACT` — an affirmative documented finding that
-the authority is absent from the wire, not an unexplored gap. Full per-field
+is `UNAVAILABLE_BY_DOCUMENTED_CONTRACT`: the retained official response contract
+does not provide an authoritative exact endpoint selector or ID. An affirmative
+documented finding, not an unexplored gap. The future mapper emits an epistemic
+status with no endpoint value and never infers or synthesizes the endpoint. Full per-field
 tracing is in the
 [canonical gate document](../../SOCRATES_ZERO_OPENROUTER_WIRE_MAPPING_V2_AUTHORIZATION_GATE.md).
 
@@ -90,8 +100,9 @@ a scientific object without adding scientific content.
 ## Blockers
 
 P17 NOT_ESTABLISHED. P18 NOT_ESTABLISHED. P19 NOT_ESTABLISHED. Exact endpoint
-response identity NOT_ESTABLISHED (documented-unavailable). **Live pilot NOT
-EARNED.**
+response identity NOT_ESTABLISHED (documented-unavailable). Runtime authority
+**NOT AUTHORIZED**. Live OpenRouter execution **NOT AUTHORIZED**. **Live pilot
+NOT EARNED.**
 
 ## Next safe step
 

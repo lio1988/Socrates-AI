@@ -7,9 +7,30 @@ from `feature/socrates-zero-openrouter-provenance-boundary-v1` at exactly
 
 Decision only. No parser, no live call, no artifact rewrite.
 
-## Result
+## Result — layered authorization
 
-**WIRE-MAPPING v2 IMPLEMENTATION EARNED.**
+The decision is recorded in layers, because a single verdict string has proven
+easy to over-read.
+
+| layer | status |
+| --- | --- |
+| Parser boundary specifiable | **YES** |
+| Offline wire-mapping v2 implementation attempt | **AUTHORIZED / JUSTIFIED** |
+| Runtime authority | **NOT AUTHORIZED** |
+| Live OpenRouter execution | **NOT AUTHORIZED** |
+| P17 input token bound | **NOT_ESTABLISHED** |
+| P18 trusted pricing | **NOT_ESTABLISHED** |
+| P19 total cost bound | **NOT_ESTABLISHED** |
+
+**WIRE-MAPPING v2 IMPLEMENTATION EARNED** is retained only as the legacy gate
+shorthand, and is explicitly defined as:
+
+> one bounded offline implementation attempt is authorized; no runtime or live
+> authority is granted.
+
+Read it as nothing more than that. Authorizing an offline parser is not
+authorizing that parser to hold runtime authority, and it is not authorizing any
+OpenRouter execution.
 
 ## The decision being rerun
 
@@ -81,6 +102,28 @@ endpoint response identity was *observed*. The validation artifact's
 Provider label (#5, #6) must never be promoted to endpoint identity. These are
 separate authorities at separate granularities and the manifest says so.
 
+## Exact endpoint semantics
+
+`UNAVAILABLE_BY_DOCUMENTED_CONTRACT` means the retained official response
+contract does not provide an authoritative exact endpoint selector or endpoint
+ID. It is a statement about the documented contract, not about this repository's
+effort.
+
+Two consequences bind the future mapper:
+
+1. it must emit an **epistemic status with no endpoint value** — the status is
+   the whole output for this concern, and there is no field carrying a candidate,
+   best-guess or partial endpoint;
+2. it must **never infer or synthesize the endpoint** — not from the provider
+   label, not from the request-side selector it sent, not from endpoint candidate
+   records, not from a single-element `provider.only`, and not from any
+   combination of these.
+
+Provider label (#5, #6) is `HUMAN_DISPLAY_NAME` granularity and is a different
+authority at a different granularity. It must never be promoted to endpoint
+identity. Request-side endpoint intent (#15) is what the repository *asked for*
+and is not evidence of what served the response.
+
 ## Mapping eligibility
 
 Every mapping the future v2 candidate needs falls under an eligible category:
@@ -137,12 +180,18 @@ condition the gate required.
 | 11 | provenance boundary clean | YES |
 | 12 | sealed scientific evidence unchanged | YES (15/15 byte-identical) |
 
-All twelve hold. **WIRE-MAPPING v2 IMPLEMENTATION EARNED.**
+All twelve hold, so the layered result at the top of this document stands: the
+parser boundary is specifiable, one bounded **offline** implementation attempt is
+authorized, and **no runtime authority and no live OpenRouter execution are
+authorized**. The legacy shorthand for exactly that is
+`WIRE-MAPPING v2 IMPLEMENTATION EARNED`.
 
 ## Blockers that remain blockers
 
 | item | status |
 | --- | --- |
+| runtime authority | **NOT AUTHORIZED** |
+| live OpenRouter execution | **NOT AUTHORIZED** |
 | P17 input token bound | **NOT_ESTABLISHED** |
 | P18 trusted pricing | **NOT_ESTABLISHED** |
 | P19 total cost bound | **NOT_ESTABLISHED** |
