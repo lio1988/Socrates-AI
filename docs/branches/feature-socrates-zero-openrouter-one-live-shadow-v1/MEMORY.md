@@ -124,3 +124,18 @@ binding failure would mean the evidence really disagrees.
 The real captured model-detail response is kept under ``evidence/`` and an
 offline test asserts it still fails the frozen identity rule. That keeps the
 abort reason reproducible without any network.
+
+## A leak my own test caused, and the rule it produced
+
+The first import-inertness probe instrumented ``os.environ.get`` and restored it
+by assignment. That leaked: the acquisition tripwire patches
+``os._Environ.get`` on the **class**, so assigning ``os.environ.get`` created an
+*instance* attribute that kept shadowing the class after the tripwire stopped.
+Two unrelated tests in ``test_tree_distillation.py`` then aborted on
+``ANTHROPIC_API_KEY`` reads, but only when run in the same process — they passed
+standalone.
+
+Rule: **do not patch global interpreter state to prove inertness.** The probe now
+patches nothing and simply executes the module bodies inside the tripwire, which
+already aborts on credential, network, provider and tool seams. Filesystem
+inertness is proven by an AST check over module-level statements instead.

@@ -952,67 +952,127 @@ def test_s6_binds_the_transport_record_without_adapter_reconstruction() -> None:
 
 
 def test_the_s7b_modules_are_import_inert() -> None:
-    """Executing the module bodies reads no credential and writes no file.
+    """Executing both module bodies crosses no acquisition boundary.
 
-    Runs in-process against throwaway namespaces: the acquisition tripwire
-    forbids subprocess, and spawning one would only move the question somewhere
-    the tripwire cannot watch.
+    This test runs inside the shared tripwire, which already aborts on any
+    credential read, network attempt, provider call or tool call. Executing the
+    module bodies under it is therefore the proof: if importing touched any of
+    those seams, this test would fail rather than pass quietly.
+
+    Deliberately patches nothing global. An earlier version instrumented
+    ``os.environ.get`` and leaked: the tripwire patches ``os._Environ.get`` on
+    the *class*, so assigning to ``os.environ.get`` created an instance
+    attribute that shadowed the class even after the tripwire stopped, and later
+    unrelated tests aborted on credential reads.
     """
-    import builtins
-    import os
     import sys as _sys
-
-    reads: list = []
-    writes: list = []
-    real_get = os.environ.get
-    real_open = builtins.open
-
-    def watched_get(key, default=None):
-        reads.append(key)
-        return real_get(key, default)
-
-    def watched_open(file, mode="r", *args, **kwargs):
-        if any(flag in mode for flag in ("w", "a", "x", "+")):
-            writes.append((str(file), mode))
-        return real_open(file, mode, *args, **kwargs)
 
     package = "backend.dialogues.socrates_zero"
     names = (
         "openrouter_one_live_shadow_v1",
         "openrouter_one_live_shadow_runner_v1",
     )
-    sources = [
-        (ROOT / "backend/dialogues/socrates_zero" / f"{name}.py").read_text(
-            encoding="utf-8"
-        )
-        for name in names
-    ]
-
-    os.environ.get = watched_get
-    builtins.open = watched_open
-    try:
-        for index, source in enumerate(sources):
-            key = f"{package}._s7b_inertness_probe_{index}"
-            shim = type(_sys)(key)
-            shim.__package__ = package
-            shim.__file__ = key
-            _sys.modules[key] = shim
-            try:
-                exec(compile(source, key, "exec"), shim.__dict__)
-            finally:
-                _sys.modules.pop(key, None)
-    finally:
-        os.environ.get = real_get
-        builtins.open = real_open
-
-    assert "OPENROUTER_API_KEY" not in reads
-    assert writes == []
+    for index, name in enumerate(names):
+        source = (
+            ROOT / "backend/dialogues/socrates_zero" / f"{name}.py"
+        ).read_text(encoding="utf-8")
+        key = f"{package}._s7b_inertness_probe_{index}"
+        shim = type(_sys)(key)
+        shim.__package__ = package
+        shim.__file__ = key
+        _sys.modules[key] = shim
+        try:
+            exec(compile(source, key, "exec"), shim.__dict__)
+        finally:
+            _sys.modules.pop(key, None)
 
 
-def test_importing_does_not_create_the_claim_store_directory() -> None:
-    """No filesystem side effect at import time."""
+def test_module_bodies_perform_no_io_at_import() -> None:
+    """No top-level statement opens, writes or creates anything."""
+    import ast
+
+    forbidden_calls = {
+        "open",
+        "mkdir",
+        "write_text",
+        "write_bytes",
+        "touch",
+        "makedirs",
+        "remove",
+        "unlink",
+        "rmtree",
+        "connect",
+        "request",
+        "urlopen",
+        "system",
+        "run",
+        "Popen",
+    }
+    for name in (
+        "openrouter_one_live_shadow_v1",
+        "openrouter_one_live_shadow_runner_v1",
+    ):
+        path = ROOT / "backend/dialogues/socrates_zero" / f"{name}.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            # Only module-level statements run at import; function bodies do not.
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Call):
+                    func = inner.func
+                    called = (
+                        func.attr
+                        if isinstance(func, ast.Attribute)
+                        else getattr(func, "id", "")
+                    )
+                    assert called not in forbidden_calls, (name, called)
+
+
+def test_the_transport_module_never_creates_the_claim_store() -> None:
+    """The store directory is the operator's to create, never the runner's."""
     import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
 
     source = Path(module.__file__).read_text(encoding="utf-8")
-    # mkdir appears nowhere; the store directory is the operator's to create.
     assert "mkdir" not in source
+    assert "rmtree" not in source
+    assert "unlink" not in source
+
+
+def test_a_missing_p17_proof_cannot_reach_preflight_authorization() -> None:
+    """Without a real P17 proof there is no authorization to mint.
+
+    This is the state S7B actually reached live: the frozen parser refused the
+    model-detail response, so no limit record and therefore no proof existed.
+    The preflight's type firewall is what makes that a refusal rather than a
+    silently unbounded call.
+    """
+    from backend.dialogues.socrates_zero.openrouter_live_safety_closure_v1 import (
+        evaluate_one_live_call_preflight_v1,
+    )
+
+    from backend.dialogues.socrates_zero.openrouter_live_safety_closure_v1 import (
+        OpenRouterOneLiveCallVerdictV1,
+    )
+
+    result = evaluate_one_live_call_preflight_v1(
+        mode=OpenRouterLiveSafetyModeV1.LIVE_JIT,
+        preflight_execution_id="s7b-missing-p17",
+        rendered_request=object(),
+        p17_proof=None,
+        output_bound=object(),
+        price_policy=object(),
+        modality_binding=object(),
+        cost_bound=object(),
+        total_spend_ceiling=object(),
+        credential_presence=object(),
+        transport_policy=object(),
+        transport_readiness=object(),
+        s5_mapper=object(),
+        s6_integration=object(),
+        claim_store_readiness=object(),
+        claim_directory=Path("."),
+    )
+    # Fail closed: a refusal verdict with no authorization, not an exception.
+    assert result.verdict is OpenRouterOneLiveCallVerdictV1.REFUSED
+    assert result.authorization is None
