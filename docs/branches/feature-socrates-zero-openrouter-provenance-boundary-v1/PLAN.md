@@ -40,22 +40,29 @@ becomes generation-aware:
 `OpenRouterScopedMutationEvidenceV1` needs no change: the sealed artifact records
 zero mutations, so its membership check never ranks a historical row.
 
+## Status
+
+All steps complete. Result: **PROVENANCE BOUNDARY v1 SUPPORTED**.
+Every validation gate below was met; see [PRESENT.md](PRESENT.md) for exact
+results and [the canonical result document](../../SOCRATES_ZERO_OPENROUTER_PROVENANCE_BOUNDARY_V1.md)
+for the full record. No stop condition was triggered.
+
 ## Ordered steps
 
-1. **Initialize** branch documentation. *(commit 1)*
-2. **Audit** every runtime occurrence of the predecessor raw path and classify
+1. **Initialize** branch documentation. *(commit 1 — `acc0dfc`)* **done**
+2. **Audit** *(done — 0 runtime semantic dependencies)* every runtime occurrence of the predecessor raw path and classify
    it; AST-audit imports. Stop and falsify if any runtime semantic dependency
    exists.
-3. **Add** `backend/dialogues/socrates_zero/openrouter_provenance_boundary_v1.py`
+3. **Add** *(done)* `backend/dialogues/socrates_zero/openrouter_provenance_boundary_v1.py`
    with immutable, content-addressed provenance records.
 4. **Edit** `openrouter_route_controls_evaluation.py`, provenance-only:
    substitute the two reference identifiers, freeze the historical generation
    constants, make the snapshot contract generation-aware, resolve provenance
-   references during capture. *(commit 2)*
+   references during capture. *(commit 2 — `661840c`)* **done**
 5. **Test** — adapt the one existing inventory test that assumed every row is a
-   file, and add the adversarial suite. *(commit 3)*
-6. **Verify** the gates below.
-7. **Document** the result and close the checkpoint. *(commit 4)*
+   file, and add the adversarial suite. *(commit 3 — `526e6ca`)* **done**
+6. **Verify** the gates below. *(done — all green)*
+7. **Document** the result and close the checkpoint. *(commit 4)* **done**
 
 ## Validation gates
 
