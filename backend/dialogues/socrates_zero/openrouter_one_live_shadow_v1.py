@@ -85,6 +85,11 @@ FROZEN_OPENROUTER_CLAIM_STORE_THREATS_EXCLUDED_V1: Tuple[str, ...] = (
 OPENROUTER_LIVE_API_HOST_V1 = "openrouter.ai"
 OPENROUTER_LIVE_INFERENCE_PATH_V1 = "/api/v1/chat/completions"
 OPENROUTER_MODEL_DETAIL_PATH_V1 = "/api/v1/model/openai/gpt-4.1-mini"
+#: The documented first-party endpoint listing.  S7B guessed the endpoint slug
+#: and the router matched nothing; this is the surface that states the real ones.
+OPENROUTER_MODEL_ENDPOINTS_PATH_V1 = (
+    "/api/v1/models/openai/gpt-4.1-mini/endpoints"
+)
 OPENROUTER_CREDENTIAL_VARIABLE_V1 = "OPENROUTER_API_KEY"
 
 #: Response bytes above this are refused rather than buffered without limit.
@@ -95,6 +100,7 @@ OPENROUTER_MAX_LIVE_RESPONSE_BYTES_V1 = 4 * 1024 * 1024
 FROZEN_OPENROUTER_PERMITTED_TARGETS_V1 = {
     "jit_metadata_get": ("GET", OPENROUTER_MODEL_DETAIL_PATH_V1),
     "live_inference_post": ("POST", OPENROUTER_LIVE_INFERENCE_PATH_V1),
+    "jit_endpoints_get": ("GET", OPENROUTER_MODEL_ENDPOINTS_PATH_V1),
 }
 
 
@@ -300,7 +306,9 @@ class OpenRouterLiveTransportRegistrationV1(_FrozenShadowContractV1):
     schema_version: Literal[
         OPENROUTER_LIVE_TRANSPORT_REGISTRATION_SCHEMA_V1
     ] = OPENROUTER_LIVE_TRANSPORT_REGISTRATION_SCHEMA_V1
-    dispatch_class: Literal["jit_metadata_get", "live_inference_post"]
+    dispatch_class: Literal[
+        "jit_metadata_get", "live_inference_post", "jit_endpoints_get"
+    ]
     method: Literal["POST", "GET"]
     host: Literal[OPENROUTER_LIVE_API_HOST_V1] = OPENROUTER_LIVE_API_HOST_V1
     path: str = Field(min_length=1)
@@ -542,6 +550,24 @@ def fetch_openrouter_model_detail_v1(
     )
 
 
+def fetch_openrouter_model_endpoints_v1(
+    *, bounded_timeout_seconds: int = 30
+) -> OpenRouterRawHttpResultV1:
+    """One bounded GET of the documented endpoint listing.  No retry."""
+    credential = _read_bearer_credential_v1()
+    if credential is None:
+        raise ContractValidationError("credential absent; no request may be made")
+    return _dispatch_once_v1(
+        kind="jit_endpoints_get",
+        method="GET",
+        path=OPENROUTER_MODEL_ENDPOINTS_PATH_V1,
+        body=None,
+        semantic_headers={"Accept": "application/json"},
+        bounded_timeout_seconds=bounded_timeout_seconds,
+        bearer_credential=credential,
+    )
+
+
 def dispatch_openrouter_one_live_inference_v1(
     *,
     body_bytes: bytes,
@@ -590,5 +616,6 @@ __all__ = [
     "build_openrouter_claim_store_grant_v1",
     "dispatch_openrouter_one_live_inference_v1",
     "fetch_openrouter_model_detail_v1",
+    "fetch_openrouter_model_endpoints_v1",
     "openrouter_credential_is_present_v1",
 ]
