@@ -1,0 +1,54 @@
+[
+  [
+    "Date",
+    "Fri, 28 Aug 2026 00:04:38 GMT"
+  ],
+  [
+    "Content-Type",
+    "application/json"
+  ],
+  [
+    "Transfer-Encoding",
+    "chunked"
+  ],
+  [
+    "Connection",
+    "keep-alive"
+  ],
+  [
+    "Server-Timing",
+    "cfEdge;dur=47,cfOrigin;dur=0,cfWorker;dur=209"
+  ],
+  [
+    "Access-Control-Allow-Origin",
+    "*"
+  ],
+  [
+    "Access-Control-Expose-Headers",
+    "X-Generation-Id,X-Provider-Name,request-id,cf-ray"
+  ],
+  [
+    "set-cookie",
+    "__cf_bm=PYtGkH.EHHS0qCwH2aPuldjqUXHPA5G.7C1L1gF36A0-1787875477.9432359-1.0.1.1-txSKxmYuGpFXBEfdMozXF2Rd71Uv9aiPvnYZN711M8TzqP7APX2jVNPHtOxMyJhbf13rnLEY8hGlDIY8D3ZQIPR6KdjJeeH5adliGu0Oo0n620gpFyMudtazxXc8rTaY; HttpOnly; Secure; Path=/; Domain=openrouter.ai; Expires=Fri, 28 Aug 2026 00:34:38 GMT"
+  ],
+  [
+    "Permissions-Policy",
+    "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")"
+  ],
+  [
+    "Referrer-Policy",
+    "no-referrer, strict-origin-when-cross-origin"
+  ],
+  [
+    "X-Content-Type-Options",
+    "nosniff"
+  ],
+  [
+    "Server",
+    "cloudflare"
+  ],
+  [
+    "CF-RAY",
+    "a31f0f492f09eeec-ATH"
+  ]
+]
