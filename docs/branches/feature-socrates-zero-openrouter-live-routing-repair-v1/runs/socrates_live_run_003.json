@@ -1,0 +1,100 @@
+{
+  "question": "Is knowledge merely justified true belief?",
+  "baseline": {},
+  "turns": [
+    {
+      "schema_version": "socrateszero-openrouter-turn-record/v1",
+      "dialogue_id": "socrates-live-1787878466",
+      "turn_id": "task_c53c0c317cc0",
+      "role_seat": "socrates",
+      "dialogue_phase": "opening",
+      "model": "openai/gpt-4.1-mini",
+      "provider_selector": "azure/swedencentral",
+      "request_id": "szorturnrequestv1_d5564cedd491b21cb690fe085b6ed880534ae4f7497256611813555c429e80d5",
+      "body_sha256": "e4326be947ff2314d9b4ec5e33341cbc597a191396cb2357c23e90764ea9cc50",
+      "http_status": 200,
+      "transport_completed": true,
+      "latency_ms": 1836.583,
+      "prompt_tokens": 3974,
+      "completion_tokens": 87,
+      "observed_cost_picodollars": 761200000,
+      "worst_case_picodollars": 524300000000,
+      "actual_served_model": "openai/gpt-4.1-mini",
+      "provider_display_name": "Azure",
+      "s5_envelope_kind": "SUCCESS",
+      "s6_binding": null,
+      "ced_move_accepted": false,
+      "ced_rejection_reason": "schema validation failed: epistemic_marker is required",
+      "assistant_text_excerpt": "{\"content\": {\"question\": \"When we say knowledge is 'justified true belief,' do we mean that justification, truth, and belief are each individually necessary and jointly sufficient conditions for knowledge? Or is there an additional condition or nuance that must be included for a proper account of knowledge?\", \"operator\": \"distinguish\"}, \"confidence\": 0.9, \"epistemic_marker\": \"open_uncertainty\"}",
+      "failure_class": null,
+      "record_id": null
+    }
+  ],
+  "totals": {
+    "calls_consumed": 1,
+    "call_limit": 30,
+    "settled_picodollars": 761200000,
+    "settled_usd": "$0.000761",
+    "unsettled_reserved_picodollars": 0,
+    "total_ceiling_usd": "$2.000000",
+    "session_id": "socrates-live-1787878466",
+    "policy_id": "szorexecutionpolicyv1_c262de59c96bec4f4f6d342e50348ffbb8ecc98413ac8457e9630ae932afcacd",
+    "profile_id": "szorendpointprofilev1_44005e8a6c7199de38c14d61e97147311bc3660a9675f5f1c48f0a07541a0254",
+    "session_authorization_id": "szorlivesessionauthv1_295e0cddcdeea12c8ca926c62b632e8fe94fbba3945ddde0f3d608112fea6e69"
+  },
+  "error": null,
+  "final": {
+    "response_id": "resp_a67de7dde33b",
+    "session_id": "socrates-live-1787878466",
+    "question": "Is knowledge merely justified true belief?",
+    "synthesis": null,
+    "ratification_status": "quorum_failed",
+    "audit_summary": {
+      "execution_mode": "registry",
+      "proceeded": false,
+      "quorum_failed": true,
+      "blocked_phase": "opening",
+      "warning": "Council mode unavailable: at least 1 configured providers are required.",
+      "shadow_scoring_mode": "all_phases",
+      "provider_status_summary": {
+        "available_providers": [
+          "live_seat_0",
+          "live_seat_1"
+        ],
+        "unavailable_providers": [],
+        "failed_providers": [
+          "live_seat_1"
+        ],
+        "minimum_providers": 2,
+        "quorum_for_assembly": 2
+      },
+      "task_log_count": 1,
+      "registry_phase_rounds": [
+        {
+          "phase": "opening",
+          "proceed": false,
+          "ok_providers": [],
+          "failed_providers": [
+            "live_seat_1"
+          ]
+        }
+      ]
+    },
+    "socratic_leaderboard": null,
+    "answer": "",
+    "ratified": false,
+    "blocking_objections": [
+      "Council mode unavailable: at least 1 configured providers are required."
+    ],
+    "unresolved_sections": [],
+    "ratification_votes": [],
+    "epistemic_status": "uncertain",
+    "governing_epistemic_status": null,
+    "release_decision": null,
+    "council_summary": {
+      "execution_mode": "registry",
+      "quorum_failed": true
+    },
+    "created_at": "2026-08-28T00:54:28.889743Z"
+  }
+}

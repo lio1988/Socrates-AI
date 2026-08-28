@@ -537,3 +537,52 @@ def test_the_adapter_plugs_into_the_council_provider_interface() -> None:
     assert issubclass(SocratesLiveOpenRouterAdapter, BaseProviderAdapter)
     assert hasattr(SocratesLiveOpenRouterAdapter, "generate_agent_move")
     assert hasattr(SocratesLiveOpenRouterAdapter, "_produce_raw_text")
+
+
+def test_the_process_dispatch_ceiling_defaults_to_one() -> None:
+    """The pilot's behaviour stays the default; a session must ask for more."""
+    import inspect
+
+    import backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 as module
+
+    signature = inspect.signature(
+        module.dispatch_openrouter_one_live_inference_v1
+    )
+    assert signature.parameters["process_dispatch_limit"].default == 1
+
+
+def test_the_adapter_raises_the_ceiling_to_the_session_call_cap(
+    tmp_path: Path,
+) -> None:
+    """A multi-turn session needs a ceiling above one, and says so explicitly."""
+    seen = []
+
+    def dispatch(**kwargs):
+        seen.append(kwargs.get("process_dispatch_limit"))
+        return _FakeResult(_success_body())
+
+    adapter = _adapter(tmp_path, dispatch)
+    task, state = _task_and_state()
+    asyncio.run(adapter._produce_raw_text(task, state))
+    assert seen == [adapter.ledger.authorization.maximum_calls]
+
+
+def test_a_refusal_before_the_socket_does_not_charge_the_budget(
+    tmp_path: Path,
+) -> None:
+    """Nothing left the machine, so nothing is spent or uncertain."""
+    from backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 import (
+        OpenRouterDispatchBudgetExceeded,
+    )
+
+    def dispatch(**kwargs):
+        raise OpenRouterDispatchBudgetExceeded("process ceiling reached")
+
+    adapter = _adapter(tmp_path, dispatch)
+    task, state = _task_and_state()
+    with pytest.raises(OpenRouterDispatchBudgetExceeded):
+        asyncio.run(adapter._produce_raw_text(task, state))
+    assert adapter.ledger.calls_consumed == 0
+    assert adapter.ledger.unsettled_reserved_picodollars == 0
+    # The claim is still burnt, so this exact turn can never be retried.
+    assert len(list(tmp_path.iterdir())) == 1

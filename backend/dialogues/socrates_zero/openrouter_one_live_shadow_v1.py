@@ -454,6 +454,7 @@ def _dispatch_once_v1(
     semantic_headers: Mapping[str, str],
     bounded_timeout_seconds: int,
     bearer_credential: str,
+    limit: int = 1,
 ) -> OpenRouterRawHttpResultV1:
     """Send exactly one request and capture raw evidence.  Never retries.
 
@@ -476,7 +477,7 @@ def _dispatch_once_v1(
         semantic_headers_sha256=_header_evidence_digest_v1(ordered_headers),
         bounded_timeout_seconds=bounded_timeout_seconds,
     )
-    OPENROUTER_DISPATCH_LATCH_V1.claim(kind, 1)
+    OPENROUTER_DISPATCH_LATCH_V1.claim(kind, limit)
 
     headers = dict(ordered_headers)
     # Injected at the boundary only; never recorded anywhere below.
@@ -573,12 +574,24 @@ def dispatch_openrouter_one_live_inference_v1(
     body_bytes: bytes,
     semantic_headers: Mapping[str, str],
     bounded_timeout_seconds: int,
+    process_dispatch_limit: int = 1,
 ) -> OpenRouterRawHttpResultV1:
-    """The single permitted inference POST.  No retry, ever.
+    """One inference POST.  No retry, ever.
 
-    The caller must have consumed the one-call authorization already; this
-    function does not check that, because the claim store is the authority and
-    double-checking here would invite a second code path to the same decision.
+    ``process_dispatch_limit`` is the process-wide ceiling on how many inference
+    dispatches this interpreter may ever make. It defaults to **1**, which is the
+    scientific pilot's behaviour and must stay the default: a lone call should
+    never be able to become two by accident.
+
+    A bounded session raises it to its own authorized call cap. That is not a
+    weakening — the ceiling still exists, is still enforced before a socket
+    opens, and is still a number the operator authorized. What protects a
+    *specific* turn from being dispatched twice is its single-use claim, not this
+    counter.
+
+    The caller must have consumed that claim already; this function does not
+    check it, because the claim store is the authority and a second check here
+    would only invite a second code path to the same decision.
     """
     credential = _read_bearer_credential_v1()
     if credential is None:
@@ -593,6 +606,7 @@ def dispatch_openrouter_one_live_inference_v1(
         semantic_headers=semantic_headers,
         bounded_timeout_seconds=bounded_timeout_seconds,
         bearer_credential=credential,
+        limit=int(process_dispatch_limit),
     )
 
 

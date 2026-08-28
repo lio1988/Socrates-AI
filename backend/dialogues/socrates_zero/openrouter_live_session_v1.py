@@ -561,6 +561,10 @@ class OpenRouterTurnRecordV1(_FrozenLiveContract):
     s5_envelope_kind: Optional[str] = None
     s6_binding: Optional[str] = None
     ced_move_accepted: Optional[bool] = None
+    ced_rejection_reason: Optional[str] = None
+    #: The model's own public output, truncated. Not a reasoning trace and
+    #: never a credential: it is what CED itself judged.
+    assistant_text_excerpt: Optional[str] = None
     failure_class: Optional[str] = None
     record_id: Optional[str] = None
 

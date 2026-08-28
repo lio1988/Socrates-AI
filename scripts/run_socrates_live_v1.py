@@ -110,14 +110,15 @@ def run_baseline_call(
     worst_case = conservative_turn_cost_bound_v1(policy, MAX_INPUT_TOKENS)
     ledger.check_admits(worst_case)
     consume_turn_claim_v1(CLAIM_STORE, mint_turn_claim_id_v1(session, rendered))
-    ledger.record_dispatch(worst_case)
 
     started = time.perf_counter()
     result = dispatch_openrouter_one_live_inference_v1(
         body_bytes=rendered.canonical_body_json.encode("utf-8"),
         semantic_headers=dict(FROZEN_LIVE_SEMANTIC_HEADERS_V1),
         bounded_timeout_seconds=policy.bounded_timeout_seconds,
+        process_dispatch_limit=session.maximum_calls,
     )
+    ledger.record_dispatch(worst_case)
     latency_ms = round((time.perf_counter() - started) * 1000, 1)
 
     out: Dict[str, Any] = {

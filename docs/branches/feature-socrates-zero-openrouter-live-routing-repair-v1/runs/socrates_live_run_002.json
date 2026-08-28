@@ -1,0 +1,108 @@
+{
+  "question": "Is knowledge merely justified true belief?",
+  "baseline": {
+    "http_status": 200,
+    "latency_ms": 2012.1,
+    "request_id": "szorturnrequestv1_14ea2503c3a9d537b45771a1c3ac77fb61f9008eec99e830b180e7863a6db576",
+    "observed_cost_picodollars": 231440000,
+    "prompt_tokens": 46,
+    "completion_tokens": 120,
+    "text": "{\"answer\": \"The traditional philosophical definition of knowledge as 'justified true belief' has been widely debated and challenged, especially since Edmund Gettier's 1963 paper presenting cases (now called Gettier problems) where individuals have justified true belief without what we intuitively consider knowledge. These cases suggest that knowledge requires more than just justification, truth, and belief. Many contemporary epistemologists argue that additional conditions, such as the absence of defeaters or a reliable connection between belief and truth, are necessary. Therefore, knowledge is not merely justified true belief.\", \"confidence\": 0.95}",
+    "actual_model": "openai/gpt-4.1-mini",
+    "provider": "Azure"
+  },
+  "turns": [
+    {
+      "schema_version": "socrateszero-openrouter-turn-record/v1",
+      "dialogue_id": "socrates-live-1787878366",
+      "turn_id": "task_b4a907ab931f",
+      "role_seat": "socrates",
+      "dialogue_phase": "opening",
+      "model": "openai/gpt-4.1-mini",
+      "provider_selector": "azure/swedencentral",
+      "request_id": "szorturnrequestv1_fb49706fb2cc3b5514553efa9bb6bff8151a7e2a535fec8a15554fb054d7cba3",
+      "body_sha256": "51a309e78619e267bd06d8903965856fdeddf4984e4587a3a4252b3ec84a4b08",
+      "http_status": 200,
+      "transport_completed": true,
+      "latency_ms": 2552.47,
+      "prompt_tokens": 3972,
+      "completion_tokens": 94,
+      "observed_cost_picodollars": 1913120000,
+      "worst_case_picodollars": 524300000000,
+      "actual_served_model": "openai/gpt-4.1-mini",
+      "provider_display_name": "Azure",
+      "s5_envelope_kind": "SUCCESS",
+      "s6_binding": null,
+      "ced_move_accepted": false,
+      "failure_class": null,
+      "record_id": null
+    }
+  ],
+  "totals": {
+    "calls_consumed": 2,
+    "call_limit": 30,
+    "settled_picodollars": 2144560000,
+    "settled_usd": "$0.002145",
+    "unsettled_reserved_picodollars": 0,
+    "total_ceiling_usd": "$2.000000",
+    "session_id": "socrates-live-1787878366",
+    "policy_id": "szorexecutionpolicyv1_c262de59c96bec4f4f6d342e50348ffbb8ecc98413ac8457e9630ae932afcacd",
+    "profile_id": "szorendpointprofilev1_44005e8a6c7199de38c14d61e97147311bc3660a9675f5f1c48f0a07541a0254",
+    "session_authorization_id": "szorlivesessionauthv1_402917419068bd6fec64e98dd3b90e91385b878d99e2d235da0c37b8f9dde2fc"
+  },
+  "error": null,
+  "final": {
+    "response_id": "resp_bd50a5370d52",
+    "session_id": "socrates-live-1787878366",
+    "question": "Is knowledge merely justified true belief?",
+    "synthesis": null,
+    "ratification_status": "quorum_failed",
+    "audit_summary": {
+      "execution_mode": "registry",
+      "proceeded": false,
+      "quorum_failed": true,
+      "blocked_phase": "opening",
+      "warning": "Council mode unavailable: at least 1 configured providers are required.",
+      "shadow_scoring_mode": "all_phases",
+      "provider_status_summary": {
+        "available_providers": [
+          "live_seat_0",
+          "live_seat_1"
+        ],
+        "unavailable_providers": [],
+        "failed_providers": [
+          "live_seat_0"
+        ],
+        "minimum_providers": 2,
+        "quorum_for_assembly": 2
+      },
+      "task_log_count": 1,
+      "registry_phase_rounds": [
+        {
+          "phase": "opening",
+          "proceed": false,
+          "ok_providers": [],
+          "failed_providers": [
+            "live_seat_0"
+          ]
+        }
+      ]
+    },
+    "socratic_leaderboard": null,
+    "answer": "",
+    "ratified": false,
+    "blocking_objections": [
+      "Council mode unavailable: at least 1 configured providers are required."
+    ],
+    "unresolved_sections": [],
+    "ratification_votes": [],
+    "epistemic_status": "uncertain",
+    "governing_epistemic_status": null,
+    "release_decision": null,
+    "council_summary": {
+      "execution_mode": "registry",
+      "quorum_failed": true
+    },
+    "created_at": "2026-08-28T00:52:50.884783Z"
+  }
+}

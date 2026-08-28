@@ -138,14 +138,18 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
 
         claim_id = mint_turn_claim_id_v1(self.ledger.authorization, rendered)
         consume_turn_claim_v1(self.claim_directory, claim_id)
-        self.ledger.record_dispatch(worst_case)
 
         started = time.perf_counter()
+        # The budget is charged only once a dispatch is actually attempted. A
+        # refusal raised before the socket spent nothing and left nothing
+        # uncertain; the burnt claim already prevents this turn being retried.
         result = self._dispatcher()(
             body_bytes=rendered.canonical_body_json.encode("utf-8"),
             semantic_headers=dict(FROZEN_LIVE_SEMANTIC_HEADERS_V1),
             bounded_timeout_seconds=self.policy.bounded_timeout_seconds,
+            process_dispatch_limit=self.ledger.authorization.maximum_calls,
         )
+        self.ledger.record_dispatch(worst_case)
         latency_ms = round((time.perf_counter() - started) * 1000, 3)
         completion = result.completion
         self.last_raw_response = result.raw_response_body
@@ -224,7 +228,10 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             return None, extra
         message = choices[0].get("message") if isinstance(choices[0], dict) else None
         content = message.get("content") if isinstance(message, dict) else None
-        return (content if isinstance(content, str) else None), extra
+        if isinstance(content, str):
+            extra["assistant_text_excerpt"] = content[:600]
+            return content, extra
+        return None, extra
 
     async def generate_agent_move(
         self, task: AgentTask, agent_state: AgentState
@@ -253,7 +260,11 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
         if self.turn_records:
             last = self.turn_records[-1]
             self.turn_records[-1] = last.model_copy(
-                update={"ced_move_accepted": accepted, "record_id": None}
+                update={
+                    "ced_move_accepted": accepted,
+                    "ced_rejection_reason": None if accepted else (err or status.value),
+                    "record_id": None,
+                }
             )
         return ProviderResponse(
             provider_id=self.provider_id,
