@@ -3,7 +3,7 @@
 - Branch: `feature/socrates-zero-openrouter-live-routing-repair-v1`
 - Pre-experiment HEAD: `2f304c0af45ed6bccda64f5d3da42796db0f5935`
 - Tested harness freeze HEAD: `283eb384813cb54dd8e6b2c1ee9c6640814942eb`
-- Live treatment calls made in this continuation: `0`
+- Live treatment calls made in this continuation: `2` (exactly one per arm)
 - Automatic retries: `0`
 
 ## Completed
@@ -30,7 +30,12 @@ Python compilation and `git diff --check` also pass.
 
 ## Remaining blocker and next safe step
 
-No GPT-4.1 operator price or per-arm spend authority existed in the frozen
-materials. Obtain explicit numeric authorization for both arms, verify credential
-presence, then run each arm once in a fresh process from the tested harness.
-Do not retry either arm.
+No blocker remains. Both declared arms are complete and no further model call is
+authorized. Report the persisted outputs side by side and stop. Detailed result:
+[STRUCTURED_OUTPUT_EXPERIMENT.md](STRUCTURED_OUTPUT_EXPERIMENT.md).
+
+ARM 1: HTTP 200; provider/CED/Socratic accepted; 4273/71 tokens;
+`5016.503 ms`; `$0.00200508`.
+
+ARM 2: HTTP 200; provider/CED/Socratic accepted; 4272/83 tokens;
+`1498.043 ms`; `$0.0101288`.

@@ -1,5 +1,7 @@
 # Controlled structured-output experiment plan
 
+Status: **complete**.
+
 ## Success criterion
 
 Run exactly one no-retry inference for each authorized arm, retain the exact
@@ -33,3 +35,6 @@ their Socratic quality separately from schema compliance, then stop.
   or live invocation.
 - Any arm failure is its result; it is not retried.
 - Stop after the second arm and report.
+
+All steps and gates completed. Exactly two inference dispatches occurred, one
+per arm, and no retry occurred.

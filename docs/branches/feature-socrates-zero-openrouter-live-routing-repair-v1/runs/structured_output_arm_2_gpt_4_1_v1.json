@@ -1,0 +1,307 @@
+{
+  "acceptance": {
+    "accepted_move_id": "move_fd70fad10f2f",
+    "canonical_rejection_kind": null,
+    "canonical_rejection_reason": null,
+    "ced_repair_attempted": false,
+    "ced_repair_succeeded": false,
+    "ced_schema_accepted": true,
+    "ced_schema_reason": null,
+    "ced_schema_status": "ok",
+    "confidence": 0.7,
+    "epistemic_marker": "reasonable_hypothesis",
+    "operator": "clarify",
+    "provider_structured_output_error": null,
+    "provider_structured_output_valid": true,
+    "provider_validated_fields": {
+      "confidence": 0.7,
+      "epistemic_marker": "reasonable_hypothesis",
+      "operator": "clarify",
+      "question": "When we ask whether knowledge is merely justified true belief, what do we mean by 'justified'—does it require objective evidence, subjective conviction, or something else, and how does this affect whether the definition is sufficient for knowledge?"
+    },
+    "question": "When we ask whether knowledge is merely justified true belief, what do we mean by 'justified'—does it require objective evidence, subjective conviction, or something else, and how does this affect whether the definition is sufficient for knowledge?",
+    "raw_field_observation": {
+      "confidence": 0.7,
+      "epistemic_marker": "reasonable_hypothesis",
+      "operator": "clarify",
+      "question": "When we ask whether knowledge is merely justified true belief, what do we mean by 'justified'—does it require objective evidence, subjective conviction, or something else, and how does this affect whether the definition is sufficient for knowledge?",
+      "top_level_epistemic_marker": null
+    },
+    "socratic_audit": {
+      "content_contract_accepted": true,
+      "content_contract_reason": "accepted opening question",
+      "cycle": 0,
+      "injection_check": "not_applicable",
+      "injection_detail": "no mechanical ordering detector applies to this task",
+      "inquiry_state": null,
+      "operator": "clarify",
+      "phase": "opening",
+      "provider_id": "live_seat_1",
+      "question": "When we ask whether knowledge is merely justified true belief, what do we mean by 'justified'—does it require objective evidence, subjective conviction, or something else, and how does this affect whether the definition is sufficient for knowledge?",
+      "self_declared_new_proposition": false
+    },
+    "socratic_move_accepted": true,
+    "top_level_epistemic_marker": null
+  },
+  "actual_model": "openai/gpt-4.1",
+  "actual_model_matches_requested": true,
+  "arm": "ARM_2",
+  "assistant_content_transport_type": "string",
+  "assistant_output": "{\"confidence\": 0.7, \"content\": {\"epistemic_marker\": \"reasonable_hypothesis\", \"operator\": \"clarify\", \"question\": \"When we ask whether knowledge is merely justified true belief, what do we mean by 'justified'—does it require objective evidence, subjective conviction, or something else, and how does this affect whether the definition is sufficient for knowledge?\"}}",
+  "assistant_refusal": null,
+  "attempt_claim_id": "szorturnclaimv1_a60499174e743f2dcd1a4de2e61bc1e7e259e2aae62c23d2441b4d5c031d6aa4",
+  "automatic_retries": 0,
+  "body_claim_id": "szorturnclaimv1_9df8126df3cb81887bc7af5a4798971547d50283a01fa4cf25116fdcc54009b4",
+  "completed_utc": "2026-08-28T01:48:07.118034Z",
+  "control": {
+    "classification": "PRESERVED_PROMPT_ONLY_CONTROL_0_OF_2",
+    "run_002_unchanged": true,
+    "run_003_unchanged": true
+  },
+  "cost_checks": {
+    "observed_cost_available": true,
+    "observed_cost_within_operator_arm_maximum": true,
+    "observed_cost_within_preflight_bound": true
+  },
+  "credential_present_pre_dispatch": true,
+  "endpoint_capability": {
+    "completion_price_usd_per_token": "0.0000088",
+    "context_length": 1047576,
+    "data_model": "openai/gpt-4.1",
+    "endpoint_model": "openai/gpt-4.1",
+    "endpoint_name": "Azure | openai/gpt-4.1-2025-04-14",
+    "listing_length": 2654,
+    "listing_sha256": "297c5ea5a9b8fd333042ea9b1b047407ee8822d88a5ff50bbd42a2f86c6f2611",
+    "maximum_output_tokens": 942818,
+    "output_limit_parameter": "max_completion_tokens",
+    "prompt_price_usd_per_token": "0.0000022",
+    "provider_name": "Azure",
+    "provider_selector": "azure/swedencentral",
+    "request_price_usd": null,
+    "requested_model": "openai/gpt-4.1",
+    "status": 0,
+    "supported_parameters": [
+      "max_completion_tokens",
+      "seed",
+      "response_format",
+      "structured_outputs",
+      "tools",
+      "tool_choice",
+      "temperature",
+      "top_p"
+    ]
+  },
+  "endpoint_http": {
+    "body_length": 2654,
+    "body_sha256": "297c5ea5a9b8fd333042ea9b1b047407ee8822d88a5ff50bbd42a2f86c6f2611",
+    "host": "openrouter.ai",
+    "http_status": 200,
+    "latency_ms": 155.38,
+    "method": "GET",
+    "path": "/api/v1/models/openai/gpt-4.1/endpoints",
+    "response_header_count": 14,
+    "response_header_sha256": "b451503e3f3a370200ad7a5e0fc92bea4977a219e754ed4d6b88570e06667df2"
+  },
+  "endpoint_raw_utf8": "{\"data\":{\"id\":\"openai/gpt-4.1\",\"name\":\"OpenAI: GPT-4.1\",\"created\":1744651385,\"description\":\"GPT-4.1 is a flagship large language model optimized for advanced instruction following, real-world software engineering, and long-context reasoning. It supports a 1 million token context window and outperforms GPT-4o and...\",\"architecture\":{\"tokenizer\":\"GPT\",\"instruct_type\":null,\"modality\":\"text+image+file->text\",\"input_modalities\":[\"image\",\"text\",\"file\"],\"output_modalities\":[\"text\"]},\"endpoints\":[{\"name\":\"OpenAI | openai/gpt-4.1-2025-04-14\",\"model_id\":\"openai/gpt-4.1\",\"model_name\":\"OpenAI: GPT-4.1\",\"context_length\":1047576,\"pricing\":{\"prompt\":\"0.000002\",\"completion\":\"0.000008\",\"web_search\":\"0.01\",\"input_cache_read\":\"0.0000005\",\"discount\":0},\"provider_name\":\"OpenAI\",\"tag\":\"openai\",\"quantization\":\"unknown\",\"max_completion_tokens\":32768,\"max_prompt_tokens\":null,\"supported_parameters\":[\"seed\",\"max_tokens\",\"response_format\",\"structured_outputs\",\"tools\",\"tool_choice\",\"temperature\",\"top_p\"],\"status\":0,\"uptime_last_30m\":99.62109048872905,\"uptime_last_5m\":99.74747474747475,\"uptime_last_1d\":99.84533198196772,\"supports_implicit_caching\":false,\"supports_voice_cloning\":false,\"latency_last_30m\":null,\"throughput_last_30m\":null},{\"name\":\"Azure | openai/gpt-4.1-2025-04-14\",\"model_id\":\"openai/gpt-4.1\",\"model_name\":\"OpenAI: GPT-4.1\",\"context_length\":1047576,\"pricing\":{\"prompt\":\"0.000002\",\"completion\":\"0.000008\",\"web_search\":\"0.01\",\"input_cache_read\":\"0.0000005\",\"discount\":0},\"provider_name\":\"Azure\",\"tag\":\"azure\",\"quantization\":\"unknown\",\"max_completion_tokens\":942818,\"max_prompt_tokens\":null,\"supported_parameters\":[\"max_completion_tokens\",\"seed\",\"response_format\",\"structured_outputs\",\"tools\",\"tool_choice\",\"temperature\",\"top_p\"],\"status\":0,\"uptime_last_30m\":100,\"uptime_last_5m\":100,\"uptime_last_1d\":99.98055987558321,\"supports_implicit_caching\":true,\"supports_voice_cloning\":false,\"latency_last_30m\":null,\"throughput_last_30m\":null},{\"name\":\"Azure | openai/gpt-4.1-2025-04-14\",\"model_id\":\"openai/gpt-4.1\",\"model_name\":\"OpenAI: GPT-4.1\",\"context_length\":1047576,\"pricing\":{\"prompt\":\"0.0000022\",\"completion\":\"0.0000088\",\"web_search\":\"0.01\",\"input_cache_read\":\"0.00000055\",\"discount\":0},\"provider_name\":\"Azure\",\"tag\":\"azure/swedencentral\",\"quantization\":\"unknown\",\"max_completion_tokens\":942818,\"max_prompt_tokens\":null,\"supported_parameters\":[\"max_completion_tokens\",\"seed\",\"response_format\",\"structured_outputs\",\"tools\",\"tool_choice\",\"temperature\",\"top_p\"],\"status\":0,\"uptime_last_30m\":null,\"uptime_last_5m\":null,\"uptime_last_1d\":100,\"supports_implicit_caching\":true,\"supports_voice_cloning\":false,\"latency_last_30m\":null,\"throughput_last_30m\":null}]}}",
+  "endpoint_retrievals": 1,
+  "execution_sources": {
+    "experiment_module_sha256": "9a12f3c5d8eb3cb49cc5b98e4d8b336488d3d5cb03393b6a708cbb6dbeaba96c",
+    "runner_sha256": "ea109a3c715b2e8c187f3cf68e23da817eea597d464c0d1f8769e30be6f3ab39"
+  },
+  "experiment": "structured-socratic-move-v1",
+  "finish_reason": "stop",
+  "http_success": true,
+  "inference_dispatches": 1,
+  "maximum_inference_dispatches": 1,
+  "operator_authorization": {
+    "completion_usd_per_million_tokens": "10.00",
+    "maximum_arm_spend_usd": "2.63",
+    "prompt_usd_per_million_tokens": "2.50",
+    "request_usd": "0",
+    "statement": "Approved."
+  },
+  "phase": "opening",
+  "preflight": {
+    "admitted": true,
+    "context_limit_tokens": 1047576,
+    "endpoint_capability_valid": true,
+    "endpoint_request_price_state": "ABSENT_UNKNOWN_NOT_PROMOTED_TO_ZERO",
+    "endpoint_request_price_usd": null,
+    "maximum_arm_spend_picodollars": 2630000000000,
+    "output_limit_parameter": "max_completion_tokens",
+    "output_limit_tokens": 256,
+    "rendered_request_price_ceiling_usd": "0",
+    "worst_case_picodollars": 2621500000000,
+    "worst_case_usd": "2.6215"
+  },
+  "provider_display_name": "Azure",
+  "provider_selector": "azure/swedencentral",
+  "question": "Is knowledge merely justified true belief?",
+  "raw_response_utf8": "\n         \n\n         \n{\"id\":\"gen-1787881686-n5QmfBz8trhc6steECCD\",\"object\":\"chat.completion\",\"created\":1787881686,\"model\":\"openai/gpt-4.1\",\"provider\":\"Azure\",\"system_fingerprint\":null,\"service_tier\":\"default\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"completed\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"confidence\\\": 0.7, \\\"content\\\": {\\\"epistemic_marker\\\": \\\"reasonable_hypothesis\\\", \\\"operator\\\": \\\"clarify\\\", \\\"question\\\": \\\"When we ask whether knowledge is merely justified true belief, what do we mean by 'justified'—does it require objective evidence, subjective conviction, or something else, and how does this affect whether the definition is sufficient for knowledge?\\\"}}\",\"refusal\":null,\"reasoning\":null}}],\"usage\":{\"prompt_tokens\":4272,\"completion_tokens\":83,\"total_tokens\":4355,\"cost\":0.0101288,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.0101288,\"upstream_inference_prompt_cost\":0.0093984,\"upstream_inference_completions_cost\":0.0007304},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}},\"openrouter_metadata\":{\"requested\":\"openai/gpt-4.1\",\"strategy\":\"direct\",\"region\":\"ATH\",\"summary\":\"available=1, selected=Azure\",\"attempt\":1,\"is_byok\":false,\"endpoints\":{\"total\":3,\"available\":[{\"provider\":\"Azure\",\"model\":\"openai/gpt-4.1-2025-04-14\",\"selected\":true}]}}}",
+  "repository_head": "3407194a4b81c696ea599f470c29997ae924a33d",
+  "request": {
+    "body_length": 19860,
+    "body_sha256": "30f4990faa0b26f0f6aaaedd746872c212d36d804e1be0bcee83e66b458d71a1",
+    "dialogue_context_sha256": "f5a2298b1c95d024bc330b2533706c670a457688d1ae9d5ade3a6e154d0d4365",
+    "output_limit_parameter": "max_completion_tokens",
+    "output_limit_tokens": 256,
+    "provider_selector": "azure/swedencentral",
+    "request_id": "szorstructuredrequestv1_cd46d2c710d70972527bb508905aade837194626df41452d5b521641fe35e3c2",
+    "requested_model": "openai/gpt-4.1",
+    "response_schema_sha256": "6ca8aafa24c01e8772b1c4be4ef05dfeb32acfa962807d51f92bad6875474bf1",
+    "schema_version": "socrateszero-openrouter-structured-socratic-request/v1",
+    "system_prompt_sha256": "6fbb046eebbe4d24f1e600d2988d95df5f2aa152368e0bec62bc536f91a24e9e",
+    "user_content_sha256": "d7e83a1dcc151bc80a00f66b6f17254d5235096a63c5cec7e9ac78151a01d0e6"
+  },
+  "requested_model": "openai/gpt-4.1",
+  "response_format": {
+    "json_schema": {
+      "name": "ced_socratic_opening_move",
+      "schema": {
+        "$defs": {
+          "CedOpeningSocraticContentV1": {
+            "additionalProperties": false,
+            "description": "The phase-specific content CED accepts for an opening question.",
+            "properties": {
+              "epistemic_marker": {
+                "$ref": "#/$defs/EpistemicMarker"
+              },
+              "operator": {
+                "$ref": "#/$defs/MaieuticOperator"
+              },
+              "question": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Question",
+                "type": "string"
+              }
+            },
+            "required": [
+              "question",
+              "operator",
+              "epistemic_marker"
+            ],
+            "title": "CedOpeningSocraticContentV1",
+            "type": "object"
+          },
+          "EpistemicMarker": {
+            "enum": [
+              "established_fact",
+              "logical_inference",
+              "reasonable_hypothesis",
+              "open_uncertainty",
+              "unsubstantiated_claim"
+            ],
+            "title": "EpistemicMarker",
+            "type": "string"
+          },
+          "MaieuticOperator": {
+            "description": "What a question does. Not what it asserts — a question asserts nothing.",
+            "enum": [
+              "clarify",
+              "elicit_commitment",
+              "expose_premise",
+              "draw_consequence",
+              "connect_commitments",
+              "test_coherence",
+              "distinguish",
+              "request_grounds",
+              "resolve_disagreement",
+              "induce_aporia",
+              "maieutic_reconstruction",
+              "identify_remainder"
+            ],
+            "title": "MaieuticOperator",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The frozen provider-visible opening envelope, before CED-owned fields.",
+        "properties": {
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "content": {
+            "$ref": "#/$defs/CedOpeningSocraticContentV1"
+          }
+        },
+        "required": [
+          "content",
+          "confidence"
+        ],
+        "title": "CedOpeningSocraticMoveV1",
+        "type": "object"
+      },
+      "strict": true
+    },
+    "type": "json_schema"
+  },
+  "response_id": "gen-1787881686-n5QmfBz8trhc6steECCD",
+  "response_schema_sha256": "6ca8aafa24c01e8772b1c4be4ef05dfeb32acfa962807d51f92bad6875474bf1",
+  "result": "COMPLETED",
+  "retry_count": 0,
+  "role": "socrates",
+  "schema_version": "socrateszero-openrouter-structured-socratic-arm/v1",
+  "scientific_model_identity_valid": true,
+  "selected_endpoint_raw": {
+    "context_length": 1047576,
+    "latency_last_30m": null,
+    "max_completion_tokens": 942818,
+    "max_prompt_tokens": null,
+    "model_id": "openai/gpt-4.1",
+    "model_name": "OpenAI: GPT-4.1",
+    "name": "Azure | openai/gpt-4.1-2025-04-14",
+    "pricing": {
+      "completion": "0.0000088",
+      "discount": 0,
+      "input_cache_read": "0.00000055",
+      "prompt": "0.0000022",
+      "web_search": "0.01"
+    },
+    "provider_name": "Azure",
+    "quantization": "unknown",
+    "status": 0,
+    "supported_parameters": [
+      "max_completion_tokens",
+      "seed",
+      "response_format",
+      "structured_outputs",
+      "tools",
+      "tool_choice",
+      "temperature",
+      "top_p"
+    ],
+    "supports_implicit_caching": true,
+    "supports_voice_cloning": false,
+    "tag": "azure/swedencentral",
+    "throughput_last_30m": null,
+    "uptime_last_1d": 100,
+    "uptime_last_30m": null,
+    "uptime_last_5m": null
+  },
+  "started_utc": "2026-08-28T01:48:05.319488Z",
+  "transport": {
+    "completed": true,
+    "completion_id": "szorlivetransportcompletionv1_5516d0897eb237fc0009cc6636cc9fb0c98f3479904cb678ea93d3c9ddd15fd5",
+    "failure_class": null,
+    "http_status": 200,
+    "latency_ms": 1498.043,
+    "registration_id": "szorlivetransportregistrationv1_bce22151599448855f3fbae79511f5067927275d884e6816508f77fa5db816b5",
+    "response_body_length": 1469,
+    "response_body_sha256": "4b32b9f84cfd66b4ab56bcfa88bf8038b823c3c38024e98ecf87f6ac36ae8ae3",
+    "response_header_count": 14,
+    "response_header_evidence_sha256": "f62773907e7b263524157b144ddca690a22c0ae8f25aa7697de726e01f0b8221",
+    "retry_count": 0
+  },
+  "usage": {
+    "completion_tokens": 83,
+    "observed_cost_picodollars": 10128800000,
+    "observed_cost_usd": "0.0101288",
+    "prompt_tokens": 4272,
+    "raw_cost": "0.0101288",
+    "total_tokens": 4355
+  }
+}

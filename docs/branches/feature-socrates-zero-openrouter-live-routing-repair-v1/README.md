@@ -50,6 +50,17 @@ HTTP 200, a real model answer, `actual_served_model` ESTABLISHED and equal to th
 requested model, S5 mapping accepted, S6 causal binding accepted, observed cost
 $0.00004928 against a pre-call bound of $0.5243 and an operator ceiling of $0.60.
 
+## Structured-output follow-up result
+
+The bounded two-arm continuation is complete. Both GPT-4.1-mini and GPT-4.1
+returned HTTP 200, satisfied the identical strict provider schema, passed CED
+schema validation, and passed the canonical Socratic firewall with one call and
+zero retries each. Mini's success classifies the preserved `0/2` prompt-only
+control as an interface reliability failure. The full model showed no material
+Socratic quality gain in this pair, so the cheaper mini remains preferred.
+
+See [STRUCTURED_OUTPUT_EXPERIMENT.md](STRUCTURED_OUTPUT_EXPERIMENT.md).
+
 ## Non-goals
 
 No change to sealed predecessor evidence. No retry of any call. No runtime or CED

@@ -18,6 +18,13 @@
   model immediately before its arm. Model-level parameter unions are never
   accepted as endpoint authority.
 - No push is authorized.
+- The completed treatment produced two HTTP-200, provider-valid, CED-accepted,
+  Socratic-accepted moves with zero retries. Mini succeeded under structured
+  output, so the preserved prompt-only failure is classified as interface
+  reliability rather than semantic-move failure.
+- This pair establishes no material GPT-4.1 Socratic capability gain. Prefer
+  GPT-4.1-mini for the opening Socratic role until broader evidence changes that
+  conclusion.
 
 Frozen control SHA-256 values:
 
