@@ -170,7 +170,7 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             self.turn_records.append(OpenRouterTurnRecordV1(**record_fields))
             raise RuntimeError(f"transport_failed:{completion.failure_class}")
 
-        text, extra = self._interpret(result)
+        text, extra = self._interpret(result, worst_case)
         record_fields.update(extra)
         self.turn_records.append(OpenRouterTurnRecordV1(**record_fields))
 
@@ -180,7 +180,9 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             raise RuntimeError("no_assistant_content")
         return text
 
-    def _interpret(self, result) -> tuple[Optional[str], Dict[str, Any]]:
+    def _interpret(
+        self, result, reserved_picodollars: int
+    ) -> tuple[Optional[str], Dict[str, Any]]:
         """Map through S5, bind through S6, and read usage. Never invents."""
         from .openrouter_one_live_shadow_runner_v1 import (
             s5_observation_from_live_v1,
@@ -215,7 +217,7 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             if isinstance(cost, (int, float)):
                 observed = int(round(float(cost) * 10**12))
                 extra["observed_cost_picodollars"] = observed
-                self.ledger.settle_observed(observed)
+                self.ledger.settle_observed(observed, reserved_picodollars)
 
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
@@ -276,7 +278,10 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
         return {
             "calls_consumed": self.ledger.calls_consumed,
             "call_limit": self.ledger.authorization.maximum_calls,
-            "reserved_picodollars": self.ledger.reserved_picodollars,
+            "settled_picodollars": self.ledger.settled_picodollars,
+            "unsettled_reserved_picodollars": (
+                self.ledger.unsettled_reserved_picodollars
+            ),
             "observed_picodollars": self.ledger.observed_picodollars,
             "total_ceiling_picodollars": (
                 self.ledger.authorization.maximum_total_spend_picodollars

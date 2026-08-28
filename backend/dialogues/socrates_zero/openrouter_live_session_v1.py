@@ -429,20 +429,29 @@ class OpenRouterSessionLedgerV1:
     ) -> None:
         self.authorization = authorization
         self.calls_consumed = 0
-        self.reserved_picodollars = 0
+        self.settled_picodollars = 0
+        self.unsettled_reserved_picodollars = 0
         self.observed_picodollars = 0
 
     @property
     def committed_picodollars(self) -> int:
-        """What the session must assume it has spent.
+        """What the session must assume it has spent right now.
 
-        The larger of reservations and observations: a reservation that has not
-        yet been settled still has to count, or a burst of in-flight calls could
-        overshoot the ceiling together.
+        Settled cost is what the provider actually reported. Anything dispatched
+        but not yet reported is carried at its conservative worst case, so an
+        in-flight call can never be accounted at zero. Once a call reports, its
+        reservation is released and replaced by the truth.
         """
-        return max(self.reserved_picodollars, self.observed_picodollars)
+        return self.settled_picodollars + self.unsettled_reserved_picodollars
 
     def check_admits(self, worst_case_picodollars: int) -> None:
+        """Refuse before the network if either session bound would break.
+
+        The per-call ceiling is checked against the *conservative* worst case, so
+        no single call can run away regardless of how cheap the session has been
+        so far. The session total is checked against settled cost plus anything
+        still in flight plus this call's worst case.
+        """
         auth = self.authorization
         if self.calls_consumed >= auth.maximum_calls:
             raise OpenRouterSessionBudgetExceeded(
@@ -461,9 +470,20 @@ class OpenRouterSessionLedgerV1:
     def record_dispatch(self, worst_case_picodollars: int) -> None:
         """A dispatch attempt is consumed whether or not it succeeds."""
         self.calls_consumed += 1
-        self.reserved_picodollars += worst_case_picodollars
+        self.unsettled_reserved_picodollars += worst_case_picodollars
 
-    def settle_observed(self, observed_picodollars: int) -> None:
+    def settle_observed(
+        self, observed_picodollars: int, reserved_picodollars: int
+    ) -> None:
+        """Replace one call's reservation with its reported cost.
+
+        A call that never reports keeps its reservation forever, which is the
+        safe direction: an unreported call is assumed expensive, not free.
+        """
+        self.unsettled_reserved_picodollars = max(
+            0, self.unsettled_reserved_picodollars - reserved_picodollars
+        )
+        self.settled_picodollars += observed_picodollars
         self.observed_picodollars += observed_picodollars
 
 

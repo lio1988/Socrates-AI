@@ -196,6 +196,7 @@ def test_session_total_spend_limit_is_enforced_before_network() -> None:
     )
     ledger.check_admits(600)
     ledger.record_dispatch(600)
+    # Still in flight, so it is carried at its worst case.
     with pytest.raises(OpenRouterSessionBudgetExceeded, match="session total"):
         ledger.check_admits(600)
 
@@ -216,14 +217,38 @@ def test_a_failed_dispatch_still_consumes_a_call() -> None:
         ledger.check_admits(10)
 
 
-def test_reservations_and_observations_do_not_double_count() -> None:
+def test_an_in_flight_call_is_carried_at_its_worst_case_until_it_reports() -> None:
+    """An unreported call is assumed expensive, never free."""
     ledger = OpenRouterSessionLedgerV1(_session())
     ledger.record_dispatch(1_000)
-    ledger.settle_observed(10)
-    # The reservation still governs until observation exceeds it.
-    assert ledger.committed_picodollars == 1_000
-    ledger.settle_observed(2_000)
-    assert ledger.committed_picodollars == 2_010
+    assert ledger.committed_picodollars == 1_000  # in flight, conservative
+    ledger.settle_observed(10, 1_000)
+    # Reservation released, truth substituted.
+    assert ledger.committed_picodollars == 10
+    assert ledger.settled_picodollars == 10
+    assert ledger.unsettled_reserved_picodollars == 0
+
+
+def test_a_call_that_never_reports_keeps_its_reservation() -> None:
+    """Safe direction: silence costs the worst case, not zero."""
+    ledger = OpenRouterSessionLedgerV1(_session())
+    ledger.record_dispatch(5_000)
+    ledger.record_dispatch(5_000)
+    ledger.settle_observed(7, 5_000)  # only one of the two reported
+    assert ledger.committed_picodollars == 5_007
+
+
+def test_the_per_call_ceiling_still_bounds_every_call(tmp_path: Path) -> None:
+    """Cheap history never relaxes the per-call guard."""
+    ledger = OpenRouterSessionLedgerV1(
+        _session(maximum_calls=50, maximum_per_call_spend_picodollars=1_000)
+    )
+    for _ in range(5):
+        ledger.record_dispatch(1_000)
+        ledger.settle_observed(1, 1_000)
+    assert ledger.settled_picodollars == 5
+    with pytest.raises(OpenRouterSessionBudgetExceeded, match="per-call"):
+        ledger.check_admits(1_001)
 
 
 def test_a_per_call_ceiling_above_the_session_total_is_refused() -> None:
