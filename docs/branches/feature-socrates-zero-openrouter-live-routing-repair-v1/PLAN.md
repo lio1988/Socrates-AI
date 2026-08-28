@@ -190,3 +190,43 @@ Preparation is complete. No attempt latch, endpoint GET, or inference was
 dispatched. Do not run another diagnostic or the reduced benchmark. A future
 normal invocation must retain the prepared policy and current cumulative spend
 ceiling.
+
+## Q2d offline repair and authorization plan
+
+Status: **offline preparation and canonical freeze complete; live execution blocked**.
+
+1. Preserve Q2c and append its protocol mismatch and corrected failure
+   attribution without rewriting historical artifacts.
+2. Require strict UTF-8, duplicate-key rejection, canonical JSON bytes, exact
+   SHA-256, and exact reconstructed payload before any acquisition boundary.
+3. Consume a digest-keyed one-shot latch, issue an opaque process-local
+   capability, bind it once to one live builder, and recheck both the current
+   manifest and the bound capability in every pre-dispatch guard.
+4. Raise only GPT-5 Mini elenchus objections from 4,096 to 8,192 tokens.
+5. Replace future raw-body error retention with privacy-safe
+   digest/length/usage sidecars; preserve historical evidence unchanged.
+6. Replace Q2b/Q2c's four-logical/three-physical mapping with exactly three
+   logical agents mapped one-to-one to the three model/provider seats. Record
+   that Q2d is therefore a new exploratory reliability protocol, not a
+   confirmatory replication.
+7. Derive and test the complete 107-call topology for the inherited fixed
+   session `q2d-ced-hetero-v1`, without searching role offsets.
+8. Generated the Q2d manifest last, after implementation, EOL controls, and
+   ledger digests stabilized. Exact canonical SHA-256:
+   `2729d4bd82af1ddc29ba6526daa4cd00ee3132540e01dbee7a73dba723581075`;
+   byte length: `32,320`.
+9. Stop without credentials, claims, endpoint acquisition, or inference.
+
+Final offline verification: 189 focused tests passed; the repository-wide
+suite reported 4,301 passed, 1 skipped, and only two known synthetic-POSIX
+environment/history failures unrelated to Q2d.
+
+### Authorization stop
+
+The incremental conservative maximum is `$5.18420480`; the cumulative maximum
+is `$5.83611980`. This exceeds the prior `$5.00` ceiling. Do not reduce prompt
+budgets, scoring, corroboration, verification, call count, or safety margins to
+fit it. No Q2d live execution may occur without approval of both the exact final
+manifest digest and the raised cumulative amount. The target Windows runtime
+must also reproduce the exact frozen runtime, schema, source, evidence, and EOL
+hashes before the one-shot attempt is consumed.

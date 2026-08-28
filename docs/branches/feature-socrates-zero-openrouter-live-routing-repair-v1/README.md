@@ -215,8 +215,71 @@ consumes one endpoint/question-independent write-once attempt latch, so a new
 question or changed endpoint listing cannot reset the cumulative `$8.00`
 authorization.
 
+## Q2c correction and Q2d offline preflight
+
+Q2c remains incomplete and is additionally **protocol-nonconformant**. The
+operator approved protocol digest
+`ee9fa22e32d99f81d80f7865763b241ec05e65b051e4e6b60e3ee83754c816f0`,
+while execution used successor digest
+`3b88603b694585f779ffb941d61f1b92da3600237f82b916b09f91c0eef17233`.
+Matching six component digests did not authorize a different whole manifest.
+The 13-call trajectory is preserved unchanged, but it produced no synthesis,
+ratification, or final CED score and cannot be called confirmatory.
+
+The two Q2c failures also have different demonstrated causes. GPT-5 Mini
+exhausted its 4,096-token elenchus envelope with `finish_reason=length`, 3,264
+reasoning tokens, and truncated JSON. Gemini stopped normally and returned the
+complete body `{"confidence":0.9,"content":{}}`; that is a
+`provider_structured_output_contract_violation`, not demonstrated envelope or
+transport failure.
+
+Q2d preparation is offline only. It adds exact canonical-manifest
+authorization with strict UTF-8/canonical-byte and duplicate-key checks, a
+process-local one-shot builder capability, and a per-dispatch latch recheck;
+raises only GPT-5 Mini `ELENCHUS_OBJECTION` from 4,096 to 8,192 tokens; and
+replaces future raw-body error retention with privacy-safe
+digest/length/usage sidecars. The guard also reconstructs the exact
+seat/task/round/role schedule, `turn_content_id`, semantic headers, wire schema,
+model, provider controls, output field, seed, session, and question.
+
+The topology audit found that Q2b/Q2c registered three physical models behind
+four logical agents. Alpha therefore authored twice in some phases, and two
+successful Alpha responses could satisfy a quorum of two. Q2d repairs this to
+exactly three logical agents mapped one-to-one to three distinct model/provider
+seats. That is a substantive protocol change: Q2d is a **new exploratory
+reliability run, not a confirmatory replication**.
+
+The corrected maximum is 107 calls: 20 deliberation, 40 move-score, 30
+section-score, 3 ratification, and 14 objection-verification calls. The
+predeclared session `q2d-ced-hetero-v1` is retained without searching role
+offsets. Its conservative incremental bound is `$5.18420480`; with retained
+spend conservatively rounded to `$0.651915`, the required cumulative ceiling is
+`$5.83611980`.
+
+Q2d made **zero live calls**. It remains blocked until the operator approves
+both canonical manifest SHA-256
+`2729d4bd82af1ddc29ba6526daa4cd00ee3132540e01dbee7a73dba723581075`
+(32,320 exact bytes) and a cumulative ceiling of at least `$5.83611980`.
+The target Windows process must independently reconstruct the identical
+payload, including the recorded Python/Pydantic runtime, response-schema,
+implementation, evidence, and EOL hashes, or stop before acquisition.
+
+The final read-only security audit found no release-blocking bypass under the
+declared trusted-local-code threat model. It explicitly excludes malicious
+in-process reflection, local-administrator action, and filesystem/snapshot
+rollback. Client-side endpoint pinning is exact, but evidence of the final
+endpoint slug still depends on OpenRouter honoring the emitted singleton
+`provider.only/order` and `allow_fallbacks:false` controls.
+
+Final verification: 189 focused security tests passed. The repository-wide
+suite produced 4,301 passes, 1 skip, and only the two known checkout-specific
+failures: unavailable predecessor Git objects in the synthetic history and
+POSIX interpretation of a frozen Windows path. Neither touches Q2d,
+authorization, privacy, or the frozen core itself.
+
 ## Non-goals
 
 No change to sealed predecessor evidence. No retry or rerun of any prior call.
 No change to CED authority. No claim about heterogeneous-model benefits. No
-normal live inference during preparation. Not pushed.
+normal live inference during preparation. Delivery is limited to this feature
+branch; `main` remains unchanged.

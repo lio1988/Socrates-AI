@@ -181,6 +181,129 @@ def test_claim_collision_is_accounted_and_still_hard_stops(tmp_path: Path) -> No
     assert "already consumed" in str(exc)
 
 
+def test_dispatch_budget_refusal_rethrows_unchanged_without_ledger_spend(
+    tmp_path: Path,
+) -> None:
+    from backend.dialogues.socrates_zero.openrouter_live_session_adapter_v1 import (
+        PRE_DISPATCH_RECORD_ATTRIBUTE_V1,
+    )
+    from backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 import (
+        OpenRouterDispatchBudgetExceeded,
+    )
+
+    ledger = _ledger()
+    before = (
+        ledger.calls_consumed,
+        ledger.settled_picodollars,
+        ledger.unsettled_reserved_picodollars,
+        ledger.observed_picodollars,
+        ledger.committed_picodollars,
+        ledger.fatal_failure,
+    )
+    refusal = OpenRouterDispatchBudgetExceeded("provider text must not persist")
+
+    def refuse(**_kwargs):
+        raise refusal
+
+    with pytest.raises(OpenRouterDispatchBudgetExceeded) as caught:
+        _run(tmp_path=tmp_path, ledger=ledger, dispatch=refuse)
+    assert caught.value is refusal
+    record = getattr(caught.value, PRE_DISPATCH_RECORD_ATTRIBUTE_V1)
+    assert record.failure_class == (
+        "dispatch_refusal:process_budget:OpenRouterDispatchBudgetExceeded"
+    )
+    assert record.transport_completed is False
+    assert record.worst_case_picodollars == 0
+    assert record.observed_cost_picodollars is None
+    assert record.http_status is None
+    assert record.request_id
+    assert record.body_sha256 != "0" * 64
+    after = (
+        ledger.calls_consumed,
+        ledger.settled_picodollars,
+        ledger.unsettled_reserved_picodollars,
+        ledger.observed_picodollars,
+        ledger.committed_picodollars,
+        ledger.fatal_failure,
+    )
+    assert after == before
+    assert len(list((tmp_path / "claims").glob("*.json"))) == 1
+
+
+def test_dispatch_budget_refusal_reaches_adapter_records_exactly_once(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from backend.dialogues.models import (
+        AgentRole,
+        AgentState,
+        AgentTask,
+        DialogPhase,
+        TaskKind,
+    )
+    from backend.dialogues.socrates_zero.openrouter_live_session_adapter_v1 import (
+        SocratesLiveOpenRouterAdapter,
+    )
+    from backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 import (
+        OpenRouterDispatchBudgetExceeded,
+    )
+
+    refusal = OpenRouterDispatchBudgetExceeded("process ceiling reached")
+
+    def refuse(**_kwargs):
+        raise refusal
+
+    ledger = _ledger()
+    adapter = SocratesLiveOpenRouterAdapter(
+        provider_id="worker_beta",
+        policy=_policy(),
+        profile=_profile(),
+        ledger=ledger,
+        claim_directory=tmp_path / "claims",
+        max_input_tokens=65_536,
+        dispatch=refuse,
+        worker_alias="Beta",
+        expose_model_identity_to_worker=False,
+        expected_returned_models=("openai/gpt-5-mini",),
+        expected_provider_display_names=("OpenAI",),
+        ced_parse_repair_attempts=0,
+    )
+    task = AgentTask(
+        session_id="s",
+        agent_id="a",
+        role=AgentRole.SOCRATES,
+        phase=DialogPhase.RECONSTRUCTION,
+        question="Is this argument valid?",
+        task_kind=TaskKind.RECONSTRUCTION_PROPOSAL,
+    )
+    state = AgentState(
+        agent_id="a",
+        role=AgentRole.SOCRATES,
+        primary_role=AgentRole.SOCRATES,
+        assigned_role=AgentRole.SOCRATES,
+    )
+    response = asyncio.run(adapter.generate_agent_move(task, state))
+
+    assert response.status.value == "error"
+    assert response.error_message == (
+        "provider_turn:OpenRouterDispatchBudgetExceeded"
+    )
+    rows = adapter.observability_rows()
+    assert len(rows) == 1
+    assert rows[0]["failure_class"] == (
+        "dispatch_refusal:process_budget:OpenRouterDispatchBudgetExceeded"
+    )
+    assert rows[0]["worst_case_picodollars"] == 0
+    assert rows[0]["transport_completed"] is False
+    totals = adapter.session_totals()
+    assert totals["calls_consumed"] == 0
+    assert totals["settled_picodollars"] == 0
+    assert totals["unsettled_reserved_picodollars"] == 0
+    assert totals["observed_picodollars"] == 0
+    assert totals["fatal_failure"] is None
+
+
 def test_a_refused_turn_reaches_the_adapter_records(tmp_path: Path) -> None:
     """The record must survive to `observability_rows`, not only be raised."""
     import asyncio

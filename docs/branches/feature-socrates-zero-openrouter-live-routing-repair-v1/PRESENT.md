@@ -1,7 +1,7 @@
 # Current branch state
 
 - Branch: `feature/socrates-zero-openrouter-live-routing-repair-v1`
-- Current HEAD: `c7f42f316a24176a62110ed522b85afcdf1a1660`
+- Q2d base remote HEAD: `020a675504f14fb559ea91a6223eaf00ee45c806`
 - Pre-experiment HEAD: `2f304c0af45ed6bccda64f5d3da42796db0f5935`
 - Tested harness freeze HEAD: `283eb384813cb54dd8e6b2c1ee9c6640814942eb`
 - GPT-4.1 structured-output treatment calls: `2` (exactly one per arm)
@@ -952,6 +952,100 @@ this remains trajectory evidence and establishes nothing causal.
 
 Spend: $0.058986715 of an authorized $4.26860544. Cumulative $0.651915.
 
+#### Q2c attribution and authorization correction
+
+The statement above that the two failed turns had one shared reasoning-envelope
+cause is withdrawn.
+
+- GPT-5 Mini turn 7 ended `length` at 4,096 completion tokens, with 3,264
+  reasoning tokens, and returned JSON truncated mid-string. This is
+  `completion_envelope_exhausted_before_valid_visible_payload`.
+- Gemini turn 10 ended `stop` and returned the complete body
+  `{"confidence":0.9,"content":{}}`. The strict wire schema required seven
+  content fields. This is `provider_structured_output_contract_violation`;
+  neither transport failure nor envelope exhaustion is established.
+
+Q2c was approved against digest
+`ee9fa22e32d99f81d80f7865763b241ec05e65b051e4e6b60e3ee83754c816f0`
+but executed against
+`3b88603b694585f779ffb941d61f1b92da3600237f82b916b09f91c0eef17233`.
+The six component digests matched, but the whole manifest did not. Q2c remains
+an incomplete historical trajectory and is additionally
+**protocol-nonconformant**. It is not a confirmatory replication.
+
+### Q2d frozen offline preflight — NOT AUTHORIZED FOR LIVE EXECUTION
+
+Q2d closes demonstrated local defects without an inference call:
+
+1. exact canonical-manifest authorization before any acquisition boundary,
+   rechecked before every dispatch and protected by a fresh one-shot latch plus
+   an opaque process-local capability bound once to one live builder;
+2. GPT-5 Mini elenchus output raised from 4,096 to 8,192 tokens, with every
+   other task/model envelope unchanged;
+3. privacy-safe evidence sidecars containing only allowlisted digests, lengths,
+   routing metadata, finish reasons, numeric usage, and error classification.
+
+The topology audit also found that Q2b/Q2c placed four logical agents behind
+three physical model seats. Alpha served two agents, so two Alpha successes
+could satisfy quorum two. Q2d changes this to one logical agent per distinct
+model/provider seat. This repairs provider-independent quorum, but it is a
+substantive protocol change: **Q2d is a new exploratory reliability run, not a
+confirmatory replication**.
+
+The corrected three-provider structural maximum is:
+
+| component | maximum calls |
+|---|---:|
+| deliberation | 20 |
+| move scoring | 40 |
+| section scoring | 30 |
+| ratification | 3 |
+| objection verification | 14 |
+| **total** | **107** |
+
+The predeclared session `q2d-ced-hetero-v1` is retained without searching or
+optimizing its modulo-three role offset:
+
+| seat | cap distribution | calls | conservative bound |
+|---|---|---:|---:|
+| Alpha — GPT-5 Mini | 30x4,096; 5x8,192; 1x16,384 | 36 | `$0.770048` |
+| Beta — Gemini | 31x4,096; 3x8,192; 1x16,384 | 35 | `$2.0352` |
+| Gamma — GPT-4.1 Mini | 32x4,096; 3x8,192; 1x16,384 | 36 | `$2.3789568` |
+| **total** |  | **107** | **`$5.18420480`** |
+
+Retained cumulative spend is conservatively rounded to `$0.651915`, making the
+required cumulative bound `$5.83611980`. This does not fit the prior `$5.00`
+ceiling.
+
+**Q2d live calls: 0. Q2d live spend: `$0.00`.** The next permissible step is
+operator approval of canonical protocol SHA-256
+`2729d4bd82af1ddc29ba6526daa4cd00ee3132540e01dbee7a73dba723581075`
+(32,320 bytes, exact canonical JSON with no BOM or trailing newline) and a
+cumulative ceiling of at least `$5.83611980`. Until then the runner fails
+closed before credentials, claims, acquisition, or POST. A target Windows
+process must reconstruct the same runtime/schema/implementation/evidence
+payload byte-for-byte or stop before the attempt latch is consumed.
+
+The final security audit passed with no release blocker under the declared
+trusted-local-code threat model. The manifest recursively hashes all 188
+`backend/dialogues/**/*.py` and live runtime/control roots, pins source EOLs,
+and preserves historical evidence as raw bytes. The fixed run directory is
+claimed atomically; every sidecar and final artifact uses exclusive `xb`,
+flush, and fsync. Raw HTTP request/response bodies are not retained.
+
+Non-blocking limitations are explicit: malicious in-process reflection,
+administrator action, and filesystem/snapshot rollback are outside scope;
+ledger/process-counter atomics would need locks if the transport later became
+truly concurrent; and returned evidence proves model/provider family while
+the exact endpoint slug ultimately relies on OpenRouter honoring the emitted
+no-fallback singleton routing controls.
+
+Final verification: 189 focused security tests passed. The full suite
+reported 4,301 passed, 1 skipped, and two known environment/history failures
+specific to this synthetic POSIX checkout (missing predecessor Git objects and
+POSIX interpretation of a frozen Windows path), with no Q2d, authorization, or
+privacy failure. The canonical-manifest lock itself passes independently.
+
 ### Spend
 
 Condition A: $0.021553. Earlier `json_object` attempt: $0.048012 (two 200s).
@@ -969,6 +1063,7 @@ Q2 council: $0.043896 (12 calls).
 Q2b matched baselines: $0.006281 (3 calls).
 Q2b council: $0.051430 (12 calls, incomplete).
 Q2c council: $0.058987 (13 calls, incomplete).
+Q2d offline preflight: $0.00 (0 live calls; authorization blocked).
 Session total: $0.651915. Five metadata GETs consumed (two authorized
 earlier, plus one catalog and two endpoint listings for the open-weight
 seats the operator asked for).

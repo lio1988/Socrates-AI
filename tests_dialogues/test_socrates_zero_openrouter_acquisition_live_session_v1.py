@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from backend.dialogues.socrates_zero.contracts import ContractValidationError
 from backend.dialogues.socrates_zero.openrouter_live_session_v1 import (
@@ -503,6 +503,111 @@ def test_turn_records_carry_no_credential_or_reasoning_trace(
     blob = json.dumps(adapter.observability_rows())
     for banned in ("Authorization", "Bearer", "sk-or-", "reasoning"):
         assert banned not in blob
+
+
+def test_validation_errors_persist_only_safe_type_counts(
+    tmp_path: Path,
+) -> None:
+    """Pydantic messages/inputs may contain provider text; neither is evidence."""
+    from backend.dialogues.socrates_zero.openrouter_live_session_adapter_v1 import (
+        SocratesLiveOpenRouterAdapter,
+    )
+
+    secret = "Patient Alice sk-or-v1-THISISASECRET123"
+
+    class PrivateProbe(BaseModel):
+        count: int
+
+    def validator(_task, _raw):
+        PrivateProbe.model_validate({"count": secret})
+
+    strict_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "privacy_probe",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {},
+            },
+        },
+    }
+    policy = _policy()
+    adapter = SocratesLiveOpenRouterAdapter(
+        provider_id="privacy-probe",
+        policy=policy,
+        profile=PROFILE,
+        ledger=OpenRouterSessionLedgerV1(_session(policy=policy)),
+        claim_directory=tmp_path,
+        max_input_tokens=1_047_576,
+        dispatch=lambda **_kwargs: _FakeResult(_success_body()),
+        response_format_factory=lambda _task: strict_format,
+        structured_output_validator=validator,
+        expected_returned_models=("openai/gpt-4.1-mini",),
+        expected_provider_display_names=("Azure",),
+    )
+    task, state = _task_and_state()
+    response = asyncio.run(adapter.generate_agent_move(task, state))
+
+    assert response.status.value == "ok"
+    row = adapter.observability_rows()[0]
+    assert row["provider_structured_output_valid"] is False
+    assert row["provider_structured_output_error"] == (
+        "structured_output:ValidationError:int_parsing=1"
+    )
+    persisted = json.dumps(row, sort_keys=True)
+    assert "Patient Alice" not in persisted
+    assert "THISISASECRET123" not in persisted
+    assert "input_value" not in persisted
+
+
+def test_ced_validation_error_channels_never_copy_pydantic_input(
+    tmp_path: Path,
+) -> None:
+    secret = "Patient Alice sk-or-v1-THISISASECRET123"
+    raw_content = json.dumps(
+        {
+            "content": {"claim": "A benign visible council claim."},
+            "confidence": secret,
+        }
+    )
+    adapter = _adapter(
+        tmp_path, lambda **_kwargs: _FakeResult(_success_body(raw_content))
+    )
+    task, state = _task_and_state()
+    response = asyncio.run(adapter.generate_agent_move(task, state))
+
+    assert response.status.value == "schema_error"
+    assert response.error_message == "ced_schema_error:validation_failed"
+    row = adapter.observability_rows()[0]
+    assert row["ced_rejection_reason"] == "ced_schema_error:validation_failed"
+    for safe_error in (response.error_message, row["ced_rejection_reason"]):
+        assert "Patient Alice" not in safe_error
+        assert "THISISASECRET123" not in safe_error
+
+
+def test_unrecognized_provider_identity_is_not_persisted_verbatim(
+    tmp_path: Path,
+) -> None:
+    secret = "Patient Alice sk-or-v1-THISISASECRET123"
+    payload = json.loads(_success_body())
+    payload["model"] = secret
+    payload["provider"] = secret
+    adapter = _adapter(
+        tmp_path,
+        lambda **_kwargs: _FakeResult(json.dumps(payload).encode("utf-8")),
+    )
+    task, state = _task_and_state()
+    response = asyncio.run(adapter.generate_agent_move(task, state))
+
+    assert response.error_message == "provider_turn:RuntimeError"
+    row = adapter.observability_rows()[0]
+    assert row["actual_served_model"] == "unrecognized_model"
+    assert row["provider_display_name"] == "unrecognized_provider"
+    persisted = json.dumps(row, sort_keys=True)
+    assert "Patient Alice" not in persisted
+    assert "THISISASECRET123" not in persisted
 
 
 def test_the_harness_modules_are_import_inert() -> None:

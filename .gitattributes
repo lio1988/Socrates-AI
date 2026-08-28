@@ -1,1 +1,16 @@
 docs/branches/feature-socrates-zero-canonical-successor-parity-v2/artifacts/*.json text eol=lf
+
+# Q2d authorization hashes canonical checked-out bytes on Linux and Windows.
+# Keep the existing q1 runner's historical CRLF; pin every other live runtime
+# root and the dialogue backend to LF without renormalizing unrelated files.
+.gitattributes text eol=lf
+backend/dialogues/**/*.py text eol=lf
+docs/branches/feature-socrates-zero-openrouter-live-routing-repair-v1/runs/** -text
+docs/branches/feature-socrates-zero-openrouter-one-live-shadow-v1/evidence/*.json -text
+scripts/q2_ethics_question_v1.py text eol=lf
+scripts/score_q2_ethics_v1.py text eol=lf
+scripts/run_hard_logic_live_test_v1.py text eol=lf
+scripts/run_multimodel_q1_ced_v1.py text eol=lf
+scripts/run_multimodel_q1_v1.py text eol=crlf
+scripts/run_reduced_socrates_benchmark_v1.py text eol=lf
+scripts/run_socrates_live_v1.py text eol=lf

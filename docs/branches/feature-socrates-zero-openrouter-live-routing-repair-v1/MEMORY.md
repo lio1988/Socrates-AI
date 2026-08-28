@@ -17,7 +17,8 @@
 - Exact endpoint capability is fetched and validated independently for each
   model immediately before its arm. Model-level parameter unions are never
   accepted as endpoint authority.
-- No push is authorized.
+- Push authorization is branch-scoped: this feature branch may be updated;
+  `main` must remain unchanged.
 - The completed treatment produced two HTTP-200, provider-valid, CED-accepted,
   Socratic-accepted moves with zero retries. Mini succeeded under structured
   output, so the preserved prompt-only failure is classified as interface
@@ -147,7 +148,69 @@
   invariant, not an approval pause: different question or fresh-profile bytes
   cannot mint another full remaining ledger.
 - Preparation itself performed no endpoint GET, credential read, provider/model
-  call, attempt/claim consumption, or artifact write. No push is authorized.
+  call, attempt/claim consumption, or live result artifact write.
+
+## Q2c correction and Q2d invariants
+
+- Q2c is incomplete and protocol-nonconformant: approval named `ee9fa22e...`,
+  while execution used `3b88603b...`. Six matching component digests are not a
+  substitute for exact whole-manifest authorization.
+- Preserve every Q2c artifact unchanged. The append-only correction ledgers
+  govern causal attribution and protocol status. Q2c has no final CED score and
+  supports no confirmatory or causal diversity claim.
+- GPT-5 Mini Q2c turn 7 is
+  `completion_envelope_exhausted_before_valid_visible_payload`.
+- Gemini Q2c turn 10 is `provider_structured_output_contract_violation`: it
+  stopped normally and returned `{"confidence":0.9,"content":{}}`, omitting
+  all seven required fields. Do not attribute it to token exhaustion.
+- Q2d uses fixed session ID `q2d-ced-hetero-v1`; do not search role offsets for
+  a cheaper allocation.
+- Q2b/Q2c used four logical agents behind three physical model seats. Alpha
+  served two logical agents, so duplicate Alpha successes could satisfy quorum
+  two. Q2d must use exactly three logical agents mapped one-to-one to the three
+  distinct model/provider seats.
+- The one-to-one topology is a substantive protocol change. Q2d is a new
+  exploratory reliability run, not a confirmatory replication of Q2b/Q2c.
+- Only GPT-5 Mini `ELENCHUS_OBJECTION` receives 8,192 output tokens. All other
+  task/model envelopes remain unchanged.
+- The exact Q2d ceiling is 107 calls, not 64. The 64-call value belongs to the
+  earlier two-worker homogeneous topology.
+- Exact distribution: Alpha/GPT-5 Mini 36 calls (`$0.770048`), Beta/Gemini 35
+  (`$2.0352`), Gamma/GPT-4.1 Mini 36 (`$2.3789568`), total 107
+  (`$5.18420480`).
+- Retained spend is conservatively rounded to `$0.651915`; maximum cumulative
+  authorization required is `$5.83611980`.
+- Exact authorization occurs before ledger, claims, credentials, acquisition,
+  or dispatch; every pre-dispatch guard rechecks current manifest and retained
+  implementation evidence.
+- A persisted latch is audit evidence, not reusable authority. Live
+  construction also requires the opaque process-local capability issued by a
+  fresh latch write, bound once to one live builder.
+- Q2d evidence never persists raw request or response bodies. Historical raw
+  artifacts remain unchanged; new sidecars contain allowlisted metadata keyed
+  by `body_sha256`.
+- Q2d has made zero live calls and remains blocked pending explicit approval of
+  canonical manifest SHA-256
+  `2729d4bd82af1ddc29ba6526daa4cd00ee3132540e01dbee7a73dba723581075`
+  (32,320 exact bytes) and the raised cumulative ceiling of `$5.83611980`.
+- The target Windows live process must reproduce the exact frozen
+  Python/Pydantic runtime, reachable response schemas, implementation/evidence
+  hashes, and EOL-controlled bytes before acquisition; drift fails closed.
+- Exact task authorization includes reachable seat/task/round/role signatures,
+  reconstructed task body, `turn_content_id`, semantic headers, model, provider
+  controls, response schema, output field, seed, session, and question.
+- The one-shot filesystem latch and claim store cover process crash, ordinary
+  restart, accidental duplicate execution, and concurrent duplicate
+  consumption. They explicitly do not claim protection from a malicious local
+  administrator, deliberate rollback, VM/snapshot rollback, or backup restore.
+- The frozen local-code threat model excludes malicious in-process reflection.
+  Ledger/counter locking is required if transport becomes genuinely
+  concurrent. Exact endpoint selection ultimately relies on OpenRouter honoring
+  the emitted singleton route and no-fallback controls.
+- Final offline verification: 189 focused tests passed. Repository-wide:
+  4,301 passed, 1 skipped, with only the known missing-predecessor-Git-object
+  and POSIX/frozen-Windows-path failures; no Q2d, authorization, or privacy
+  failure.
 
 Frozen control SHA-256 values:
 

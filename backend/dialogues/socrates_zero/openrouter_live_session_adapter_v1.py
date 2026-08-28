@@ -15,10 +15,13 @@ import hashlib
 import json
 import re
 import time
+from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+
+from pydantic import ValidationError
 
 from ..models import AgentState, AgentTask, ProviderResponse, ProviderStatus
 from ..provider_registry import BaseProviderAdapter, parse_and_validate_move
@@ -76,6 +79,150 @@ def sanitize_public_assistant_output_v1(text: str) -> str:
         else:
             sanitized = pattern.sub("[REDACTED]", sanitized)
     return sanitized
+
+
+_SAFE_PUBLIC_EXCEPTION_NAMES_V1 = frozenset(
+    {
+        "ConnectionError",
+        "ContractValidationError",
+        "EstimatorUnsupportedError",
+        "JSONDecodeError",
+        "KeyError",
+        "OpenRouterDispatchBudgetExceeded",
+        "OSError",
+        "RequestBoundError",
+        "RuntimeError",
+        "SemanticFloorError",
+        "TimeoutError",
+        "TypeError",
+        "ValidationError",
+        "ValueError",
+    }
+)
+_SAFE_PUBLIC_EXCEPTION_CONTEXTS_V1 = frozenset(
+    {"orchestration", "provider_turn", "structured_output"}
+)
+_SAFE_PYDANTIC_ERROR_TYPES_V1 = frozenset(
+    {
+        "assertion_error",
+        "bool_parsing",
+        "bool_type",
+        "dict_type",
+        "enum",
+        "extra_forbidden",
+        "float_parsing",
+        "float_type",
+        "greater_than",
+        "greater_than_equal",
+        "int_parsing",
+        "int_type",
+        "invalid_key",
+        "is_instance_of",
+        "is_subclass_of",
+        "json_invalid",
+        "json_type",
+        "less_than",
+        "less_than_equal",
+        "list_type",
+        "literal_error",
+        "mapping_type",
+        "missing",
+        "model_attributes_type",
+        "multiple_of",
+        "none_required",
+        "set_type",
+        "string_pattern_mismatch",
+        "string_too_long",
+        "string_too_short",
+        "string_type",
+        "too_long",
+        "too_short",
+        "tuple_type",
+        "union_tag_invalid",
+        "union_tag_not_found",
+        "url_parsing",
+        "url_type",
+        "uuid_parsing",
+        "uuid_type",
+        "value_error",
+    }
+)
+
+
+def safe_public_exception_code_v1(exc: BaseException, *, context: str) -> str:
+    """Return a finite-domain error code without provider-controlled text.
+
+    Exception messages are intentionally excluded.  Pydantic validation errors
+    retain only counts by a fixed allowlist of machine error types; locations,
+    messages, URLs and input values never enter the returned code.
+    """
+
+    if context not in _SAFE_PUBLIC_EXCEPTION_CONTEXTS_V1:
+        raise ContractValidationError("public exception-code context is unsupported")
+    name = type(exc).__name__
+    safe_name = name if name in _SAFE_PUBLIC_EXCEPTION_NAMES_V1 else "OtherError"
+    if isinstance(exc, ValidationError):
+        try:
+            issues = exc.errors(include_input=False, include_url=False)
+        except TypeError:  # pragma: no cover - compatibility with old Pydantic
+            issues = exc.errors()
+        counts: Counter[str] = Counter()
+        for issue in issues:
+            error_type = issue.get("type") if isinstance(issue, Mapping) else None
+            if error_type not in _SAFE_PYDANTIC_ERROR_TYPES_V1:
+                error_type = "other"
+            counts[str(error_type)] += 1
+        summary = ",".join(
+            f"{error_type}={counts[error_type]}" for error_type in sorted(counts)
+        ) or "none=0"
+        return f"{context}:ValidationError:{summary}"
+    return f"{context}:{safe_name}"
+
+
+_SAFE_CED_REJECTION_CODES_V1: Mapping[str, str] = {
+    "empty response": "ced_invalid_json:empty_response",
+    "json parse failed": "ced_invalid_json:json_parse_failed",
+    "top-level JSON is not an object": "ced_schema_error:top_level_not_object",
+    (
+        "schema validation failed: epistemic_marker is required"
+    ): "ced_schema_error:epistemic_marker_required",
+    (
+        "schema validation failed: epistemic_marker is not permitted "
+        "for this task kind"
+    ): "ced_schema_error:epistemic_marker_not_permitted",
+    (
+        "schema validation failed: epistemic_marker must be a string"
+    ): "ced_schema_error:epistemic_marker_not_string",
+    (
+        "schema validation failed: epistemic_marker is not canonical"
+    ): "ced_schema_error:epistemic_marker_not_canonical",
+}
+
+
+def _safe_ced_rejection_code_v1(
+    status: ProviderStatus,
+    raw_error: Optional[str],
+    *,
+    semantic_floor_rejected: bool,
+) -> str:
+    """Map CED parser diagnostics to fixed codes, never their raw message."""
+
+    if semantic_floor_rejected:
+        return "ced_schema_error:semantic_floor_rejected"
+    exact = _SAFE_CED_REJECTION_CODES_V1.get(raw_error or "")
+    if exact is not None:
+        return exact
+    if status is ProviderStatus.INVALID_JSON:
+        if isinstance(raw_error, str) and raw_error.startswith(
+            "json parse failed after repair:"
+        ):
+            return "ced_invalid_json:repair_failed"
+        return "ced_invalid_json:unrecognized"
+    if status is ProviderStatus.SCHEMA_ERROR:
+        return "ced_schema_error:validation_failed"
+    if isinstance(status, ProviderStatus):
+        return f"ced_rejected:{status.value}"
+    return "ced_rejected:unrecognized"
 
 
 #: Where a pre-dispatch refusal parks its accounting record.  The exception
@@ -285,6 +432,29 @@ def execute_bounded_text_turn_v1(
         )
 
         if isinstance(exc, OpenRouterDispatchBudgetExceeded):
+            latency_ms = round((time.perf_counter() - started) * 1000, 3)
+            setattr(
+                exc,
+                PRE_DISPATCH_RECORD_ATTRIBUTE_V1,
+                OpenRouterTurnRecordV1(
+                    dialogue_id=turn.dialogue_id,
+                    turn_id=turn.turn_id,
+                    role_seat=turn.role_seat,
+                    dialogue_phase=turn.dialogue_phase,
+                    task_kind=task_kind_value,
+                    model=policy.model,
+                    provider_selector=profile.provider_selector,
+                    request_id=rendered.request_id or "",
+                    body_sha256=rendered.body_sha256,
+                    transport_completed=False,
+                    latency_ms=latency_ms,
+                    worst_case_picodollars=0,
+                    failure_class=(
+                        "dispatch_refusal:process_budget:"
+                        "OpenRouterDispatchBudgetExceeded"
+                    ),
+                ),
+            )
             raise
         ledger.record_dispatch(worst_case)
         latency_ms = round((time.perf_counter() - started) * 1000, 3)
@@ -452,14 +622,19 @@ def execute_bounded_text_turn_v1(
         mapping.envelope_kind, "value", str(mapping.envelope_kind)
     )
     actual_model = mapping.actual_served_model
-    record_fields["actual_served_model"] = actual_model
     model_ok = actual_model in expected_returned_models
+    if actual_model is not None:
+        record_fields["actual_served_model"] = (
+            actual_model if model_ok else "unrecognized_model"
+        )
     record_fields["returned_model_binding_ok"] = model_ok
 
     provider_display = payload.get("provider") if payload is not None else None
-    if isinstance(provider_display, str):
-        record_fields["provider_display_name"] = provider_display
     provider_ok = provider_display in expected_provider_display_names
+    if isinstance(provider_display, str):
+        record_fields["provider_display_name"] = (
+            provider_display if provider_ok else "unrecognized_provider"
+        )
     record_fields["returned_provider_binding_ok"] = provider_ok
 
     assistant_text: Optional[str] = None
@@ -742,7 +917,9 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
                 provider_id=self.provider_id,
                 agent_id=task.agent_id,
                 status=ProviderStatus.ERROR,
-                error_message=str(exc)[:200],
+                error_message=safe_public_exception_code_v1(
+                    exc, context="provider_turn"
+                ),
                 latency_ms=round((time.perf_counter() - start) * 1000, 3),
             )
         meta: Dict[str, Any] = {}
@@ -754,8 +931,8 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
                 provider_valid = True
             except Exception as exc:  # provider-schema evidence, not CED authority
                 provider_valid = False
-                provider_error = (
-                    f"{type(exc).__name__}: {exc}"[:1000]
+                provider_error = safe_public_exception_code_v1(
+                    exc, context="structured_output"
                 )
         move, status, err = parse_and_validate_move(
             raw,
@@ -779,19 +956,27 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
         # at this adapter keeps CED semantics untouched: a move that asserts
         # nothing never reaches the council at all, so `ced_move_accepted`
         # stops meaning "was syntactically well-formed".
-        floor_error: Optional[str] = None
+        semantic_floor_rejected = False
         if accepted:
             try:
                 assert_move_content_floor(json.loads(raw).get("content"))
-            except SemanticFloorError as exc:
-                floor_error = str(exc)
+            except SemanticFloorError:
+                semantic_floor_rejected = True
             except (ValueError, AttributeError):
                 pass  # raw already parsed once above; nothing new to learn here
-        if floor_error is not None:
+        if semantic_floor_rejected:
             move = None
             status = ProviderStatus.SCHEMA_ERROR
-            err = floor_error
             accepted = False
+        rejection_code = (
+            None
+            if accepted
+            else _safe_ced_rejection_code_v1(
+                status,
+                err,
+                semantic_floor_rejected=semantic_floor_rejected,
+            )
+        )
         if self.turn_records:
             last = self.turn_records[-1]
             updated = last.model_dump(mode="python", exclude={"record_id"})
@@ -800,9 +985,7 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
                     "provider_structured_output_valid": provider_valid,
                     "provider_structured_output_error": provider_error,
                     "ced_move_accepted": accepted,
-                    "ced_rejection_reason": (
-                        None if accepted else (err or status.value)
-                    ),
+                    "ced_rejection_reason": rejection_code,
                 }
             )
             self.turn_records[-1] = OpenRouterTurnRecordV1(**updated)
@@ -812,7 +995,7 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             status=status,
             raw_text=raw,
             parsed_move=move,
-            error_message=err,
+            error_message=rejection_code,
             latency_ms=round((time.perf_counter() - start) * 1000, 3),
             repair_attempted=meta.get("repair_attempted", False),
             repair_succeeded=meta.get("repair_succeeded", False),
@@ -851,5 +1034,6 @@ __all__ = [
     "SocratesLiveOpenRouterAdapter",
     "build_turn_user_content_v1",
     "execute_bounded_text_turn_v1",
+    "safe_public_exception_code_v1",
     "sanitize_public_assistant_output_v1",
 ]
