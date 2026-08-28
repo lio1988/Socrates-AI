@@ -2,6 +2,7 @@
 
 - Branch: `feature/socrates-zero-openrouter-live-routing-repair-v1`
 - Pre-experiment HEAD: `2f304c0af45ed6bccda64f5d3da42796db0f5935`
+- Tested harness freeze HEAD: `283eb384813cb54dd8e6b2c1ee9c6640814942eb`
 - Live treatment calls made in this continuation: `0`
 - Automatic retries: `0`
 
@@ -31,5 +32,5 @@ Python compilation and `git diff --check` also pass.
 
 No GPT-4.1 operator price or per-arm spend authority existed in the frozen
 materials. Obtain explicit numeric authorization for both arms, verify credential
-presence, commit the tested harness so the executed code is represented by HEAD,
-then run each arm once in a fresh process. Do not retry either arm.
+presence, then run each arm once in a fresh process from the tested harness.
+Do not retry either arm.
