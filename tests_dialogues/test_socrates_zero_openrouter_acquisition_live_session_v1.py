@@ -586,3 +586,437 @@ def test_a_refusal_before_the_socket_does_not_charge_the_budget(
     assert adapter.ledger.unsettled_reserved_picodollars == 0
     # The claim is still burnt, so this exact turn can never be retried.
     assert len(list(tmp_path.iterdir())) == 1
+
+
+# --------------------------------------- normal GPT-5 Mini/Flex live runner ---
+
+
+def _normal_flex_endpoint_bytes(
+    maximum_output: int = 128_000,
+    *,
+    context_length: int = 400_000,
+    max_prompt_tokens: int = 272_000,
+) -> bytes:
+    return json.dumps(
+        {
+            "data": {
+                "id": "openai/gpt-5-mini",
+                "endpoints": [
+                    {
+                        "name": "OpenAI | openai/gpt-5-mini-2025-08-07",
+                        "tag": "openai/flex",
+                        "provider_name": "OpenAI",
+                        "model_id": "openai/gpt-5-mini",
+                        "status": 0,
+                        "context_length": context_length,
+                        "max_prompt_tokens": max_prompt_tokens,
+                        "max_completion_tokens": maximum_output,
+                        "supported_parameters": [
+                            "reasoning",
+                            "include_reasoning",
+                            "structured_outputs",
+                            "response_format",
+                            "seed",
+                            "max_tokens",
+                            "tools",
+                            "tool_choice",
+                            "reasoning_effort",
+                        ],
+                        "pricing": {
+                            "prompt": "0.000000125",
+                            "completion": "0.000001",
+                        },
+                    }
+                ],
+            }
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def _normal_success_body() -> bytes:
+    return json.dumps(
+        {
+            "id": "gen-normal-fixture",
+            "model": "openai/gpt-5-mini",
+            "provider": "OpenAI",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": '{"content":{"claim":"x"},"confidence":0.5}',
+                    },
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 20,
+                "completion_tokens": 10,
+                "total_tokens": 30,
+                "cost": 0.0000125,
+            },
+        }
+    ).encode("utf-8")
+
+
+def test_normal_output_policy_exactly_covers_ced_structured_task_kinds() -> None:
+    import scripts.run_socrates_live_v1 as runner
+    from backend.dialogues.models import TaskKind
+    from backend.dialogues.socrates_zero.ced_structured_output_v1 import (
+        SUPPORTED_CED_TASK_KINDS_V1,
+    )
+
+    assert set(runner.NORMAL_OUTPUT_LIMIT_BY_TASK_KIND_V1) == set(
+        SUPPORTED_CED_TASK_KINDS_V1
+    )
+    assert {
+        kind
+        for kind, limit in runner.NORMAL_OUTPUT_LIMIT_BY_TASK_KIND_V1.items()
+        if limit == 4_096
+    } == {
+        TaskKind.SOCRATIC_QUESTION,
+        TaskKind.ELENCHUS_OBJECTION,
+        TaskKind.MOVE_SCORE,
+        TaskKind.SECTION_SCORE,
+        TaskKind.COUNCIL_RATIFICATION,
+        TaskKind.OBJECTION_VERIFICATION,
+    }
+    assert {
+        kind
+        for kind, limit in runner.NORMAL_OUTPUT_LIMIT_BY_TASK_KIND_V1.items()
+        if limit == 8_192
+    } == {
+        TaskKind.INITIAL_RESPONSE,
+        TaskKind.REFLECTION_REVISION,
+        TaskKind.RECONSTRUCTION_PROPOSAL,
+    }
+    assert runner.NORMAL_OUTPUT_LIMIT_BY_TASK_KIND_V1[TaskKind.SYNTHESIS_DRAFT] == 16_384
+    assert TaskKind.TREE_REVISION not in runner.NORMAL_OUTPUT_LIMIT_BY_TASK_KIND_V1
+
+
+def test_normal_policy_family_changes_only_the_output_limit() -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    policies = runner.build_normal_policy_family_v1()
+    assert set(policies) == {4_096, 8_192, 16_384}
+    fixed = {
+        json.dumps(
+            policy.model_dump(
+                mode="json", exclude={"output_limit_tokens", "policy_id"}
+            ),
+            sort_keys=True,
+        )
+        for policy in policies.values()
+    }
+    assert len(fixed) == 1
+    assert all(policy.model == "openai/gpt-5-mini" for policy in policies.values())
+    assert all(policy.provider_only == ("openai/flex",) for policy in policies.values())
+    assert all(policy.temperature is None for policy in policies.values())
+    assert all(policy.seed == 0 for policy in policies.values())
+    assert all(policy.automatic_retries == 0 for policy in policies.values())
+    assert len({policy.policy_id for policy in policies.values()}) == 3
+
+
+def test_normal_reporting_separates_return_from_ced_release() -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    class FinalFixture:
+        synthesis = None
+        ratified = False
+        ratification_status = "quorum_failed"
+        release_decision = "withhold"
+        governing_epistemic_status = "unresolved"
+
+    summary = runner._ced_outcome_summary_v1(FinalFixture())
+    assert summary == {
+        "final_returned": True,
+        "synthesis_present": False,
+        "ratified": False,
+        "ratification_status": "quorum_failed",
+        "release_decision": "withhold",
+        "governing_epistemic_status": "unresolved",
+    }
+
+
+def test_normal_structural_and_phase_aware_spend_bounds_fit_remaining_ceiling() -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    assert runner.derive_normal_call_budget_v1() == {
+        "socratic_questions": 3,
+        "initial_responses": 3,
+        "elenchus_objections": 4,
+        "reflections": 6,
+        "reconstruction": 1,
+        "synthesis": 4,
+        "move_scores": 21,
+        "section_scores": 20,
+        "ratification": 2,
+        "homogeneous_objection_verification": 0,
+        "ced_maximum": 64,
+    }
+    spend = runner.conservative_phase_aware_session_bound_v1()
+    assert spend["calls_by_output_limit"] == {4_096: 50, 8_192: 10, 16_384: 4}
+    assert spend["per_call_bound_picodollars"] == {
+        4_096: 54_096_000_000,
+        8_192: 58_192_000_000,
+        16_384: 66_384_000_000,
+    }
+    assert spend["structural_session_bound_picodollars"] == 3_552_256_000_000
+    assert spend["structural_session_bound_picodollars"] < (
+        runner.NORMAL_REMAINING_SPEND_PICODOLLARS_V1
+    )
+    assert (
+        runner.PRIOR_OBSERVED_SPEND_PICODOLLARS_V1
+        + runner.NORMAL_REMAINING_SPEND_PICODOLLARS_V1
+        == runner.HARD_CUMULATIVE_SPEND_PICODOLLARS_V1
+    )
+
+
+def test_normal_preparation_is_offline_exact_and_has_no_baseline(
+    tmp_path: Path,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    calls = []
+
+    def dispatch(**kwargs):
+        calls.append(kwargs)
+        return _FakeResult(_normal_success_body())
+
+    prepared = runner.prepare_normal_live_run_v1(
+        "Is the causal claim justified?",
+        _normal_flex_endpoint_bytes(),
+        claim_directory=tmp_path,
+        dispatch=dispatch,
+    )
+    assert calls == []
+    assert list(tmp_path.iterdir()) == []
+    assert len(prepared.adapters) == 2
+    assert len(prepared.ced.agents) == 4
+    assert [adapter.worker_alias for adapter in prepared.adapters] == ["Alpha", "Beta"]
+    assert all(
+        adapter.authoritative_model_id() == "openai/gpt-5-mini"
+        for adapter in prepared.adapters
+    )
+    assert all(adapter.ced_parse_repair_attempts == 0 for adapter in prepared.adapters)
+    assert prepared.ced.phase_retry is False
+    assert prepared.ced.ratification_repair == "block"
+    assert prepared.ced.max_socratic_followups == 2
+    assert prepared.ced.tree_expansions == 0
+    assert prepared.ced.ai_learning is False
+    assert prepared.manifest["baseline_calls"] == 0
+    assert prepared.authorization.maximum_calls == 64
+    assert prepared.authorization.maximum_total_spend_picodollars == 7_993_911_750_000
+    assert prepared.authorization.maximum_per_call_spend_picodollars == 66_384_000_000
+
+
+def test_normal_preparation_rejects_endpoint_below_synthesis_envelope(
+    tmp_path: Path,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    with pytest.raises(ContractValidationError, match="16,384-token"):
+        runner.prepare_normal_live_run_v1(
+            "Question?",
+            _normal_flex_endpoint_bytes(maximum_output=16_383),
+            claim_directory=tmp_path,
+            dispatch=lambda **kwargs: None,
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_normal_preparation_refuses_input_bound_drift_before_dispatch(
+    tmp_path: Path,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    dispatches = []
+    with pytest.raises(ContractValidationError, match="400,000-token P19 bound"):
+        runner.prepare_normal_live_run_v1(
+            "Question?",
+            _normal_flex_endpoint_bytes(context_length=400_001),
+            claim_directory=tmp_path,
+            dispatch=lambda **kwargs: dispatches.append(kwargs),
+        )
+    assert dispatches == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_normal_run_attempt_is_global_one_shot_not_question_or_endpoint_scoped(
+    tmp_path: Path,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    first_id = runner.normal_run_attempt_id_v1()
+    first = runner.consume_normal_run_attempt_v1(tmp_path)
+    assert first["run_attempt_id"] == first_id
+    assert first["manifest"]["scope"] == (
+        "one caller-supplied normal Socrates question"
+    )
+    assert len(first["latch_sha256"]) == 64
+    with pytest.raises(ContractValidationError, match="already consumed"):
+        runner.consume_normal_run_attempt_v1(tmp_path)
+    assert runner.normal_run_attempt_id_v1() == first_id
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+@pytest.mark.parametrize(
+    ("task_kind", "phase", "role", "expected_limit"),
+    [
+        ("socratic_question", "opening", "socrates", 4_096),
+        ("initial_response", "initial_response", "empiricist", 8_192),
+        ("synthesis_draft", "synthesis", "synthesizer", 16_384),
+        ("move_score", "synthesis", "final_evaluator", 4_096),
+    ],
+)
+def test_normal_task_policy_reaches_exact_wire_body(
+    tmp_path: Path,
+    task_kind: str,
+    phase: str,
+    role: str,
+    expected_limit: int,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+    from backend.dialogues.models import AgentRole, AgentState, AgentTask, DialogPhase, TaskKind
+    from backend.dialogues.socrates_zero.ced_structured_output_v1 import (
+        ced_structured_response_format_v1,
+    )
+
+    sent = []
+
+    def dispatch(**kwargs):
+        sent.append(kwargs)
+        return _FakeResult(_normal_success_body())
+
+    prepared = runner.prepare_normal_live_run_v1(
+        "Question?",
+        _normal_flex_endpoint_bytes(),
+        claim_directory=tmp_path,
+        dispatch=dispatch,
+    )
+    task = AgentTask(
+        task_id=f"task-{task_kind}",
+        session_id=prepared.session_id,
+        agent_id="agent_0",
+        role=AgentRole(role),
+        phase=DialogPhase(phase),
+        question="Question?",
+        task_kind=TaskKind(task_kind),
+    )
+    state = AgentState(
+        agent_id="agent_0",
+        primary_role=AgentRole(role),
+        assigned_role=AgentRole(role),
+    )
+    asyncio.run(prepared.adapters[0]._produce_raw_text(task, state))
+
+    assert len(sent) == 1
+    body = json.loads(sent[0]["body_bytes"])
+    assert body["max_tokens"] == expected_limit
+    assert body["response_format"] == ced_structured_response_format_v1(task)
+    assert body["provider"]["only"] == ["openai/flex"]
+    assert body["provider"]["allow_fallbacks"] is False
+    for forbidden in (
+        "temperature",
+        "reasoning",
+        "reasoning_effort",
+        "include_reasoning",
+        "tools",
+        "tool_choice",
+    ):
+        assert forbidden not in body
+
+
+def test_normal_adapter_refuses_policy_drift_before_claim_or_dispatch(
+    tmp_path: Path,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+    from backend.dialogues.models import AgentRole, AgentState, AgentTask, DialogPhase, TaskKind
+    from backend.dialogues.socrates_zero.openrouter_live_session_adapter_v1 import (
+        SocratesLiveOpenRouterAdapter,
+    )
+
+    calls = []
+    prepared = runner.prepare_normal_live_run_v1(
+        "Question?",
+        _normal_flex_endpoint_bytes(),
+        claim_directory=tmp_path,
+        dispatch=lambda **kwargs: calls.append(kwargs),
+    )
+    changed = runner.build_normal_execution_policy_v1(4_096).model_dump(
+        mode="python", exclude={"policy_id"}
+    )
+    changed["seed"] = 1
+    drifted = OpenRouterFrozenExecutionPolicyV1(**changed)
+    adapter = SocratesLiveOpenRouterAdapter(
+        provider_id="drift-probe",
+        policy=prepared.policies[16_384],
+        profile=prepared.profile,
+        ledger=prepared.ledger,
+        claim_directory=tmp_path,
+        max_input_tokens=400_000,
+        dispatch=lambda **kwargs: calls.append(kwargs),
+        task_execution_policy_factory=lambda _task: drifted,
+    )
+    task = AgentTask(
+        task_id="drift-task",
+        session_id=prepared.session_id,
+        agent_id="agent_0",
+        role=AgentRole.SOCRATES,
+        phase=DialogPhase.OPENING,
+        question="Question?",
+        task_kind=TaskKind.SOCRATIC_QUESTION,
+    )
+    state = AgentState(
+        agent_id="agent_0",
+        primary_role=AgentRole.SOCRATES,
+        assigned_role=AgentRole.SOCRATES,
+    )
+    with pytest.raises(ContractValidationError, match="only output_limit_tokens"):
+        asyncio.run(adapter._produce_raw_text(task, state))
+    assert calls == []
+    assert prepared.ledger.calls_consumed == 0
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_normal_artifact_write_is_exclusive_and_preserves_first_bytes(
+    tmp_path: Path,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    target = tmp_path / "normal.json"
+    first_sha = runner._write_once_json_v1(target, {"value": 1})
+    first_bytes = target.read_bytes()
+    assert len(first_sha) == 64
+    with pytest.raises(ContractValidationError, match="already exists"):
+        runner._write_once_json_v1(target, {"value": 2})
+    assert target.read_bytes() == first_bytes
+
+
+def test_existing_normal_output_refuses_before_endpoint_or_inference(
+    tmp_path: Path,
+) -> None:
+    import scripts.run_socrates_live_v1 as runner
+
+    target = tmp_path / "already-there.json"
+    target.write_bytes(b"preserved")
+    endpoint_reads = []
+    dispatches = []
+
+    def endpoint_fetch(**kwargs):
+        endpoint_reads.append(kwargs)
+        raise AssertionError("endpoint must not be read")
+
+    with pytest.raises(ContractValidationError, match="already exists"):
+        runner.run_socrates(
+            "Question?",
+            output_path=target,
+            endpoint_fetch=endpoint_fetch,
+            dispatch=lambda **kwargs: dispatches.append(kwargs),
+            claim_directory=tmp_path / "claims",
+            attempt_directory=tmp_path / "attempt",
+        )
+    assert endpoint_reads == []
+    assert dispatches == []
+    assert target.read_bytes() == b"preserved"

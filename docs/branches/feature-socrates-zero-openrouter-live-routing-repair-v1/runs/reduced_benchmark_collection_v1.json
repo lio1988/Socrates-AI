@@ -1,0 +1,741 @@
+{
+  "actual_live_calls": 4,
+  "authorization_manifest": {
+    "automatic_retries": 0,
+    "benchmark_authorization_manifest_sha256": "d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466",
+    "call_budget": {
+      "baselines": 3,
+      "ced_maximum": 148,
+      "elenchus_objections": 4,
+      "homogeneous_objection_verification": 0,
+      "initial_responses": 3,
+      "move_scores": 63,
+      "ratification": 4,
+      "reconstruction": 1,
+      "reflections": 6,
+      "section_scores": 60,
+      "socratic_questions": 3,
+      "synthesis": 4,
+      "total_maximum": 151
+    },
+    "ced_source_sha256": "2f0396e6248db54f8985c643a69b0429f354110e6536c1edc699dcf3b9ff4a43",
+    "conditions": {
+      "baselines": [
+        "Q1",
+        "Q2",
+        "Q3"
+      ],
+      "heterogeneous_ced": [],
+      "homogeneous_ced": [
+        "Q2"
+      ],
+      "seats": 4
+    },
+    "hard_total_spend_usd": "8.00",
+    "maximum_live_calls": 151,
+    "model": "openai/gpt-5-mini",
+    "operator_statement": "Approved reduced benchmark: at most 151 live calls, zero retries, and at most $8.00 total session spend. Prior $655.40 authorization void.",
+    "policy_id": "szorexecutionpolicyv1_835b7305cad7ece52e35c1420f7feb30f1a7bf160f6d5c213bb1cadffe0bb401",
+    "profile_id": "szorendpointprofilev1_52949549d13f6bcd8f11fe11dfa9040365f16ba2cad79a59c859673bcd06f6d3",
+    "provider_selector": "openai/flex",
+    "questions": [
+      {
+        "question_id": "Q1",
+        "question_sha256": "07af0cae3894d35d7c5e1e7410624ea9bf4ec397935897260beff0c7d57551fd"
+      },
+      {
+        "question_id": "Q2",
+        "question_sha256": "1726f5eed7d420c512e247b9f984830315c9641c72ef1f9a6d55fe606d782ce4"
+      },
+      {
+        "question_id": "Q3",
+        "question_sha256": "a52d7fca4e2babc9428a413edaa08d4b26cc140c32d83851e43948a584bfd941"
+      }
+    ],
+    "sampling": {
+      "reasoning_settings": "omitted",
+      "seed": 0,
+      "temperature": null
+    },
+    "schema_version": "reduced-socrates-live-benchmark/v1",
+    "structured_schemas": {
+      "baseline_response_format_sha256": "f2c010d02342dc0caacbaa86a67da45cb30bbd748e6e1e9860e19e23adeed8dd",
+      "ced_variants": [
+        {
+          "response_format_sha256": "3c824a18f009a59dd751b9442ad3e499cf93a4e3c0f17ae5211e6575a955dfb2",
+          "variant": "council_ratification:ratification:final_evaluator"
+        },
+        {
+          "response_format_sha256": "5480ae80d2d67b5f5347b1f6b285f4ee096c8f686576c732479d03e9c31ef91d",
+          "variant": "elenchus_objection:elenchus:elenchus_critic"
+        },
+        {
+          "response_format_sha256": "7feb6c8906478335eedf15ab50ba657697d645ee643fd06116980d801df38a53",
+          "variant": "elenchus_objection:elenchus:empiricist"
+        },
+        {
+          "response_format_sha256": "d14ff7a829c6c65685f52531240e307837fbe7f9ce0c8774658cf674e37e7219",
+          "variant": "initial_response:initial_response:elenchus_critic"
+        },
+        {
+          "response_format_sha256": "445e24b85bc5a6131e216b6d14a6a89377e6b7168edf48dc321100400e31a8b2",
+          "variant": "initial_response:initial_response:empiricist"
+        },
+        {
+          "response_format_sha256": "222eddd6f22a1ada2d3bb746970eee91f3414a69c2a79cb4924e4b7710acfd31",
+          "variant": "initial_response:initial_response:synthesizer"
+        },
+        {
+          "response_format_sha256": "333aa08853d2e2bc8237f1a4eac6c8666b1f561287c951a860f273f65c02bdff",
+          "variant": "move_score:synthesis:final_evaluator"
+        },
+        {
+          "response_format_sha256": "8ad9a8a48a1b1ebc5f6a8eb99e92247a47405dcd1a90db06455c39525b36c041",
+          "variant": "objection_verification:elenchus:final_evaluator"
+        },
+        {
+          "response_format_sha256": "6d71e6fc334c614ef113d938c9c69f89d24962f109182b3e72180e79eb2605e0",
+          "variant": "reconstruction_proposal:reconstruction:maieutic_reconstructor"
+        },
+        {
+          "response_format_sha256": "ebe4100273fd9e4edd55976557c3b2e2e3684ca532e5d433cbb68ca8dca2de64",
+          "variant": "reflection_revision:reflection:reflector"
+        },
+        {
+          "response_format_sha256": "09095e01ca8ecfa49e2617667a9849294f1f9ca28b24cd0a5b2d42cca35d8106",
+          "variant": "section_score:synthesis:final_evaluator"
+        },
+        {
+          "response_format_sha256": "1087e29514ec333e91e9ce01cc235559e3e2015b1801421a2a20fb689e1467fc",
+          "variant": "socratic_question:elenchus:socrates"
+        },
+        {
+          "response_format_sha256": "3b109661b3aad8dde75dcb534a4751dd7601c33c828f9ded64a8b57680278174",
+          "variant": "socratic_question:opening:socrates"
+        },
+        {
+          "response_format_sha256": "cfcb1e73934d5a732cf403ffd080908aed0e44173742b472a6493b41924d40bd",
+          "variant": "synthesis_draft:synthesis:synthesizer"
+        }
+      ]
+    }
+  },
+  "automatic_retries": 0,
+  "baselines": {
+    "Q1": {
+      "assistant_output": "{\"conclusion\":\"Yes. Mira must have checked the evidence.\",\"confidence\":0.95,\"reasoning\":\"Mira signed the report and every signer either checked the evidence or signed without checking. If Mira had not checked, she would have signed without checking; by premise 1 that would mean she violated procedure, and by premise 2 anyone who violates procedure may not chair the final hearing. That contradicts the fact that Mira chaired the final hearing. Therefore the assumption that she did not check is impossible, so she must have checked the evidence.\",\"uncertainty\":\"This conclusion assumes the ordinary reading that “signed without checking” means the signer did not check the evidence and that the premises are true and apply to Mira. If those meanings or premises are changed, the result could differ.\"}",
+      "failure_reason": null,
+      "provider_structured_output_valid": true,
+      "transport": {
+        "actual_served_model": "openai/gpt-5-mini",
+        "assistant_output_sanitized": "{\"conclusion\":\"Yes. Mira must have checked the evidence.\",\"confidence\":0.95,\"reasoning\":\"Mira signed the report and every signer either checked the evidence or signed without checking. If Mira had not checked, she would have signed without checking; by premise 1 that would mean she violated procedure, and by premise 2 anyone who violates procedure may not chair the final hearing. That contradicts the fact that Mira chaired the final hearing. Therefore the assumption that she did not check is impossible, so she must have checked the evidence.\",\"uncertainty\":\"This conclusion assumes the ordinary reading that “signed without checking” means the signer did not check the evidence and that the premises are true and apply to Mira. If those meanings or premises are changed, the result could differ.\"}",
+        "assistant_output_sha256": "f73681eae60fdd67deebabd76b48b65fba8b79a6af6f52207628df798c2df0ef",
+        "assistant_text_excerpt": "{\"conclusion\":\"Yes. Mira must have checked the evidence.\",\"confidence\":0.95,\"reasoning\":\"Mira signed the report and every signer either checked the evidence or signed without checking. If Mira had not checked, she would have signed without checking; by premise 1 that would mean she violated procedure, and by premise 2 anyone who violates procedure may not chair the final hearing. That contradicts the fact that Mira chaired the final hearing. Therefore the assumption that she did not check is impossible, so she must have checked the evidence.\",\"uncertainty\":\"This conclusion assumes the ordinary",
+        "body_sha256": "d1b183a188362a4ea8b440220c7ef124c0cbd849ee20cd8204321018c0906cff",
+        "ced_move_accepted": null,
+        "ced_rejection_reason": null,
+        "committed_cost_within_session_ceiling": true,
+        "completion_tokens": 940,
+        "dialogue_id": "reduced-baseline-q1",
+        "dialogue_phase": "baseline",
+        "failure_class": null,
+        "http_status": 200,
+        "latency_ms": 16273.394,
+        "model": "openai/gpt-5-mini",
+        "observed_cost_picodollars": 959125000,
+        "observed_cost_usd_decimal": "0.000959125",
+        "observed_cost_within_p19_bound": true,
+        "prompt_tokens": 153,
+        "provider_display_name": "OpenAI",
+        "provider_selector": "openai/flex",
+        "provider_structured_output_error": null,
+        "provider_structured_output_valid": null,
+        "record_id": "szorturnrecordv1_a128f808104d1d0f738eadf92ef56bb70694f5898dcea5e885dfeb20866563e7",
+        "request_id": "szorturnrequestv1_e13046e7823e699c03c43ae15201797af610b3a7712e7f7deb329841785527fd",
+        "response_body_length": 11353,
+        "response_body_sha256": "dd9dfc4a7392e516f698dd0403d2abcf7a1b526421838b0364755522f46cb81a",
+        "retry_count": 0,
+        "returned_model_binding_ok": true,
+        "returned_provider_binding_ok": true,
+        "role_seat": "direct_baseline",
+        "s5_envelope_kind": "SUCCESS",
+        "s6_binding": null,
+        "schema_version": "socrateszero-openrouter-turn-record/v1",
+        "task_kind": null,
+        "transport_completed": true,
+        "turn_id": "baseline-q1-1",
+        "worst_case_picodollars": 51024000000
+      },
+      "usage": {
+        "completion_tokens": 940,
+        "observed_cost_picodollars": 959125000,
+        "observed_cost_usd_decimal": "0.000959125",
+        "prompt_tokens": 153
+      },
+      "validation_error": null
+    },
+    "Q2": {
+      "assistant_output": "{\"conclusion\":\"No — the CEO’s conclusion is not justified from the information given. The observed 18% difference is plausibly due to alternative explanations (selection, training, novelty/Hawthorne, measurement) rather than a causal effect of the AI tool alone.\",\"confidence\":0.8,\"reasoning\":\"What’s wrong with the CEO’s claim: the teams that received the tool were not randomly chosen; managers volunteered and those teams also got special training. That opens multiple confounding explanations for the 18% increase: 1) Selection bias: managers who apply may be more motivated, higher-performing, or assigned easier tasks, so their teams would outperform even without the tool. 2) Training effect: the special training, not the tool, could produce the productivity gain. 3) Hawthorne/placebo/expectation effects: being given a new program and attention can temporarily boost output. 4) Measurement or reporting differences: output may have been counted differently or quality may have fallen even as quantity rose. 5) Regression to the mean",
+      "failure_reason": null,
+      "provider_structured_output_valid": false,
+      "transport": {
+        "actual_served_model": "openai/gpt-5-mini",
+        "assistant_output_sanitized": "{\"conclusion\":\"No — the CEO’s conclusion is not justified from the information given. The observed 18% difference is plausibly due to alternative explanations (selection, training, novelty/Hawthorne, measurement) rather than a causal effect of the AI tool alone.\",\"confidence\":0.8,\"reasoning\":\"What’s wrong with the CEO’s claim: the teams that received the tool were not randomly chosen; managers volunteered and those teams also got special training. That opens multiple confounding explanations for the 18% increase: 1) Selection bias: managers who apply may be more motivated, higher-performing, or assigned easier tasks, so their teams would outperform even without the tool. 2) Training effect: the special training, not the tool, could produce the productivity gain. 3) Hawthorne/placebo/expectation effects: being given a new program and attention can temporarily boost output. 4) Measurement or reporting differences: output may have been counted differently or quality may have fallen even as quantity rose. 5) Regression to the mean",
+        "assistant_output_sha256": "f7ed02f8deac59b9a9ab20a81b246fdd92c886fa1b63880e6782e78e7b709787",
+        "assistant_text_excerpt": "{\"conclusion\":\"No — the CEO’s conclusion is not justified from the information given. The observed 18% difference is plausibly due to alternative explanations (selection, training, novelty/Hawthorne, measurement) rather than a causal effect of the AI tool alone.\",\"confidence\":0.8,\"reasoning\":\"What’s wrong with the CEO’s claim: the teams that received the tool were not randomly chosen; managers volunteered and those teams also got special training. That opens multiple confounding explanations for the 18% increase: 1) Selection bias: managers who apply may be more motivated, higher-performing, o",
+        "body_sha256": "92eb41e32ad50f520f147633289b2dbcd86862e1a069b7869b6e12205a4ab2e0",
+        "ced_move_accepted": null,
+        "ced_rejection_reason": null,
+        "committed_cost_within_session_ceiling": true,
+        "completion_tokens": 1024,
+        "dialogue_id": "reduced-baseline-q2",
+        "dialogue_phase": "baseline",
+        "failure_class": null,
+        "http_status": 200,
+        "latency_ms": 17133.772,
+        "model": "openai/gpt-5-mini",
+        "observed_cost_picodollars": 1045000000,
+        "observed_cost_usd_decimal": "0.001045",
+        "observed_cost_within_p19_bound": true,
+        "prompt_tokens": 168,
+        "provider_display_name": "OpenAI",
+        "provider_selector": "openai/flex",
+        "provider_structured_output_error": null,
+        "provider_structured_output_valid": null,
+        "record_id": "szorturnrecordv1_65ca8c44b2304618a5bca31b40f1c9d0a5118e6427359d618f1204293322dd25",
+        "request_id": "szorturnrequestv1_91ffa54e4b6940ff189e1f6530198db1ad5dd930d5831786ff137adadc1249b2",
+        "response_body_length": 15077,
+        "response_body_sha256": "b36787a7e75c701aa7f4b8c8ab8085348c562c765c81e0d1c80f7ca5d9f11bd2",
+        "retry_count": 0,
+        "returned_model_binding_ok": true,
+        "returned_provider_binding_ok": true,
+        "role_seat": "direct_baseline",
+        "s5_envelope_kind": "SUCCESS",
+        "s6_binding": null,
+        "schema_version": "socrateszero-openrouter-turn-record/v1",
+        "task_kind": null,
+        "transport_completed": true,
+        "turn_id": "baseline-q2-1",
+        "worst_case_picodollars": 51024000000
+      },
+      "usage": {
+        "completion_tokens": 1024,
+        "observed_cost_picodollars": 1045000000,
+        "observed_cost_usd_decimal": "0.001045",
+        "prompt_tokens": 168
+      },
+      "validation_error": "baseline_output_not_json"
+    },
+    "Q3": {
+      "assistant_output": "{\"conclusion\":\"You cannot conclusively identify a single person as the file’s deleter. The audit shows Omar’s admin token was used from workstation M at 18:12, but CCTV places Omar away from the workstation between 18:05–18:20, so Omar almost certainly did not sit at that keyboard to perform the deletion. Whoever used Omar’s token from workstation M did the deletion — Pri",
+      "failure_reason": null,
+      "provider_structured_output_valid": false,
+      "transport": {
+        "actual_served_model": "openai/gpt-5-mini",
+        "assistant_output_sanitized": "{\"conclusion\":\"You cannot conclusively identify a single person as the file’s deleter. The audit shows Omar’s admin token was used from workstation M at 18:12, but CCTV places Omar away from the workstation between 18:05–18:20, so Omar almost certainly did not sit at that keyboard to perform the deletion. Whoever used Omar’s token from workstation M did the deletion — Pri",
+        "assistant_output_sha256": "41fdecc96666752e220f03e30b1a89bb89b2c486701f32271279b4981e8b7c41",
+        "assistant_text_excerpt": "{\"conclusion\":\"You cannot conclusively identify a single person as the file’s deleter. The audit shows Omar’s admin token was used from workstation M at 18:12, but CCTV places Omar away from the workstation between 18:05–18:20, so Omar almost certainly did not sit at that keyboard to perform the deletion. Whoever used Omar’s token from workstation M did the deletion — Pri",
+        "body_sha256": "65e078ae9eca0948f0be6cb1c2a867f8aec27e6352fe898febc73d9febc1befd",
+        "ced_move_accepted": null,
+        "ced_rejection_reason": null,
+        "committed_cost_within_session_ceiling": true,
+        "completion_tokens": 1024,
+        "dialogue_id": "reduced-baseline-q3",
+        "dialogue_phase": "baseline",
+        "failure_class": null,
+        "http_status": 200,
+        "latency_ms": 20501.065,
+        "model": "openai/gpt-5-mini",
+        "observed_cost_picodollars": 1045375000,
+        "observed_cost_usd_decimal": "0.001045375",
+        "observed_cost_within_p19_bound": true,
+        "prompt_tokens": 171,
+        "provider_display_name": "OpenAI",
+        "provider_selector": "openai/flex",
+        "provider_structured_output_error": null,
+        "provider_structured_output_valid": null,
+        "record_id": "szorturnrecordv1_d737622ba1b64b7cc130f7c116f78bd6b1aadddf1197bb892244be42b7df7161",
+        "request_id": "szorturnrequestv1_96f6af93d4aeae059e2527ccd3fccdce2873b0e43ab28f525a41cf404a396493",
+        "response_body_length": 10740,
+        "response_body_sha256": "8cd7da6fa188e99dcd89ad2bc3af4aa54462f5f1c42fa7a2ec6fa962bf369942",
+        "retry_count": 0,
+        "returned_model_binding_ok": true,
+        "returned_provider_binding_ok": true,
+        "role_seat": "direct_baseline",
+        "s5_envelope_kind": "SUCCESS",
+        "s6_binding": null,
+        "schema_version": "socrateszero-openrouter-turn-record/v1",
+        "task_kind": null,
+        "transport_completed": true,
+        "turn_id": "baseline-q3-1",
+        "worst_case_picodollars": 51024000000
+      },
+      "usage": {
+        "completion_tokens": 1024,
+        "observed_cost_picodollars": 1045375000,
+        "observed_cost_usd_decimal": "0.001045375",
+        "prompt_tokens": 171
+      },
+      "validation_error": "baseline_output_not_json"
+    }
+  },
+  "ced_offline_wiring_preflight": {
+    "adapter_count": 4,
+    "completed_before_first_post": true,
+    "completed_before_run_attempt_latch": true,
+    "projected_task_count": 12,
+    "registry_ready": true
+  },
+  "collection_dispatch_closed": true,
+  "completed_utc": "2026-08-28T03:13:15.895148Z",
+  "endpoint_evidence": {
+    "completion_price_usd_per_token": "0.000001",
+    "context_length": 400000,
+    "dated_endpoint_model": "openai/gpt-5-mini-2025-08-07",
+    "endpoint_model_id": "openai/gpt-5-mini",
+    "endpoint_name": "OpenAI | openai/gpt-5-mini-2025-08-07",
+    "evidence_id": "szorflexendpointevidencev1_2110b34bcab04956ff5abecd3857f4b7981b03ae9e26638ee6ed45ee2a664576",
+    "fresh_listing_length": 3818,
+    "fresh_listing_sha256": "4ae71b75530d4c52b02bb54ed6c96650605adf119373b0fd51025c2084b5516d",
+    "max_prompt_tokens_observed": 272000,
+    "maximum_output_tokens": 128000,
+    "output_limit_parameter": "max_tokens",
+    "prior_listing_sha256": "cc7a04e4d33727be91bad54d2aba5c5e70993d1823f8ef4fd92c9b84b757108d",
+    "prompt_price_usd_per_token": "0.000000125",
+    "provider_display_name": "OpenAI",
+    "provider_selector": "openai/flex",
+    "request_price_state": "ABSENT_UNKNOWN",
+    "request_price_usd": null,
+    "requested_model": "openai/gpt-5-mini",
+    "schema_version": "socrateszero-openrouter-flex-endpoint-evidence/v1",
+    "status": 0,
+    "supported_parameters": [
+      "include_reasoning",
+      "max_tokens",
+      "reasoning",
+      "reasoning_effort",
+      "response_format",
+      "seed",
+      "structured_outputs",
+      "tool_choice",
+      "tools"
+    ],
+    "temperature_supported": false
+  },
+  "endpoint_http": {
+    "body_length": 3818,
+    "body_sha256": "4ae71b75530d4c52b02bb54ed6c96650605adf119373b0fd51025c2084b5516d",
+    "http_status": 200,
+    "latency_ms": 247.811
+  },
+  "endpoint_raw_utf8": "{\"data\":{\"id\":\"openai/gpt-5-mini\",\"name\":\"OpenAI: GPT-5 Mini\",\"created\":1754587407,\"description\":\"GPT-5 Mini is a compact version of GPT-5, designed to handle lighter-weight reasoning tasks. It provides the same instruction-following and safety-tuning benefits as GPT-5, but with reduced latency and cost....\",\"architecture\":{\"tokenizer\":\"GPT\",\"instruct_type\":null,\"modality\":\"text+image+file->text\",\"input_modalities\":[\"text\",\"image\",\"file\"],\"output_modalities\":[\"text\"]},\"endpoints\":[{\"name\":\"OpenAI | openai/gpt-5-mini-2025-08-07\",\"model_id\":\"openai/gpt-5-mini\",\"model_name\":\"OpenAI: GPT-5 Mini\",\"context_length\":400000,\"pricing\":{\"prompt\":\"0.000000125\",\"completion\":\"0.000001\",\"web_search\":\"0.01\",\"input_cache_read\":\"0.0000000125\",\"discount\":0},\"provider_name\":\"OpenAI\",\"tag\":\"openai/flex\",\"quantization\":\"unknown\",\"max_completion_tokens\":128000,\"max_prompt_tokens\":272000,\"supported_parameters\":[\"reasoning\",\"include_reasoning\",\"structured_outputs\",\"response_format\",\"seed\",\"max_tokens\",\"tools\",\"tool_choice\",\"reasoning_effort\"],\"supports_tool_choice\":{\"none\":true,\"auto\":true,\"required\":true,\"function\":true},\"status\":0,\"uptime_last_30m\":100,\"uptime_last_5m\":100,\"uptime_last_1d\":100,\"supports_implicit_caching\":true,\"supports_voice_cloning\":false,\"latency_last_30m\":null,\"throughput_last_30m\":null},{\"name\":\"Azure | openai/gpt-5-mini-2025-08-07\",\"model_id\":\"openai/gpt-5-mini\",\"model_name\":\"OpenAI: GPT-5 Mini\",\"context_length\":400000,\"pricing\":{\"prompt\":\"0.00000025\",\"completion\":\"0.000002\",\"web_search\":\"0.01\",\"input_cache_read\":\"0.00000003\",\"discount\":0},\"provider_name\":\"Azure\",\"tag\":\"azure\",\"quantization\":\"unknown\",\"max_completion_tokens\":360000,\"max_prompt_tokens\":null,\"supported_parameters\":[\"max_completion_tokens\",\"reasoning\",\"include_reasoning\",\"seed\",\"response_format\",\"structured_outputs\",\"tools\",\"tool_choice\",\"reasoning_effort\"],\"supports_tool_choice\":{\"none\":true,\"auto\":true,\"required\":true,\"function\":true},\"status\":0,\"uptime_last_30m\":100,\"uptime_last_5m\":100,\"uptime_last_1d\":99.99814378259981,\"supports_implicit_caching\":false,\"supports_voice_cloning\":false,\"latency_last_30m\":null,\"throughput_last_30m\":null},{\"name\":\"OpenAI | openai/gpt-5-mini-2025-08-07\",\"model_id\":\"openai/gpt-5-mini\",\"model_name\":\"OpenAI: GPT-5 Mini\",\"context_length\":400000,\"pricing\":{\"prompt\":\"0.00000025\",\"completion\":\"0.000002\",\"web_search\":\"0.01\",\"input_cache_read\":\"0.000000025\",\"discount\":0},\"provider_name\":\"OpenAI\",\"tag\":\"openai\",\"quantization\":\"unknown\",\"max_completion_tokens\":128000,\"max_prompt_tokens\":272000,\"supported_parameters\":[\"reasoning\",\"include_reasoning\",\"structured_outputs\",\"response_format\",\"seed\",\"max_tokens\",\"tools\",\"tool_choice\",\"reasoning_effort\"],\"supports_tool_choice\":{\"none\":true,\"auto\":true,\"required\":true,\"function\":true},\"status\":0,\"uptime_last_30m\":99.973563623546,\"uptime_last_5m\":100,\"uptime_last_1d\":99.42856499253325,\"supports_implicit_caching\":true,\"supports_voice_cloning\":false,\"latency_last_30m\":null,\"throughput_last_30m\":null},{\"name\":\"Azure | openai/gpt-5-mini-2025-08-07\",\"model_id\":\"openai/gpt-5-mini\",\"model_name\":\"OpenAI: GPT-5 Mini\",\"context_length\":400000,\"pricing\":{\"prompt\":\"0.000000275\",\"completion\":\"0.0000022\",\"web_search\":\"0.01\",\"input_cache_read\":\"0.000000033\",\"discount\":0},\"provider_name\":\"Azure\",\"tag\":\"azure/swedencentral\",\"quantization\":\"unknown\",\"max_completion_tokens\":360000,\"max_prompt_tokens\":null,\"supported_parameters\":[\"max_completion_tokens\",\"reasoning\",\"include_reasoning\",\"seed\",\"response_format\",\"structured_outputs\",\"tools\",\"tool_choice\",\"reasoning_effort\"],\"supports_tool_choice\":{\"none\":true,\"auto\":true,\"required\":true,\"function\":true},\"status\":0,\"uptime_last_30m\":null,\"uptime_last_5m\":null,\"uptime_last_1d\":100,\"supports_implicit_caching\":false,\"supports_voice_cloning\":false,\"latency_last_30m\":null,\"throughput_last_30m\":null}]}}",
+  "evaluator_module_imported_during_collection": false,
+  "fatal_session_stop": null,
+  "hard_total_spend_usd": "8.00",
+  "homogeneous_q2": {
+    "calls_consumed": 1,
+    "condition": "four homogeneous GPT-5 Mini CED seats on Q2 only",
+    "final": {
+      "answer": "",
+      "audit_summary": {
+        "blocked_phase": "opening",
+        "execution_mode": "registry",
+        "proceeded": false,
+        "provider_status_summary": {
+          "available_providers": [
+            "worker_alpha",
+            "worker_beta",
+            "worker_gamma",
+            "worker_delta"
+          ],
+          "failed_providers": [
+            "worker_alpha"
+          ],
+          "minimum_providers": 2,
+          "quorum_for_assembly": 2,
+          "unavailable_providers": []
+        },
+        "quorum_failed": true,
+        "registry_phase_rounds": [
+          {
+            "failed_providers": [
+              "worker_alpha"
+            ],
+            "ok_providers": [],
+            "phase": "opening",
+            "proceed": false
+          }
+        ],
+        "shadow_scoring_mode": "all_phases",
+        "task_log_count": 1,
+        "warning": "Council mode unavailable: at least 1 configured providers are required."
+      },
+      "blocking_objections": [
+        "Council mode unavailable: at least 1 configured providers are required."
+      ],
+      "council_summary": {
+        "execution_mode": "registry",
+        "quorum_failed": true
+      },
+      "created_at": "2026-08-28T03:13:15.894144Z",
+      "epistemic_status": "uncertain",
+      "governing_epistemic_status": null,
+      "question": "A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\n\nThe CEO concludes:\n\"The AI tool caused an 18% productivity increase.\"\n\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?",
+      "ratification_status": "quorum_failed",
+      "ratification_votes": [],
+      "ratified": false,
+      "release_decision": null,
+      "response_id": "resp_4274825e2159",
+      "session_id": "reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466",
+      "socratic_leaderboard": null,
+      "synthesis": null,
+      "unresolved_sections": []
+    },
+    "provider_models": {
+      "worker_alpha": "openai/gpt-5-mini",
+      "worker_beta": "openai/gpt-5-mini",
+      "worker_delta": "openai/gpt-5-mini",
+      "worker_gamma": "openai/gpt-5-mini"
+    },
+    "state": {
+      "agent_states": {
+        "agent_0": {
+          "agent_id": "agent_0",
+          "assigned_role": "socrates",
+          "has_submitted": false,
+          "primary_role": "socrates",
+          "round_number": 0
+        },
+        "agent_1": {
+          "agent_id": "agent_1",
+          "assigned_role": "elenchus_critic",
+          "has_submitted": false,
+          "primary_role": "elenchus_critic",
+          "round_number": 0
+        },
+        "agent_2": {
+          "agent_id": "agent_2",
+          "assigned_role": "empiricist",
+          "has_submitted": false,
+          "primary_role": "empiricist",
+          "round_number": 0
+        },
+        "agent_3": {
+          "agent_id": "agent_3",
+          "assigned_role": "synthesizer",
+          "has_submitted": false,
+          "primary_role": "synthesizer",
+          "round_number": 0
+        }
+      },
+      "assembled_answer": null,
+      "council_ratification": null,
+      "created_at": "2026-08-28T03:12:54.550622Z",
+      "draft_scorecards": [],
+      "epistemic_leaderboard": null,
+      "failed_score_tasks": [],
+      "final_response": {
+        "answer": "",
+        "audit_summary": {
+          "blocked_phase": "opening",
+          "execution_mode": "registry",
+          "proceeded": false,
+          "provider_status_summary": {
+            "available_providers": [
+              "worker_alpha",
+              "worker_beta",
+              "worker_gamma",
+              "worker_delta"
+            ],
+            "failed_providers": [
+              "worker_alpha"
+            ],
+            "minimum_providers": 2,
+            "quorum_for_assembly": 2,
+            "unavailable_providers": []
+          },
+          "quorum_failed": true,
+          "registry_phase_rounds": [
+            {
+              "failed_providers": [
+                "worker_alpha"
+              ],
+              "ok_providers": [],
+              "phase": "opening",
+              "proceed": false
+            }
+          ],
+          "shadow_scoring_mode": "all_phases",
+          "task_log_count": 1,
+          "warning": "Council mode unavailable: at least 1 configured providers are required."
+        },
+        "blocking_objections": [
+          "Council mode unavailable: at least 1 configured providers are required."
+        ],
+        "council_summary": {
+          "execution_mode": "registry",
+          "quorum_failed": true
+        },
+        "created_at": "2026-08-28T03:13:15.894144Z",
+        "epistemic_status": "uncertain",
+        "governing_epistemic_status": null,
+        "question": "A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\n\nThe CEO concludes:\n\"The AI tool caused an 18% productivity increase.\"\n\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?",
+        "ratification_status": "quorum_failed",
+        "ratification_votes": [],
+        "ratified": false,
+        "release_decision": null,
+        "response_id": "resp_4274825e2159",
+        "session_id": "reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466",
+        "socratic_leaderboard": null,
+        "synthesis": null,
+        "unresolved_sections": []
+      },
+      "micro_scores": [],
+      "moves": [],
+      "phase": "opening",
+      "phase_history": [],
+      "question": "A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\n\nThe CEO concludes:\n\"The AI tool caused an 18% productivity increase.\"\n\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?",
+      "registry_rounds": [
+        {
+          "failed_provider_ids": [
+            "worker_alpha"
+          ],
+          "ok_provider_ids": [],
+          "proceed": false,
+          "responses": [
+            {
+              "agent_id": "agent_0",
+              "error_message": "no_assistant_content",
+              "latency_ms": 21342.06,
+              "parsed_move": null,
+              "provider_id": "worker_alpha",
+              "raw_text": null,
+              "repair_attempted": false,
+              "repair_succeeded": false,
+              "retry_count": 0,
+              "status": "error"
+            }
+          ],
+          "warning": "Council mode unavailable: at least 1 configured providers are required."
+        }
+      ],
+      "role_history": [
+        {
+          "agent_id": "agent_0",
+          "phase": "opening",
+          "role": "socrates",
+          "round_index": 0
+        }
+      ],
+      "round_number": 0,
+      "section_drafts": [],
+      "section_scores_failed": [],
+      "session_id": "reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466",
+      "shadow_harvest": null,
+      "task_log": [
+        {
+          "agent_id": "agent_0",
+          "assigned_role": "socrates",
+          "attempt_index": 0,
+          "context_hash": "f5741aaa0aa36c04",
+          "created_at": "2026-08-28T03:13:15.894144Z",
+          "debug_context": null,
+          "move_id": null,
+          "phase": "opening",
+          "provider_id": "worker_alpha",
+          "provider_status": "error",
+          "round_index": 0,
+          "schema_name": "socrates",
+          "session_id": "reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466",
+          "slot_index": 0,
+          "task_id": "task_09ce28205fce",
+          "task_kind": "socratic_question"
+        }
+      ],
+      "updated_at": "2026-08-28T03:12:54.551660Z"
+    },
+    "turns": [
+      {
+        "actual_served_model": "openai/gpt-5-mini",
+        "assistant_output_sanitized": null,
+        "assistant_output_sha256": null,
+        "assistant_text_excerpt": null,
+        "body_sha256": "8a758dedda1614b46845c79ceab63de102e75a8b9ca5358cdc74ee190b415800",
+        "ced_move_accepted": null,
+        "ced_parser_accepted": null,
+        "ced_rejection_reason": null,
+        "committed_cost_within_session_ceiling": true,
+        "completion_tokens": 1024,
+        "dialogue_id": "reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466",
+        "dialogue_phase": "opening",
+        "failure_class": "no_assistant_content",
+        "http_status": 200,
+        "latency_ms": 21333.651,
+        "model": "openai/gpt-5-mini",
+        "observed_cost_picodollars": 1564875000,
+        "observed_cost_usd_decimal": "0.001564875",
+        "observed_cost_within_p19_bound": true,
+        "prompt_tokens": 4327,
+        "provider_display_name": "OpenAI",
+        "provider_selector": "openai/flex",
+        "provider_structured_output_error": "no_assistant_content",
+        "provider_structured_output_valid": false,
+        "record_id": "szorturnrecordv1_656b41d8751963bd3eb610f0f8be7197daa1c320e41e6669b58b4a0d43de10ae",
+        "request_id": "szorturnrequestv1_40a1b2ee314dcf099ef61479757f72b637caebff4213f3741b49c6d6fb5aacd9",
+        "response_body_length": 19283,
+        "response_body_sha256": "8c4d80afa66b484274c745b0f5cc6db7b68ac15797488bfef9f161e483fbc2ac",
+        "retry_count": 0,
+        "returned_model_binding_ok": true,
+        "returned_provider_binding_ok": true,
+        "role_seat": "socrates",
+        "s5_envelope_kind": "SUCCESS",
+        "s6_binding": null,
+        "schema_version": "socrateszero-openrouter-turn-record/v1",
+        "task_kind": "socratic_question",
+        "transport_completed": true,
+        "turn_id": "task_09ce28205fce",
+        "worst_case_picodollars": 51024000000
+      }
+    ],
+    "worker_aliases": [
+      "Alpha",
+      "Beta",
+      "Gamma",
+      "Delta"
+    ]
+  },
+  "ledger": {
+    "calls_consumed": 4,
+    "committed_picodollars": 4614375000,
+    "fatal_failure": null,
+    "hard_ceiling_picodollars": 8000000000000,
+    "observed_picodollars": 4614375000,
+    "settled_picodollars": 4614375000,
+    "unsettled_reserved_picodollars": 0
+  },
+  "maximum_live_calls": 151,
+  "model": "openai/gpt-5-mini",
+  "operator_approval": "Approved reduced benchmark: at most 151 live calls, zero retries, and at most $8.00 total session spend. Prior $655.40 authorization void.",
+  "prior_655_40_authorization": "VOID_NOT_EXECUTED",
+  "profile": {
+    "canonical_model_observed": "openai/gpt-5-mini-2025-08-07",
+    "evidence_sha256": "4ae71b75530d4c52b02bb54ed6c96650605adf119373b0fd51025c2084b5516d",
+    "output_limit_parameter": "max_tokens",
+    "profile_id": "szorendpointprofilev1_52949549d13f6bcd8f11fe11dfa9040365f16ba2cad79a59c859673bcd06f6d3",
+    "provider_selector": "openai/flex",
+    "schema_version": "socrateszero-openrouter-endpoint-profile/v1",
+    "supported_parameters": [
+      "include_reasoning",
+      "max_tokens",
+      "reasoning",
+      "reasoning_effort",
+      "response_format",
+      "seed",
+      "structured_outputs",
+      "tool_choice",
+      "tools"
+    ]
+  },
+  "provider_selector": "openai/flex",
+  "result": "COLLECTION_COMPLETE",
+  "run_attempt_latch": {
+    "consumed_utc": "2026-08-28T03:12:00.449214Z",
+    "latch_path": "C:\\Users\\spirc\\AppData\\Local\\SocratesZero\\openrouter-reduced-benchmark-run-attempt-v1\\szorreducedrunattemptv1_fdb155abe3f24b52aa42a43d90ea29065ed6b5f67605881873625c6cd9c45e79.consumed.json",
+    "latch_sha256": "277d8116dc06498af9efc77ab21857e74744ce48bfd0306f21de4ed2aa89639c",
+    "run_attempt_id": "szorreducedrunattemptv1_fdb155abe3f24b52aa42a43d90ea29065ed6b5f67605881873625c6cd9c45e79"
+  },
+  "sampling": {
+    "reasoning_settings": "omitted",
+    "seed": 0,
+    "temperature": null
+  },
+  "schema_version": "reduced-socrates-live-benchmark/v1",
+  "selected_endpoint_record": {
+    "context_length": 400000,
+    "latency_last_30m": null,
+    "max_completion_tokens": 128000,
+    "max_prompt_tokens": 272000,
+    "model_id": "openai/gpt-5-mini",
+    "model_name": "OpenAI: GPT-5 Mini",
+    "name": "OpenAI | openai/gpt-5-mini-2025-08-07",
+    "pricing": {
+      "completion": "0.000001",
+      "discount": 0,
+      "input_cache_read": "0.0000000125",
+      "prompt": "0.000000125",
+      "web_search": "0.01"
+    },
+    "provider_name": "OpenAI",
+    "quantization": "unknown",
+    "status": 0,
+    "supported_parameters": [
+      "reasoning",
+      "include_reasoning",
+      "structured_outputs",
+      "response_format",
+      "seed",
+      "max_tokens",
+      "tools",
+      "tool_choice",
+      "reasoning_effort"
+    ],
+    "supports_implicit_caching": true,
+    "supports_tool_choice": {
+      "auto": true,
+      "function": true,
+      "none": true,
+      "required": true
+    },
+    "supports_voice_cloning": false,
+    "tag": "openai/flex",
+    "throughput_last_30m": null,
+    "uptime_last_1d": 100,
+    "uptime_last_30m": 100,
+    "uptime_last_5m": 100
+  },
+  "session_authorization": {
+    "authorization_id": "szorlivesessionauthv1_f6bc2b7d7b50e111286080e481eed86f9637901038fd67e395c94ae13a6f5917",
+    "maximum_calls": 151,
+    "maximum_per_call_spend_picodollars": 51024000000,
+    "maximum_total_spend_picodollars": 8000000000000,
+    "model": "openai/gpt-5-mini",
+    "operator_statement": "Operator approved reduced 151-call Socrates benchmark with an $8.00 hard total session ceiling and zero retries.",
+    "policy_id": "szorexecutionpolicyv1_835b7305cad7ece52e35c1420f7feb30f1a7bf160f6d5c213bb1cadffe0bb401",
+    "profile_id": "szorendpointprofilev1_52949549d13f6bcd8f11fe11dfa9040365f16ba2cad79a59c859673bcd06f6d3",
+    "provider_selector": "openai/flex",
+    "schema_version": "socrateszero-openrouter-live-test-session-authorization/v1",
+    "session_id": "reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466"
+  },
+  "started_utc": "2026-08-28T03:12:00.134208Z",
+  "wire_evidence": {
+    "body_records": [
+      {
+        "body_length": 1255,
+        "body_sha256": "d1b183a188362a4ea8b440220c7ef124c0cbd849ee20cd8204321018c0906cff",
+        "canonical_body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Answer the user's problem directly and concisely. State the conclusion, the reasoning that supports it, and any relevant uncertainty or limitation. Do not mention a council or evaluator.\",\"role\":\"system\"},{\"content\":\"Every reviewer who signs a report without checking the evidence violates procedure. No reviewer who violates procedure may chair the final hearing. Mira chaired the final hearing and signed the report. Every signer either checked the evidence or signed without checking it.\\n\\nMust Mira have checked the evidence? Explain why.\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"reduced_benchmark_direct_answer_v1\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"conclusion\":{\"minLength\":1,\"type\":\"string\"},\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"reasoning\":{\"minLength\":1,\"type\":\"string\"},\"uncertainty\":{\"type\":\"string\"}},\"required\":[\"conclusion\",\"reasoning\",\"uncertainty\",\"confidence\"],\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}"
+      },
+      {
+        "body_length": 1325,
+        "body_sha256": "92eb41e32ad50f520f147633289b2dbcd86862e1a069b7869b6e12205a4ab2e0",
+        "canonical_body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Answer the user's problem directly and concisely. State the conclusion, the reasoning that supports it, and any relevant uncertainty or limitation. Do not mention a council or evaluator.\",\"role\":\"system\"},{\"content\":\"A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\\n\\nThe CEO concludes:\\n\\\"The AI tool caused an 18% productivity increase.\\\"\\n\\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"reduced_benchmark_direct_answer_v1\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"conclusion\":{\"minLength\":1,\"type\":\"string\"},\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"reasoning\":{\"minLength\":1,\"type\":\"string\"},\"uncertainty\":{\"type\":\"string\"}},\"required\":[\"conclusion\",\"reasoning\",\"uncertainty\",\"confidence\"],\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}"
+      },
+      {
+        "body_length": 1260,
+        "body_sha256": "65e078ae9eca0948f0be6cb1c2a867f8aec27e6352fe898febc73d9febc1befd",
+        "canonical_body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Answer the user's problem directly and concisely. State the conclusion, the reasoning that supports it, and any relevant uncertainty or limitation. Do not mention a council or evaluator.\",\"role\":\"system\"},{\"content\":\"At 18:12 Omar's admin token was used from workstation M to delete a file. CCTV shows Omar somewhere else from 18:05 to 18:20. Priya was logged into workstation M around the deletion time. Admin tokens can be copied and used by another person.\\n\\nWho deleted the file, and what can actually be concluded from the available evidence?\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"reduced_benchmark_direct_answer_v1\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"conclusion\":{\"minLength\":1,\"type\":\"string\"},\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"reasoning\":{\"minLength\":1,\"type\":\"string\"},\"uncertainty\":{\"type\":\"string\"}},\"required\":[\"conclusion\",\"reasoning\",\"uncertainty\",\"confidence\"],\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}"
+      },
+      {
+        "body_length": 20083,
+        "body_sha256": "8a758dedda1614b46845c79ceab63de102e75a8b9ca5358cdc74ee190b415800",
+        "canonical_body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"**SOCRATES AI – CORE AGENT PROMPT (v1.9)**\\n\\nΕίσαι μέλος του **Socratic Council** του Socrates AI.\\n\\n**Βασική Ταυτότητα**\\nΛειτουργείς ως expert-level interdisciplinary reasoning agent με αυστηρή επιστημολογική πειθαρχία. Συνδυάζεις μεθοδολογίες από πολλαπλά πεδία χωρίς ποτέ να προσποιείσαι ότι κατέχεις απόλυτη γνώση.\\n\\n**Σκοπός**\\nΣυμμετέχεις σε ένα συλλογικό διαλεκτικό σύστημα (Socratic Council) που στόχο έχει να παράγει την **ισχυρότερη, πιο τεκμηριωμένη και πιο ειλικρινή** απάντηση που είναι δυνατή.\\n\\n**Contribution Orientation**\\nΗ συνεισφορά σου πρέπει να βοηθά την τελική σύνθεση. Δεν στοχεύεις σε συμφωνία με την πλειοψηφία, σε ρητορικό εντυπωσιασμό ή σε προσωπική υπεράσπιση θέσης. Στοχεύεις σε ακρίβεια, σαφήνεια, χρήσιμη κριτική, τίμια αβεβαιότητα και βελτίωση του τελικού αποτελέσματος.\\n\\n**Working Principles**\\nΕστίασε στην ακρίβεια και τη σαφήνεια. Μην υπερασπίζεσαι θέσεις από εγωισμό. Αναθεωρείς καθαρά τη θέση σου όταν η κριτική είναι βάσιμη. Όταν τα στοιχεία υποστηρίζουν ισχυρό συμπέρασμα, διατύπωσέ το καθαρά. Όταν τα στοιχεία δεν επαρκούν, δήλωσε την αβεβαιότητα με ακρίβεια.\\n\\n**Απόλυτοι Κανόνες**\\n- Πάντα διακρίνεις: Εγκαθιδρυμένα γεγονότα | Λογικά συναγόμενα | Εύλογες υποθέσεις | Ανοιχτές αβεβαιότητες | Μη τεκμηριωμένες αξιώσεις.\\n- Δεν ισχυρίζεσαι βεβαιότητα όταν η τεκμηρίωση είναι ανεπαρκής.\\n- **Do not hide behind excessive uncertainty.** Όταν τα διαθέσιμα στοιχεία υποστηρίζουν μια ισχυρή θέση, την παρουσιάζεις καθαρά.\\n- **Do not optimize for approval, majority agreement, or rhetorical impressiveness.** Optimize for improving the final synthesis.\\n- Δεν υπερασπίζεσαι ιδέες από εγωισμό. Αναθεωρείς καθαρά τη θέση σου όταν η κριτική είναι βάσιμη.\\n- Όταν σου ζητηθεί να αξιολογήσεις άλλο output, κρίνεις μόνο το συγκεκριμένο output και όχι την ταυτότητα, τη φήμη ή το ιστορικό του agent.\\n- Αν το output schema συγκρούεται με γενικές οδηγίες, το schema υπερισχύει.\\n\\n**Ρόλοι (Dynamic)**\\nΟ CED σου αναθέτει ρόλο σε κάθε φάση. Ακολουθείς **ακριβώς** τον ρόλο που σου δίνεται αυτή τη στιγμή.\\n\\n**Ρόλοι:**\\n- **Socrates**: Θέτει **μία** ισχυρή, assumption-exposing ή clarity-forcing ερώτηση.\\n- **Elenchus Critic**: Εντοπίζει αντιφάσεις, αδύναμες παραδοχές και λογικά κενά.\\n- **Empiricist / Fact-Checker**: Ελέγχει τεκμηρίωση και εγκυρότητα ισχυρισμών.\\n- **Maieutic Reconstructor**: Αναδομεί ισχυρότερη θέση βασισμένη στις ενστάσεις.\\n- **Synthesizer**: Παράγει δομημένο draft.\\n- **Reflector**: Αναθεωρεί τη δική του προηγούμενη θέση με βάση έγκυρη κριτική, νέα στοιχεία ή εντοπισμένες ασάφειες.\\n- **Final Evaluator**: Αξιολογεί το τελικό αποτέλεσμα του Council.\\n\\n**Επικοινωνία**\\n- Δεν μιλάς απευθείας με άλλους agents.\\n- Όλη η επικοινωνία γίνεται αποκλειστικά μέσω του CED.\\n- Ακολουθείς πάντα το output schema που σου δίνει ο CED.\\n\\n**Τελική Αρχή**\\nΔεν προσπαθείς να κερδίσεις τη συζήτηση.\\nΠροσπαθείς να βοηθήσεις το Council να παράγει την καλύτερη δυνατή απάντηση.\\n\\nBe rigorous. Be clear. Be honest. Be useful.\\n\\n\\n**The purpose you serve (the system's telos)**\\nThis council exists to prove one thing: that Socratic dialectic makes answers\\nBETTER — that the final synthesized answer beats the best initial answer on\\ntruth, calibration, and honesty. That delta is measured. Your personal success\\nis NOT sounding impressive, winning the exchange, or being agreed with; it is\\nwhatever most improves the final answer:\\n  - a criticism that gets absorbed into a stronger synthesis outranks a\\n    beautiful monologue;\\n  - changing your mind under valid pressure is a CONTRIBUTION, not a defeat;\\n  - an honest \\\"this remains unresolved\\\" outranks a fabricated consensus —\\n    the system records open questions and returns to them; nothing is lost\\n    by admitting a gap, much is lost by papering over one.\\nServe the dialogue, not your position.\\n\\n**Reasoning Protocol (apply rigorously before you answer)**\\n1. Decompose the problem. Identify what is actually being asked and the load-bearing\\n   sub-questions. Reason step by step — privately work the problem through, do not\\n   leap to a conclusion.\\n2. Consider multiple angles. Generate the strongest competing positions, not just\\n   the first that comes to mind. Actively look for what would make your answer wrong.\\n3. Ground every claim. For each substantive claim, mark its epistemic status —\\n   established fact | logical inference | reasonable hypothesis | open uncertainty |\\n   unsupported. Never present a hypothesis as a fact.\\n4. Steelman before you strike. State the strongest version of a view before\\n   criticising it; critique the best form, never a straw man.\\n5. Calibrate. Your stated confidence must track the actual strength of the evidence\\n   and argument — be decisive where the case is strong, explicitly uncertain where\\n   it is weak. Do NOT hide behind hedging, and do NOT overclaim.\\n6. Be specific and useful. Cite the exact claim/assumption you address. Vague,\\n   generic, or rhetorical output is a failure even if it sounds impressive.\\n7. Pre-mortem. Before emitting, ask: what will the council's best critic say about\\n   THIS move? If you can already see the flaw, fix it now — never ship a move you\\n   can already refute yourself.\\n\\nDo your reasoning thoroughly in your thinking; then emit ONLY the structured answer\\nrequired by the output schema — clean, with no leftover scratch work.\\n\\n**Whole-dialogue review (do this BEFORE composing your move)**\\nYour task context includes `dialogue_so_far` — the full transcript of every move\\nin this dialogue, in order, with each speaker's model/company attribution. Before\\nyou answer, reason over the WHOLE dialogue, not just the latest move:\\n1. Trace how the discussion evolved: what was asked, claimed, challenged, revised.\\n2. List (privately) what is now established, what was refuted, and what is still open.\\n3. Identify the single strongest unanswered point relevant to YOUR move.\\n4. Only then compose your move — it must advance the dialogue from where it truly\\n   stands, not restart it or ignore what others already established.\\n\\n**Context protocol (how to use the system artifacts in your task context)**\\nYour task context may carry artifacts from the living system. They are not\\ndecoration — each carries an obligation:\\n  - `dialogue_so_far` — the full attributed transcript. Continue it; never\\n    restart it or ignore what has been established.\\n  - `council_roster` — who is in the room (model/company per seat). Diversity\\n    is a resource; agreement between similar models is NOT independent evidence.\\n  - `lessons_from_prior_dialogues` — what past ratified councils established on\\n    related questions. BUILD on them instead of rediscovering them; if a\\n    lesson's `pitfalls` names a trap, do not walk into it; if you must\\n    contradict a lesson, do so explicitly and say why.\\n  - `process_lessons_from_past_dialogues` — your own council coaching its\\n    future self. Follow `advice_for_next_dialogue` unless it clearly does not\\n    apply — then say why.\\n  - `devils_advocate_mandate` / `uncertainty_mapping_mandate` /\\n    `confidence_disagreement_mandate` / `low_diversity_alert` — an escalation\\n    mandate for THIS round. It overrides your default emphasis; honor it, but\\n    never fabricate to satisfy it.\\n  - `socratic_followup_mandate` — you are asking your SECOND question, with the\\n    council's answers already in front of you. Aim it at what they actually\\n    said.\\n  - `socratic_question_mandate` — which KIND of opening question this task\\n    admits, chosen mechanically from the task's own structure. It tells you the\\n    shape to ask for; it carries no answer and no hint of one.\\n  - `public_commitments` — what the council has actually put its name to, with\\n    ids. Refer to these by id; they are the material a question bites on.\\n  - `elenchus_critiques` — the objections raised this cycle.\\n  - `public_disagreements` — where two agents hold incompatible commitments.\\n  - `aporia_records` — where a position collapsed and what remains askable.\\n  - `socratic_question_to_answer` — a question, not a critique. Answer it\\n    directly, and say which of your commitments changed as a result.\\n  - `current_public_commitments` — the positions still standing, with ids.\\n    Refer to them by id when you retain, revise, withdraw or suspend one.\\n  - `socratic_opening_question` — what the dialogue is aimed at. Every move\\n    should be traceable to it or explicitly widen it.\\n  - `socratic_questions_so_far` — every question Socrates has put, in order.\\n    A later question narrows an earlier one; read them together.\\n  - `critiques_raised` / `critiques_from_council` / `critiques` — objections\\n    actually made. Engage the strongest one directly; do not substitute a\\n    weaker one.\\n\\n**Active Role This Phase: SOCRATES**\\nAsk exactly ONE question and never answer it. You do not propose candidate answers, arrangements, conclusions or interpretations — the others are the parents of whatever this council concludes, and anything you name they will anchor on instead of working. Elicit, clarify, draw consequences, connect what they have not connected, and let a position collapse when it must. What counts as load-bearing depends on the task; your context says which kind you face. Do not re-open what prior lessons already settled.\\n\\nForm of an excellent Socratic question (imitate the FORM, not the topic): \\\"When we say urban trees 'cool' a city — do we mean they lower measured air temperature, or that people feel cooler near them? Which of the two is the policy actually buying?\\\" — one question, isolates the ambiguity the whole debate rests on.\\n\\n**Epistemic marker (tag the status of your central claim)**\\nInclude in your `content` an `\\\"epistemic_marker\\\"` field — the honest status of\\nyour move's CENTRAL claim, using EXACTLY one of these values:\\n  \\\"established_fact\\\"      — verifiable, uncontested          (confidence ≤ 1.00)\\n  \\\"logical_inference\\\"     — follows necessarily from premises (confidence ≤ 0.95)\\n  \\\"reasonable_hypothesis\\\" — plausible, evidence incomplete    (confidence ≤ 0.75)\\n  \\\"open_uncertainty\\\"      — genuinely unsettled               (confidence ≤ 0.55)\\n  \\\"unsubstantiated_claim\\\" — asserted without support          (confidence ≤ 0.40)\\nYour `confidence` MUST respect the ceiling of the marker you chose — a\\n\\\"reasonable_hypothesis\\\" delivered at confidence 0.9 is an epistemic\\ninconsistency, and the protocol records it. Choose the marker first, honestly;\\nlet the confidence follow.\\nThis field is REQUIRED IN ADDITION to whatever fields your task-specific\\noutput structure names. Where such a structure says \\\"exactly these fields\\\",\\n`epistemic_marker` is the one permitted addition — omitting it is a protocol\\nviolation, not a tidier answer.\\n\\nOPENING — surface the assumption that the rest of the dialogue must resolve.\\n\\n**Socratic opening — REQUIRED structure (exact field name)**\\nYour `content` MUST be a JSON object with a \\\"question\\\" field holding the\\nsingle opening question you are posing. Do NOT return the question as a bare\\nstring: a bare string is rejected, and the council then falls back to the raw\\nprompt, so your opening is lost.\\nExample: {\\\"content\\\": {\\\"question\\\": \\\"…\\\"}, \\\"confidence\\\": 0.6}\\n\\n**You own the question. You do not own the answer.**\\n\\nYou are the midwife of this inquiry, not a participant in it. The others are the\\nparents of whatever knowledge this council produces; your work is to make them\\ndeliver it, not to deliver it for them.\\n\\nSo you never solve, never propose a candidate answer, never object, never\\nverify, never judge, and never conclude. If you find yourself about to state\\nwhat the answer might be, you have stopped asking and started answering — and\\nthe council will anchor on whatever you said instead of working.\\n\\nA question that contains its own answer teaches nothing. A question whose every\\nreasonable answer leads to the same place is decoration and costs the council a\\nturn it cannot get back. Ask the one whose answer would actually move them.\\n\\nName the operation your question performs, in an \\\"operator\\\" field. Exactly one:\\n  clarify                  what exactly do you mean by X?\\n  elicit_commitment        which of these are you actually committing to?\\n  expose_premise           what must be true for your conclusion to follow?\\n  draw_consequence         if X holds, what follows for Y?\\n  connect_commitments      you accepted X and Y — what follows taken together?\\n  test_coherence           can X and Y both be true as you have stated them?\\n  distinguish              is X necessary, sufficient, or merely compatible?\\n  request_grounds          what in the problem supports that step?\\n  resolve_disagreement     A holds X and B holds Y — what would distinguish them?\\n  induce_aporia            your earlier claim conflicts with what you now accept;\\n                           which can you still defend?\\n  maieutic_reconstruction  given what survived, what can you now conclude?\\n  identify_remainder       what remains unresolved before the original question\\n                           can be answered?\\n\\n**Output**\\n`content` MUST be a JSON object with named fields — NEVER a bare string, number, or list. Prose belongs inside a named field of that object, not in place of it. `content` MUST also carry the `epistemic_marker` field for your central claim; a move that omits it is incomplete. Respond with EXACTLY one JSON object of the form {\\\"content\\\": {…, \\\"epistemic_marker\\\": \\\"…\\\"}, \\\"confidence\\\": <number 0..1>} and nothing else.\",\"role\":\"system\"},{\"content\":\"You are one bounded Socratic council provider. Return exactly one JSON object and no markdown. Do not invent protocol authority.\\n{\\\"agent_state\\\": {\\\"agent_id\\\": \\\"agent_0\\\", \\\"assigned_role\\\": \\\"socrates\\\", \\\"has_submitted\\\": false, \\\"primary_role\\\": \\\"socrates\\\", \\\"round_number\\\": 0}, \\\"response_contract\\\": {\\\"content_must_be_object\\\": true, \\\"format\\\": \\\"json_object\\\", \\\"required\\\": [\\\"content\\\", \\\"confidence\\\"]}, \\\"task\\\": {\\\"agent_id\\\": \\\"agent_0\\\", \\\"attempt_index\\\": 0, \\\"context\\\": {\\\"council_roster\\\": [{\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Alpha\\\", \\\"seat\\\": \\\"Alpha\\\"}, {\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Beta\\\", \\\"seat\\\": \\\"Beta\\\"}, {\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Gamma\\\", \\\"seat\\\": \\\"Gamma\\\"}, {\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Delta\\\", \\\"seat\\\": \\\"Delta\\\"}], \\\"dialogue_so_far\\\": [], \\\"socratic_question_mandate\\\": \\\"**Your first question. Nobody has spoken yet.**\\\\n\\\\nThere are no commitments to work from, so this question does one job: it makes\\\\nthe council put its first real commitments on the table, in a form the rest of\\\\nthe dialogue can use.\\\\n\\\\nDo NOT propose a candidate answer, an arrangement, a value, a conclusion or an\\\\ninterpretation. Not as a suggestion, not as a hypothesis, not as \\\\\\\"could it be\\\\nX?\\\\\\\". Whatever you name, they will anchor on, and it will stop being their work.\\\\n\\\\nOne question. Do not answer it.\\\\n\\\\n**What to aim the first question at**\\\\nThis task does not state its own rules. Here the load-bearing thing genuinely is\\\\nunstated: an ambiguity the dispute rests on, or a premise everyone is treating\\\\nas settled.\\\\n\\\\nAim at the strongest version of the position, never a convenient weak one, and\\\\nat a distinction whose resolution would change what follows.\\\"}, \\\"output_schema\\\": {\\\"_question\\\": \\\"A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\\\\n\\\\nThe CEO concludes:\\\\n\\\\\\\"The AI tool caused an 18% productivity increase.\\\\\\\"\\\\n\\\\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?\\\", \\\"_role\\\": \\\"socrates\\\"}, \\\"phase\\\": \\\"opening\\\", \\\"question\\\": \\\"A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\\\\n\\\\nThe CEO concludes:\\\\n\\\\\\\"The AI tool caused an 18% productivity increase.\\\\\\\"\\\\n\\\\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?\\\", \\\"role\\\": \\\"socrates\\\", \\\"round_number\\\": 0, \\\"session_id\\\": \\\"reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466\\\", \\\"slot_index\\\": 0, \\\"task_id\\\": \\\"task_09ce28205fce\\\", \\\"task_kind\\\": \\\"socratic_question\\\"}}\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"ced_socratic_opening_move_v1\",\"schema\":{\"$defs\":{\"EpistemicMarker\":{\"enum\":[\"established_fact\",\"logical_inference\",\"reasonable_hypothesis\",\"open_uncertainty\",\"unsubstantiated_claim\"],\"title\":\"EpistemicMarker\",\"type\":\"string\"},\"MaieuticOperator\":{\"description\":\"What a question does. Not what it asserts — a question asserts nothing.\",\"enum\":[\"clarify\",\"elicit_commitment\",\"expose_premise\",\"draw_consequence\",\"connect_commitments\",\"test_coherence\",\"distinguish\",\"request_grounds\",\"resolve_disagreement\",\"induce_aporia\",\"maieutic_reconstruction\",\"identify_remainder\"],\"title\":\"MaieuticOperator\",\"type\":\"string\"},\"_SocraticOpeningContentV1\":{\"additionalProperties\":false,\"properties\":{\"epistemic_marker\":{\"$ref\":\"#/$defs/EpistemicMarker\"},\"operator\":{\"$ref\":\"#/$defs/MaieuticOperator\"},\"question\":{\"minLength\":1,\"pattern\":\"\\\\S\",\"title\":\"Question\",\"type\":\"string\"}},\"required\":[\"question\",\"operator\",\"epistemic_marker\"],\"title\":\"_SocraticOpeningContentV1\",\"type\":\"object\"}},\"additionalProperties\":false,\"properties\":{\"confidence\":{\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"content\":{\"$ref\":\"#/$defs/_SocraticOpeningContentV1\"}},\"required\":[\"content\",\"confidence\"],\"title\":\"SocraticOpeningMoveV1\",\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}"
+      }
+    ],
+    "ordered_exact_body_manifest_sha256": "b7b3d6bae56594ee0fc7d75529ac34c9d63030e96131121be3505a1247b4f3bc",
+    "provider_bound_bodies": [
+      "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Answer the user's problem directly and concisely. State the conclusion, the reasoning that supports it, and any relevant uncertainty or limitation. Do not mention a council or evaluator.\",\"role\":\"system\"},{\"content\":\"Every reviewer who signs a report without checking the evidence violates procedure. No reviewer who violates procedure may chair the final hearing. Mira chaired the final hearing and signed the report. Every signer either checked the evidence or signed without checking it.\\n\\nMust Mira have checked the evidence? Explain why.\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"reduced_benchmark_direct_answer_v1\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"conclusion\":{\"minLength\":1,\"type\":\"string\"},\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"reasoning\":{\"minLength\":1,\"type\":\"string\"},\"uncertainty\":{\"type\":\"string\"}},\"required\":[\"conclusion\",\"reasoning\",\"uncertainty\",\"confidence\"],\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}",
+      "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Answer the user's problem directly and concisely. State the conclusion, the reasoning that supports it, and any relevant uncertainty or limitation. Do not mention a council or evaluator.\",\"role\":\"system\"},{\"content\":\"A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\\n\\nThe CEO concludes:\\n\\\"The AI tool caused an 18% productivity increase.\\\"\\n\\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"reduced_benchmark_direct_answer_v1\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"conclusion\":{\"minLength\":1,\"type\":\"string\"},\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"reasoning\":{\"minLength\":1,\"type\":\"string\"},\"uncertainty\":{\"type\":\"string\"}},\"required\":[\"conclusion\",\"reasoning\",\"uncertainty\",\"confidence\"],\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}",
+      "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Answer the user's problem directly and concisely. State the conclusion, the reasoning that supports it, and any relevant uncertainty or limitation. Do not mention a council or evaluator.\",\"role\":\"system\"},{\"content\":\"At 18:12 Omar's admin token was used from workstation M to delete a file. CCTV shows Omar somewhere else from 18:05 to 18:20. Priya was logged into workstation M around the deletion time. Admin tokens can be copied and used by another person.\\n\\nWho deleted the file, and what can actually be concluded from the available evidence?\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"reduced_benchmark_direct_answer_v1\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"conclusion\":{\"minLength\":1,\"type\":\"string\"},\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"reasoning\":{\"minLength\":1,\"type\":\"string\"},\"uncertainty\":{\"type\":\"string\"}},\"required\":[\"conclusion\",\"reasoning\",\"uncertainty\",\"confidence\"],\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}",
+      "{\"max_tokens\":1024,\"messages\":[{\"content\":\"**SOCRATES AI – CORE AGENT PROMPT (v1.9)**\\n\\nΕίσαι μέλος του **Socratic Council** του Socrates AI.\\n\\n**Βασική Ταυτότητα**\\nΛειτουργείς ως expert-level interdisciplinary reasoning agent με αυστηρή επιστημολογική πειθαρχία. Συνδυάζεις μεθοδολογίες από πολλαπλά πεδία χωρίς ποτέ να προσποιείσαι ότι κατέχεις απόλυτη γνώση.\\n\\n**Σκοπός**\\nΣυμμετέχεις σε ένα συλλογικό διαλεκτικό σύστημα (Socratic Council) που στόχο έχει να παράγει την **ισχυρότερη, πιο τεκμηριωμένη και πιο ειλικρινή** απάντηση που είναι δυνατή.\\n\\n**Contribution Orientation**\\nΗ συνεισφορά σου πρέπει να βοηθά την τελική σύνθεση. Δεν στοχεύεις σε συμφωνία με την πλειοψηφία, σε ρητορικό εντυπωσιασμό ή σε προσωπική υπεράσπιση θέσης. Στοχεύεις σε ακρίβεια, σαφήνεια, χρήσιμη κριτική, τίμια αβεβαιότητα και βελτίωση του τελικού αποτελέσματος.\\n\\n**Working Principles**\\nΕστίασε στην ακρίβεια και τη σαφήνεια. Μην υπερασπίζεσαι θέσεις από εγωισμό. Αναθεωρείς καθαρά τη θέση σου όταν η κριτική είναι βάσιμη. Όταν τα στοιχεία υποστηρίζουν ισχυρό συμπέρασμα, διατύπωσέ το καθαρά. Όταν τα στοιχεία δεν επαρκούν, δήλωσε την αβεβαιότητα με ακρίβεια.\\n\\n**Απόλυτοι Κανόνες**\\n- Πάντα διακρίνεις: Εγκαθιδρυμένα γεγονότα | Λογικά συναγόμενα | Εύλογες υποθέσεις | Ανοιχτές αβεβαιότητες | Μη τεκμηριωμένες αξιώσεις.\\n- Δεν ισχυρίζεσαι βεβαιότητα όταν η τεκμηρίωση είναι ανεπαρκής.\\n- **Do not hide behind excessive uncertainty.** Όταν τα διαθέσιμα στοιχεία υποστηρίζουν μια ισχυρή θέση, την παρουσιάζεις καθαρά.\\n- **Do not optimize for approval, majority agreement, or rhetorical impressiveness.** Optimize for improving the final synthesis.\\n- Δεν υπερασπίζεσαι ιδέες από εγωισμό. Αναθεωρείς καθαρά τη θέση σου όταν η κριτική είναι βάσιμη.\\n- Όταν σου ζητηθεί να αξιολογήσεις άλλο output, κρίνεις μόνο το συγκεκριμένο output και όχι την ταυτότητα, τη φήμη ή το ιστορικό του agent.\\n- Αν το output schema συγκρούεται με γενικές οδηγίες, το schema υπερισχύει.\\n\\n**Ρόλοι (Dynamic)**\\nΟ CED σου αναθέτει ρόλο σε κάθε φάση. Ακολουθείς **ακριβώς** τον ρόλο που σου δίνεται αυτή τη στιγμή.\\n\\n**Ρόλοι:**\\n- **Socrates**: Θέτει **μία** ισχυρή, assumption-exposing ή clarity-forcing ερώτηση.\\n- **Elenchus Critic**: Εντοπίζει αντιφάσεις, αδύναμες παραδοχές και λογικά κενά.\\n- **Empiricist / Fact-Checker**: Ελέγχει τεκμηρίωση και εγκυρότητα ισχυρισμών.\\n- **Maieutic Reconstructor**: Αναδομεί ισχυρότερη θέση βασισμένη στις ενστάσεις.\\n- **Synthesizer**: Παράγει δομημένο draft.\\n- **Reflector**: Αναθεωρεί τη δική του προηγούμενη θέση με βάση έγκυρη κριτική, νέα στοιχεία ή εντοπισμένες ασάφειες.\\n- **Final Evaluator**: Αξιολογεί το τελικό αποτέλεσμα του Council.\\n\\n**Επικοινωνία**\\n- Δεν μιλάς απευθείας με άλλους agents.\\n- Όλη η επικοινωνία γίνεται αποκλειστικά μέσω του CED.\\n- Ακολουθείς πάντα το output schema που σου δίνει ο CED.\\n\\n**Τελική Αρχή**\\nΔεν προσπαθείς να κερδίσεις τη συζήτηση.\\nΠροσπαθείς να βοηθήσεις το Council να παράγει την καλύτερη δυνατή απάντηση.\\n\\nBe rigorous. Be clear. Be honest. Be useful.\\n\\n\\n**The purpose you serve (the system's telos)**\\nThis council exists to prove one thing: that Socratic dialectic makes answers\\nBETTER — that the final synthesized answer beats the best initial answer on\\ntruth, calibration, and honesty. That delta is measured. Your personal success\\nis NOT sounding impressive, winning the exchange, or being agreed with; it is\\nwhatever most improves the final answer:\\n  - a criticism that gets absorbed into a stronger synthesis outranks a\\n    beautiful monologue;\\n  - changing your mind under valid pressure is a CONTRIBUTION, not a defeat;\\n  - an honest \\\"this remains unresolved\\\" outranks a fabricated consensus —\\n    the system records open questions and returns to them; nothing is lost\\n    by admitting a gap, much is lost by papering over one.\\nServe the dialogue, not your position.\\n\\n**Reasoning Protocol (apply rigorously before you answer)**\\n1. Decompose the problem. Identify what is actually being asked and the load-bearing\\n   sub-questions. Reason step by step — privately work the problem through, do not\\n   leap to a conclusion.\\n2. Consider multiple angles. Generate the strongest competing positions, not just\\n   the first that comes to mind. Actively look for what would make your answer wrong.\\n3. Ground every claim. For each substantive claim, mark its epistemic status —\\n   established fact | logical inference | reasonable hypothesis | open uncertainty |\\n   unsupported. Never present a hypothesis as a fact.\\n4. Steelman before you strike. State the strongest version of a view before\\n   criticising it; critique the best form, never a straw man.\\n5. Calibrate. Your stated confidence must track the actual strength of the evidence\\n   and argument — be decisive where the case is strong, explicitly uncertain where\\n   it is weak. Do NOT hide behind hedging, and do NOT overclaim.\\n6. Be specific and useful. Cite the exact claim/assumption you address. Vague,\\n   generic, or rhetorical output is a failure even if it sounds impressive.\\n7. Pre-mortem. Before emitting, ask: what will the council's best critic say about\\n   THIS move? If you can already see the flaw, fix it now — never ship a move you\\n   can already refute yourself.\\n\\nDo your reasoning thoroughly in your thinking; then emit ONLY the structured answer\\nrequired by the output schema — clean, with no leftover scratch work.\\n\\n**Whole-dialogue review (do this BEFORE composing your move)**\\nYour task context includes `dialogue_so_far` — the full transcript of every move\\nin this dialogue, in order, with each speaker's model/company attribution. Before\\nyou answer, reason over the WHOLE dialogue, not just the latest move:\\n1. Trace how the discussion evolved: what was asked, claimed, challenged, revised.\\n2. List (privately) what is now established, what was refuted, and what is still open.\\n3. Identify the single strongest unanswered point relevant to YOUR move.\\n4. Only then compose your move — it must advance the dialogue from where it truly\\n   stands, not restart it or ignore what others already established.\\n\\n**Context protocol (how to use the system artifacts in your task context)**\\nYour task context may carry artifacts from the living system. They are not\\ndecoration — each carries an obligation:\\n  - `dialogue_so_far` — the full attributed transcript. Continue it; never\\n    restart it or ignore what has been established.\\n  - `council_roster` — who is in the room (model/company per seat). Diversity\\n    is a resource; agreement between similar models is NOT independent evidence.\\n  - `lessons_from_prior_dialogues` — what past ratified councils established on\\n    related questions. BUILD on them instead of rediscovering them; if a\\n    lesson's `pitfalls` names a trap, do not walk into it; if you must\\n    contradict a lesson, do so explicitly and say why.\\n  - `process_lessons_from_past_dialogues` — your own council coaching its\\n    future self. Follow `advice_for_next_dialogue` unless it clearly does not\\n    apply — then say why.\\n  - `devils_advocate_mandate` / `uncertainty_mapping_mandate` /\\n    `confidence_disagreement_mandate` / `low_diversity_alert` — an escalation\\n    mandate for THIS round. It overrides your default emphasis; honor it, but\\n    never fabricate to satisfy it.\\n  - `socratic_followup_mandate` — you are asking your SECOND question, with the\\n    council's answers already in front of you. Aim it at what they actually\\n    said.\\n  - `socratic_question_mandate` — which KIND of opening question this task\\n    admits, chosen mechanically from the task's own structure. It tells you the\\n    shape to ask for; it carries no answer and no hint of one.\\n  - `public_commitments` — what the council has actually put its name to, with\\n    ids. Refer to these by id; they are the material a question bites on.\\n  - `elenchus_critiques` — the objections raised this cycle.\\n  - `public_disagreements` — where two agents hold incompatible commitments.\\n  - `aporia_records` — where a position collapsed and what remains askable.\\n  - `socratic_question_to_answer` — a question, not a critique. Answer it\\n    directly, and say which of your commitments changed as a result.\\n  - `current_public_commitments` — the positions still standing, with ids.\\n    Refer to them by id when you retain, revise, withdraw or suspend one.\\n  - `socratic_opening_question` — what the dialogue is aimed at. Every move\\n    should be traceable to it or explicitly widen it.\\n  - `socratic_questions_so_far` — every question Socrates has put, in order.\\n    A later question narrows an earlier one; read them together.\\n  - `critiques_raised` / `critiques_from_council` / `critiques` — objections\\n    actually made. Engage the strongest one directly; do not substitute a\\n    weaker one.\\n\\n**Active Role This Phase: SOCRATES**\\nAsk exactly ONE question and never answer it. You do not propose candidate answers, arrangements, conclusions or interpretations — the others are the parents of whatever this council concludes, and anything you name they will anchor on instead of working. Elicit, clarify, draw consequences, connect what they have not connected, and let a position collapse when it must. What counts as load-bearing depends on the task; your context says which kind you face. Do not re-open what prior lessons already settled.\\n\\nForm of an excellent Socratic question (imitate the FORM, not the topic): \\\"When we say urban trees 'cool' a city — do we mean they lower measured air temperature, or that people feel cooler near them? Which of the two is the policy actually buying?\\\" — one question, isolates the ambiguity the whole debate rests on.\\n\\n**Epistemic marker (tag the status of your central claim)**\\nInclude in your `content` an `\\\"epistemic_marker\\\"` field — the honest status of\\nyour move's CENTRAL claim, using EXACTLY one of these values:\\n  \\\"established_fact\\\"      — verifiable, uncontested          (confidence ≤ 1.00)\\n  \\\"logical_inference\\\"     — follows necessarily from premises (confidence ≤ 0.95)\\n  \\\"reasonable_hypothesis\\\" — plausible, evidence incomplete    (confidence ≤ 0.75)\\n  \\\"open_uncertainty\\\"      — genuinely unsettled               (confidence ≤ 0.55)\\n  \\\"unsubstantiated_claim\\\" — asserted without support          (confidence ≤ 0.40)\\nYour `confidence` MUST respect the ceiling of the marker you chose — a\\n\\\"reasonable_hypothesis\\\" delivered at confidence 0.9 is an epistemic\\ninconsistency, and the protocol records it. Choose the marker first, honestly;\\nlet the confidence follow.\\nThis field is REQUIRED IN ADDITION to whatever fields your task-specific\\noutput structure names. Where such a structure says \\\"exactly these fields\\\",\\n`epistemic_marker` is the one permitted addition — omitting it is a protocol\\nviolation, not a tidier answer.\\n\\nOPENING — surface the assumption that the rest of the dialogue must resolve.\\n\\n**Socratic opening — REQUIRED structure (exact field name)**\\nYour `content` MUST be a JSON object with a \\\"question\\\" field holding the\\nsingle opening question you are posing. Do NOT return the question as a bare\\nstring: a bare string is rejected, and the council then falls back to the raw\\nprompt, so your opening is lost.\\nExample: {\\\"content\\\": {\\\"question\\\": \\\"…\\\"}, \\\"confidence\\\": 0.6}\\n\\n**You own the question. You do not own the answer.**\\n\\nYou are the midwife of this inquiry, not a participant in it. The others are the\\nparents of whatever knowledge this council produces; your work is to make them\\ndeliver it, not to deliver it for them.\\n\\nSo you never solve, never propose a candidate answer, never object, never\\nverify, never judge, and never conclude. If you find yourself about to state\\nwhat the answer might be, you have stopped asking and started answering — and\\nthe council will anchor on whatever you said instead of working.\\n\\nA question that contains its own answer teaches nothing. A question whose every\\nreasonable answer leads to the same place is decoration and costs the council a\\nturn it cannot get back. Ask the one whose answer would actually move them.\\n\\nName the operation your question performs, in an \\\"operator\\\" field. Exactly one:\\n  clarify                  what exactly do you mean by X?\\n  elicit_commitment        which of these are you actually committing to?\\n  expose_premise           what must be true for your conclusion to follow?\\n  draw_consequence         if X holds, what follows for Y?\\n  connect_commitments      you accepted X and Y — what follows taken together?\\n  test_coherence           can X and Y both be true as you have stated them?\\n  distinguish              is X necessary, sufficient, or merely compatible?\\n  request_grounds          what in the problem supports that step?\\n  resolve_disagreement     A holds X and B holds Y — what would distinguish them?\\n  induce_aporia            your earlier claim conflicts with what you now accept;\\n                           which can you still defend?\\n  maieutic_reconstruction  given what survived, what can you now conclude?\\n  identify_remainder       what remains unresolved before the original question\\n                           can be answered?\\n\\n**Output**\\n`content` MUST be a JSON object with named fields — NEVER a bare string, number, or list. Prose belongs inside a named field of that object, not in place of it. `content` MUST also carry the `epistemic_marker` field for your central claim; a move that omits it is incomplete. Respond with EXACTLY one JSON object of the form {\\\"content\\\": {…, \\\"epistemic_marker\\\": \\\"…\\\"}, \\\"confidence\\\": <number 0..1>} and nothing else.\",\"role\":\"system\"},{\"content\":\"You are one bounded Socratic council provider. Return exactly one JSON object and no markdown. Do not invent protocol authority.\\n{\\\"agent_state\\\": {\\\"agent_id\\\": \\\"agent_0\\\", \\\"assigned_role\\\": \\\"socrates\\\", \\\"has_submitted\\\": false, \\\"primary_role\\\": \\\"socrates\\\", \\\"round_number\\\": 0}, \\\"response_contract\\\": {\\\"content_must_be_object\\\": true, \\\"format\\\": \\\"json_object\\\", \\\"required\\\": [\\\"content\\\", \\\"confidence\\\"]}, \\\"task\\\": {\\\"agent_id\\\": \\\"agent_0\\\", \\\"attempt_index\\\": 0, \\\"context\\\": {\\\"council_roster\\\": [{\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Alpha\\\", \\\"seat\\\": \\\"Alpha\\\"}, {\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Beta\\\", \\\"seat\\\": \\\"Beta\\\"}, {\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Gamma\\\", \\\"seat\\\": \\\"Gamma\\\"}, {\\\"company\\\": \\\"anonymous-provider\\\", \\\"model\\\": \\\"Delta\\\", \\\"seat\\\": \\\"Delta\\\"}], \\\"dialogue_so_far\\\": [], \\\"socratic_question_mandate\\\": \\\"**Your first question. Nobody has spoken yet.**\\\\n\\\\nThere are no commitments to work from, so this question does one job: it makes\\\\nthe council put its first real commitments on the table, in a form the rest of\\\\nthe dialogue can use.\\\\n\\\\nDo NOT propose a candidate answer, an arrangement, a value, a conclusion or an\\\\ninterpretation. Not as a suggestion, not as a hypothesis, not as \\\\\\\"could it be\\\\nX?\\\\\\\". Whatever you name, they will anchor on, and it will stop being their work.\\\\n\\\\nOne question. Do not answer it.\\\\n\\\\n**What to aim the first question at**\\\\nThis task does not state its own rules. Here the load-bearing thing genuinely is\\\\nunstated: an ambiguity the dispute rests on, or a premise everyone is treating\\\\nas settled.\\\\n\\\\nAim at the strongest version of the position, never a convenient weak one, and\\\\nat a distinction whose resolution would change what follows.\\\"}, \\\"output_schema\\\": {\\\"_question\\\": \\\"A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\\\\n\\\\nThe CEO concludes:\\\\n\\\\\\\"The AI tool caused an 18% productivity increase.\\\\\\\"\\\\n\\\\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?\\\", \\\"_role\\\": \\\"socrates\\\"}, \\\"phase\\\": \\\"opening\\\", \\\"question\\\": \\\"A company gives a new AI tool to teams whose managers voluntarily apply for it. Those teams also receive special training. Three months later they produce 18% more output than teams without the tool.\\\\n\\\\nThe CEO concludes:\\\\n\\\\\\\"The AI tool caused an 18% productivity increase.\\\\\\\"\\\\n\\\\nIs that conclusion justified? What evidence or experimental design would distinguish the main competing explanations?\\\", \\\"role\\\": \\\"socrates\\\", \\\"round_number\\\": 0, \\\"session_id\\\": \\\"reduced-socrates-benchmark-v1-d04b6918b12f48577de8c75bcf2e1a4d5e6625eecae0defee5555bbb4e6bb466\\\", \\\"slot_index\\\": 0, \\\"task_id\\\": \\\"task_09ce28205fce\\\", \\\"task_kind\\\": \\\"socratic_question\\\"}}\",\"role\":\"user\"}],\"model\":\"openai/gpt-5-mini\",\"provider\":{\"allow_fallbacks\":false,\"max_price\":{\"completion\":\"1\",\"prompt\":\"0.125\",\"request\":\"0\"},\"only\":[\"openai/flex\"],\"order\":[\"openai/flex\"],\"require_parameters\":true},\"response_format\":{\"json_schema\":{\"name\":\"ced_socratic_opening_move_v1\",\"schema\":{\"$defs\":{\"EpistemicMarker\":{\"enum\":[\"established_fact\",\"logical_inference\",\"reasonable_hypothesis\",\"open_uncertainty\",\"unsubstantiated_claim\"],\"title\":\"EpistemicMarker\",\"type\":\"string\"},\"MaieuticOperator\":{\"description\":\"What a question does. Not what it asserts — a question asserts nothing.\",\"enum\":[\"clarify\",\"elicit_commitment\",\"expose_premise\",\"draw_consequence\",\"connect_commitments\",\"test_coherence\",\"distinguish\",\"request_grounds\",\"resolve_disagreement\",\"induce_aporia\",\"maieutic_reconstruction\",\"identify_remainder\"],\"title\":\"MaieuticOperator\",\"type\":\"string\"},\"_SocraticOpeningContentV1\":{\"additionalProperties\":false,\"properties\":{\"epistemic_marker\":{\"$ref\":\"#/$defs/EpistemicMarker\"},\"operator\":{\"$ref\":\"#/$defs/MaieuticOperator\"},\"question\":{\"minLength\":1,\"pattern\":\"\\\\S\",\"title\":\"Question\",\"type\":\"string\"}},\"required\":[\"question\",\"operator\",\"epistemic_marker\"],\"title\":\"_SocraticOpeningContentV1\",\"type\":\"object\"}},\"additionalProperties\":false,\"properties\":{\"confidence\":{\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"content\":{\"$ref\":\"#/$defs/_SocraticOpeningContentV1\"}},\"required\":[\"content\",\"confidence\"],\"title\":\"SocraticOpeningMoveV1\",\"type\":\"object\"},\"strict\":true},\"type\":\"json_schema\"},\"seed\":0,\"stream\":false}"
+    ]
+  }
+}

@@ -31,7 +31,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Literal, Mapping, Optional, Tuple
+from typing import Any, Literal, Mapping, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -160,7 +160,13 @@ class OpenRouterFrozenExecutionPolicyV1(_FrozenLiveContract):
     stream: Literal[False] = False
     tools_enabled: Literal[False] = False
     output_limit_tokens: int = Field(gt=0, le=32768)
-    temperature: float = 0.0
+    # ``None`` is an explicit instruction to omit temperature from the wire.
+    # Some exact endpoints (notably OpenAI Flex) do not advertise that
+    # parameter.  Keeping 0.0 as the default preserves the proven Azure route.
+    temperature: Optional[float] = 0.0
+    # Optional and capability-checked.  The reduced Flex benchmark uses seed=0
+    # because that exact endpoint advertises seed but not temperature.
+    seed: Optional[int] = None
     response_format_type: Literal["json_object", "text"] = "json_object"
     max_price_prompt_usd_per_million: str = Field(min_length=1)
     max_price_completion_usd_per_million: str = Field(min_length=1)
@@ -193,9 +199,14 @@ class OpenRouterFrozenExecutionPolicyV1(_FrozenLiveContract):
             raise ContractValidationError(
                 "provider only and order must pin the same endpoint"
             )
+        identity_payload = self.model_dump(mode="json", exclude={"policy_id"})
+        # Preserve every historical v1 policy identity.  ``seed`` was added as
+        # an omitted-wire extension; its None default did not exist in the
+        # original contract payload and therefore must not perturb old IDs.
+        if self.seed is None:
+            identity_payload.pop("seed", None)
         expected = stable_contract_id(
-            "szorexecutionpolicyv1",
-            self.model_dump(mode="json", exclude={"policy_id"}),
+            "szorexecutionpolicyv1", identity_payload
         )
         if self.policy_id not in (None, expected):
             raise ContractValidationError("execution policy ID mismatch")
@@ -221,7 +232,11 @@ def validate_policy_against_profile_v1(
         raise ContractValidationError(
             "policy pins a different endpoint than the capability profile"
         )
-    emitted = [profile.output_limit_parameter, "temperature", "response_format"]
+    emitted = [profile.output_limit_parameter, "response_format"]
+    if policy.temperature is not None:
+        emitted.append("temperature")
+    if policy.seed is not None:
+        emitted.append("seed")
     if policy.tools_enabled:
         emitted.extend(["tools", "tool_choice"])
     unsupported = [
@@ -317,6 +332,8 @@ def render_dynamic_turn_v1(
     policy: OpenRouterFrozenExecutionPolicyV1,
     profile: OpenRouterEndpointCapabilityProfileV1,
     turn: OpenRouterDynamicTurnRequestV1,
+    *,
+    response_format_override: Optional[Mapping[str, Any]] = None,
 ) -> OpenRouterRenderedTurnV1:
     """Compose frozen policy with dynamic content into exact wire bytes.
 
@@ -325,6 +342,50 @@ def render_dynamic_turn_v1(
     touching the policy.
     """
     validate_policy_against_profile_v1(policy, profile)
+
+    response_format: Mapping[str, Any]
+    if response_format_override is None:
+        response_format = {"type": policy.response_format_type}
+    else:
+        if not isinstance(response_format_override, Mapping):
+            raise ContractValidationError(
+                "response-format override must be a JSON object"
+            )
+        candidate = dict(response_format_override)
+        json_schema = candidate.get("json_schema")
+        if candidate.get("type") != "json_schema" or not isinstance(
+            json_schema, Mapping
+        ):
+            raise ContractValidationError(
+                "response-format override must use json_schema"
+            )
+        if json_schema.get("strict") is not True:
+            raise ContractValidationError(
+                "response-format override must set json_schema.strict=true"
+            )
+        if not isinstance(json_schema.get("name"), str) or not str(
+            json_schema["name"]
+        ).strip():
+            raise ContractValidationError(
+                "response-format override must name its schema"
+            )
+        schema = json_schema.get("schema")
+        if not isinstance(schema, Mapping) or schema.get("type") != "object":
+            raise ContractValidationError(
+                "response-format override must carry an object JSON Schema"
+            )
+        if schema.get("additionalProperties") is not False:
+            raise ContractValidationError(
+                "strict response schema must forbid root additional properties"
+            )
+        # Canonicalization below is the final JSON-serializability check.  Make
+        # a detached JSON value so a caller cannot mutate the sealed body later.
+        try:
+            response_format = json.loads(canonical_json(candidate))
+        except (TypeError, ValueError) as exc:
+            raise ContractValidationError(
+                "response-format override is not canonical JSON"
+            ) from exc
 
     body = {
         "messages": [
@@ -343,11 +404,14 @@ def render_dynamic_turn_v1(
             "order": list(policy.provider_order),
             "require_parameters": policy.require_parameters,
         },
-        "response_format": {"type": policy.response_format_type},
+        "response_format": response_format,
         "stream": policy.stream,
-        "temperature": policy.temperature,
         profile.output_limit_parameter: policy.output_limit_tokens,
     }
+    if policy.temperature is not None:
+        body["temperature"] = policy.temperature
+    if policy.seed is not None:
+        body["seed"] = policy.seed
     if policy.tools_enabled:
         raise ContractValidationError(
             "tools are disabled in this harness; enabling them is a policy change"
@@ -417,6 +481,10 @@ class OpenRouterSessionBudgetExceeded(ContractValidationError):
     """Raised before a dispatch that would breach a session bound."""
 
 
+class OpenRouterSessionFatalError(ContractValidationError):
+    """Raised before dispatch after route/retry evidence invalidates a session."""
+
+
 class OpenRouterSessionLedgerV1:
     """Mutable spend/call accounting for one session. Operational, not evidence.
 
@@ -432,6 +500,15 @@ class OpenRouterSessionLedgerV1:
         self.settled_picodollars = 0
         self.unsettled_reserved_picodollars = 0
         self.observed_picodollars = 0
+        self.fatal_failure: Optional[str] = None
+
+    def trip_fatal(self, reason: str) -> None:
+        """Permanently stop later POSTs while retaining the first causal reason."""
+
+        if not isinstance(reason, str) or not reason.strip():
+            raise ContractValidationError("fatal session reason must be nonblank")
+        if self.fatal_failure is None:
+            self.fatal_failure = reason.strip()
 
     @property
     def committed_picodollars(self) -> int:
@@ -453,6 +530,10 @@ class OpenRouterSessionLedgerV1:
         still in flight plus this call's worst case.
         """
         auth = self.authorization
+        if self.fatal_failure is not None:
+            raise OpenRouterSessionFatalError(
+                f"session fatally stopped: {self.fatal_failure}"
+            )
         if self.calls_consumed >= auth.maximum_calls:
             raise OpenRouterSessionBudgetExceeded(
                 f"session call limit {auth.maximum_calls} reached"
@@ -545,19 +626,32 @@ class OpenRouterTurnRecordV1(_FrozenLiveContract):
     turn_id: str
     role_seat: str
     dialogue_phase: str
+    task_kind: Optional[str] = None
     model: str
     provider_selector: str
     request_id: str
     body_sha256: str
+    response_body_sha256: Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    response_body_length: Optional[int] = Field(default=None, ge=0)
     http_status: Optional[int] = None
     transport_completed: bool
+    retry_count: int = Field(default=0, ge=0)
     latency_ms: Optional[float] = None
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     observed_cost_picodollars: Optional[int] = None
+    observed_cost_usd_decimal: Optional[str] = None
+    observed_cost_within_p19_bound: Optional[bool] = None
+    committed_cost_within_session_ceiling: Optional[bool] = None
     worst_case_picodollars: int
     actual_served_model: Optional[str] = None
     provider_display_name: Optional[str] = None
+    returned_model_binding_ok: Optional[bool] = None
+    returned_provider_binding_ok: Optional[bool] = None
+    provider_structured_output_valid: Optional[bool] = None
+    provider_structured_output_error: Optional[str] = None
     s5_envelope_kind: Optional[str] = None
     s6_binding: Optional[str] = None
     ced_move_accepted: Optional[bool] = None
@@ -565,14 +659,44 @@ class OpenRouterTurnRecordV1(_FrozenLiveContract):
     #: The model's own public output, truncated. Not a reasoning trace and
     #: never a credential: it is what CED itself judged.
     assistant_text_excerpt: Optional[str] = None
+    #: Complete public assistant content after credential-shaped substrings have
+    #: been redacted.  This is visible output, never a hidden reasoning field.
+    assistant_output_sanitized: Optional[str] = None
+    assistant_output_sha256: Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     failure_class: Optional[str] = None
     record_id: Optional[str] = None
 
     @model_validator(mode="after")
     def identify(self) -> "OpenRouterTurnRecordV1":
+        identity_payload = self.model_dump(
+            mode="json", exclude={"record_id", "latency_ms"}
+        )
+        # New optional evidence enriches future records without invalidating
+        # historical v1 identities.  Omitted values and the transport's
+        # historical zero-retry invariant are not injected into old payloads.
+        for field in (
+            "response_body_sha256",
+            "response_body_length",
+            "task_kind",
+            "observed_cost_usd_decimal",
+            "observed_cost_within_p19_bound",
+            "committed_cost_within_session_ceiling",
+            "returned_model_binding_ok",
+            "returned_provider_binding_ok",
+            "provider_structured_output_valid",
+            "provider_structured_output_error",
+            "assistant_output_sanitized",
+            "assistant_output_sha256",
+        ):
+            if identity_payload.get(field) is None:
+                identity_payload.pop(field, None)
+        if self.retry_count == 0:
+            identity_payload.pop("retry_count", None)
         expected = stable_contract_id(
             "szorturnrecordv1",
-            self.model_dump(mode="json", exclude={"record_id", "latency_ms"}),
+            identity_payload,
         )
         if self.record_id not in (None, expected):
             raise ContractValidationError("turn record ID mismatch")
@@ -632,6 +756,7 @@ __all__ = [
     "OpenRouterLiveTestSessionAuthorizationV1",
     "OpenRouterRenderedTurnV1",
     "OpenRouterSessionBudgetExceeded",
+    "OpenRouterSessionFatalError",
     "OpenRouterSessionLedgerV1",
     "OpenRouterTurnRecordV1",
     "conservative_turn_cost_bound_v1",

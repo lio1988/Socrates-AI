@@ -95,12 +95,69 @@ OPENROUTER_CREDENTIAL_VARIABLE_V1 = "OPENROUTER_API_KEY"
 #: Response bytes above this are refused rather than buffered without limit.
 OPENROUTER_MAX_LIVE_RESPONSE_BYTES_V1 = 4 * 1024 * 1024
 
-#: The only two request targets this phase may ever open, paired with the only
+#: Endpoint listings for the two families the multi-model experiment adds. Each
+#: is its own pinned class, so a typo in a slug cannot silently become a request
+#: to some other model.
+OPENROUTER_CLAUDE_SONNET_5_ENDPOINTS_PATH_V1 = (
+    "/api/v1/models/anthropic/claude-sonnet-5/endpoints"
+)
+OPENROUTER_GEMINI_3_7_FLASH_ENDPOINTS_PATH_V1 = (
+    "/api/v1/models/google/gemini-3.7-flash/endpoints"
+)
+
+#: The catalog listing, used only to discover exact model slugs before they are
+#: pinned above.  A slug cannot be pinned without first being read from the
+#: provider, and guessing one is what produced the S7B routing refusal.
+OPENROUTER_MODELS_CATALOG_PATH_V1 = "/api/v1/models"
+
+#: The two open-weight families the operator added to the council.  Both slugs
+#: were read from the catalog listing above, not guessed.
+OPENROUTER_QWEN3_235B_ENDPOINTS_PATH_V1 = (
+    "/api/v1/models/qwen/qwen3-235b-a22b-2507/endpoints"
+)
+OPENROUTER_LLAMA_4_MAVERICK_ENDPOINTS_PATH_V1 = (
+    "/api/v1/models/meta-llama/llama-4-maverick/endpoints"
+)
+
+#: Low-cost council candidates.  ``qwen3-32b`` is the operator's exact slug.
+#: The operator's Seat C slug ``llama-4-scout-17b-16e-instruct`` is absent from
+#: the catalog; ``llama-4-scout`` is the same model under OpenRouter's canonical
+#: slug and is pinned here as an identified alternative, not a substitution.
+OPENROUTER_QWEN3_32B_ENDPOINTS_PATH_V1 = (
+    "/api/v1/models/qwen/qwen3-32b/endpoints"
+)
+OPENROUTER_LLAMA_4_SCOUT_ENDPOINTS_PATH_V1 = (
+    "/api/v1/models/meta-llama/llama-4-scout/endpoints"
+)
+
+#: The only request targets this phase may ever open, paired with the only
 #: dispatch class allowed to use each.  Anything else is refused before a socket.
 FROZEN_OPENROUTER_PERMITTED_TARGETS_V1 = {
     "jit_metadata_get": ("GET", OPENROUTER_MODEL_DETAIL_PATH_V1),
     "live_inference_post": ("POST", OPENROUTER_LIVE_INFERENCE_PATH_V1),
     "jit_endpoints_get": ("GET", OPENROUTER_MODEL_ENDPOINTS_PATH_V1),
+    "claude_sonnet_5_endpoints_get": (
+        "GET",
+        OPENROUTER_CLAUDE_SONNET_5_ENDPOINTS_PATH_V1,
+    ),
+    "gemini_3_7_flash_endpoints_get": (
+        "GET",
+        OPENROUTER_GEMINI_3_7_FLASH_ENDPOINTS_PATH_V1,
+    ),
+    "models_catalog_get": ("GET", OPENROUTER_MODELS_CATALOG_PATH_V1),
+    "qwen3_235b_endpoints_get": (
+        "GET",
+        OPENROUTER_QWEN3_235B_ENDPOINTS_PATH_V1,
+    ),
+    "llama_4_maverick_endpoints_get": (
+        "GET",
+        OPENROUTER_LLAMA_4_MAVERICK_ENDPOINTS_PATH_V1,
+    ),
+    "qwen3_32b_endpoints_get": ("GET", OPENROUTER_QWEN3_32B_ENDPOINTS_PATH_V1),
+    "llama_4_scout_endpoints_get": (
+        "GET",
+        OPENROUTER_LLAMA_4_SCOUT_ENDPOINTS_PATH_V1,
+    ),
 }
 
 
@@ -307,7 +364,16 @@ class OpenRouterLiveTransportRegistrationV1(_FrozenShadowContractV1):
         OPENROUTER_LIVE_TRANSPORT_REGISTRATION_SCHEMA_V1
     ] = OPENROUTER_LIVE_TRANSPORT_REGISTRATION_SCHEMA_V1
     dispatch_class: Literal[
-        "jit_metadata_get", "live_inference_post", "jit_endpoints_get"
+        "jit_metadata_get",
+        "live_inference_post",
+        "jit_endpoints_get",
+        "claude_sonnet_5_endpoints_get",
+        "gemini_3_7_flash_endpoints_get",
+        "models_catalog_get",
+        "qwen3_235b_endpoints_get",
+        "llama_4_maverick_endpoints_get",
+        "qwen3_32b_endpoints_get",
+        "llama_4_scout_endpoints_get",
     ]
     method: Literal["POST", "GET"]
     host: Literal[OPENROUTER_LIVE_API_HOST_V1] = OPENROUTER_LIVE_API_HOST_V1
@@ -551,6 +617,33 @@ def fetch_openrouter_model_detail_v1(
     )
 
 
+def fetch_openrouter_family_endpoints_v1(
+    *, dispatch_class: str, bounded_timeout_seconds: int = 30
+) -> OpenRouterRawHttpResultV1:
+    """One bounded GET of a pinned family endpoint listing.  No retry.
+
+    The class selects the path from the frozen target table, so a caller cannot
+    reach an arbitrary model listing by passing a crafted string.
+    """
+    permitted = FROZEN_OPENROUTER_PERMITTED_TARGETS_V1.get(dispatch_class)
+    if permitted is None or permitted[0] != "GET":
+        raise ContractValidationError(
+            f"{dispatch_class!r} is not a permitted metadata GET class"
+        )
+    credential = _read_bearer_credential_v1()
+    if credential is None:
+        raise ContractValidationError("credential absent; no request may be made")
+    return _dispatch_once_v1(
+        kind=dispatch_class,
+        method="GET",
+        path=permitted[1],
+        body=None,
+        semantic_headers={"Accept": "application/json"},
+        bounded_timeout_seconds=bounded_timeout_seconds,
+        bearer_credential=credential,
+    )
+
+
 def fetch_openrouter_model_endpoints_v1(
     *, bounded_timeout_seconds: int = 30
 ) -> OpenRouterRawHttpResultV1:
@@ -630,6 +723,7 @@ __all__ = [
     "build_openrouter_claim_store_grant_v1",
     "dispatch_openrouter_one_live_inference_v1",
     "fetch_openrouter_model_detail_v1",
+    "fetch_openrouter_family_endpoints_v1",
     "fetch_openrouter_model_endpoints_v1",
     "openrouter_credential_is_present_v1",
 ]

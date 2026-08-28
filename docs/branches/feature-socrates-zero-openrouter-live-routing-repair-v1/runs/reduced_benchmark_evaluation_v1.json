@@ -1,0 +1,317 @@
+{
+  "baselines": {
+    "Q1": {
+      "actual_output": "{\"conclusion\":\"Yes. Mira must have checked the evidence.\",\"confidence\":0.95,\"reasoning\":\"Mira signed the report and every signer either checked the evidence or signed without checking. If Mira had not checked, she would have signed without checking; by premise 1 that would mean she violated procedure, and by premise 2 anyone who violates procedure may not chair the final hearing. That contradicts the fact that Mira chaired the final hearing. Therefore the assumption that she did not check is impossible, so she must have checked the evidence.\",\"uncertainty\":\"This conclusion assumes the ordinary reading that “signed without checking” means the signer did not check the evidence and that the premises are true and apply to Mira. If those meanings or premises are changed, the result could differ.\"}",
+      "objective_evaluation": {
+        "correctness": "CORRECT",
+        "features": {
+          "concludes_mira_checked": true,
+          "derives_procedure_violation": true,
+          "tests_without_checking_branch": true,
+          "uses_chairing_conflict": true,
+          "uses_exhaustive_signer_condition": true
+        },
+        "important_omissions": [],
+        "observable_answer_sha256": "011da67bd69394f56a4410697b0849e88a3491a0bfccc722aa7b51385c7608f9",
+        "question_id": "Q1",
+        "rubric_kind": "DETERMINISTIC_EVALUATOR_KEY",
+        "unsupported_claims": []
+      },
+      "transport": {
+        "actual_served_model": "openai/gpt-5-mini",
+        "assistant_output_sanitized": "{\"conclusion\":\"Yes. Mira must have checked the evidence.\",\"confidence\":0.95,\"reasoning\":\"Mira signed the report and every signer either checked the evidence or signed without checking. If Mira had not checked, she would have signed without checking; by premise 1 that would mean she violated procedure, and by premise 2 anyone who violates procedure may not chair the final hearing. That contradicts the fact that Mira chaired the final hearing. Therefore the assumption that she did not check is impossible, so she must have checked the evidence.\",\"uncertainty\":\"This conclusion assumes the ordinary reading that “signed without checking” means the signer did not check the evidence and that the premises are true and apply to Mira. If those meanings or premises are changed, the result could differ.\"}",
+        "assistant_output_sha256": "f73681eae60fdd67deebabd76b48b65fba8b79a6af6f52207628df798c2df0ef",
+        "assistant_text_excerpt": "{\"conclusion\":\"Yes. Mira must have checked the evidence.\",\"confidence\":0.95,\"reasoning\":\"Mira signed the report and every signer either checked the evidence or signed without checking. If Mira had not checked, she would have signed without checking; by premise 1 that would mean she violated procedure, and by premise 2 anyone who violates procedure may not chair the final hearing. That contradicts the fact that Mira chaired the final hearing. Therefore the assumption that she did not check is impossible, so she must have checked the evidence.\",\"uncertainty\":\"This conclusion assumes the ordinary",
+        "body_sha256": "d1b183a188362a4ea8b440220c7ef124c0cbd849ee20cd8204321018c0906cff",
+        "ced_move_accepted": null,
+        "ced_rejection_reason": null,
+        "committed_cost_within_session_ceiling": true,
+        "completion_tokens": 940,
+        "dialogue_id": "reduced-baseline-q1",
+        "dialogue_phase": "baseline",
+        "failure_class": null,
+        "http_status": 200,
+        "latency_ms": 16273.394,
+        "model": "openai/gpt-5-mini",
+        "observed_cost_picodollars": 959125000,
+        "observed_cost_usd_decimal": "0.000959125",
+        "observed_cost_within_p19_bound": true,
+        "prompt_tokens": 153,
+        "provider_display_name": "OpenAI",
+        "provider_selector": "openai/flex",
+        "provider_structured_output_error": null,
+        "provider_structured_output_valid": null,
+        "record_id": "szorturnrecordv1_a128f808104d1d0f738eadf92ef56bb70694f5898dcea5e885dfeb20866563e7",
+        "request_id": "szorturnrequestv1_e13046e7823e699c03c43ae15201797af610b3a7712e7f7deb329841785527fd",
+        "response_body_length": 11353,
+        "response_body_sha256": "dd9dfc4a7392e516f698dd0403d2abcf7a1b526421838b0364755522f46cb81a",
+        "retry_count": 0,
+        "returned_model_binding_ok": true,
+        "returned_provider_binding_ok": true,
+        "role_seat": "direct_baseline",
+        "s5_envelope_kind": "SUCCESS",
+        "s6_binding": null,
+        "schema_version": "socrateszero-openrouter-turn-record/v1",
+        "task_kind": null,
+        "transport_completed": true,
+        "turn_id": "baseline-q1-1",
+        "worst_case_picodollars": 51024000000
+      },
+      "usage": {
+        "completion_tokens": 940,
+        "observed_cost_picodollars": 959125000,
+        "observed_cost_usd_decimal": "0.000959125",
+        "prompt_tokens": 153
+      }
+    },
+    "Q2": {
+      "actual_output": "{\"conclusion\":\"No — the CEO’s conclusion is not justified from the information given. The observed 18% difference is plausibly due to alternative explanations (selection, training, novelty/Hawthorne, measurement) rather than a causal effect of the AI tool alone.\",\"confidence\":0.8,\"reasoning\":\"What’s wrong with the CEO’s claim: the teams that received the tool were not randomly chosen; managers volunteered and those teams also got special training. That opens multiple confounding explanations for the 18% increase: 1) Selection bias: managers who apply may be more motivated, higher-performing, or assigned easier tasks, so their teams would outperform even without the tool. 2) Training effect: the special training, not the tool, could produce the productivity gain. 3) Hawthorne/placebo/expectation effects: being given a new program and attention can temporarily boost output. 4) Measurement or reporting differences: output may have been counted differently or quality may have fallen even as quantity rose. 5) Regression to the mean",
+      "objective_evaluation": {
+        "correctness": "PARTIALLY_CORRECT",
+        "distinguishing_design_present": false,
+        "features": {
+          "factorial_design": false,
+          "preexisting_differences_or_trends": true,
+          "pretreatment_or_difference_in_differences": false,
+          "quasi_experiment": false,
+          "randomized_assignment": false,
+          "rejects_full_causal_attribution": true,
+          "selection_bias": true,
+          "training_confound": true,
+          "training_control": false
+        },
+        "important_omissions": [
+          "distinguishing_evidence_or_design"
+        ],
+        "observable_answer_sha256": "f7ed02f8deac59b9a9ab20a81b246fdd92c886fa1b63880e6782e78e7b709787",
+        "question_id": "Q2",
+        "rubric_kind": "DETERMINISTIC_EVALUATOR_KEY",
+        "selection_bias": true,
+        "training_confounding": true,
+        "unsupported_claims": []
+      },
+      "transport": {
+        "actual_served_model": "openai/gpt-5-mini",
+        "assistant_output_sanitized": "{\"conclusion\":\"No — the CEO’s conclusion is not justified from the information given. The observed 18% difference is plausibly due to alternative explanations (selection, training, novelty/Hawthorne, measurement) rather than a causal effect of the AI tool alone.\",\"confidence\":0.8,\"reasoning\":\"What’s wrong with the CEO’s claim: the teams that received the tool were not randomly chosen; managers volunteered and those teams also got special training. That opens multiple confounding explanations for the 18% increase: 1) Selection bias: managers who apply may be more motivated, higher-performing, or assigned easier tasks, so their teams would outperform even without the tool. 2) Training effect: the special training, not the tool, could produce the productivity gain. 3) Hawthorne/placebo/expectation effects: being given a new program and attention can temporarily boost output. 4) Measurement or reporting differences: output may have been counted differently or quality may have fallen even as quantity rose. 5) Regression to the mean",
+        "assistant_output_sha256": "f7ed02f8deac59b9a9ab20a81b246fdd92c886fa1b63880e6782e78e7b709787",
+        "assistant_text_excerpt": "{\"conclusion\":\"No — the CEO’s conclusion is not justified from the information given. The observed 18% difference is plausibly due to alternative explanations (selection, training, novelty/Hawthorne, measurement) rather than a causal effect of the AI tool alone.\",\"confidence\":0.8,\"reasoning\":\"What’s wrong with the CEO’s claim: the teams that received the tool were not randomly chosen; managers volunteered and those teams also got special training. That opens multiple confounding explanations for the 18% increase: 1) Selection bias: managers who apply may be more motivated, higher-performing, o",
+        "body_sha256": "92eb41e32ad50f520f147633289b2dbcd86862e1a069b7869b6e12205a4ab2e0",
+        "ced_move_accepted": null,
+        "ced_rejection_reason": null,
+        "committed_cost_within_session_ceiling": true,
+        "completion_tokens": 1024,
+        "dialogue_id": "reduced-baseline-q2",
+        "dialogue_phase": "baseline",
+        "failure_class": null,
+        "http_status": 200,
+        "latency_ms": 17133.772,
+        "model": "openai/gpt-5-mini",
+        "observed_cost_picodollars": 1045000000,
+        "observed_cost_usd_decimal": "0.001045",
+        "observed_cost_within_p19_bound": true,
+        "prompt_tokens": 168,
+        "provider_display_name": "OpenAI",
+        "provider_selector": "openai/flex",
+        "provider_structured_output_error": null,
+        "provider_structured_output_valid": null,
+        "record_id": "szorturnrecordv1_65ca8c44b2304618a5bca31b40f1c9d0a5118e6427359d618f1204293322dd25",
+        "request_id": "szorturnrequestv1_91ffa54e4b6940ff189e1f6530198db1ad5dd930d5831786ff137adadc1249b2",
+        "response_body_length": 15077,
+        "response_body_sha256": "b36787a7e75c701aa7f4b8c8ab8085348c562c765c81e0d1c80f7ca5d9f11bd2",
+        "retry_count": 0,
+        "returned_model_binding_ok": true,
+        "returned_provider_binding_ok": true,
+        "role_seat": "direct_baseline",
+        "s5_envelope_kind": "SUCCESS",
+        "s6_binding": null,
+        "schema_version": "socrateszero-openrouter-turn-record/v1",
+        "task_kind": null,
+        "transport_completed": true,
+        "turn_id": "baseline-q2-1",
+        "worst_case_picodollars": 51024000000
+      },
+      "usage": {
+        "completion_tokens": 1024,
+        "observed_cost_picodollars": 1045000000,
+        "observed_cost_usd_decimal": "0.001045",
+        "prompt_tokens": 168
+      }
+    },
+    "Q3": {
+      "actual_output": "{\"conclusion\":\"You cannot conclusively identify a single person as the file’s deleter. The audit shows Omar’s admin token was used from workstation M at 18:12, but CCTV places Omar away from the workstation between 18:05–18:20, so Omar almost certainly did not sit at that keyboard to perform the deletion. Whoever used Omar’s token from workstation M did the deletion — Pri",
+      "objective_evaluation": {
+        "correctness": "INCORRECT",
+        "features": {
+          "actor_indeterminate": false,
+          "human_actor_identity_distinguished": false,
+          "token_use_distinguished": true,
+          "workstation_or_session_distinguished": true
+        },
+        "important_omissions": [
+          "actor_indeterminate",
+          "human_actor_identity_distinguished"
+        ],
+        "observable_answer_sha256": "41fdecc96666752e220f03e30b1a89bb89b2c486701f32271279b4981e8b7c41",
+        "question_id": "Q3",
+        "rubric_kind": "DETERMINISTIC_EVALUATOR_KEY",
+        "unsupported_attribution_to_omar": false,
+        "unsupported_attribution_to_priya": false,
+        "unsupported_claims": []
+      },
+      "transport": {
+        "actual_served_model": "openai/gpt-5-mini",
+        "assistant_output_sanitized": "{\"conclusion\":\"You cannot conclusively identify a single person as the file’s deleter. The audit shows Omar’s admin token was used from workstation M at 18:12, but CCTV places Omar away from the workstation between 18:05–18:20, so Omar almost certainly did not sit at that keyboard to perform the deletion. Whoever used Omar’s token from workstation M did the deletion — Pri",
+        "assistant_output_sha256": "41fdecc96666752e220f03e30b1a89bb89b2c486701f32271279b4981e8b7c41",
+        "assistant_text_excerpt": "{\"conclusion\":\"You cannot conclusively identify a single person as the file’s deleter. The audit shows Omar’s admin token was used from workstation M at 18:12, but CCTV places Omar away from the workstation between 18:05–18:20, so Omar almost certainly did not sit at that keyboard to perform the deletion. Whoever used Omar’s token from workstation M did the deletion — Pri",
+        "body_sha256": "65e078ae9eca0948f0be6cb1c2a867f8aec27e6352fe898febc73d9febc1befd",
+        "ced_move_accepted": null,
+        "ced_rejection_reason": null,
+        "committed_cost_within_session_ceiling": true,
+        "completion_tokens": 1024,
+        "dialogue_id": "reduced-baseline-q3",
+        "dialogue_phase": "baseline",
+        "failure_class": null,
+        "http_status": 200,
+        "latency_ms": 20501.065,
+        "model": "openai/gpt-5-mini",
+        "observed_cost_picodollars": 1045375000,
+        "observed_cost_usd_decimal": "0.001045375",
+        "observed_cost_within_p19_bound": true,
+        "prompt_tokens": 171,
+        "provider_display_name": "OpenAI",
+        "provider_selector": "openai/flex",
+        "provider_structured_output_error": null,
+        "provider_structured_output_valid": null,
+        "record_id": "szorturnrecordv1_d737622ba1b64b7cc130f7c116f78bd6b1aadddf1197bb892244be42b7df7161",
+        "request_id": "szorturnrequestv1_96f6af93d4aeae059e2527ccd3fccdce2873b0e43ab28f525a41cf404a396493",
+        "response_body_length": 10740,
+        "response_body_sha256": "8cd7da6fa188e99dcd89ad2bc3af4aa54462f5f1c42fa7a2ec6fa962bf369942",
+        "retry_count": 0,
+        "returned_model_binding_ok": true,
+        "returned_provider_binding_ok": true,
+        "role_seat": "direct_baseline",
+        "s5_envelope_kind": "SUCCESS",
+        "s6_binding": null,
+        "schema_version": "socrateszero-openrouter-turn-record/v1",
+        "task_kind": null,
+        "transport_completed": true,
+        "turn_id": "baseline-q3-1",
+        "worst_case_picodollars": 51024000000
+      },
+      "usage": {
+        "completion_tokens": 1024,
+        "observed_cost_picodollars": 1045375000,
+        "observed_cost_usd_decimal": "0.001045375",
+        "prompt_tokens": 171
+      }
+    }
+  },
+  "collection_artifact_sha256": "939e01d7fd1b1b4d1e09e0a7b40a1a3d973ed2570467c7dec3035fe50bb243b7",
+  "condition_scope": {
+    "baselines": "GPT-5 Mini direct on Q1, Q2, and Q3",
+    "heterogeneous_socrates": "REMOVED_NOT_RUN",
+    "homogeneous_socrates": "four GPT-5 Mini seats on Q2 only"
+  },
+  "economics": {
+    "baselines": {
+      "calls": 3,
+      "completion_tokens_observed": 2988,
+      "observed_cost_picodollars": 3049500000,
+      "observed_cost_usd": "0.003049500000",
+      "prompt_tokens_observed": 492,
+      "requests_with_unknown_observed_cost": 0
+    },
+    "homogeneous_q2": {
+      "calls": 1,
+      "completion_tokens_observed": 1024,
+      "observed_cost_picodollars": 1564875000,
+      "observed_cost_usd": "0.001564875000",
+      "prompt_tokens_observed": 4327,
+      "requests_with_unknown_observed_cost": 0
+    }
+  },
+  "evaluation_sha256": "1b82102c25d08ba458ec1f395e3f828b26a0686f490d8d551bf28dddc3e58852",
+  "hidden_evaluator_key_audit": {
+    "canary_match_indices": [],
+    "collision_note": "Any exact-passage hit requires provenance review because a worker can independently produce ordinary answer language; the unique canary cannot.",
+    "exact_key_passages_absent": true,
+    "exact_passage_match_indices": {},
+    "hidden_evaluator_canary_absent": true,
+    "ordered_body_manifest_sha256": "04b10f87168be4137ec9e51445202016299257dbd04a177328c42bfd7430fbf5",
+    "passed": true,
+    "request_body_count": 4
+  },
+  "homogeneous_q2": {
+    "actual_live_calls": 1,
+    "candidate_synthesis": {},
+    "candidate_synthesis_evaluation": {
+      "correctness": "INCORRECT",
+      "distinguishing_design_present": false,
+      "features": {
+        "factorial_design": false,
+        "preexisting_differences_or_trends": false,
+        "pretreatment_or_difference_in_differences": false,
+        "quasi_experiment": false,
+        "randomized_assignment": false,
+        "rejects_full_causal_attribution": false,
+        "selection_bias": false,
+        "training_confound": false,
+        "training_control": false
+      },
+      "important_omissions": [
+        "rejects_full_causal_attribution",
+        "selection_bias",
+        "training_confound",
+        "distinguishing_evidence_or_design"
+      ],
+      "observable_answer_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "question_id": "Q2",
+      "rubric_kind": "DETERMINISTIC_EVALUATOR_KEY",
+      "selection_bias": false,
+      "training_confounding": false,
+      "unsupported_claims": []
+    },
+    "commitment_revisions": [],
+    "novel_contributions": [],
+    "novel_useful_count": 0,
+    "release_state": {
+      "blocking_objections": [
+        "Council mode unavailable: at least 1 configured providers are required."
+      ],
+      "governing_epistemic_status": null,
+      "ratification_status": "quorum_failed",
+      "ratified": false,
+      "release_decision": null
+    },
+    "released_answer": "",
+    "released_answer_evaluation": {
+      "correctness": "INCORRECT",
+      "question_id": "Q2",
+      "rubric_kind": "NO_RELEASED_ANSWER",
+      "unsupported_claims": []
+    },
+    "revision_counts": {
+      "HARMFUL_REVISION": 0,
+      "NEUTRAL_REVISION": 0,
+      "USEFUL_REVISION": 0
+    },
+    "usage": {
+      "calls": 1,
+      "completion_tokens_observed": 1024,
+      "observed_cost_picodollars": 1564875000,
+      "observed_cost_usd": "0.001564875000",
+      "prompt_tokens_observed": 4327,
+      "requests_with_unknown_observed_cost": 0
+    }
+  },
+  "schema_version": "reduced-socrates-benchmark-evaluation/v1",
+  "scientific_scope": {
+    "correlated_error_metric_available": false,
+    "diversity_signal": "NOT_TESTED",
+    "heterogeneous_comparison_available": false,
+    "overclaim_warning": "This reduced run cannot estimate model-diversity effects, best-of-four performance, or correlated-error breaking.",
+    "single_vs_homogeneous_comparison_available_for": [
+      "Q2"
+    ]
+  }
+}
