@@ -3,6 +3,14 @@
 Repairs the S7B routing refusal and obtains the first real OpenRouter model
 response for this research line.
 
+This same branch also carries one bounded follow-up experiment: compare
+GPT-4.1-mini and GPT-4.1 under the exact same provider-facing JSON Schema while
+leaving CED unchanged. It is an experiment continuation, not another
+architecture phase.
+
+Branch working notes: [MEMORY.md](MEMORY.md), [PLAN.md](PLAN.md), and
+[PRESENT.md](PRESENT.md).
+
 ## What S7B hit
 
 S7B dispatched one authorized call and received HTTP 404, "No endpoints found
