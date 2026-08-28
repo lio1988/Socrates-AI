@@ -1227,9 +1227,14 @@ def acquire_openrouter_wire_spec_sources_v1(
                     response_content_bytes=len(fetched.response_body),
                     response_bytes_received=len(fetched.response_body),
                 ) from exc
+            # One clock read per source. The log contract requires this
+            # snapshot's retrieved_utc to equal its event's completed_utc, and
+            # _utc_now has one-second precision, so reading it twice loses the
+            # race whenever a second boundary lands between the two reads.
+            retrieved_utc = _utc_now()
             try:
                 bundle = _build_retained_bundle(
-                    root, record, fetched, extraction, _utc_now()
+                    root, record, fetched, extraction, retrieved_utc
                 )
             except (ContractValidationError, UnicodeError, ValueError) as exc:
                 raise _AcquisitionFailure(
@@ -1265,7 +1270,7 @@ def acquire_openrouter_wire_spec_sources_v1(
                     plan_record_id=record.plan_record_id or "",
                     source_key=record.source_key,
                     started_utc=started_utc,
-                    completed_utc=_utc_now(),
+                    completed_utc=retrieved_utc,
                     status=OpenRouterWireRetrievalStatusV1.RETAINED,
                     redirect_chain=fetched.redirect_chain,
                     http_status=fetched.status,

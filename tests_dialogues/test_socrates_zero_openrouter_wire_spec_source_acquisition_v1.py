@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -157,3 +158,45 @@ def test_preflight_rejects_missing_or_mutated_plan(tmp_path: Path) -> None:
     plan_path.write_bytes(plan_path.read_bytes() + b" ")
     with pytest.raises(ContractValidationError, match="differs from the frozen contract"):
         acquire._preflight(tmp_path)
+
+
+def test_acquisition_survives_a_second_boundary_between_clock_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ticking clock must not make the retrieval log unbuildable.
+
+    ``_utc_now`` has one-second precision, and the log contract requires each
+    snapshot's ``retrieved_utc`` to equal its event's ``completed_utc``. If the
+    acquisition loop reads the clock twice per source, a second boundary landing
+    between the two reads makes them differ and the whole log refuses to build —
+    a real failure observed under load.
+
+    This advances the clock by a second on *every* read, which is the worst case
+    the real clock can produce. The loop must therefore read it once per source
+    and reuse that value.
+    """
+    _materialize_plan(tmp_path)
+    monkeypatch.setattr(acquire, "_fetch_one", _fake_fetch)
+
+    ticks = iter(range(1000))
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    def _ticking_utc_now() -> str:
+        moment = base + timedelta(seconds=next(ticks))
+        return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    monkeypatch.setattr(acquire, "_utc_now", _ticking_utc_now)
+
+    log = acquire.acquire_openrouter_wire_spec_sources_v1(tmp_path)
+
+    assert len(log.events) == 6
+    assert len(log.snapshots) == 6
+    assert all(
+        event.status is OpenRouterWireRetrievalStatusV1.RETAINED
+        for event in log.events
+    )
+    # The one value read per source is used for both, so they agree by
+    # construction rather than by winning a race.
+    for event, snapshot in zip(log.events, log.snapshots):
+        assert snapshot.retrieved_utc == event.completed_utc
+        assert event.completed_utc >= event.started_utc
