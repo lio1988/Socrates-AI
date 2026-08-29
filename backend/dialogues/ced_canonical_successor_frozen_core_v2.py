@@ -204,7 +204,7 @@ _CORE_BLOBS = (
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/ced.py",
-        git_blob_id="9a1c7ab4610c0dcc5cf40b5211095afaa694d90f",
+        git_blob_id="9faaf048d3b3f6fbd84057997c421623a96ae724",
         role="CED-owned scheduling, task, response-application, and finalization seam",
     ),
     FrozenCoreBlobEntry(
@@ -309,7 +309,7 @@ _CORE_BLOBS = (
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/reasoning_prompts.py",
-        git_blob_id="be7be5533f80e5062bf85781de7fa11d5636ee45",
+        git_blob_id="74b4c9237b6a9e4436005c6c37690d76881723b7",
         role="opening mandate, roster projection, and marker contract",
     ),
     FrozenCoreBlobEntry(
@@ -319,7 +319,7 @@ _CORE_BLOBS = (
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/socratic.py",
-        git_blob_id="e3e420d3f5f701a19d40f40226c2fd7f5ae17bef",
+        git_blob_id="f1171f9580e8da77feef2d771d92a288dce2ae33",
         role="Socratic content, injection, commitment, and aporia semantics",
     ),
     FrozenCoreBlobEntry(
