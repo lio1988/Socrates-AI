@@ -370,12 +370,15 @@ you answer, reason over the WHOLE dialogue, not just the latest move:
 
 
 OPENING_CONTENT_DIRECTIVE = """\
-**Socratic opening — REQUIRED structure (exact field name)**
-Your `content` MUST be a JSON object with a "question" field holding the
-single opening question you are posing. Do NOT return the question as a bare
-string: a bare string is rejected, and the council then falls back to the raw
-prompt, so your opening is lost.
-Example: {"content": {"question": "…"}, "confidence": 0.6}"""
+**Socratic question — REQUIRED base structure (exact field names)**
+Your `content` MUST be a JSON object with a "question" field holding the single
+question you are posing, an "operator" field naming exactly one canonical
+maieutic operator from the list below, and an "epistemic_marker" field using one
+canonical marker value listed above. Do NOT return the question as a bare string.
+Follow-up questions also require the phase-specific fields named in their
+mandate.
+Example: {"content": {"question": "…", "operator": "clarify",
+"epistemic_marker": "open_uncertainty"}, "confidence": 0.5}"""
 
 SYNTHESIS_CONTENT_DIRECTIVE = """\
 **Synthesis output — REQUIRED structure (exact field names)**
@@ -540,13 +543,25 @@ Still: no candidate answers, no conclusions of your own, no objections. If a
 position has collapsed, that is not a failure to paper over — say where it
 collapsed and what remains askable.
 
+You may ask the council to construct new knowledge. You may not construct it
+for them. Soliciting a proposition is not introducing one.
+
 Your `content` MUST be a JSON object with these fields:
   "question"                    the single question
   "operator"                    one operator name from the list above
   "grounded_in"                 [{"ref_type": "commitment"|"critique"|"aporia"|
                                   "socratic_question", "ref_id": "..."}]
-  "introduces_new_proposition"  true if your question states something no prior
-                                move contains — answer honestly; it is checked
+  "introduces_new_proposition"  boolean. Set true ONLY when the QUESTION ITSELF
+                                asserts or supplies a new substantive proposition
+                                not already present in the original task or cited
+                                public material. Set false when it merely asks the
+                                council to generate criteria, methods, alternatives,
+                                consequences, distinctions, or explanations. A true
+                                declaration violates this contract; rewrite the
+                                question rather than supplying the proposition.
+                                False is a declaration, not proof of semantic
+                                innocence; the independent mechanical firewall
+                                still applies
   "inquiry_state"               "continue_inquiry" if a further question would
                                 still do work, "ready_for_reconstruction" if the
                                 dialectical work is done. This is a suggestion:

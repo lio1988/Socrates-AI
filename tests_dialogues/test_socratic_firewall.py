@@ -101,12 +101,20 @@ class Injecting(ScriptedMockProvider):
 
     async def _produce_raw_text(self, task: AgentTask, agent_state: AgentState) -> str:
         if task.task_kind is TaskKind.SOCRATIC_QUESTION:
-            return json.dumps({"content": {
+            content = {
                 "question": f"Could the order be {OTHER_ORDER}?",
                 "operator": MaieuticOperator.DRAW_CONSEQUENCE.value,
-                "grounded_in": [], "introduces_new_proposition": False,
-                "inquiry_state": InquiryState.CONTINUE_INQUIRY.value,
-                "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.6})
+                "epistemic_marker": "reasonable_hypothesis",
+            }
+            if task.phase is not DialogPhase.OPENING:
+                critiques = task.context.get("elenchus_critiques") or []
+                content.update({
+                    "grounded_in": [{"ref_type": "critique",
+                                     "ref_id": critiques[0]["critique_id"]}],
+                    "introduces_new_proposition": False,
+                    "inquiry_state": InquiryState.CONTINUE_INQUIRY.value,
+                })
+            return json.dumps({"content": content, "confidence": 0.6})
         return await super()._produce_raw_text(task, agent_state)
 
 
@@ -127,9 +135,13 @@ def test_an_injecting_question_never_becomes_a_public_move():
     state = ced.get_session("inject")
     assert [m for m in state.moves if m.role is AgentRole.SOCRATES] == []
     rows = ced._socratic_audit_rows["inject"]
+    assert rows and all(r["content_contract_accepted"] is True for r in rows)
     assert rows and all(
         r["injection_check"] == InjectionCheck.ANSWER_INJECTION_DETECTED.value
         for r in rows)
+    followups = [r for r in rows if r["phase"] == DialogPhase.ELENCHUS.value]
+    assert followups and all(
+        r["self_declared_new_proposition"] is False for r in followups)
 
 
 def test_the_session_survives_a_refused_question():

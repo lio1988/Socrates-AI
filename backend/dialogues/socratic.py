@@ -28,6 +28,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 
 from .hybrid_epistemic import stable_id
 from .model_identity import independent_model_sources
+from .models import EpistemicMarker
 from .task_checker import all_candidate_orders, model_task
 
 # ── the twelve operations ────────────────────────────────────────────────────
@@ -277,15 +278,18 @@ def resolve_grounding(
 class SocraticContentValidation:
     """Deterministic result of the phase-aware Socratic content contract.
 
-    This validates whether a provider-OK ``AgentMove`` may become a public
-    Socratic move. It does not validate truth, quality, or prompt compliance.
+    This decides whether a provider-OK envelope may become a public Socratic
+    move. It does not validate truth, question quality, operator/text alignment,
+    or semantic innocence in an arbitrary open domain.
     """
 
     accepted: bool
     reason: str
     question: str = ""
     operator: Optional[MaieuticOperator] = None
+    epistemic_marker: Optional[EpistemicMarker] = None
     inquiry_state: Optional[InquiryState] = None
+    introduces_new_proposition: Optional[bool] = None
     grounded_in: Tuple[Tuple[str, str], ...] = ()
     unresolved_grounding: Tuple[Tuple[str, str], ...] = ()
 
@@ -296,16 +300,15 @@ def validate_socratic_content(
     followup: bool,
     public_ids: Optional[Mapping[str, Set[str]]] = None,
 ) -> SocraticContentValidation:
-    """Apply the hard content contract for an opening or follow-up question.
+    """Apply the hard structural contract for one Socratic question.
 
-    Opening questions require a real string question and one known maieutic
-    operator. Follow-ups additionally require a non-empty, entirely valid set
-    of typed references to already-public artifacts, a boolean declaration that
-    no new proposition was introduced (which must be false), and a known
-    inquiry-state recommendation.
+    Openings require a non-empty question, canonical operator, and canonical
+    marker. Follow-ups additionally require entirely public typed grounding, an
+    exact-false proposition declaration, and a canonical inquiry-state hint.
 
-    Invalid fields are never coerced. In particular, ``123`` does not become a
-    question and malformed grounding entries are not silently dropped.
+    The proposition flag is a declaration, not proof that a false declaration
+    is safe. The independent mechanical answer-injection detector remains a
+    separate CED veto.
     """
     if not isinstance(content, Mapping):
         return SocraticContentValidation(False, "content must be an object")
@@ -317,67 +320,142 @@ def validate_socratic_content(
     if not question:
         return SocraticContentValidation(False, "question must be non-empty")
 
-    operator = read_operator(content)
-    if operator is None:
+    raw_operator = content.get("operator")
+    if not isinstance(raw_operator, str):
+        return SocraticContentValidation(
+            False, "operator must name one canonical maieutic operator",
+            question=question,
+        )
+    try:
+        operator = MaieuticOperator(raw_operator)
+    except ValueError:
         return SocraticContentValidation(
             False, "operator must name one canonical maieutic operator",
             question=question,
         )
 
+    if "epistemic_marker" not in content:
+        return SocraticContentValidation(
+            False, "epistemic_marker is required for Socratic questions",
+            question=question, operator=operator,
+        )
+    raw_marker = content.get("epistemic_marker")
+    if not isinstance(raw_marker, str):
+        return SocraticContentValidation(
+            False, "epistemic_marker must be a string",
+            question=question, operator=operator,
+        )
+    try:
+        marker = EpistemicMarker(raw_marker)
+    except ValueError:
+        return SocraticContentValidation(
+            False, "epistemic_marker must be canonical",
+            question=question, operator=operator,
+        )
+
+    introduces_present = "introduces_new_proposition" in content
+    introduces = content.get("introduces_new_proposition")
     if not followup:
+        if introduces_present and type(introduces) is not bool:
+            return SocraticContentValidation(
+                False, "introduces_new_proposition must be a boolean",
+                question=question, operator=operator, epistemic_marker=marker,
+            )
+        if introduces is True:
+            return SocraticContentValidation(
+                False, "Socrates may solicit new propositions but may not supply one",
+                question=question, operator=operator, epistemic_marker=marker,
+                introduces_new_proposition=True,
+            )
         return SocraticContentValidation(
             True, "accepted opening question", question=question,
-            operator=operator,
+            operator=operator, epistemic_marker=marker,
+            introduces_new_proposition=(introduces if introduces_present else None),
         )
 
     raw_grounding = content.get("grounded_in")
     if not isinstance(raw_grounding, (list, tuple)) or not raw_grounding:
         return SocraticContentValidation(
             False, "follow-up grounded_in must be a non-empty list",
-            question=question, operator=operator,
+            question=question, operator=operator, epistemic_marker=marker,
+            introduces_new_proposition=(introduces if introduces_present else None),
         )
-    grounding = tuple(parse_grounding(raw_grounding))
-    if len(grounding) != len(raw_grounding):
-        return SocraticContentValidation(
-            False, "follow-up grounded_in contains a malformed reference",
-            question=question, operator=operator, grounded_in=grounding,
-        )
+
+    grounding: List[Tuple[str, str]] = []
+    for item in raw_grounding:
+        if not isinstance(item, Mapping):
+            return SocraticContentValidation(
+                False, "follow-up grounded_in contains a malformed reference",
+                question=question, operator=operator, epistemic_marker=marker,
+                introduces_new_proposition=(introduces if introduces_present else None),
+            )
+        raw_type = item.get("ref_type")
+        raw_id = item.get("ref_id")
+        if (not isinstance(raw_type, str) or not isinstance(raw_id, str)
+                or not raw_id.strip()):
+            return SocraticContentValidation(
+                False, "follow-up grounded_in contains a malformed reference",
+                question=question, operator=operator, epistemic_marker=marker,
+                introduces_new_proposition=(introduces if introduces_present else None),
+            )
+        try:
+            ref_type = GroundingRefType(raw_type).value
+        except ValueError:
+            return SocraticContentValidation(
+                False, "follow-up grounded_in contains a malformed reference",
+                question=question, operator=operator, epistemic_marker=marker,
+                introduces_new_proposition=(introduces if introduces_present else None),
+            )
+        grounding.append((ref_type, raw_id))
 
     resolved, unresolved = resolve_grounding(grounding, public_ids or {})
     if unresolved:
         return SocraticContentValidation(
             False, "follow-up grounded_in contains an unresolved reference",
-            question=question, operator=operator,
+            question=question, operator=operator, epistemic_marker=marker,
+            introduces_new_proposition=(introduces if introduces_present else None),
             grounded_in=tuple(resolved),
             unresolved_grounding=tuple(unresolved),
         )
     if not resolved:
         return SocraticContentValidation(
             False, "follow-up grounded_in resolves to no public material",
-            question=question, operator=operator,
+            question=question, operator=operator, epistemic_marker=marker,
+            introduces_new_proposition=(introduces if introduces_present else None),
         )
 
-    introduces = content.get("introduces_new_proposition")
-    if not isinstance(introduces, bool):
+    if not introduces_present or type(introduces) is not bool:
         return SocraticContentValidation(
             False, "introduces_new_proposition must be a boolean",
-            question=question, operator=operator, grounded_in=tuple(resolved),
+            question=question, operator=operator, epistemic_marker=marker,
+            grounded_in=tuple(resolved),
         )
     if introduces:
         return SocraticContentValidation(
-            False, "Socrates may not introduce a new proposition",
-            question=question, operator=operator, grounded_in=tuple(resolved),
+            False, "Socrates may solicit new propositions but may not supply one",
+            question=question, operator=operator, epistemic_marker=marker,
+            introduces_new_proposition=True, grounded_in=tuple(resolved),
         )
 
-    inquiry_state = read_inquiry_state(content)
+    raw_inquiry_state = content.get("inquiry_state")
+    if not isinstance(raw_inquiry_state, str):
+        inquiry_state = None
+    else:
+        try:
+            inquiry_state = InquiryState(raw_inquiry_state)
+        except ValueError:
+            inquiry_state = None
     if inquiry_state is None:
         return SocraticContentValidation(
             False, "inquiry_state must name one canonical inquiry state",
-            question=question, operator=operator, grounded_in=tuple(resolved),
+            question=question, operator=operator, epistemic_marker=marker,
+            introduces_new_proposition=False, grounded_in=tuple(resolved),
         )
+
     return SocraticContentValidation(
-        True, "accepted grounded follow-up question",
-        question=question, operator=operator, inquiry_state=inquiry_state,
+        True, "accepted grounded follow-up question", question=question,
+        operator=operator, epistemic_marker=marker,
+        inquiry_state=inquiry_state, introduces_new_proposition=False,
         grounded_in=tuple(resolved),
     )
 

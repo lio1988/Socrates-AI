@@ -1007,15 +1007,15 @@ class CEDOrchestrator:
             "question": question[:400],
             "operator": (validation.operator.value
                          if validation.operator else None),
+            "epistemic_marker": (validation.epistemic_marker.value
+                                  if validation.epistemic_marker else None),
             "inquiry_state": (validation.inquiry_state.value
                               if validation.inquiry_state else None),
             "content_contract_accepted": validation.accepted,
             "content_contract_reason": validation.reason,
             "injection_check": check.value,
             "injection_detail": why,
-            "self_declared_new_proposition": (
-                bool(content.get("introduces_new_proposition"))
-                if isinstance(content, dict) else None),
+            "self_declared_new_proposition": validation.introduces_new_proposition,
         }
         if task.phase is not DialogPhase.OPENING:
             row["grounded_in_resolved"] = [{"ref_type": t, "ref_id": i}
@@ -1462,8 +1462,9 @@ class CEDOrchestrator:
                 and task.task_kind is TaskKind.SOCRATIC_QUESTION):
             verdict = self._screen_socratic_move(state, task, resp)
             if verdict is not None:
-                # Answer injection. The question is refused before it can
-                # anchor anyone; the phase continues without it.
+                # A content-contract or firewall rejection. The question is
+                # refused before it can anchor anyone; the phase continues
+                # without it.
                 self._record_task_log(
                     state,
                     task,
