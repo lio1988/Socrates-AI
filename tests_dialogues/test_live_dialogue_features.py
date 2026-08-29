@@ -30,6 +30,7 @@ def offline_env(monkeypatch):
     monkeypatch.delenv("CED_ENABLE_LIVE_PROVIDERS", raising=False)
     monkeypatch.delenv("CED_PROVIDER_FAMILIES", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("CED_TRACE_INCLUDE_CONTENT", raising=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -41,20 +42,40 @@ def test_defaults_lessons_and_trace_on_tree_off(live_dialogue):
     assert "openclaw_lessons" in features
     assert len(features["openclaw_lessons"]) > 0
     assert "trace_capturer" in features
+    assert features["trace_capturer"].include_content is False
     assert "tree_expansions" not in features          # costs calls -> opt-in
     joined = " | ".join(notes)
     assert "lessons:" in joined and "trace:" in joined and "tree: off" in joined
+    assert "trace content: off" in joined
+
+
+def test_trace_content_opt_in(live_dialogue):
+    features, notes = live_dialogue._resolve_features({
+        "CED_TRACE_INCLUDE_CONTENT": "1",
+    })
+    assert features["trace_capturer"].include_content is True
+    assert "trace content: on" in notes
+
+
+def test_trace_content_zero_is_off(live_dialogue):
+    features, notes = live_dialogue._resolve_features({
+        "CED_TRACE_INCLUDE_CONTENT": "0",
+    })
+    assert features["trace_capturer"].include_content is False
+    assert "trace content: off" in notes
 
 
 def test_off_switches(live_dialogue):
     features, notes = live_dialogue._resolve_features({
         "CED_OPENCLAW_LESSONS": "0",
         "CED_TRACE_CAPTURE": "0",
+        "CED_TRACE_INCLUDE_CONTENT": "1",
     })
     assert "openclaw_lessons" not in features
     assert "trace_capturer" not in features
     joined = " | ".join(notes)
     assert "lessons: off" in joined and "trace: off" in joined
+    assert "trace content: off" in joined
 
 
 def test_tree_expansions_env(live_dialogue):
@@ -90,10 +111,30 @@ def test_main_mock_run_writes_trace_with_lessons(live_dialogue, tmp_path,
     assert trace_file.exists()
     trace = json.loads(trace_file.read_text(encoding="utf-8").splitlines()[0])
     assert trace["session_id"] == "live_dialogue"
+    assert all("content" not in move and "content_keys" in move
+               for move in trace["moves"])
     # Lessons flowed end-to-end: the audit-fed trace names selected lesson ids.
     assert len(trace["selected_openclaw_lessons"]) > 0
     # And the operator summary reported them.
     assert "openclaw lessons :" in out
+    assert "trace content: off" in out
+
+
+def test_main_mock_run_can_include_public_move_content(live_dialogue, tmp_path,
+                                                       monkeypatch, capsys):
+    monkeypatch.setenv("CED_TRACE_DIR", str(tmp_path / "traces"))
+    monkeypatch.setenv("CED_TRACE_INCLUDE_CONTENT", "1")
+    rc = live_dialogue.main(["live_dialogue.py", "public trace content"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "MOCK" in out
+    assert "trace content: on" in out
+    trace = json.loads((tmp_path / "traces" / "live_dialogue.jsonl")
+                       .read_text(encoding="utf-8").splitlines()[0])
+    assert trace["moves"]
+    assert all("content" in move and "content_keys" not in move
+               for move in trace["moves"])
+    assert any(move["content"] for move in trace["moves"])
 
 
 def test_main_mock_run_with_tree(live_dialogue, tmp_path, monkeypatch, capsys):
@@ -115,6 +156,6 @@ def test_main_all_features_off_still_runs(live_dialogue, monkeypatch, capsys):
     rc = live_dialogue.main(["live_dialogue.py", "test"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "lessons: off | trace: off | tree: off" in out
+    assert "lessons: off | trace: off | trace content: off | tree: off" in out
     assert "openclaw lessons :" not in out
     assert "trace            :" not in out
