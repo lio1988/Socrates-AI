@@ -1141,7 +1141,7 @@ def test_evidence_ids_are_deterministic_and_tampering_is_refused() -> None:
 def test_core_and_predecessor_locks_are_exact_and_clean() -> None:
     lock = evaluation.FROZEN_CANONICAL_SUCCESSOR_CORE_BLOB_LOCK_V2
     assert lock.lock_id == (
-        "cedcorebloblockv2_2cfc46afcf7afca20b4eb537d626296e11c8b85e885f5caa78d7322e0eb0a957"
+        "cedcorebloblockv2_192c688821bfeca9914f23a06c9df1a7392997a4b09c3e7d04c434bf5695f6a5"
     )
     assert evaluation.SEALED_PHASE8_ARTIFACT_ID == (
         "cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0"
