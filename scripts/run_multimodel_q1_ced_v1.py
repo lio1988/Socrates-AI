@@ -1983,6 +1983,18 @@ def _legacy_question_v1(name: str) -> Tuple[str, str]:
 
     if name == "q1":
         return q1.QUESTION_V1, q1.QUESTION_SHA256_V1
+    if name == "q5":
+        # Q5 is Q4 with the symmetric profiles removed from the domain, which
+        # inverts the verdict. The council proposed the restriction itself, and
+        # the weight sits on two facts about the solution space - no satisfying
+        # rule is monotone, and the least any of them departs from higher-total
+        # is two profiles - because a verdict is guessable and the symmetry
+        # proof is by now recalled rather than derived.
+        import scripts.q5_ethics_question_v1 as q5
+
+        if not q5.verify_key_v1()["key_is_sound"]:
+            raise ContractValidationError("Q5 evaluator key failed its own check")
+        return q5.QUESTION_V1, q5.QUESTION_SHA256_V1
     if name == "q4":
         # Q4 states a *true* impossibility and then draws an unjustified remedy
         # from it. Q3 was saturated - seven of nine baselines cleared 30/32 - so
@@ -2339,7 +2351,7 @@ def run_condition_c_v1(
 ) -> Dict[str, Any]:
     """Execute one exactly authorized Q2d dialogue and persist its record."""
 
-    if question_name not in ("q2", "q3", "q4"):
+    if question_name not in ("q2", "q3", "q4", "q5"):
         raise ContractValidationError(
             "authorization permits only the frozen Q2 or Q3 question"
         )
@@ -2496,7 +2508,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Q2d exactly-authorized heterogeneous CED")
     parser.add_argument(
         "--question",
-        choices=("q2", "q3", "q4"),
+        choices=("q2", "q3", "q4", "q5"),
         default="q2",
         help="Q2d authorizes only the frozen ethics question",
     )
