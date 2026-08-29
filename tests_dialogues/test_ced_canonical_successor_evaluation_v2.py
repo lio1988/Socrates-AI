@@ -1154,7 +1154,7 @@ def test_core_and_predecessor_locks_are_exact_and_clean() -> None:
     # asked again before the question passes to another, because a first
     # failure may be misunderstanding and a second is not.
     assert lock.lock_id == (
-        "cedcorebloblockv2_a0386473b3deeeb39e63e0cada6806f1daba0c0bed20c7fd8e7e5bca970d9a74"
+        "cedcorebloblockv2_234f0c5fc23941772da222fc0ba544a221b12a3f4e6ae3353c9125cf44f50675"
     )
     assert evaluation.SEALED_PHASE8_ARTIFACT_ID == (
         "cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0"

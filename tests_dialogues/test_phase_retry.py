@@ -132,6 +132,7 @@ def test_audit_shape_is_complete():
                        "reasked_same_seat_slots", "rerouted_on_first_attempt_slots",
                        "rerouted_distinct_seat_slots",
                        "reroute_ok_providers", "quorum_held_but_a_voice_was_lost",
+                       "reroute_withheld_seats_are_bound",
                        "rescued"}
     # A reroute onto a seat already serving a sibling is now recorded rather
     # than invisible: the four-seat council took that path silently for two

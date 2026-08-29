@@ -51,6 +51,7 @@ QUESTION_MODULES_V1: Mapping[str, str] = {
     "q3": "scripts.q3_ethics_question_v1",
     "q4": "scripts.q4_ethics_question_v1",
     "q5": "scripts.q5_ethics_question_v1",
+    "q6": "scripts.q6_ethics_question_v1",
 }
 
 #: Fields of a question module that form the evaluator key. Kept explicit so a
@@ -81,6 +82,10 @@ _KEY_FIELDS_V1 = (
     "NO_SOLUTION_IS_MONOTONE_V1",
     "MINIMUM_DEPARTURES_FROM_HIGHER_TOTAL_V1",
     "WITNESS_RULE_V1",
+    # Q6 only: the four answers, which do not follow one another.
+    "ANSWER_BY_CRITERIA_V1",
+    "WHY_ONE_CRITERION_IS_IMPOSSIBLE_V1",
+    "WHY_TWO_IS_THE_ONLY_COSTLY_WIDTH_V1",
 )
 
 

@@ -207,3 +207,31 @@ def test_a_rerouted_slot_is_not_recorded_as_re_asked():
         assert entry["rerouted_on_first_attempt_slots"], (
             "the reroute of a silent line was not recorded"
         )
+
+
+def test_where_seats_are_bound_the_question_is_not_handed_on():
+    """Some protocols cannot reroute at all, and must not try.
+
+    Q2d binds one physical seat to each logical agent and prices the run on that
+    binding, so its pre-dispatch guard refuses any task arriving at the wrong
+    seat: "deliberation task is not bound to agent_1". Enabling the rescue there
+    without saying so cost a live council its initial_response phase - every
+    rerouted task was refused at the wire and the run collapsed at four calls.
+
+    Asking the same seat again stays available; handing the question on does not.
+    The withholding is recorded rather than left to look like a rescue that
+    simply found nowhere to go.
+    """
+
+    ced, silent = _council(phase_retry=True, silent_attempts=99)
+    ced.reroute_permitted_v1 = False
+    asyncio.run(ced.run_registry_session(QUESTION_V1, session_id=SESSION_WITH_SILENT_SOCRATES_V1))
+    retries = ced._phase_retries.get(SESSION_WITH_SILENT_SOCRATES_V1, [])
+    assert retries, "the rescue did not run at all"
+    assert 1 in silent.attempts_seen, "the seat was not asked again"
+    assert all(not r["rerouted_distinct_seat_slots"] for r in retries), (
+        "a task was rerouted under a protocol that binds seats to agents"
+    )
+    assert any(r["reroute_withheld_seats_are_bound"] for r in retries), (
+        "the withheld reroute was not recorded"
+    )

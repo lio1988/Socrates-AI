@@ -210,7 +210,7 @@ _CORE_BLOBS = (
         # run_objection_verification, the claim state and the release seam are
         # byte-identical. Re-pinning is the authorization, not a formality: the
         # previous id was 9faaf048d3b3f6fbd84057997c421623a96ae724.
-        git_blob_id="9eca11be8777f7a51c0d30fb873c8c7852079e8d",
+        git_blob_id="a791b75c5a29b4f584238f67a49294a4f0f9b61d",
         role="CED-owned scheduling, task, response-application, and finalization seam",
     ),
     FrozenCoreBlobEntry(

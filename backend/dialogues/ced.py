@@ -1785,8 +1785,19 @@ class CEDOrchestrator:
             # so a seat that failed twice never had its question handed on. A
             # second failure after being asked again is the point at which
             # another seat should answer.
+            # Some protocols bind each logical agent to one physical seat and
+            # price the run on that binding. Rerouting is then not a weaker form
+            # of the same act - it is a different topology, and the pre-dispatch
+            # guard refuses it: "deliberation task is not bound to agent_1".
+            # Enabling the rescue under such a protocol without saying so cost a
+            # Q5 council its initial_response phase and collapsed the run at four
+            # calls, because every rerouted task was refused at the wire.
+            #
+            # So the second step of the doctrine is available only where seats
+            # are interchangeable. Where they are not, a seat is asked again and
+            # that is the end of it; the failure stays in the record either way.
             reroute_ok: List[Any] = []
-            if second_plan:
+            if second_plan and getattr(self, "reroute_permitted_v1", True):
                 second_pairs = list(await asyncio.gather(
                     *(_one(slot, aid, role, attempt=2, offset=offset)
                       for slot, aid, role, offset in second_plan)))
@@ -1831,9 +1842,13 @@ class CEDOrchestrator:
                 "rerouted_on_first_attempt_slots": [
                     slot for slot, _, _, _ in plan if slot not in spoke
                 ],
-                "rerouted_distinct_seat_slots": [
-                    slot for slot, _, _, _ in second_plan
-                ],
+                "rerouted_distinct_seat_slots": (
+                    [slot for slot, _, _, _ in second_plan]
+                    if getattr(self, "reroute_permitted_v1", True) else []
+                ),
+                "reroute_withheld_seats_are_bound": (
+                    bool(second_plan) and not getattr(self, "reroute_permitted_v1", True)
+                ),
                 "reroute_ok_providers": [r.provider_id for r in reroute_ok if r.ok],
                 "rescued": rescued,
             })

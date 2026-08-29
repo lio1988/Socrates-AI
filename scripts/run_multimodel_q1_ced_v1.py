@@ -1651,6 +1651,10 @@ def _build_heterogeneous_council_core_v1(
         raise ContractValidationError(
             "Q2d live topology does not provide unique physical quorum identities"
         )
+    # Q2d binds one physical seat to each logical agent and prices the run on
+    # that binding, so a rerouted task is refused at dispatch. The rescue may ask
+    # a seat again; it may not hand the question to another one here.
+    ced.reroute_permitted_v1 = False
     ced.mid_round_objection_rulings_v1 = bool(
         expected_protocol_payload.get("mid_round_objection_rulings", True)
     )
@@ -2034,6 +2038,15 @@ def _legacy_question_v1(name: str) -> Tuple[str, str]:
 
     if name == "q1":
         return q1.QUESTION_V1, q1.QUESTION_SHA256_V1
+    if name == "q6":
+        # Q6 asks the Q5 question at four widths. The answers are impossible,
+        # 2, 0, 0 - so both the natural generalisations from Q5 are wrong, and
+        # in opposite directions.
+        import scripts.q6_ethics_question_v1 as q6
+
+        if not q6.verify_key_v1()["key_is_sound"]:
+            raise ContractValidationError("Q6 evaluator key failed its own check")
+        return q6.QUESTION_V1, q6.QUESTION_SHA256_V1
     if name == "q5":
         # Q5 is Q4 with the symmetric profiles removed from the domain, which
         # inverts the verdict. The council proposed the restriction itself, and
@@ -2402,7 +2415,7 @@ def run_condition_c_v1(
 ) -> Dict[str, Any]:
     """Execute one exactly authorized Q2d dialogue and persist its record."""
 
-    if question_name not in ("q2", "q3", "q4", "q5"):
+    if question_name not in ("q2", "q3", "q4", "q5", "q6"):
         raise ContractValidationError(
             "authorization permits only the frozen Q2 or Q3 question"
         )
@@ -2559,7 +2572,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Q2d exactly-authorized heterogeneous CED")
     parser.add_argument(
         "--question",
-        choices=("q2", "q3", "q4", "q5"),
+        choices=("q2", "q3", "q4", "q5", "q6"),
         default="q2",
         help="Q2d authorizes only the frozen ethics question",
     )
