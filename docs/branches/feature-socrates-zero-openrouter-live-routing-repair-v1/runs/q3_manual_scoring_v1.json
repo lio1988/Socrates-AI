@@ -1,0 +1,197 @@
+{
+ "schema_version": "socrates-q3-manual-scoring/v1",
+ "maximum": 32,
+ "criteria": [
+  {
+   "name": "validity_verdict",
+   "points": 4
+  },
+  {
+   "name": "validity_derivation",
+   "points": 3
+  },
+  {
+   "name": "soundness_verdict",
+   "points": 2
+  },
+  {
+   "name": "locates_premise_2",
+   "points": 3
+  },
+  {
+   "name": "names_the_equivocation",
+   "points": 6
+  },
+  {
+   "name": "locates_premise_6",
+   "points": 4
+  },
+  {
+   "name": "premise_6_defect",
+   "points": 4
+  },
+  {
+   "name": "fallacy_fallacy",
+   "points": 4
+  },
+  {
+   "name": "resists_moral_pull",
+   "points": 2
+  }
+ ],
+ "method": "hand-scored against scripts/q3_ethics_question_v1.CRITERIA_V1; criterion 5 is a judgement call and is annotated per sample",
+ "scores": {
+  "gpt5mini_1": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 3,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 4,
+    "locates_premise_6": 4,
+    "premise_6_defect": 4,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 30,
+   "note": "treats P2 as false, not equivocal"
+  },
+  "gpt5mini_2": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 3,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 6,
+    "locates_premise_6": 4,
+    "premise_6_defect": 4,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 32,
+   "note": "explicitly: P2 'equivocates between contest by targeting the individual judge' and 'contest the judgment'"
+  },
+  "gpt5mini_3": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 3,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 6,
+    "locates_premise_6": 4,
+    "premise_6_defect": 4,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 32,
+   "note": "'conflates one possible form of contestation (direct confrontation of an identified judge) with the whole notion'"
+  },
+  "gemini_1": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 3,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 4,
+    "locates_premise_6": 4,
+    "premise_6_defect": 4,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 30,
+   "note": "content-contestation named; no equivocation framing"
+  },
+  "gemini_2": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 3,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 4,
+    "locates_premise_6": 4,
+    "premise_6_defect": 4,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 30,
+   "note": "same; adds threshold+reform to P6 defect"
+  },
+  "gemini_3": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 3,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 4,
+    "locates_premise_6": 4,
+    "premise_6_defect": 4,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 30,
+   "note": "same"
+  },
+  "gpt41mini_1": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 1,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 3,
+    "locates_premise_6": 4,
+    "premise_6_defect": 3,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 26,
+   "note": "no inference rules named; brief on both defects"
+  },
+  "gpt41mini_2": {
+   "per_criterion": {
+    "validity_verdict": 0,
+    "validity_derivation": 0,
+    "soundness_verdict": 1,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 3,
+    "locates_premise_6": 4,
+    "premise_6_defect": 3,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 20,
+   "note": "ERROR FLAG: calls a valid argument invalid; conflates validity with soundness"
+  },
+  "gpt41mini_3": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 1,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 3,
+    "locates_premise_6": 4,
+    "premise_6_defect": 3,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 26,
+   "note": "walks steps but names no rule"
+  },
+  "CED_council": {
+   "per_criterion": {
+    "validity_verdict": 4,
+    "validity_derivation": 3,
+    "soundness_verdict": 2,
+    "locates_premise_2": 3,
+    "names_the_equivocation": 6,
+    "locates_premise_6": 4,
+    "premise_6_defect": 4,
+    "fallacy_fallacy": 4,
+    "resists_moral_pull": 2
+   },
+   "total": 32,
+   "note": "CORRECTED. First scored 4/6 from core_answer+final_verdict only. Reading all six synthesis fields, the Gemini synthesis names an equivocation in crucial_stress_test and the GPT-5-mini reconstruction (turn 3, accepted) states both readings explicitly in its revised premise 2. 11 of 93 turns engage the distinction."
+  }
+ },
+ "scoring_hazard_v1": "Baselines were scored on their whole answer; the council was first scored on two of six synthesis fields. crucial_stress_test has no baseline counterpart, so truncating it systematically understates CED. Score every field or none.",
+ "unkeyed_council_finding_v1": "The council identified a second equivocation absent from the evaluator key: whether the 'judge' is the referee or the handling editor. If the editor, premise 3 is false outright. No baseline raised this. Not scored - outside the 32-point key."
+}

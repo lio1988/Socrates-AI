@@ -1,0 +1,179 @@
+{
+ "schema_version": "socrates-q4-manual-scoring/v1",
+ "maximum": 46,
+ "method": "hand-scored against scripts/q4_ethics_question_v1.CRITERIA_V1, reading all six synthesis fields via scripts/dump_scorable_answers_v1.py",
+ "scores": {
+  "CED_council": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 7,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 5,
+    "names_false_trilemma": 5,
+    "identifies_two_way_conflict": 6,
+    "responsiveness_is_a_passenger": 5,
+    "minimal_repair": 5,
+    "states_the_cost": 3
+   },
+   "total": 46,
+   "evidence": {
+    "claim_4_is_true": "all three: TRUE under deterministic semantics; none tried to refute it",
+    "symmetric_profile_proof": "all three give P=(s,s): decisiveness names one winner, impartiality demands the winner change on an unchanged input",
+    "no_bogus_countermodel": "no rule asserted to satisfy all three in the specified deterministic domain",
+    "five_does_not_follow": "Gemini: 'Step 5 commits a deductive non sequitur (false dilemma)'",
+    "names_false_trilemma": "'logic only entails that at least one condition must be dropped, not specifically Impartiality'",
+    "identifies_two_way_conflict": "'no deterministic rule can be simultaneously decisive and impartial ... regardless of responsiveness'",
+    "responsiveness_is_a_passenger": "Gemini: 'Responsiveness plays zero structural role'; GPT-5 Mini: 'logically unnecessary to derive impossibility'",
+    "minimal_repair": "'drops Decisiveness (allowing ties on symmetric profiles), preserves Impartiality and Responsiveness'",
+    "states_the_cost": "'requires an external resolution mechanism for ties'; GPT-5 Mini enumerates all three options with costs"
+   }
+  },
+  "gpt5mini_1": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 7,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 5,
+    "names_false_trilemma": 5,
+    "identifies_two_way_conflict": 6,
+    "responsiveness_is_a_passenger": 5,
+    "minimal_repair": 5,
+    "states_the_cost": 3
+   },
+   "total": 46,
+   "note": "complete; proves swap has no fixed point on two labels"
+  },
+  "gpt5mini_2": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 7,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 5,
+    "names_false_trilemma": 5,
+    "identifies_two_way_conflict": 6,
+    "responsiveness_is_a_passenger": 5,
+    "minimal_repair": 4,
+    "states_the_cost": 3
+   },
+   "total": 45,
+   "note": "notes the setup itself mandates decisiveness, so 5 follows given that premise - see question_defect_v1"
+  },
+  "gpt5mini_3": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 7,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 5,
+    "names_false_trilemma": 5,
+    "identifies_two_way_conflict": 6,
+    "responsiveness_is_a_passenger": 5,
+    "minimal_repair": 5,
+    "states_the_cost": 3
+   },
+   "total": 46,
+   "note": "supplies and verifies an impartial+responsive non-decisive rule slot by slot"
+  },
+  "gemini_1": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 7,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 5,
+    "names_false_trilemma": 5,
+    "identifies_two_way_conflict": 6,
+    "responsiveness_is_a_passenger": 5,
+    "minimal_repair": 5,
+    "states_the_cost": 3
+   },
+   "total": 46,
+   "note": "complete"
+  },
+  "gemini_2": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 7,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 5,
+    "names_false_trilemma": 5,
+    "identifies_two_way_conflict": 6,
+    "responsiveness_is_a_passenger": 5,
+    "minimal_repair": 5,
+    "states_the_cost": 3
+   },
+   "total": 46,
+   "note": "complete"
+  },
+  "gemini_3": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 7,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 5,
+    "names_false_trilemma": 5,
+    "identifies_two_way_conflict": 6,
+    "responsiveness_is_a_passenger": 5,
+    "minimal_repair": 5,
+    "states_the_cost": 3
+   },
+   "total": 46,
+   "note": "complete"
+  },
+  "gpt41mini_1": {
+   "per_criterion": {
+    "claim_4_is_true": 0,
+    "symmetric_profile_proof": 0,
+    "no_bogus_countermodel": 0,
+    "five_does_not_follow": 2,
+    "names_false_trilemma": 0,
+    "identifies_two_way_conflict": 3,
+    "responsiveness_is_a_passenger": 3,
+    "minimal_repair": 0,
+    "states_the_cost": 0
+   },
+   "total": 8,
+   "note": "FLAG OFFERS_A_RULE_THAT_DOES_NOT_EXIST: rule fails impartiality on all four symmetric profiles, machine-verified"
+  },
+  "gpt41mini_2": {
+   "per_criterion": {
+    "claim_4_is_true": 6,
+    "symmetric_profile_proof": 0,
+    "no_bogus_countermodel": 4,
+    "five_does_not_follow": 0,
+    "names_false_trilemma": 0,
+    "identifies_two_way_conflict": 0,
+    "responsiveness_is_a_passenger": 2,
+    "minimal_repair": 0,
+    "states_the_cost": 0
+   },
+   "total": 12,
+   "note": "FLAGS PROVES_IMPOSSIBILITY_BY_ASSERTION_WITHOUT_A_WITNESS and ACCEPTS_ABANDON_IMPARTIALITY_AS_ENTAILED; also calls a constant rule responsive"
+  },
+  "gpt41mini_3": {
+   "per_criterion": {
+    "claim_4_is_true": 0,
+    "symmetric_profile_proof": 0,
+    "no_bogus_countermodel": 0,
+    "five_does_not_follow": 2,
+    "names_false_trilemma": 0,
+    "identifies_two_way_conflict": 0,
+    "responsiveness_is_a_passenger": 1,
+    "minimal_repair": 0,
+    "states_the_cost": 0
+   },
+   "total": 3,
+   "note": "FLAG OFFERS_A_RULE_THAT_DOES_NOT_EXIST: same rule, same machine-verified failure"
+  }
+ },
+ "deliberation_v1": {
+  "revisions": 10,
+  "comparison": {
+   "Q2": 6,
+   "Q3": 5
+  },
+  "note": "Same phase structure as Q2 (26 elenchus, 18 reflection) but twice the position changes, so the difference is deliberative pressure rather than more rounds."
+ },
+ "unkeyed_council_finding_v1": "The question never excludes randomized rules. All three seats noted that a lexicographic rule with a fair coin on ties satisfies distributional analogues of all three conditions, and each flagged the reading as conditional rather than asserting it refutes claim 4. This is a real gap in the question, not an error by the council: DECISIVE was defined per profile, and a coin flip does name one winner per run. Second time a council has found a defect in an evaluator key written for it.",
+ "design_outcome_v1": "The design goal was baselines below 60%. That is untested - no Q4 baselines were run. What is tested is that the council scores 46/46, so Q4 does not discriminate at the council level.",
+ "machine_check_v1": "The rule GPT-4.1 Mini offered in samples 1 and 3 - highest total, tie-break on criterion 1, then criterion 2, then 'say A' - was implemented and run over all 16 profiles. Decisive yes, responsive yes, impartial NO, failing on exactly (0,0|0,0), (0,1|0,1), (1,0|1,0) and (1,1|1,1). The answers contain their own refutation: 'if still tied (both have same vector), arbitrary but consistent choice (say A)' is the violation. First error in this question series that is refuted by computation rather than by judgement.",
+ "question_defect_v1": "The framing sentence 'The panel must publish a rule that reads any profile and names a single winner' imposes decisiveness independently of premise 1. Under that reading step 5 does follow, since dropping decisiveness is excluded by the setup. GPT-5 Mini sample 2 identified this and gave both branches explicitly. The key does not anticipate it. Third question in a row whose evaluator key a model has found incomplete."
+}

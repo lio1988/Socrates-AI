@@ -1,0 +1,844 @@
+{
+ "schema_version": "socrates-turn-order/v1",
+ "derivation": "dispatch-evidence file mtimes at the time this file was written. Git does not preserve mtimes, so the order cannot be recovered from a clone; it is written down here instead. The turns array in the council record is grouped by seat, not chronological, and reading it as chronological produces phase orders that cannot have happened.",
+ "turn_count": 93,
+ "turns": [
+  {
+   "position": 0,
+   "record_id": "szorturnrecordv1_1ad5bdb4d431491aaf8a31e17cbeba29d52e157b31f5031491ec8b5b7c51b5db",
+   "body_sha256": "f7616ce71124c569106c0db30ab878a8ce10f5735d9f8feca9a07290310fb268",
+   "dialogue_phase": "opening",
+   "role_seat": "socrates",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 1,
+   "record_id": "szorturnrecordv1_9ea6f384b93fe97d886660fe85bfbaac38cb6a8416f4eb306a9fb04e95e9de22",
+   "body_sha256": "d61e8aa6adf548b162d3fc9d2bb4c073efb43c8368c63fad358a83e1b918ccb8",
+   "dialogue_phase": "initial_response",
+   "role_seat": "empiricist",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 2,
+   "record_id": "szorturnrecordv1_ba4569f6d7526f420e07158b417a6fb8c337a3b948484de4989b6e8fdbea2714",
+   "body_sha256": "2c3550ff979d5151f06cf4f9b27f0e0865eddb3c0a808132f0b61b6173d1cd08",
+   "dialogue_phase": "initial_response",
+   "role_seat": "synthesizer",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 3,
+   "record_id": "szorturnrecordv1_03771a5950bd677c7ae23c14b9bedcd6364a20fa4cf7bbffcf752a5e02d1ea50",
+   "body_sha256": "c9407ff77d2177230e6e5a85beb617c6bfc6f9b2c62957e98b8817bf38a55c53",
+   "dialogue_phase": "initial_response",
+   "role_seat": "elenchus_critic",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 4,
+   "record_id": "szorturnrecordv1_bf1360b5b48b5c1c3704adf0ac5fe43049a8b6ff6fb1fa9f22941deb89b9e17d",
+   "body_sha256": "cb2fa798bde404c07d82187a83173059553cb7d97a2878f9682b3aaefac0daf1",
+   "dialogue_phase": "elenchus",
+   "role_seat": "elenchus_critic",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 5,
+   "record_id": "szorturnrecordv1_de9280028d8ec7cca22447e7f96f59455779617e0fd0315f0b5d725676cd9b16",
+   "body_sha256": "247f84ec8d6f8f8cc2105c8f77f559f56ff409caab9b99e32da3aca8fdf22925",
+   "dialogue_phase": "elenchus",
+   "role_seat": "empiricist",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 6,
+   "record_id": "szorturnrecordv1_ca36ae979200fd02c7fca7a130ea175fee429c157644e5c202df6896b107a358",
+   "body_sha256": "ac4716d4db82ef657ab25ec0ddbecadc6081b79f95e276ab03cc0f100759f059",
+   "dialogue_phase": "elenchus",
+   "role_seat": "socrates",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 7,
+   "record_id": "szorturnrecordv1_33d0af87b6acf5e4b9dbaa0591c870e1990df655d2bf972cac1757444eeb7f25",
+   "body_sha256": "ba80d6ade3d903e0edf2a406bd776a5f251fdda7451ba9850b43f67899ba0945",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 8,
+   "record_id": "szorturnrecordv1_af764d26eb6d8abb5af769402a87a5477ffefa391a82df4a9940e3f408a8506f",
+   "body_sha256": "dc58c6c9cdb0cc674fed5bb9dd61ce97dfb2b574e59852fa1c07e1071a12edbe",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 9,
+   "record_id": "szorturnrecordv1_f2055121544c48ebcd68a7d5b578abee37ba48aa0216dd5e7a5eb09c5bbe61aa",
+   "body_sha256": "eb37d9a19155ac150950af1e68206b0614a33dff871d8feafb80670126dfc21f",
+   "dialogue_phase": "reflection",
+   "role_seat": "reflector",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 1
+  },
+  {
+   "position": 10,
+   "record_id": "szorturnrecordv1_f2ecccc972815f556a50f0e290b02fc8ee18c0a939e59fef968e2c3bcb3f2381",
+   "body_sha256": "40936df10b1c1e4972714bd8fd5d4d862aef102ceead59360f26f1801fff2b7b",
+   "dialogue_phase": "reflection",
+   "role_seat": "reflector",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 1
+  },
+  {
+   "position": 11,
+   "record_id": "szorturnrecordv1_a7f08deb7d373b283adcd87cd325e3b33e19c5472f29dd9b63f2745d99b691a5",
+   "body_sha256": "9215b9cea6649ae7b1511e18f426a11baf533d0f9eac5e564cc77a1456a7f444",
+   "dialogue_phase": "reflection",
+   "role_seat": "reflector",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 1
+  },
+  {
+   "position": 12,
+   "record_id": "szorturnrecordv1_77fd5e830eb0e1c033d446b7ff1fa693bb7b8f14d769a455cd00a787b361a7d6",
+   "body_sha256": "544fc473b213ce732828993464df32fc0c8de23aba3faab66f4903f1265405ce",
+   "dialogue_phase": "elenchus",
+   "role_seat": "elenchus_critic",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 1
+  },
+  {
+   "position": 13,
+   "record_id": "szorturnrecordv1_d84cb483d2aec891218e7b2d5b7e894d569216e7ac165e3b368f496efa913430",
+   "body_sha256": "88ab022d13928fff51d15f9d4fc6b8d66b43b7ee7eec0ed5b6ef158a337b10de",
+   "dialogue_phase": "elenchus",
+   "role_seat": "empiricist",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 1
+  },
+  {
+   "position": 14,
+   "record_id": "szorturnrecordv1_f7a2290494da9cc28cd2f6ee44069bc7f19de17cbf15eb64e80b87ce38723a9e",
+   "body_sha256": "5d4fd766e4ef137ebaa9c5c4424e4e32686565686b257a3455ef75b078a1c178",
+   "dialogue_phase": "elenchus",
+   "role_seat": "socrates",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 1
+  },
+  {
+   "position": 15,
+   "record_id": "szorturnrecordv1_7d58feb04bf1d98ea702a4b6e8164f0b28e802ebcf74d55489aa0b0c555046a5",
+   "body_sha256": "ea2c3ff59fdeda74a59b3ba2058620555d9643d8f009215a6f77fac523dec2b9",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 16,
+   "record_id": "szorturnrecordv1_f1943dc5bd99bf5d61b8f50e34ff4c73bca47d3ce740647b77e8b027cc81b15c",
+   "body_sha256": "eb428a9e668c0227293faa899642cd6fa3af8890eefba0a715044bfbdd6e000b",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 17,
+   "record_id": "szorturnrecordv1_2ac37317b6fef27496f798c5e6af0b808a566ec02295aa0bcbaa829f0e187683",
+   "body_sha256": "5082ea87428469083979c1efa4b2a6a62db9a9548ed49f288ae941b12d98351a",
+   "dialogue_phase": "reflection",
+   "role_seat": "reflector",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 18,
+   "record_id": "szorturnrecordv1_3e2787d7e8052451027bb9125303b598768cc0048f2e011f1014e0b1c4085274",
+   "body_sha256": "79f0838f456feb0d2e0bc872c98db0b21111ff27868cdd96d93036c7a8437559",
+   "dialogue_phase": "reflection",
+   "role_seat": "reflector",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 19,
+   "record_id": "szorturnrecordv1_a9a93395068f99ac130c5eb96cb814e74fecee4450ddd4d67f4ce54d67f5cd5b",
+   "body_sha256": "da57edc9c5ba02f89679e6bc93b10e6f23e88e41ec409626dae529e7e56155c3",
+   "dialogue_phase": "reflection",
+   "role_seat": "reflector",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 20,
+   "record_id": "szorturnrecordv1_35b25da8df06e69e966c7566e05c021e5168b9472428ade06ef6ed6478d3e045",
+   "body_sha256": "ab1c6aa4de5d55d81bed8b2814293da07258c38df8dc9555e5d3172acb0dad6e",
+   "dialogue_phase": "reconstruction",
+   "role_seat": "maieutic_reconstructor",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 21,
+   "record_id": "szorturnrecordv1_9d1a79af920bc1918ad303fa390fa99e40f56dcf7110adf2236228a553143a1c",
+   "body_sha256": "ecc2590c9ac57c50ed74ee2fab018c7858d9c022318ce493caa657d37dda6671",
+   "dialogue_phase": "synthesis",
+   "role_seat": "synthesizer",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 22,
+   "record_id": "szorturnrecordv1_94b95ed4630dc91ce0f6f5bf868f745ecba2428977078b63def368d3b38a8abe",
+   "body_sha256": "7f037a6f192b5233fbb2ef1fc5425eccb358f108188a1e8b3af528b937fe3af5",
+   "dialogue_phase": "synthesis",
+   "role_seat": "synthesizer",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 23,
+   "record_id": "szorturnrecordv1_0072ae78f63ea66b8b2ac0d7699b662acbee9a852c1c18eb43e21d7cfdde9ee7",
+   "body_sha256": "70525acad898285e7a212207c6053dbc2995d0a6c6285e5c412e48babf356fd8",
+   "dialogue_phase": "synthesis",
+   "role_seat": "synthesizer",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 24,
+   "record_id": "szorturnrecordv1_d01a2d7ce7d7b561d870acfc5be1b8e57319167235a85985d011e90c6a5e7eac",
+   "body_sha256": "c9408c50053912ec8a91f3f4ad9f0a7c18ce0bb7b4e0b7b16846fab7dd8b1e3c",
+   "dialogue_phase": "opening",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 25,
+   "record_id": "szorturnrecordv1_a2533351151ccaa8cd00dd872c9a8e7db278a6396cc74e7944594db823c4d02d",
+   "body_sha256": "606cc5120f093401cc81bdce99f02264187533178ebd3a02a25a2ce63621e8ac",
+   "dialogue_phase": "opening",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 26,
+   "record_id": "szorturnrecordv1_4eb55f9222f86e1e108c6c442186ff963470009e8022d7404b4ce2e3b4d7fd71",
+   "body_sha256": "7596b1d9ea12950eecc80d448440e7ef935cea266c8162b1f2c33117854e86d3",
+   "dialogue_phase": "initial_response",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 27,
+   "record_id": "szorturnrecordv1_f8cd2d20ce13d54f69ec66f9d89f8a6ee80992497448e518daf35b649667275c",
+   "body_sha256": "e32617e8162d617bbc2f9d731306961194d2624d68c2349f7e7a12f55b208272",
+   "dialogue_phase": "initial_response",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 28,
+   "record_id": "szorturnrecordv1_9bec2b9ab9e23c016000699a3f5b45652af007d7af8dedcb8d30b4022d47850d",
+   "body_sha256": "dcc6c23799011071cc300e57f01f0893439fd091eeda9ca8690555f23c631cc3",
+   "dialogue_phase": "initial_response",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 29,
+   "record_id": "szorturnrecordv1_d8858a4f1eb4505ddc688c1632901ddcfba3cb75162af6a58be9d4cae51a88e2",
+   "body_sha256": "2fe92a809949d696a75ac02f2ef5e01b8e2966cd06f8c9927e24aad238038556",
+   "dialogue_phase": "initial_response",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 30,
+   "record_id": "szorturnrecordv1_83143b55967207a9d8a7fe6fc1d9d1883ee32be969d508020bcceb5399316df7",
+   "body_sha256": "43e6f69f2143c12a2f862edc97c824ea38fad13c4e9216c961deda72fec9a36b",
+   "dialogue_phase": "initial_response",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 31,
+   "record_id": "szorturnrecordv1_3aa21e1870e08b585588ea809137ea19512324d08fecacaba045356e3f7667a7",
+   "body_sha256": "26a86b9c2aa10596ee7fd62ba9ade329a478ab717fc61073746d0f0411fdab20",
+   "dialogue_phase": "initial_response",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 32,
+   "record_id": "szorturnrecordv1_cfd42986d02205f15deaabf65fbf7fbf4c2708ed27905ef3cac4c944cb960d4e",
+   "body_sha256": "514c5dc7bb04897915d6a90af570bbf15b89c18937324c0f4367d184a543bdd3",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 33,
+   "record_id": "szorturnrecordv1_0f1e8860450684d5a28ad5b4b9443506b548fa5c500fdf4980e1978dcec6e1cc",
+   "body_sha256": "f3345834c53c26e49b7e3c9cc7bff8d6bfa193f328f3642da4835c91f1926fba",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 34,
+   "record_id": "szorturnrecordv1_1529ae7714f808f24dc4d47809a0f595b2ac685c56e579cc73093459467e9997",
+   "body_sha256": "d6de5142db27d3589e5b0c7d7206537255ef77e5110daa0dcb62cc348bf14e45",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 35,
+   "record_id": "szorturnrecordv1_1368c71b34c756af79e78526180e5adf49d1d3fde2cc2b3ed038c83f2a6115e0",
+   "body_sha256": "503b1872ff5cee2035ae7f3028710ac9de7ec74d885eb2ffca388b62ff875d72",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 36,
+   "record_id": "szorturnrecordv1_a6a394520856d34a62f9632882149ca258d788eccd62d0da627fd6a42d4dc03e",
+   "body_sha256": "b39318c37c00c359e742c52bf86821deb1aa52c223d28fdbd3f7001b46c8a1af",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 37,
+   "record_id": "szorturnrecordv1_1662dedcadeceb58f7b08c9aa50d6afebd581f689b29344fee1747d84a152c15",
+   "body_sha256": "36bd183285466c6858f71ffa4a26b03e3cae793ea7a2747af0ddf1a184cf87b4",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 38,
+   "record_id": "szorturnrecordv1_e7d52d91c2c1d4e1af049578cd833aac2d00872b66133dd32127d53c1ae4c56f",
+   "body_sha256": "15f5c65f379b802233391a01b65a18be28085ed2ff1c9a4e56b64b516c890611",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 39,
+   "record_id": "szorturnrecordv1_ae4095c7ead3660f288d9355a9486494c315af5e56fcd298aac04e679b8ab4d4",
+   "body_sha256": "5fb1181b31ea4ab81e98936df995f1bc2cdf938ff4fe1bee71daf36efcffea77",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 40,
+   "record_id": "szorturnrecordv1_3d72b70aee1da2de067e6d33e5aae392aa59b8ee9280739e5dec68ef8b8df0c5",
+   "body_sha256": "40d670d855ebed65c10f5d1d2e1ea9c57ffa13f1f3da1df1ad4e3c0a03dd00e3",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 41,
+   "record_id": "szorturnrecordv1_c7e0ed4fe21b43721b1660065d29eca4ff70587eb78fadfb4232a2d6f5713ad6",
+   "body_sha256": "dbe426f34f7bf030d691416a3a50154db2aaacc21218cfd77a93da50b0276455",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 42,
+   "record_id": "szorturnrecordv1_1a77164c7c0d045132a6b9db0dd277349aedcbac77510d62eb156bfc2f52f400",
+   "body_sha256": "1babd8426ca5e7907694231e746383e670a385820c206a9a13b4cf90e27789be",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 43,
+   "record_id": "szorturnrecordv1_e896deeea8e60c3f4da47fbe36ec4027ec102e2b861d890e5fe1ec690f343286",
+   "body_sha256": "e67a16dec4c7d6a813ab27ab18713aa39fb7e8dbe0ad9f896fe654ed9c2752e8",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 44,
+   "record_id": "szorturnrecordv1_afe96bdb31660282f16a522e97c0eca5cc1929b6743f42c5e0e2f36f396519ca",
+   "body_sha256": "dbf34a59cbfbca4d16547f3b8d732fe1ce27f2197855d5a108c14fb98fdabcbc",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 45,
+   "record_id": "szorturnrecordv1_b44b4a399400740501b73879a17d3df6f42d8d95a525146bbf9a362719669361",
+   "body_sha256": "322ea7940622d3d3d29e4e0cdbe8879a3f1242059964cb4862b6e4d40494ce0c",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 46,
+   "record_id": "szorturnrecordv1_5ebd856ee0b2fa3fe0621d6b894cce219b996a7a8562397033c3f7a42789d20c",
+   "body_sha256": "ea3b08e217c70efffd3376172d008500966c1308d088e8b4db8a296307827552",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 47,
+   "record_id": "szorturnrecordv1_398eae6e0d730fcd29fd07ff7c057183aed8e1b57ec5c5d3ab0a205793e88a43",
+   "body_sha256": "51381637f7ee4034578395a136843d0eb8b006b1895a05631c4693628a176fb5",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 48,
+   "record_id": "szorturnrecordv1_45af863b53d26e9bf3010b732a6e6d82ea7cea624a1d948892a615f47a8050dc",
+   "body_sha256": "3e3d38b3f369dc0d18de6355976b5b0cf999b81546f015199d9e39b17f7374aa",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 49,
+   "record_id": "szorturnrecordv1_384b205c7757e5d9db87a4e5f81fc34f2db727b76379bed61a54ffa67642f177",
+   "body_sha256": "49822a67cb4a464cfb771ae8cc1d614b0a9000ea81b7c7bae9ced437d825bf7b",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 50,
+   "record_id": "szorturnrecordv1_471311c6703092e1edc55b679357d3f395f99de99e0bc3451a819d23d6e74674",
+   "body_sha256": "2684285a496a8237a0836e150e99d5d611a4a799f9d1f69dccb6b303a201d798",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 51,
+   "record_id": "szorturnrecordv1_f1b790eb0296a334d2ead947f4e03202d41747f3b2a3e5b8abd87c3fc19885ab",
+   "body_sha256": "89401e4500d36d0ad01fb5d825eb0e8462f4bb599ceab69d758068c98ca298d7",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 52,
+   "record_id": "szorturnrecordv1_9f958f427c852a2c1e6f3a7ee4f52f9a9a031da1dc2019f56d70b37e7c74dc5b",
+   "body_sha256": "370037ae080e5e73df585cde694f182ba6ecfbae83187e70cf10c4b2f1495db0",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 53,
+   "record_id": "szorturnrecordv1_82d905c1821f822788aadb6995289b2a5e893d8748c14878c55d98385bafd2a2",
+   "body_sha256": "aed421b8b7bdbf1eee52a91af86e97b43c2f90842c30811ba31a83df59f07aff",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 54,
+   "record_id": "szorturnrecordv1_85648dcb51cc96f755dad928cc8df08cb55e456d32ac4d53c98aae121377e018",
+   "body_sha256": "8550d4fc2ae6dd8848cb42e1ed30d32b4d5006841d0e29ddc6e44133315edabc",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 55,
+   "record_id": "szorturnrecordv1_94e412ef81583dcfd9d06e370a38072639e456594453648ae9730efb2925c06e",
+   "body_sha256": "c26115b61e84d2161b8ff0ba2778afffee2dbee90f569d6992de50c8be7539e7",
+   "dialogue_phase": "reflection",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 56,
+   "record_id": "szorturnrecordv1_0e09dc8061fa82a5106ed2abf47e1723f69257f38fba5809b409032184a13e51",
+   "body_sha256": "9caf8d974a056f103bbcf1fa85b2f9f89b35425e1421f929d99f94fba086820f",
+   "dialogue_phase": "reconstruction",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 57,
+   "record_id": "szorturnrecordv1_2179d454bcca9f90c758b01bbb15015753cd592c5a80d6f41c196ed1871d8a23",
+   "body_sha256": "ba8ee48dbb5420ed1f6ab3b8efb322635bd73b47b3a1715ee32968b4e8949031",
+   "dialogue_phase": "reconstruction",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 58,
+   "record_id": "szorturnrecordv1_b11c5ef500c479467bca8727a5262cd00708aeb8537f4a059ee535945175f126",
+   "body_sha256": "228ef8ed3c7ede0011fe9073ff1d62e34a31d3ca3170de3be613ba1fe6ef22bb",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 59,
+   "record_id": "szorturnrecordv1_6ff08948a5aad585a1d67f1060a7c01b4c9275eb0e034ec442fd744743a7cd7e",
+   "body_sha256": "376e386819cd4d2b589ced21d0cd22ccccedbce7a8ccf9af29ac021e59e7e36e",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 60,
+   "record_id": "szorturnrecordv1_b34ebf90fcb3be19fb82a14fad94e86febca4547c6e5bcfc351d812e40624bfa",
+   "body_sha256": "2c2d10d3ff827bf33b6a3065fdbf0b55172513494401bacb9e3fdc4cd4f19a66",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 61,
+   "record_id": "szorturnrecordv1_38131fd79ff5bb368452a5042ad52d50a5506824ab26dea29994f464eadb3d27",
+   "body_sha256": "1c796fa07521c24d84c75749a4bbd1964fb34352db3b6bb8c49d013dc412d03f",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 62,
+   "record_id": "szorturnrecordv1_866fb9d4e0b7d66dfddb88f1e424fa280038df72abdb4895f7f8c0484a472eac",
+   "body_sha256": "c7282943c8b711376e830885133524fc01eaf5cb032cced9961c3d888960619c",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 63,
+   "record_id": "szorturnrecordv1_aa867141af05e4bcfe8d50e62bbd6de9d50e47f0b7788900988e8a6c0ec2265b",
+   "body_sha256": "2647544589921511320b56bf4bb7aa746988fd05e4e42d89266fac26ca297333",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 64,
+   "record_id": "szorturnrecordv1_111f273bda89e59a88ca46d1d83c58f6cefbec93e5d89464ad3751986ceb61c5",
+   "body_sha256": "cc2840b8efcc8b7d9c4482dd9e860adf7538940219c61f92c58b09ed6a2c9ffa",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 65,
+   "record_id": "szorturnrecordv1_e063237bb5b5d48f860bb2eb0b80e378900ef87cf99077ed47f09c2eb9bfac3d",
+   "body_sha256": "f81ef4c72d4a1e88e73ae73ace42f4ff102c800f03910370aaa6a76b53f365fd",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 66,
+   "record_id": "szorturnrecordv1_df4258205b3e197cca20416c1cdcdbb15c3aa03711f5a72ac8a179560e70cd3a",
+   "body_sha256": "69944e2a1ae18bbf0b08984dc4c31727dbb3488e5ad6de4a6c9a9706a5a35e94",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 67,
+   "record_id": "szorturnrecordv1_e00077a2e0358083e7b78fca4872f206438caea3e6e91a37b569266d42edd2f7",
+   "body_sha256": "074e166364d1b548a43a3f253520bf11607ca4fa605be31cdf06efa3a07baf38",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 68,
+   "record_id": "szorturnrecordv1_02ea769d78ba16df87fe39e01e80cccdb3c8aee8b90492983508421f9da77c91",
+   "body_sha256": "c6f506c4707b61da098e63ae0f610a56221766a30b3d45c052c85277f50df07f",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 69,
+   "record_id": "szorturnrecordv1_d24e4207955dac5aeeeb465fa67f7a394011d27e38420f5c92c03bc0841fccc4",
+   "body_sha256": "525511e137f932b510daab44bb7fa4b435ad788cc9295689b56b946b745be93a",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 70,
+   "record_id": "szorturnrecordv1_d7ee28b3d6930ca7d181a63cf1ee1422e6e7c0a67e048267c08e6e614d0b0aad",
+   "body_sha256": "059a47267ead1e1d476886aa05c089180af501bc94ef239f5a29e5bdb61de2d2",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 71,
+   "record_id": "szorturnrecordv1_9fcd40cbf724c3d9c449942e197eea2e71e7659f3cfe60d59a55c1676dfa31da",
+   "body_sha256": "b14b08f290c6671668bc70ccc957af303ae1ff2bd0b0605c1692b0f98ac30b50",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 72,
+   "record_id": "szorturnrecordv1_089a29988290020f9519fdf53e73c4b73549a01a471b1a46d73695114271537f",
+   "body_sha256": "23be9d0782aab1c5631d5be3a04de26f51fd0dd45f98487ddba66e31e4310199",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 73,
+   "record_id": "szorturnrecordv1_ffbba26e9019cf11b2c5a7be09aa23c83b975bb32bf75949d32cceb7cbe58401",
+   "body_sha256": "5d7ec42bab08ecdf9bd2a21a52fff44b63a746936cece54cd98626a9450774d0",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 74,
+   "record_id": "szorturnrecordv1_ab32b816d2353aeb10e6b9a7fe0408594b9a0ffc44e51577dfc3e0e379fa2784",
+   "body_sha256": "dfbcf494cce29884ba55b97a529e7cc11649ccc211c8f5b9262ae958f3e2089e",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 75,
+   "record_id": "szorturnrecordv1_3e75abe11aa7644fb732614e8f36a97a72541f8d93009c562aeca9d0dc4defca",
+   "body_sha256": "9a8fd7c8ffdec96a3b5bfd38e7773d746067037feb0ee7b0159cd41c2de92d1d",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 76,
+   "record_id": "szorturnrecordv1_6dd11fb660747865e7daebfc2a6a276ccbd92f2379b7ba42d028979d1bdcd754",
+   "body_sha256": "0a2971410021e0736f9a291c7f7902bf49041908114755acfd339352cf739100",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 77,
+   "record_id": "szorturnrecordv1_0fae69090fcc779ed2e125113b9c46b010b29bd1a9a96e2bcf752536939e53bc",
+   "body_sha256": "1e10cac6ec3d6795255958f57422847cb10cb1dfaa77afc435787ce7a31c9e6e",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 78,
+   "record_id": "szorturnrecordv1_34d47f05a3d94ca2d2be5bd962d15758b4588e36b3190da6c233a4c45c7f6b0c",
+   "body_sha256": "81360f0fd0a22d36151ee4c566a327e78ff2992a0148c21e999246fb929ad471",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 79,
+   "record_id": "szorturnrecordv1_a40aff94d5d967b606d84c8f4d868562e456b1b3e420f38062f8511e24fec335",
+   "body_sha256": "a31330822020f93c2c5f2e7f4d8cba4affe8730126e21fd72e1b08c2addf3ee5",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 80,
+   "record_id": "szorturnrecordv1_99671c4e6201e73ae245f05656b8572bff4550cd367d51c9eedc19425fa38dce",
+   "body_sha256": "0cafec9e51c7b78a528fefb9a951a527449682b38f1864bb52b06b6d842967e0",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 81,
+   "record_id": "szorturnrecordv1_0b4cb59c1e43b1f59373ba75257f85e3b3126a62054490886c5184d1339cdfb8",
+   "body_sha256": "cecbbaa2ed18826d7b57bdfc065f7efd76dcf715bad1b59640c2c1d4c093f7dc",
+   "dialogue_phase": "synthesis",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 82,
+   "record_id": "szorturnrecordv1_b0bf8df7f4abf36d1fc5250ff0b135501b716a16da14b0e6ee9bd76ac7cf4baf",
+   "body_sha256": "dd8d44002969d4dcf4f465d4ccab29e6a3207c5a7949878d04a22f93c79ffd5e",
+   "dialogue_phase": "ratification",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 3
+  },
+  {
+   "position": 83,
+   "record_id": "szorturnrecordv1_98787a7c5cabc648d5f97aecd7d84e56e009230508f4b05c9137669da8aba844",
+   "body_sha256": "bcae5a629c3bae923037dec339bdd00fb08e3bca6be689c24400af3ecf28813a",
+   "dialogue_phase": "ratification",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 4
+  },
+  {
+   "position": 84,
+   "record_id": "szorturnrecordv1_5b136b6220cb3e71da388bf469d48dfb464950ccf5b0aab18dcd8202c97c8c1a",
+   "body_sha256": "7b96d1133c5d1915291e048bd34425c8fec13771de552030cb236ed6887f6bc3",
+   "dialogue_phase": "ratification",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 5
+  },
+  {
+   "position": 85,
+   "record_id": "szorturnrecordv1_abbad287a81d111a4b21a27620b8de257becdd5bc0a6c6f9174a4377db314676",
+   "body_sha256": "f98d802453035263345ab1e91e8f8004c882ab1ed9d31071c6e14991e09d7444",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 86,
+   "record_id": "szorturnrecordv1_2a22cabda14c9f3a270b9e28a4589d87543f6d5f3343919a440ab1ddac7396ad",
+   "body_sha256": "bec56973ebdc396fbf724ac8abbb8e008da0ab9b9ddcfb033fc5d831be44c58a",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 87,
+   "record_id": "szorturnrecordv1_da1dee1aed4d858c914fbe09888dff0333321e652a89bf95d4c862e2d8085cf1",
+   "body_sha256": "442794204821e445a6319de32b9dc5e51aa5f1e9bd280f945a3e2928a15258f1",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 88,
+   "record_id": "szorturnrecordv1_a944ed2bdd74756fab5571a282c91664342c1fd8ffdfcaba89586df0e3d4daf7",
+   "body_sha256": "65d245e64dd5ef16fc7fdbad1afaf71c9d6c01741b2d774ffcb47083e50fa58f",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 89,
+   "record_id": "szorturnrecordv1_7da90ad1a093ff439717717db3d2c2f0534c78b3c202bfc7c7ec75553740f825",
+   "body_sha256": "658dbd93b23ca150f2f8552b15306b49ecdb0d9983fcf1b37d7f3e80084c82db",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 90,
+   "record_id": "szorturnrecordv1_74235c0a9ac6aa86a34f72dccbad48851ea6ecc4ac0b696175a7da7f9cc96690",
+   "body_sha256": "110c18f91faa4e3b45e032f95899f21bed28f7ecb6703603e7298c6305bd6a49",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-4.1-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 91,
+   "record_id": "szorturnrecordv1_b58d35ea204759647fd0a0922ebac41a828a2fe96867d55f739b705c21bbab48",
+   "body_sha256": "67456cd7e3fe63b98af140c9640a7eb6fcf9d5628bf71a97ef72e5ee27ce6782",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "openai/gpt-5-mini",
+   "objection_rulings_in_context": 0
+  },
+  {
+   "position": 92,
+   "record_id": "szorturnrecordv1_602c0d495265e0e7586f5df9b51545b00ddae9e4fe292e000b1cc53863b4bb74",
+   "body_sha256": "0e693e6fa2ae8244ac80cbd575df9985a5561f2baa9e62625b0ae567ed5704ea",
+   "dialogue_phase": "elenchus",
+   "role_seat": "final_evaluator",
+   "model": "google/gemini-3.7-flash",
+   "objection_rulings_in_context": 0
+  }
+ ]
+}
