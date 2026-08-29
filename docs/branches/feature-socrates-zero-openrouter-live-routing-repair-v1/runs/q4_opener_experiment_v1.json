@@ -1,0 +1,33 @@
+{
+ "schema_version": "socrates-q4-opener-experiment/v1",
+ "maximum": 46,
+ "design": "Same three models, same question, same protocol, same 115-call plan. Beta and Gamma exchanged so the opening Socratic chair passes from Gemini to GPT-4.1 Mini. Role assignment derives from the fixed session offset, so seat order alone decides who asks first.",
+ "why": "Across five Q4 councils the opening question was always Gemini's and always named the symmetric profiles and set responsiveness aside. GPT-4.1 Mini, which alone calls the impossibility false in two draws of three, then produced the correct proof five times out of five. That raised the question of whether the council's result reflected one seat's framing.",
+ "result": {
+  "ratified": true,
+  "calls": 70,
+  "accepted": "69/70",
+  "observed_cost_usd": 0.224226055,
+  "harness_refusals": 0,
+  "per_criterion": {
+   "claim_4_is_true": 6,
+   "symmetric_profile_proof": 7,
+   "no_bogus_countermodel": 4,
+   "five_does_not_follow": 5,
+   "names_false_trilemma": 5,
+   "identifies_two_way_conflict": 6,
+   "responsiveness_is_a_passenger": 5,
+   "minimal_repair": 5,
+   "states_the_cost": 3
+  },
+  "total": 46
+ },
+ "opening_questions": {
+  "gemini_default": "When proposals A and B receive identical score vectors, what outcome does impartiality necessitate, and how does that constraint interact with decisiveness independently of responsiveness?",
+  "gpt_4_1_mini_rotated": "When we say a rule is decisive, impartial, and responsive in this context, precisely how should we interpret each condition's requirements and their interplay - especially impartiality's symmetry requirement - and what assumptions does this interpretation rest on that the argument might be taking as granted?"
+ },
+ "finding": "46/46, the same as all five runs opened by the strongest seat. The structure is robust to a weaker opener when two strong seats are present. The earlier claim that the council's result may reflect one seat's framing was tested and does not hold.",
+ "seat_elevation": "GPT-4.1 Mini produced the symmetric-profile proof in 6 of 6 councils, including this one where it wrote the opening question itself. Alone on the same question text it produced it 0 of 3 times and called the impossibility false twice. Same material, different outcome: what the council supplies is a direction to search, not information.",
+ "unexplained": "70 calls against 101-105 in the five default-order runs. A third less dialogue for the same score. Either fewer cycles were needed or fewer were taken; this run does not distinguish them.",
+ "invalidated_predecessor": "An earlier attempt at this experiment is kept at q4_opener_weak_invalid_midrun_edit. It is excluded: 47 of its 48 failures were pre_dispatch_refusal from our own drift guard, because the implementation was edited while the run was in flight. The guard did exactly its job - refusing to dispatch under an authorization that no longer described the running code."
+}

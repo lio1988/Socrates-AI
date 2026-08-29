@@ -1,0 +1,16 @@
+{
+ "schema_version": "socrates-turn-order/v1",
+ "derivation": "dispatch-evidence file mtimes at write time; git does not preserve mtimes, and the turns array is grouped by seat rather than chronologically",
+ "turn_count": 1,
+ "turns": [
+  {
+   "position": 0,
+   "record_id": "szorturnrecordv1_4914fdab2e9e5a2a7c1a10a508967100f0075a063ab94e39831e8b03235dbd50",
+   "dialogue_phase": "opening",
+   "role_seat": "socrates",
+   "model": "meta-llama/llama-4-maverick",
+   "objection_rulings_in_context": 0,
+   "attempt_failure_class": null
+  }
+ ]
+}

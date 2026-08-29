@@ -1,0 +1,6 @@
+{
+ "schema_version": "socrates-turn-order/v1",
+ "derivation": "dispatch-evidence file mtimes at write time; git does not preserve mtimes, and the turns array is grouped by seat rather than chronologically",
+ "turn_count": 0,
+ "turns": []
+}

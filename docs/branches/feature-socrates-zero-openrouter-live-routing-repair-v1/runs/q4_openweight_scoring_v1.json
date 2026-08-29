@@ -1,0 +1,168 @@
+{
+  "schema_version": "socrates-q4-openweight-scoring/v1",
+  "maximum": 46,
+  "method": "hand-scored against scripts/q4_ethics_question_v1.CRITERIA_V1, every field of every answer read",
+  "machine_check": "The rule offered by qwen3_32b_1, llama_4_maverick_1 and llama_4_maverick_3 - highest total, ties to A - is the same rule GPT-4.1 Mini offered. Run over all 16 profiles it is decisive and responsive but NOT impartial, failing on exactly (0,0|0,0), (0,1|0,1), (1,0|1,0), (1,1|1,1).",
+  "instruction_following": "Nine of nine returned the required fields, and eight of nine parsed. Compliance ends there: three answers are non-answers of 106-131 tokens that restate the task or announce steps never taken, five declare a machine-proven impossibility false, and one asserts a counterexample exists without exhibiting it. The question says explicitly: check any rule you propose against every profile before asserting it works.",
+  "scores": {
+    "qwen3_32b_1": {
+      "per_criterion": {
+        "claim_4_is_true": 0,
+        "symmetric_profile_proof": 0,
+        "no_bogus_countermodel": 0,
+        "five_does_not_follow": 1,
+        "names_false_trilemma": 0,
+        "identifies_two_way_conflict": 0,
+        "responsiveness_is_a_passenger": 1,
+        "minimal_repair": 0,
+        "states_the_cost": 0
+      },
+      "total": 2,
+      "note": "claim 4 called false; offers sum-rule with ties->A, the rule machine-verified to fail impartiality on all four symmetric profiles",
+      "valid": true
+    },
+    "qwen3_32b_2": {
+      "per_criterion": {
+        "claim_4_is_true": 6,
+        "symmetric_profile_proof": 7,
+        "no_bogus_countermodel": 4,
+        "five_does_not_follow": 5,
+        "names_false_trilemma": 5,
+        "identifies_two_way_conflict": 6,
+        "responsiveness_is_a_passenger": 5,
+        "minimal_repair": 3,
+        "states_the_cost": 2
+      },
+      "total": 43,
+      "note": "complete symmetric-profile proof; two-way conflict and responsiveness-as-passenger both correct; repair lists dropping responsiveness, which cannot work",
+      "valid": true
+    },
+    "qwen3_32b_3": {
+      "valid": false,
+      "total": null,
+      "note": "EXCLUDED as a measurement artifact, not a model failure. The response hit our own 16384-token output cap and was truncated mid-generation into whitespace, leaving unparseable JSON. Scoring a truncated response measures our ceiling, not the model. Every other sample terminated on its own; the 106-131 token answers stopped by choice and are genuine behaviour."
+    },
+    "llama_4_scout_1": {
+      "per_criterion": {
+        "claim_4_is_true": 0,
+        "symmetric_profile_proof": 0,
+        "no_bogus_countermodel": 0,
+        "five_does_not_follow": 0,
+        "names_false_trilemma": 0,
+        "identifies_two_way_conflict": 0,
+        "responsiveness_is_a_passenger": 0,
+        "minimal_repair": 0,
+        "states_the_cost": 0
+      },
+      "total": 0,
+      "note": "FLAG: asserts 'a simple rule can be constructed' without constructing it, in direct breach of the instruction to check any rule against every profile",
+      "valid": true
+    },
+    "llama_4_scout_2": {
+      "per_criterion": {
+        "claim_4_is_true": 6,
+        "symmetric_profile_proof": 0,
+        "no_bogus_countermodel": 4,
+        "five_does_not_follow": 0,
+        "names_false_trilemma": 0,
+        "identifies_two_way_conflict": 0,
+        "responsiveness_is_a_passenger": 5,
+        "minimal_repair": 0,
+        "states_the_cost": 0
+      },
+      "total": 15,
+      "note": "claim 4 true but by no valid route: defines a rule, says it is NOT impartial, concludes the impossibility; conclusion then gives up impartiality AND responsiveness",
+      "valid": true
+    },
+    "llama_4_scout_3": {
+      "per_criterion": {
+        "claim_4_is_true": 0,
+        "symmetric_profile_proof": 0,
+        "no_bogus_countermodel": 0,
+        "five_does_not_follow": 0,
+        "names_false_trilemma": 0,
+        "identifies_two_way_conflict": 0,
+        "responsiveness_is_a_passenger": 0,
+        "minimal_repair": 0,
+        "states_the_cost": 0
+      },
+      "total": 0,
+      "note": "NON-ANSWER: 111 tokens restating the three definitions; conclusion is 'The argument is assessed.'",
+      "valid": true
+    },
+    "llama_4_maverick_1": {
+      "per_criterion": {
+        "claim_4_is_true": 0,
+        "symmetric_profile_proof": 0,
+        "no_bogus_countermodel": 0,
+        "five_does_not_follow": 5,
+        "names_false_trilemma": 5,
+        "identifies_two_way_conflict": 0,
+        "responsiveness_is_a_passenger": 0,
+        "minimal_repair": 0,
+        "states_the_cost": 0
+      },
+      "total": 10,
+      "note": "same broken rule, and states the violation itself: impartiality holds 'unless the total scores are equal, in which case it defaults to A'; claims to have checked all 16 profiles without doing so",
+      "valid": true
+    },
+    "llama_4_maverick_2": {
+      "per_criterion": {
+        "claim_4_is_true": 0,
+        "symmetric_profile_proof": 0,
+        "no_bogus_countermodel": 0,
+        "five_does_not_follow": 0,
+        "names_false_trilemma": 0,
+        "identifies_two_way_conflict": 0,
+        "responsiveness_is_a_passenger": 0,
+        "minimal_repair": 0,
+        "states_the_cost": 0
+      },
+      "total": 0,
+      "note": "NON-ANSWER: 106 tokens describing the steps it will take, then stopping",
+      "valid": true
+    },
+    "llama_4_maverick_3": {
+      "per_criterion": {
+        "claim_4_is_true": 0,
+        "symmetric_profile_proof": 0,
+        "no_bogus_countermodel": 0,
+        "five_does_not_follow": 5,
+        "names_false_trilemma": 5,
+        "identifies_two_way_conflict": 0,
+        "responsiveness_is_a_passenger": 0,
+        "minimal_repair": 0,
+        "states_the_cost": 0
+      },
+      "total": 10,
+      "note": "same broken rule; says 'There are four possible profiles' and lists sixteen",
+      "valid": true
+    }
+  },
+  "validity_rule_v1": "A sample is excluded only when the harness caused the failure - the output cap here. A short, wrong or empty answer that terminated normally is data.",
+  "family_means_valid_only_v1": {
+    "qwen3_32b": {
+      "valid_samples": [
+        2,
+        43
+      ],
+      "mean": 22.5
+    },
+    "llama_4_scout": {
+      "valid_samples": [
+        0,
+        15,
+        0
+      ],
+      "mean": 5
+    },
+    "llama_4_maverick": {
+      "valid_samples": [
+        10,
+        0,
+        10
+      ],
+      "mean": 6.7
+    }
+  }
+}
