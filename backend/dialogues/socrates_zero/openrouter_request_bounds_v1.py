@@ -66,6 +66,27 @@ BYTE_BACKED_TOKENIZER_ENDPOINTS_V1: FrozenSet[str] = frozenset(
     {"openai/flex", "azure/swedencentral", "google-vertex/global", "google-vertex/global/flex"}
 )
 
+#: Models whose own tokenizer justifies the bound, whatever endpoint serves them.
+#:
+#: Keying only on the endpoint had the justification in the wrong place. A
+#: tokenizer belongs to a model, not to a route: adding "deepinfra/base" to the
+#: set above would have licensed a byte bound for every model that provider ever
+#: serves, including one tokenised some other way. Naming the models keeps the
+#: claim exactly as wide as its evidence.
+#:
+#: Llama 4 and Qwen3 are both byte-level BPE, so every token decodes to at least
+#: one byte and prompt_tokens <= utf8_bytes holds by construction. Corroborated
+#: on the Q4 baselines: all three deepinfra families reported 328 prompt tokens
+#: for 1491 message bytes, about 4.5 bytes per token.
+BYTE_BACKED_TOKENIZER_MODELS_V1: FrozenSet[str] = frozenset(
+    {
+        "qwen/qwen3-32b",
+        "qwen/qwen3-235b-a22b-2507",
+        "meta-llama/llama-4-scout",
+        "meta-llama/llama-4-maverick",
+    }
+)
+
 
 class RequestBoundError(ValueError):
     """A request exceeded a declared bound. Local refusal, never a provider fault."""
@@ -134,10 +155,15 @@ def measure_request_v1(
     are all counted — the provider charges context for all of them.
     """
 
-    if provider_selector not in BYTE_BACKED_TOKENIZER_ENDPOINTS_V1:
+    model = body.get("model")
+    if (
+        provider_selector not in BYTE_BACKED_TOKENIZER_ENDPOINTS_V1
+        and model not in BYTE_BACKED_TOKENIZER_MODELS_V1
+    ):
         raise EstimatorUnsupportedError(
             f"{provider_selector}: byte-backed tokenization is not justified for "
-            "this endpoint, so no token upper bound may be claimed"
+            f"this endpoint, and {model!r} is not a model whose tokenizer "
+            "justifies it, so no token upper bound may be claimed"
         )
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages:

@@ -252,3 +252,60 @@ def test_a_local_refusal_never_reads_as_a_provider_failure() -> None:
     assert "tokens" in text and "observed" in text and "limit" in text
     for word in ("provider", "upstream", "HTTP", "429", "Gemini"):
         assert word not in text
+
+
+# --------------------------------------------------------------------------
+# The tokenizer belongs to the model, not to the route.
+#
+# The estimator first allowed a byte bound only for four named endpoints. That
+# put the justification in the wrong place: adding a provider to the endpoint
+# set would license the bound for every model that provider ever serves,
+# including one tokenised some other way. Llama 4 and Qwen3 are byte-level BPE
+# wherever they are served, so they are named directly.
+# --------------------------------------------------------------------------
+
+BYTE_BACKED_MODEL_ON_UNLISTED_ENDPOINT_V1 = "meta-llama/llama-4-maverick"
+UNKNOWN_MODEL_ON_UNLISTED_ENDPOINT_V1 = "some-vendor/unknown-tokenizer"
+UNLISTED_ENDPOINT_V1 = "deepinfra/base"
+
+
+def _body_for(model: str):
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "Judge the argument, not its appeal."},
+            {"role": "user", "content": "Is claim 4 true? Prove it."},
+        ],
+    }
+
+
+def test_named_model_is_measured_on_an_unlisted_endpoint():
+    measurement = measure_request_v1(
+        _body_for(BYTE_BACKED_MODEL_ON_UNLISTED_ENDPOINT_V1),
+        reserved_output_tokens=4096,
+        context_window_tokens=1_048_576,
+        provider_selector=UNLISTED_ENDPOINT_V1,
+    )
+    assert measurement.prompt_token_upper_bound > 0
+
+
+def test_an_unnamed_model_on_an_unlisted_endpoint_is_still_refused():
+    """The route must not launder a tokenizer nobody has justified."""
+
+    with pytest.raises(EstimatorUnsupportedError):
+        measure_request_v1(
+            _body_for(UNKNOWN_MODEL_ON_UNLISTED_ENDPOINT_V1),
+            reserved_output_tokens=4096,
+            context_window_tokens=1_048_576,
+            provider_selector=UNLISTED_ENDPOINT_V1,
+        )
+
+
+def test_listed_endpoints_still_work_without_a_named_model():
+    measurement = measure_request_v1(
+        _body_for(UNKNOWN_MODEL_ON_UNLISTED_ENDPOINT_V1),
+        reserved_output_tokens=4096,
+        context_window_tokens=400_000,
+        provider_selector="openai/flex",
+    )
+    assert measurement.prompt_token_upper_bound > 0
