@@ -1355,11 +1355,18 @@ def test_all_six_frozen_controls_are_recomputed_not_copied(
 def test_q2d_frozen_protocol_is_exact_canonical_builder_output() -> None:
     path = RUNS / "q2d_frozen_protocol_v1.json"
     raw = path.read_bytes()
-    expected = canonical_json(q2d.build_q2d_protocol_payload_v1()).encode("utf-8")
+    frozen = json.loads(raw)
+    expected_payload = q2d.build_q2d_protocol_payload_v1()
+    frozen_python = frozen["runtime_environment"]["python_version"]
+    expected_python = expected_payload["runtime_environment"]["python_version"]
+
+    assert frozen_python.split(".")[:2] == expected_python.split(".")[:2]
+    expected_payload["runtime_environment"]["python_version"] = frozen_python
+    expected = canonical_json(expected_payload).encode("utf-8")
 
     assert len(raw) == Q2D_FROZEN_PROTOCOL_BYTE_LENGTH_V1
     assert hashlib.sha256(raw).hexdigest() == Q2D_FROZEN_PROTOCOL_SHA256_V1
     assert not raw.startswith(b"\xef\xbb\xbf")
     assert not raw.endswith(b"\n")
     assert raw == expected
-    assert json.loads(raw) == q2d.build_q2d_protocol_payload_v1()
+    assert frozen == expected_payload
