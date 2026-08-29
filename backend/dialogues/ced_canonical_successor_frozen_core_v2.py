@@ -204,7 +204,13 @@ _CORE_BLOBS = (
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/ced.py",
-        git_blob_id="9faaf048d3b3f6fbd84057997c421623a96ae724",
+        # Re-pinned once, deliberately, to admit rule_on_round_objections_v1:
+        # a non-governing pass that rules on a round's objections while the
+        # dialogue can still read them. Every governing path is untouched -
+        # run_objection_verification, the claim state and the release seam are
+        # byte-identical. Re-pinning is the authorization, not a formality: the
+        # previous id was 9faaf048d3b3f6fbd84057997c421623a96ae724.
+        git_blob_id="a7cb71b095538f7c024ba87b9b096230d8095c5c",
         role="CED-owned scheduling, task, response-application, and finalization seam",
     ),
     FrozenCoreBlobEntry(

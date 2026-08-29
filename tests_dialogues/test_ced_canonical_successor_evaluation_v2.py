@@ -1140,8 +1140,18 @@ def test_evidence_ids_are_deterministic_and_tampering_is_refused() -> None:
 
 def test_core_and_predecessor_locks_are_exact_and_clean() -> None:
     lock = evaluation.FROZEN_CANONICAL_SUCCESSOR_CORE_BLOB_LOCK_V2
+    # Re-pinned once, deliberately. backend/dialogues/ced.py gained
+    # rule_on_round_objections_v1, a non-governing pass that rules on a round's
+    # objections while the dialogue can still read them; every governing path -
+    # run_objection_verification, claim state, the release seam - is unchanged.
+    # The previous lock was
+    # cedcorebloblockv2_192c688821bfeca9914f23a06c9df1a7392997a4b09c3e7d04c434bf5695f6a5
+    # and this line moving without that being the intended change is a defect.
+    # Re-pinned a second time to gate the pass behind
+    # mid_round_objection_rulings_v1, so a control arm can switch it off on
+    # identical code instead of an older build.
     assert lock.lock_id == (
-        "cedcorebloblockv2_192c688821bfeca9914f23a06c9df1a7392997a4b09c3e7d04c434bf5695f6a5"
+        "cedcorebloblockv2_abfbbabe644ecf5c5398bf150b553c20f2cdde681b7b002ea98cd69e1642599a"
     )
     assert evaluation.SEALED_PHASE8_ARTIFACT_ID == (
         "cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0"

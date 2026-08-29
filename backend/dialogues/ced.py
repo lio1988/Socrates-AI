@@ -1744,13 +1744,23 @@ class CEDOrchestrator:
             })
             responses = merged
 
-        return self._finalize_registry_phase(
+        outcome = self._finalize_registry_phase(
             state,
             phase,
             responses,
             dispatch,
             effective_quorum,
         )
+        # An examined round is the only moment a ruling can still change what
+        # anyone says. Placed here rather than in either session loop so the
+        # opening cycle and every Socratic follow-up cycle are covered once.
+        # Gated so a controlled arm can switch it off on the *same* code. The
+        # first comparison ran the control on an older build, which confounds
+        # the intervention with every other change between the two builds.
+        if (phase is DialogPhase.ELENCHUS and outcome.proceed
+                and getattr(self, "mid_round_objection_rulings_v1", True)):
+            await self.rule_on_round_objections_v1(state, timeout_seconds)
+        return outcome
 
     async def run_registry_session(
         self,
@@ -2009,6 +2019,108 @@ class CEDOrchestrator:
                 vote.target_section.value if vote.target_section else None,
                 vote.reason, vote.voter_agent_id, None)
         return core
+
+    async def rule_on_round_objections_v1(
+        self, state: SessionState, timeout_seconds: Optional[float] = None,
+    ) -> int:
+        """Rule on this round's objections while the room can still read them.
+
+        Measured across four ratified councils, every verification ran after the
+        dialogue was over: all twenty seat moves completed before the first
+        ruling existed, so no reason ever reached anyone able to act on it. In
+        Q4 the seats circled one specification gap for two full cycles while six
+        reasoned rulings on that exact gap were produced at the end and
+        discarded - two of them contradicting each other on whether the task
+        settled it. Neither contradiction was visible to anybody.
+
+        This pass is deliberately NOT run_objection_verification and must stay
+        separate. That one governs: its verdicts move objections and can destroy
+        a correct claim, so it demands a mapped target and independent
+        corroboration, and it runs once, at the end, over a frozen transcript.
+        This one governs nothing at all. It writes no verdict, moves no
+        objection, touches no claim and reaches no release. It exists so the
+        next round can read why an objection was or was not settled by the task
+        text.
+
+        That difference is also why this may rule on unmapped objections, which
+        the governing pass rightly skips. There a verdict on an unmapped
+        objection buys nothing, because it can move no claim. Here it is the
+        entire point: mid-dialogue no claims exist yet, and the reason is what
+        the room needs, not the bookkeeping.
+
+        Independence is kept model-level, exactly as the governing pass keeps
+        it: a seat never rules on its own objection, and a peer running the same
+        model is the same epistemic source. Returns the number of rulings
+        requested, for the audit.
+        """
+        if self.registry is None:
+            return 0
+        adapters = self._healthy_adapters()
+        if len(adapters) < 2:
+            return 0
+        already = self.__dict__.setdefault("_dialogue_ruled_objection_ids_v1", set())
+        requested = 0
+        for move in state.moves:
+            if move.phase is not DialogPhase.ELENCHUS:
+                continue
+            if move.move_id in already:
+                continue
+            text = self._objection_text_for_ruling_v1(move)
+            if text is None:
+                continue
+            raiser_model = self._authoritative_model_id(move.provider_id)
+            if raiser_model is None:            # independence cannot be proved
+                continue
+            peers_by_model = {}
+            for adapter in adapters:
+                model_id = self._authoritative_model_id(adapter.provider_id)
+                if model_id is None or model_id == raiser_model:
+                    continue
+                peers_by_model.setdefault(model_id, adapter)
+            peers = list(peers_by_model.values())
+            if not peers:
+                continue
+            already.add(move.move_id)
+            task = AgentTask(
+                task_id=f"rule_{move.move_id}",
+                session_id=state.session_id,
+                agent_id=move.agent_id,
+                role=AgentRole.FINAL_EVALUATOR,
+                phase=DialogPhase.ELENCHUS,
+                question=state.question,
+                context={"objection_under_test": text,
+                         "original_task": state.question},
+                output_schema={"_role": "__objection_verification__",
+                               "_objection": move.move_id},
+                task_kind=TaskKind.OBJECTION_VERIFICATION,
+            )
+            agent_state = AgentState(agent_id=move.agent_id,
+                                     primary_role=AgentRole.FINAL_EVALUATOR,
+                                     assigned_role=AgentRole.FINAL_EVALUATOR)
+            await asyncio.gather(*(
+                self.registry.run_adapter(a, task, agent_state, timeout_seconds)
+                for a in peers), return_exceptions=True)
+            requested += len(peers)
+        return requested
+
+    @staticmethod
+    def _objection_text_for_ruling_v1(move) -> Optional[str]:
+        """The objection a move actually states, or None if it states none."""
+        content = move.content
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, dict):
+            for field in ("objection", "critique_summary", "challenge", "content"):
+                value = content.get(field)
+                if isinstance(value, str) and value.strip():
+                    text = value
+                    break
+            else:
+                return None
+        else:
+            return None
+        text = text.strip()
+        return text if len(text) >= 24 else None
 
     async def run_objection_verification(
         self, state: SessionState, core, timeout_seconds: Optional[float] = None,
