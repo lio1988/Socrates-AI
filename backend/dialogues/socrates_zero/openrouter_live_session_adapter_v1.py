@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import sys
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -404,6 +406,22 @@ def execute_bounded_text_turn_v1(
         stage = "claim_consume"
         consume_turn_claim_v1(Path(claim_directory), claim_id)
     except Exception as exc:
+        # Opt-in diagnostic. Refusals here are sanitised to a class name for the
+        # record, which is right for evidence and wrong for debugging: three
+        # separate times this refusal was diagnosed by guessing, twice
+        # incorrectly, because the message never surfaced anywhere. Setting
+        # SOCRATES_DEBUG_PREDISPATCH=1 prints it to stderr. Nothing is written to
+        # any artifact, so the privacy boundary is unchanged.
+        if os.environ.get("SOCRATES_DEBUG_PREDISPATCH"):
+            import traceback
+
+            print(
+                f"[pre-dispatch refusal] stage={stage} seat={turn.role_seat} "
+                f"phase={turn.dialogue_phase} model={policy.model}: "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+            traceback.print_exc()
         # Attach the accounting record to the exception and re-raise the
         # original, unchanged.  Swallowing these into a returned outcome would
         # be a real weakening: an evaluator-canary leak and a duplicate claim
@@ -717,6 +735,35 @@ def execute_bounded_text_turn_v1(
 # deliberation contexts. The ledger is process-wide because the three seats hold
 # separate adapters within one run, and it is keyed by session so two runs in a
 # process cannot bleed into each other.
+#: What a failure means depends on which attempt it was, and the three are not
+#: the same failure. Recording them under one name throws away the only thing
+#: that distinguishes a seat that did not understand from one that will not
+#: comply.
+#:
+#: 0 - IGNORANCE. It did not know. Nothing is held against it; the question is
+#:     put again, to the same seat, because it may simply not have understood.
+#: 1 - BETRAYAL. It was asked again and failed again. This is no longer not
+#:     knowing: it is persisting after being told, so the question passes to a
+#:     different seat.
+#: 2 - NON_CONFORMANCE. It did not come into line with what the room requires.
+#:     The council stops asking and records the fact about the seat, because a
+#:     seat that reliably will not answer is evidence about that seat and must
+#:     not be silently absorbed as though the round had merely been unlucky.
+#:
+#: The three are kept apart in the evidence precisely so reliability can be read
+#: off the dialogue itself rather than inferred from separate baselines.
+ATTEMPT_FAILURE_CLASSES_V1 = ("ignorance", "betrayal", "non_conformance")
+
+
+def attempt_failure_class_v1(attempt_index: Optional[int]) -> Optional[str]:
+    """Name a rejected attempt by what that attempt means, not by its number."""
+    if not isinstance(attempt_index, int) or attempt_index < 0:
+        return None
+    if attempt_index >= len(ATTEMPT_FAILURE_CLASSES_V1):
+        return ATTEMPT_FAILURE_CLASSES_V1[-1]
+    return ATTEMPT_FAILURE_CLASSES_V1[attempt_index]
+
+
 OBJECTION_RULING_CONTEXT_KEY_V1 = "objection_rulings_so_far"
 OBJECTION_RULING_FIELDS_V1 = (
     "condition_tested",
@@ -1103,9 +1150,17 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             )
             self.turn_records[-1] = OpenRouterTurnRecordV1(**updated)
         if self.turn_records:
+            record_id = self.turn_records[-1].record_id
             self.__dict__.setdefault("_rulings_in_context_v1", {})[
-                self.turn_records[-1].record_id
+                record_id
             ] = carried_rulings
+            self.__dict__.setdefault("_attempt_meaning_v1", {})[record_id] = {
+                "attempt_index": task.attempt_index,
+                "failure_class": (
+                    None if accepted
+                    else attempt_failure_class_v1(task.attempt_index)
+                ),
+            }
         return ProviderResponse(
             provider_id=self.provider_id,
             agent_id=task.agent_id,
@@ -1125,6 +1180,11 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
         for record in self.turn_records:
             row = record.model_dump(mode="json", exclude_none=False)
             row["objection_rulings_in_context"] = carried.get(record.record_id, 0)
+            meaning = self.__dict__.get("_attempt_meaning_v1", {}).get(
+                record.record_id, {}
+            )
+            row["attempt_index"] = meaning.get("attempt_index")
+            row["attempt_failure_class"] = meaning.get("failure_class")
             rows.append(row)
         return rows
 

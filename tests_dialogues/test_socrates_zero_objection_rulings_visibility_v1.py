@@ -171,3 +171,48 @@ def test_sessions_do_not_bleed_into_each_other():
     _record_objection_ruling_v1(_task(TaskKind.OBJECTION_VERIFICATION), RULING_HOLDS_V1)
     other = _task(TaskKind.ELENCHUS_OBJECTION).model_copy(update={"session_id": "another-run"})
     assert _with_objection_rulings_v1(other) is other
+
+
+# --------------------------------------------------------------------------
+# Three failures, three different things.
+#
+# A first failure may be simple misunderstanding, so the same seat is asked
+# again - which is the elenchus, not an evasion of it: nothing is discarded,
+# every attempt stays in the record, and a seat that answers differently the
+# second time has shown its first answer was opinion. A second failure, after
+# being asked again, is no longer not knowing, so the question passes to another
+# seat. A third is neither, and the council stops asking and records the fact
+# about that seat rather than absorbing it as an unlucky round.
+#
+# Collapsing the three into one name would discard the only signal that
+# separates a seat that could not answer from one that would not.
+# --------------------------------------------------------------------------
+
+from backend.dialogues.socrates_zero.openrouter_live_session_adapter_v1 import (  # noqa: E402
+    ATTEMPT_FAILURE_CLASSES_V1,
+    attempt_failure_class_v1,
+)
+
+
+@pytest.mark.parametrize(
+    "attempt,expected",
+    [(0, "ignorance"), (1, "betrayal"), (2, "non_conformance")],
+)
+def test_each_attempt_names_its_own_kind_of_failure(attempt, expected):
+    assert attempt_failure_class_v1(attempt) == expected
+
+
+def test_the_three_are_distinct():
+    assert len(set(ATTEMPT_FAILURE_CLASSES_V1)) == 3
+
+
+def test_beyond_the_third_stays_non_conformance():
+    """Nothing softer is available once a seat has refused three times."""
+
+    assert attempt_failure_class_v1(3) == "non_conformance"
+    assert attempt_failure_class_v1(9) == "non_conformance"
+
+
+@pytest.mark.parametrize("bad", [None, -1, "1", 1.0])
+def test_an_unusable_attempt_index_is_not_guessed_at(bad):
+    assert attempt_failure_class_v1(bad) is None
