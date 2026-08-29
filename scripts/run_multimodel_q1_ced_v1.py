@@ -386,6 +386,56 @@ SEAT_CONTEXT_WINDOW_TOKENS_V1: Dict[str, int] = {
     "qwen3_235b": 262_144,
 }
 
+#: The most a seat will produce in one completion, from the OpenRouter catalogue.
+#: A phase budget equal to one of these is not a budget: it asks the model for
+#: everything it can emit and leaves nothing for the answer to finish in. That is
+#: how a Qwen3 32B baseline was lost - asked for 16_384 output tokens when 16_384
+#: was its ceiling, it ran to the cap and returned truncated, unparseable JSON,
+#: and the sample had to be excluded as our artifact rather than scored.
+SEAT_COMPLETION_CEILING_TOKENS_V1: Dict[str, int] = {
+    "gpt_5_mini": 128_000,
+    "gemini_3_7_flash_standard": 65_536,
+    "gemini_3_7_flash": 65_536,
+    "gpt_4_1_mini": 32_768,
+    "qwen3_32b": 16_384,
+    "llama_4_maverick": 16_384,
+    "llama_4_scout": 16_384,
+}
+
+#: Room a phase budget must leave below the tightest seat ceiling.
+OUTPUT_BUDGET_HEADROOM_TOKENS_V1 = 4_096
+
+
+def assert_output_budgets_fit_v1(seat_keys) -> Dict[str, int]:
+    """Refuse a plan whose phase budgets crowd the tightest seat's ceiling.
+
+    Twice now a run was spoiled by asking a model for as many tokens as it can
+    emit: once in the Q5 council, where six GPT-5 Mini calls were cut off and
+    recorded as rejected moves, and once in a Qwen3 32B baseline that had to be
+    thrown out entirely. Both were invisible until the evidence was read
+    afterwards. This makes the same mistake refuse to start.
+    """
+
+    ceilings = {}
+    for key in seat_keys:
+        ceiling = SEAT_COMPLETION_CEILING_TOKENS_V1.get(key)
+        if ceiling is None:
+            raise ContractValidationError(
+                f"{key}: no recorded completion ceiling; a phase budget cannot "
+                "be justified against an unknown limit"
+            )
+        ceilings[key] = ceiling
+    tightest = min(ceilings.values())
+    largest = max(OUTPUT_ENVELOPES_V1)
+    if largest + OUTPUT_BUDGET_HEADROOM_TOKENS_V1 > tightest:
+        raise ContractValidationError(
+            f"output budget {largest} leaves under "
+            f"{OUTPUT_BUDGET_HEADROOM_TOKENS_V1} tokens below the tightest seat "
+            f"ceiling {tightest}; a request that reaches a model's ceiling is a "
+            "truncated answer waiting to happen"
+        )
+    return ceilings
+
 
 def assert_input_within_bound_v1(
     key: str, body: Dict[str, Any], reserved_output_tokens: int
@@ -1110,6 +1160,7 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
     state = ced.create_session("Q2d offline schedule", session_id=Q2D_SESSION_ID_V1)
 
     seat_keys = tuple(key for _alias, key in q1.COUNCIL_SEATS_V1)
+    assert_output_budgets_fit_v1(seat_keys)
     if len(seat_keys) != Q2D_LOGICAL_AGENTS_V1 or len(set(seat_keys)) != len(
         seat_keys
     ):

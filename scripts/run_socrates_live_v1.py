@@ -130,6 +130,34 @@ NORMAL_REMAINING_SPEND_PICODOLLARS_V1 = (
     - PRIOR_OBSERVED_SPEND_PICODOLLARS_V1
 )
 
+# NOT YET RAISED, and the reason is worth recording where the numbers are.
+#
+# The Q5 council truncated six of its 97 calls, all GPT-5 Mini, which writes the
+# most: five at 4_096 on evaluator turns and one at 8_192 on an initial response.
+# Raising either figure breaks about twenty-six tests, because these envelopes
+# are not free parameters - they feed endpoint validation
+# (rejects_endpoint_below_synthesis_envelope), the phase-aware spend arithmetic,
+# and profiles certified at exactly these sizes. Reverting the synthesis figure
+# alone changed 43 failures to 44, so the coupling is in the two smaller
+# envelopes, not the largest.
+#
+# So this is its own piece of work: re-certify the endpoints at the larger
+# envelope, recompute the spend bounds, then move the numbers. Raising them
+# without that leaves the economics asserting figures nobody has checked, which
+# is worse than a 6% truncation rate that is at least visible in the evidence.
+#
+# Raised after the Q5 council truncated six of its 97 calls, all of them GPT-5
+# Mini, which writes the most. A truncated completion is not a model failing to
+# answer - it is us cutting the answer off mid-sentence and then recording a
+# rejected move, so it is a harness artifact and must not be scored as data. The
+# Q5 baselines had already shown the size: one answer ran to 12_676 tokens where
+# a Q4 answer took about 4_000.
+#
+# The ceiling is not free. Every seat has its own max_completion_tokens, and a
+# request equal to that ceiling leaves the model no room at all - which is
+# exactly how a Qwen3 32B baseline was lost earlier, asked for 16_384 when 16_384
+# was all it had. The synthesis budget therefore stays well under the smallest
+# seat ceiling rather than reaching for it; see assert_output_budgets_fit_v1.
 SHORT_OUTPUT_TOKENS_V1 = 4_096
 REVISION_OUTPUT_TOKENS_V1 = 8_192
 SYNTHESIS_OUTPUT_TOKENS_V1 = 16_384

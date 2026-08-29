@@ -1,0 +1,280 @@
+{
+ "schema_version": "socrates-q5-audit/v1",
+ "freeze": {
+  "branch": "feature/socrates-zero-openrouter-live-routing-repair-v1",
+  "head_at_audit": "fc43e4e8ef067b702603a7f252161b1064c89ef4",
+  "ced_py_blob_when_q5_ran": "f183e87dfa5cd6d9feb25c3e7b092736d23be773",
+  "ced_py_blob_after_defect_fixes": "9eca11be8777f7a51c0d30fb873c8c7852079e8d",
+  "correction": "The Q5 council ran BEFORE the two retry and reroute defects were fixed, not after. It is nonetheless unaffected: the rescue never fired in this run - phase_retries is null and every turn carries attempt_index 0 - and both defects are reachable only once it fires. So Q5 is clean evidence about the question and no evidence at all about the repaired mechanism.",
+  "tests_at_audit": "17 failed (all pre-existing), 4048 passed, 9 skipped"
+ },
+ "machine_verification": {
+  "verifier": "scripts/q5_ethics_question_v1.py",
+  "verifier_sha256": "8a2194f7b72fc3c0a0e84b8578958fe87b9a3347f37e87e803b6b0e30f751caa",
+  "source": "council synthesis, google/gemini-3.7-flash, phase=synthesis, role_seat=synthesizer",
+  "human_correction": "none - transcribed exactly as published",
+  "rule_as_published": {
+   "A=(1, 1) B=(0, 0)": "A",
+   "A=(0, 0) B=(1, 1)": "B",
+   "A=(1, 1) B=(1, 0)": "A",
+   "A=(1, 0) B=(1, 1)": "B",
+   "A=(1, 1) B=(0, 1)": "B",
+   "A=(0, 1) B=(1, 1)": "A",
+   "A=(1, 0) B=(0, 0)": "A",
+   "A=(0, 0) B=(1, 0)": "B",
+   "A=(0, 1) B=(0, 0)": "A",
+   "A=(0, 0) B=(0, 1)": "B",
+   "A=(1, 0) B=(0, 1)": "A",
+   "A=(0, 1) B=(1, 0)": "B"
+  },
+  "profiles_covered": "12/12",
+  "decisive": true,
+  "impartial": true,
+  "responsive": true,
+  "departures_from_higher_total": 2,
+  "departure_profiles": [
+   "A=(0, 1) B=(1, 1)",
+   "A=(1, 1) B=(0, 1)"
+  ],
+  "key_minimum": 2,
+  "attains_optimum": true
+ },
+ "rubric": {
+  "gpt5mini_1": {
+   "correct_minimum": false,
+   "full_rule": true,
+   "proof_lower_bound": false,
+   "machine_valid_construction": false,
+   "failure_mechanism": false,
+   "calibration": true,
+   "note": "minimum given as 4; a rule is promised but never written as a checkable table"
+  },
+  "gpt5mini_2": {
+   "correct_minimum": true,
+   "full_rule": true,
+   "proof_lower_bound": true,
+   "machine_valid_construction": true,
+   "failure_mechanism": true,
+   "calibration": true,
+   "note": "pairwise table verified: impartial, responsive, exactly 2 departures. Lower bound argued: with higher-total fixed the only freedom left is the 01/10 tie, and the two criteria demand opposite tie-breaks; impartiality then forces departures in ordered pairs, hence minimum 2. Ends with an explicit note on how it read altering only that criterion."
+  },
+  "gpt5mini_3": {
+   "correct_minimum": false,
+   "full_rule": false,
+   "proof_lower_bound": false,
+   "machine_valid_construction": false,
+   "failure_mechanism": false,
+   "calibration": true,
+   "note": "minimum given as 1, which impartiality alone rules out"
+  },
+  "gemini_1": {
+   "correct_minimum": false,
+   "full_rule": false,
+   "proof_lower_bound": false,
+   "machine_valid_construction": false,
+   "failure_mechanism": true,
+   "calibration": false,
+   "note": "minimum given as 1; states correctly that resolving the equal-sum pair toward (1,0) leaves criterion 2 unresponsive, then miscounts the consequence"
+  },
+  "gemini_2": {
+   "correct_minimum": false,
+   "full_rule": false,
+   "proof_lower_bound": false,
+   "machine_valid_construction": false,
+   "failure_mechanism": false,
+   "calibration": false,
+   "note": "no minimum stated; keeps higher-total across the unequal-total pairs"
+  },
+  "gemini_3": {
+   "correct_minimum": true,
+   "full_rule": true,
+   "proof_lower_bound": true,
+   "machine_valid_construction": true,
+   "failure_mechanism": true,
+   "calibration": false,
+   "note": "offers two rules: the first fails responsiveness under machine check, the second verifies optimal with exactly 2 departures. Argues the two criteria impose mutually exclusive tie-breaks. No calibration note."
+  },
+  "gpt41mini_1": {
+   "correct_minimum": false,
+   "full_rule": false,
+   "proof_lower_bound": false,
+   "machine_valid_construction": false,
+   "failure_mechanism": false,
+   "calibration": false,
+   "note": "no minimum; proposes highest-total with a tie-break and then calls it not impartial"
+  },
+  "gpt41mini_2": {
+   "correct_minimum": false,
+   "full_rule": false,
+   "proof_lower_bound": false,
+   "machine_valid_construction": false,
+   "failure_mechanism": false,
+   "calibration": false,
+   "note": "no minimum; highest-total then criterion 1, which fails responsiveness"
+  },
+  "gpt41mini_3": {
+   "correct_minimum": false,
+   "full_rule": false,
+   "proof_lower_bound": false,
+   "machine_valid_construction": false,
+   "failure_mechanism": false,
+   "calibration": false,
+   "note": "no minimum; plain highest total, which fails responsiveness"
+  },
+  "CED_council": {
+   "correct_minimum": true,
+   "full_rule": true,
+   "proof_lower_bound": false,
+   "machine_valid_construction": true,
+   "failure_mechanism": true,
+   "calibration": true,
+   "note": "published a complete 12-profile rule, verified impartial, responsive, exactly 2 departures, and named the mechanism. Did not prove minimality: the GPT-5 Mini synthesis says the construction strongly suggests 2 and asks for an enumeration before the claim is made."
+  }
+ },
+ "oracle_union_of_the_nine_baselines": {
+  "correct_minimum": true,
+  "full_rule": true,
+  "proof_lower_bound": true,
+  "machine_valid_construction": true,
+  "failure_mechanism": true,
+  "calibration": true
+ },
+ "oracle_union_finding": "The union covers every dimension, and so does a single sample. GPT-5 Mini #2 alone supplies the minimum, a machine-valid optimal rule, the failure mechanism, a lower-bound argument and a calibration note. Gemini #3 matches it but for the calibration. Two of nine independent draws solved the question completely on their own.",
+ "council_vs_best_baseline": "The council did not exceed the best single sample, and on the proof dimension the best baseline beat it: GPT-5 Mini #2 argued the lower bound, while the council declined to claim minimality without an enumeration. What the council did was produce the optimum in this run, where an independent draw produces it about two times in nine.",
+ "trajectory": {
+  "first_to_state_the_minimum": "position 2, google/gemini-3.7-flash, initial_response/synthesizer",
+  "first_to_publish_a_rule": "the same move",
+  "before_any_deliberation": true,
+  "contested": false,
+  "changed_in_reflection_or_reconstruction": "no - every later move carries the same figure",
+  "mechanism_appears": "position 20, gemini synthesis",
+  "reading": "The answer was present in the first substantive move and propagated unchanged. The council stabilised and published it rather than constructing it. The move at position 1, GPT-5 Mini in initial_response, was the truncated one, so the seat whose independent draw produced the strongest answer of the whole experiment was cut off before it spoke here."
+ },
+ "truncations": {
+  "total": 6,
+  "deliberative": 1,
+  "evaluator_or_scoring": 5,
+  "detail": [
+   {
+    "model": "openai/gpt-5-mini",
+    "phase": "initial_response",
+    "role_seat": "empiricist",
+    "task_kind": "initial_response",
+    "output_limit": 8192,
+    "kind": "deliberative",
+    "voice_lost": true
+   },
+   {
+    "model": "openai/gpt-5-mini",
+    "phase": "initial_response",
+    "role_seat": "final_evaluator",
+    "task_kind": "move_score",
+    "output_limit": 4096,
+    "kind": "evaluator",
+    "voice_lost": false
+   },
+   {
+    "model": "openai/gpt-5-mini",
+    "phase": "elenchus",
+    "role_seat": "final_evaluator",
+    "task_kind": "move_score",
+    "output_limit": 4096,
+    "kind": "evaluator",
+    "voice_lost": false
+   },
+   {
+    "model": "openai/gpt-5-mini",
+    "phase": "synthesis",
+    "role_seat": "final_evaluator",
+    "task_kind": "section_score",
+    "output_limit": 4096,
+    "kind": "evaluator",
+    "voice_lost": false
+   },
+   {
+    "model": "openai/gpt-5-mini",
+    "phase": "synthesis",
+    "role_seat": "final_evaluator",
+    "task_kind": "section_score",
+    "output_limit": 4096,
+    "kind": "evaluator",
+    "voice_lost": false
+   },
+   {
+    "model": "openai/gpt-5-mini",
+    "phase": "synthesis",
+    "role_seat": "final_evaluator",
+    "task_kind": "section_score",
+    "output_limit": 4096,
+    "kind": "evaluator",
+    "voice_lost": false
+   }
+  ],
+  "consequence": "initial_response proceeded on two voices of three. Five of the six were scoring calls. Every truncation was GPT-5 Mini, the model that writes the most, and every one was our own output ceiling rather than a model failing to answer."
+ },
+ "operational": {
+  "calls": 97,
+  "accepted": "91/97",
+  "truncations": 6,
+  "observed_cost_usd": 0.41293859,
+  "ratification": "ratified_with_caveats",
+  "note": "not a clean reliability run in the sense the Q4 runs were"
+ },
+ "recovery_check": {
+  "question": "Was anything recoverable from the six truncated turns, and what was actually lost?",
+  "stored_for_each_truncated_turn": {
+   "assistant_output_sanitized": "0 characters",
+   "assistant_text_excerpt": "0 characters",
+   "assistant_output_sha256": "absent"
+  },
+  "provider_returned": [
+   {
+    "turn": "initial_response/empiricist",
+    "finish_reason": "length",
+    "response_body_bytes": 103855,
+    "completion_tokens": 8192
+   },
+   {
+    "turn": "initial_response/final_evaluator",
+    "finish_reason": "length",
+    "response_body_bytes": 43236,
+    "completion_tokens": 4096
+   },
+   {
+    "turn": "elenchus/final_evaluator",
+    "finish_reason": "length",
+    "response_body_bytes": 57282,
+    "completion_tokens": 4096
+   },
+   {
+    "turn": "synthesis/final_evaluator",
+    "finish_reason": "length",
+    "response_body_bytes": 51759,
+    "completion_tokens": 4096
+   },
+   {
+    "turn": "synthesis/final_evaluator",
+    "finish_reason": "length",
+    "response_body_bytes": 60643,
+    "completion_tokens": 4096
+   },
+   {
+    "turn": "synthesis/final_evaluator",
+    "finish_reason": "length",
+    "response_body_bytes": 52121,
+    "completion_tokens": 4096
+   }
+  ],
+  "comparison_accepted_turn": {
+   "turn": "elenchus/elenchus_critic",
+   "response_body_bytes": 44121,
+   "completion_tokens": 5488,
+   "stored_characters": 3326
+  },
+  "recoverable": false,
+  "finding": "Nothing is recoverable. Every truncated turn stored zero characters and no digest, so what the seat was in the middle of saying cannot be read back. The rejection is no_assistant_content, meaning the provider returned a response whose message content was absent or unusable rather than a partial answer we then discarded.",
+  "inference_and_its_limit": "The lost deliberative turn returned 103,855 bytes for 8,192 completion tokens, about 12.7 bytes per token, against roughly 8 on an accepted turn. That is consistent with the budget being consumed by reasoning before any answer was written, which would mean there was no argument to lose - only one that was never finished. It cannot be proved from what is stored, because response bodies are deliberately not kept.",
+  "what_this_changes": "It makes the caveat smaller and a different gap larger. Smaller: the council probably did not discard a written argument, it cut a seat off before it produced one. Larger: a truncated turn leaves no trace of its content at all, so 'a voice was lost' can be established while 'what the voice was saying' cannot. Every other failure class this session records something; this one records nothing.",
+  "consequence_for_the_report": "The Q5 finding stands. The lost voice cannot have contributed an argument that was then thrown away, and the five remaining truncations were scoring calls. What is not established is whether that seat would have reached the optimum independently in this run - its own baseline draw did, twice out of three."
+ }
+}

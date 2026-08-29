@@ -129,8 +129,10 @@ def test_audit_shape_is_complete():
     assert set(pr) == {"phase", "failed_slots", "retried_slots",
                        "degraded_duplicate_slots", "degraded_reason",
                        "first_failed_providers", "retry_ok_providers",
-                       "reasked_same_seat_slots", "rerouted_distinct_seat_slots",
-                       "reroute_ok_providers", "rescued"}
+                       "reasked_same_seat_slots", "rerouted_on_first_attempt_slots",
+                       "rerouted_distinct_seat_slots",
+                       "reroute_ok_providers", "quorum_held_but_a_voice_was_lost",
+                       "rescued"}
     # A reroute onto a seat already serving a sibling is now recorded rather
     # than invisible: the four-seat council took that path silently for two
     # live runs and halved its own peer pool.

@@ -162,3 +162,48 @@ def test_every_attempt_stays_in_the_record():
         assert "reasked_same_seat_slots" in entry
         assert "rerouted_distinct_seat_slots" in entry
     assert silent.attempts_seen, "the silent seat's attempts were not observable"
+
+
+def test_a_lost_voice_is_handed_on_even_when_quorum_holds():
+    """The doctrine must not stop halfway.
+
+    A first failure is asked again at the same seat; a second, after being asked
+    again, is handed to another. Gating the hand-off on quorum broke that: a seat
+    could fail twice and never have its question passed on, because two of three
+    voices were enough for the phase to proceed. Quorum decides whether the phase
+    continues, not whether a missing argument is worth asking someone else for.
+    """
+
+    ced, silent = _council(phase_retry=True, silent_attempts=99)
+    asyncio.run(ced.run_registry_session(QUESTION_V1, session_id=SESSION_WITH_SILENT_SOCRATES_V1))
+    retries = ced._phase_retries.get(SESSION_WITH_SILENT_SOCRATES_V1, [])
+    handed_on = [r for r in retries if r["rerouted_distinct_seat_slots"]]
+    assert handed_on, "a seat failed twice and the question was never handed on"
+    assert silent.attempts_seen[:2] == [0, 1]
+
+
+def test_a_rerouted_slot_is_not_recorded_as_re_asked():
+    """A seat that never spoke is rerouted at once, and the record must say so.
+
+    Listing every retried slot as re-asked claimed the same seat had been asked
+    twice when it had not. The distinction is the whole point: re-asking tests
+    whether a first answer was opinion, and there is no first answer to test
+    when the line went quiet.
+    """
+
+    from backend.dialogues.provider_registry import TimeoutScriptedProvider
+
+    fake = FakeProvider()
+    agents = [SocraticAgent(f"agent_{i}", fake) for i in range(4)]
+    registry = CouncilProviderRegistry()
+    registry.register(TimeoutScriptedProvider())
+    registry.register(ScriptedMockProvider("m_ok"))
+    ced = CEDOrchestrator(agents, fake, registry=registry, phase_retry=True)
+    asyncio.run(ced.run_registry_session(QUESTION_V1, session_id="timeout_label"))
+    for entry in ced._phase_retries.get("timeout_label", []):
+        assert not entry["reasked_same_seat_slots"], (
+            "a seat that timed out was recorded as having been asked twice"
+        )
+        assert entry["rerouted_on_first_attempt_slots"], (
+            "the reroute of a silent line was not recorded"
+        )

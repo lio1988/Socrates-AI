@@ -1676,8 +1676,25 @@ class CEDOrchestrator:
             and bool(wave_b)
             and not self._socratic_followups_for_round(state)
         )
+        # A lost voice, not merely a lost quorum.
+        #
+        # Quorum is the right test for a vote: enough seats answered, so the
+        # count stands. It is the wrong test for a dialectic, where each seat is
+        # a distinct argument rather than a ballot. In the Q5 council a seat
+        # dropped out of INITIAL_RESPONSE - its answer was cut off at the output
+        # budget - and the phase proceeded on two voices of three with nothing
+        # recorded to say a third had been expected. The council then reasoned,
+        # and ratified, without an argument it was supposed to have heard, and
+        # the only trace was a rejected move in the evidence nobody was reading.
+        #
+        # So any failed slot in a deliberation phase is now asked again, under
+        # the same bounded terms as before: once to the same seat, once onward,
+        # every attempt kept. Quorum still decides whether the phase proceeds;
+        # it no longer decides whether a missing seat is worth asking twice.
+        voice_lost = ok_count < len(items)
         if (self.phase_retry and adapters and items
-                and (ok_count < effective_quorum or missing_socratic)):
+                and (ok_count < effective_quorum or missing_socratic
+                     or voice_lost)):
             failed = [(t.slot_index, items[t.slot_index][0], items[t.slot_index][1])
                       for t, r in pairs if not r.ok]
             failed_slots = {slot for slot, _, _ in failed}
@@ -1762,19 +1779,27 @@ class CEDOrchestrator:
                 for (slot, aid, role, offset), (_t, r) in zip(plan, first_pairs)
                 if not r.ok
             ]
+            # The reroute fires whenever the second attempt still failed, not
+            # only when quorum is short. Gating it on quorum stopped the
+            # doctrine halfway: a lost voice was asked again and then dropped,
+            # so a seat that failed twice never had its question handed on. A
+            # second failure after being asked again is the point at which
+            # another seat should answer.
             reroute_ok: List[Any] = []
-            if second_plan and (
-                sum(1 for r in ([x for _, x in pairs if x.ok] + retry_responses) if r.ok)
-                < effective_quorum
-                or _still_missing()
-            ):
+            if second_plan:
                 second_pairs = list(await asyncio.gather(
                     *(_one(slot, aid, role, attempt=2, offset=offset)
                       for slot, aid, role, offset in second_plan)))
                 reroute_ok = _absorb(second_pairs)
-            merged = (
-                [r for _, r in pairs if r.ok] + retry_responses + reroute_ok
-            )
+            # The failed originals stay in. Dropping them made a rescued round
+            # look like a round that never failed - failed_providers empty, no
+            # trace in the summary - which is the discarding this whole mechanism
+            # is supposed to forbid. It was already true before the rescue was
+            # widened; firing it more often is what made it visible.
+            #
+            # Quorum counts only responses that are ok, so carrying the failures
+            # changes no decision. It changes what the record says happened.
+            merged = [r for _, r in pairs] + retry_responses + reroute_ok
             role_critical_rescued = (
                 not missing_socratic
                 or bool(self._socratic_followups_for_round(state))
@@ -1790,9 +1815,22 @@ class CEDOrchestrator:
                 "degraded_duplicate_slots": degraded,
                 "degraded_reason": ("no distinct healthy seat; the sibling's "
                                     "provider was reused" if degraded else None),
+                "quorum_held_but_a_voice_was_lost": bool(
+                    voice_lost and ok_count >= effective_quorum
+                    and not missing_socratic
+                ),
                 "first_failed_providers": [r.provider_id for _, r in pairs if not r.ok],
                 "retry_ok_providers": [r.provider_id for r in retry_responses if r.ok],
-                "reasked_same_seat_slots": [slot for slot, _, _, _ in plan],
+                # Only the slots whose seat actually spoke were re-asked; a
+                # seat that timed out was rerouted on the first attempt. Listing
+                # every retried slot here said the same seat had been asked
+                # twice when it had not, which is a false entry in the record.
+                "reasked_same_seat_slots": [
+                    slot for slot, _, _, _ in plan if slot in spoke
+                ],
+                "rerouted_on_first_attempt_slots": [
+                    slot for slot, _, _, _ in plan if slot not in spoke
+                ],
                 "rerouted_distinct_seat_slots": [
                     slot for slot, _, _, _ in second_plan
                 ],
