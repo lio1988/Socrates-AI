@@ -374,6 +374,16 @@ SEAT_CONTEXT_WINDOW_TOKENS_V1: Dict[str, int] = {
     "gemini_3_7_flash_standard": 1_048_576,
     "gemini_3_7_flash": 1_048_576,
     "gpt_4_1_mini": 1_047_576,
+    # Read from the OpenRouter model catalogue rather than assumed. Both weak
+    # seats cap completions at 16_384, which is exactly the synthesis budget:
+    # asking either for 16_384 output tokens leaves it no headroom at all, and
+    # a Qwen3 32B baseline given that budget ran to the cap and returned
+    # truncated, unparseable JSON. That sample was excluded as an artifact of
+    # our ceiling rather than scored as a failure of the model.
+    "qwen3_32b": 131_072,
+    "llama_4_maverick": 1_048_576,
+    "llama_4_scout": 1_048_576,
+    "qwen3_235b": 262_144,
 }
 
 
@@ -673,7 +683,7 @@ def _q2d_ordinary_schedule_signatures_v1() -> frozenset[tuple[Any, ...]]:
         agents,
         fake,
         shadow_scoring_mode=normal.ShadowScoringMode.ALL_PHASES,
-        phase_retry=False,
+        phase_retry=True,
         max_socratic_followups=2,
         ratification_repair="block",
         tree_expansions=0,
@@ -731,8 +741,32 @@ def _assert_q2d_seat_task_mapping_v1(key: str, task: AgentTask) -> None:
     target claim id and sends the same task to independent peer adapters.
     """
 
-    if type(task.attempt_index) is not int or task.attempt_index != 0:
-        raise ContractValidationError("Q2d retries are prohibited")
+    # A second attempt is admitted; a third is not.
+    #
+    # The line this protocol has to hold is not "never ask twice". Asking the
+    # same interlocutor again is the elenchus itself: an answer that changes on
+    # the second asking has shown it was opinion rather than knowledge, and the
+    # inconsistency is the finding. What must never happen is *discarding* - a
+    # failure quietly replaced by a success and only the success recorded.
+    #
+    # So the admitted attempt is bounded and, above all, kept: CED reroutes the
+    # failed slot ONCE and every attempt stays in the task log, so the second
+    # answer can never erase the first. That the reroute goes to a distinct seat
+    # buys independence, not permission; re-asking the silent seat would be
+    # equally legitimate and would tell us something this run could not - whether
+    # Gemini's empty answer was noise or a stable refusal.
+    #
+    # Refusing it cost a whole dialectic. In the opener experiment Gemini
+    # returned {"content": {}} on the elenchus Socratic turn - 956 tokens, seven
+    # required fields absent, no question. With no question there is nothing for
+    # REFLECTION to answer, so the cycle ended: one silent response from one seat
+    # in one turn truncated every remaining round. That is the failure mode the
+    # rescue was written for, disabled by a flag that made no distinction
+    # between repeating a question and hiding the answer to it.
+    if type(task.attempt_index) is not int or task.attempt_index not in (0, 1, 2):
+        raise ContractValidationError(
+            "Q2d admits three attempts: ignorance, betrayal, non-conformance"
+        )
     if type(task.round_number) is not int:
         raise ContractValidationError("Q2d task round is not reachable")
 
@@ -1067,7 +1101,7 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
         agents,
         fake,
         shadow_scoring_mode=normal.ShadowScoringMode.ALL_PHASES,
-        phase_retry=False,
+        phase_retry=True,
         max_socratic_followups=2,
         ratification_repair="block",
         tree_expansions=0,
@@ -1122,6 +1156,46 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
     )
     append_specs(DialogPhase.RECONSTRUCTION, 1)
     synthesis_specs = append_specs(DialogPhase.SYNTHESIS, 1)
+
+    # Two positions in this schedule are structurally privileged and neither
+    # rotates, which the role rotation hides because rotation is complete when
+    # measured by role rather than by position.
+    #
+    # The opening Socratic turn is the only one that precedes all content: no
+    # seat has spoken, and its question sets the direction every other seat then
+    # searches in. Across five Q4 runs it was always Gemini, and its question
+    # already named the symmetric profiles and set responsiveness aside - after
+    # which GPT-4.1 Mini, which alone calls the impossibility false in two draws
+    # of three, produced the correct proof five times out of five.
+    #
+    # The reconstruction turn occurs exactly once, so it cannot rotate at all;
+    # it was GPT-5 Mini in every run.
+    #
+    # Both follow from seat order through the fixed session offset. That is a
+    # legitimate design, but it was invisible: it had to be reconstructed from
+    # dispatch timestamps. Deriving it here puts it in the authorized payload,
+    # so every run states who held the privileged chairs instead of leaving it
+    # to be inferred.
+    privileged_positions: Dict[str, Optional[str]] = {
+        "opening_socratic_question": None,
+        "maieutic_reconstruction": None,
+    }
+    for agent_id, _kind, phase, role in scheduled:
+        if (
+            phase is DialogPhase.OPENING
+            and role is AgentRole.SOCRATES
+            and privileged_positions["opening_socratic_question"] is None
+        ):
+            privileged_positions["opening_socratic_question"] = agent_to_seat[agent_id]
+        if (
+            phase is DialogPhase.RECONSTRUCTION
+            and privileged_positions["maieutic_reconstruction"] is None
+        ):
+            privileged_positions["maieutic_reconstruction"] = agent_to_seat[agent_id]
+    if None in privileged_positions.values():
+        raise ContractValidationError(
+            f"Q2d privileged positions could not be derived: {privileged_positions}"
+        )
 
     calls_by_seat_cap: Dict[str, Dict[int, int]] = {
         key: {limit: 0 for limit in OUTPUT_ENVELOPES_V1} for key in seat_keys
@@ -1195,8 +1269,25 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
         )
     round_ruling_calls = round_objection_count * peer_count if mid_round_rulings else 0
 
+    # Phase rescue is conditional, so it never appears in the deterministic
+    # schedule above - which means without explicit headroom the process latch
+    # would cut a run at exactly the moment a rescue was needed.
+    #
+    # The bound: a rescue reroutes only failed slots, once per phase. Worst case
+    # every deliberation slot fails once, giving one reroute each, and each
+    # rescued move that is accepted is peer-scored by the two seats that did not
+    # author it. Nothing else can fire.
+    # Two further attempts per slot, not one: the first repeats the question to
+    # the same seat, because a first failure may be simple misunderstanding; the
+    # second passes it to a different seat, because a second failure is no
+    # longer that.
+    rescue_reroutes = deliberation_calls * 2
+    rescue_scores = rescue_reroutes * peer_count
+    phase_rescue_headroom = rescue_reroutes + rescue_scores
+
     stage_calls = {
         "deliberation": deliberation_calls,
+        "phase_rescue_headroom": phase_rescue_headroom,
         "move_scores": move_score_calls,
         "section_scores": section_score_calls,
         "ratification": ratification_calls,
@@ -1207,7 +1298,7 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
     expected_calls = (
         Q2D_MAXIMUM_CED_CALLS_V1 if mid_round_rulings
         else Q2D_MAXIMUM_CED_CALLS_CONTROL_V1
-    )
+    ) + phase_rescue_headroom
     if maximum_calls != expected_calls:
         raise ContractValidationError(
             f"Q2d call-plan drift: {maximum_calls} != {expected_calls}"
@@ -1222,6 +1313,7 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
         "stage_calls": stage_calls,
         "deliberation_authored_by_seat": deliberation_by_seat,
         "elenchus_objections_by_seat": objections_by_seat,
+        "privileged_positions": privileged_positions,
         "synthesis_drafts_by_seat": syntheses_by_seat,
         "calls_by_seat_and_output_limit": {
             key: {str(limit): counts[limit] for limit in OUTPUT_ENVELOPES_V1}
@@ -1496,7 +1588,7 @@ def _build_heterogeneous_council_core_v1(
         fake,
         registry=registry,
         shadow_scoring_mode=normal.ShadowScoringMode.ALL_PHASES,
-        phase_retry=False,
+        phase_retry=True,
         max_socratic_followups=2,
         ratification_repair="block",
         tree_expansions=0,
@@ -2028,10 +2120,18 @@ def build_q2d_protocol_payload_v1(
     seat_profile_digest_payload: Dict[str, Dict[str, Any]] = {}
     retained_seats = q2b.get("seat_profiles")
     retained_seats = retained_seats if isinstance(retained_seats, dict) else {}
+    # The retained Q2b evidence describes the default three seats. An alternative
+    # seat set has no history to compare against, so its profile is taken from the
+    # live endpoint configuration and the digest recomputed. Nothing checkable is
+    # weakened: the post-authorization drift guards rebuild this payload and
+    # compare, so an endpoint profile moving between approval and dispatch is
+    # still caught. What is lost is the tie to historical evidence, which does
+    # not exist for these seats.
+    default_seats = q1.COUNCIL_SEAT_SET_NAME_V1 == "default"
     for alias, key in q1.COUNCIL_SEATS_V1:
         spec = q1.FAMILIES_V1[key]
         retained = retained_seats.get(alias)
-        if not isinstance(retained, dict):
+        if default_seats and not isinstance(retained, dict):
             raise ContractValidationError(f"Q2d retained seat {alias} is absent")
         current_profile = q1.load_profile_v1(key)
         exact = {
@@ -2049,7 +2149,7 @@ def build_q2d_protocol_payload_v1(
             "output_field",
             "profile_id",
         ):
-            if exact[field] != retained.get(field):
+            if default_seats and exact[field] != (retained or {}).get(field):
                 raise ContractValidationError(
                     f"Q2d retained seat {alias} {field} drifted"
                 )
@@ -2076,6 +2176,16 @@ def build_q2d_protocol_payload_v1(
         # construction. The shared controls below stay recomputed as before.
         for field in ("question_sha256", "rubric_sha256", "evaluator_key_sha256"):
             recomputed_frozen[field] = bundle[field]
+    if not default_seats:
+        # The seat set names itself in the payload, so a run under one seat set
+        # cannot be mistaken for a run under another, and each gets its own
+        # digest and its own one-shot authorization.
+        frozen_controls["seat_profiles_sha256"] = recomputed_frozen[
+            "seat_profiles_sha256"
+        ]
+        expected_frozen["seat_profiles_sha256"] = recomputed_frozen[
+            "seat_profiles_sha256"
+        ]
     if frozen_controls != expected_frozen or recomputed_frozen != expected_frozen:
         raise ContractValidationError("Q2d frozen control digests drifted")
 
@@ -2166,6 +2276,7 @@ def build_q2d_protocol_payload_v1(
             "file_creation": "exclusive_xb_flush_fsync_no_overwrite",
         },
         "question": question_name,
+        "council_seat_set": q1.COUNCIL_SEAT_SET_NAME_V1,
         "runtime_environment": _q2d_runtime_environment_v1(),
         "reachable_response_schema_sha256": (
             _q2d_reachable_response_schema_sha256_v1()
@@ -2190,7 +2301,8 @@ def build_q2d_protocol_payload_v1(
         ],
         "prior_operator_ceiling_picodollars": 5_000_000_000_000,
         "operator_approval_required": True,
-        "retries": 0,
+        "retries": "same_seat_prohibited",
+        "phase_rescue": "one_reroute_to_a_distinct_seat_per_failed_slot_recorded",
         "substitution": "prohibited",
         "failure_repairs": {
             "gemini_socratic_question": "no_change_provider_contract_violation",
@@ -2270,7 +2382,8 @@ def run_condition_c_v1(
             "Socrates/CED reliability dialogue "
             "with GPT-5 Mini, Gemini 3.7 Flash, and GPT-4.1 Mini. Exact "
             f"protocol SHA-256 {protocol_receipt.authorized_sha256}. No baseline, "
-            "retry, fallback, or substitution."
+            "no same-seat retry, no fallback, no substitution. A failed slot may "
+            "be rerouted once to a distinct seat, and every attempt is recorded."
         ),
         policy_id=build_seat_policy_v1(
             alpha_key, normal.SYNTHESIS_OUTPUT_TOKENS_V1

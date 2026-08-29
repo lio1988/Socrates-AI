@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import sys
 import time
 from decimal import Decimal
@@ -210,11 +211,49 @@ FAMILIES_V1: Dict[str, Dict[str, Any]] = {
 #: necessary condition as sufficient), GPT-4.1 Mini answered it worst (228
 #: tokens, no countermodel, no answer to the fourth question), and GPT-5 Mini
 #: sat between them. If a council adds anything, this is where it shows.
-COUNCIL_SEATS_V1 = (
-    ("Alpha", "gpt_5_mini"),
-    ("Beta", "gemini_3_7_flash_standard"),
-    ("Gamma", "gpt_4_1_mini"),
-)
+#: Alternative seat sets, selected once at start-up by SOCRATES_COUNCIL_SEATS.
+#: The default is unchanged, so every retained artifact keeps its meaning.
+#:
+#: "weak" exists because Q4 finally produced headroom. Measured over three
+#: samples each on Q4: Qwen3 32B 17.0/46 but ranging 2 to 43, GPT-4.1 Mini 7.7,
+#: Llama 4 Maverick 6.7. The interesting case is Qwen: the correct answer is in
+#: the model but surfaces roughly one time in three. A council cannot invent
+#: knowledge that is absent, but separating a correct contribution from noise is
+#: exactly what it is supposed to do, so this is the sharp test.
+COUNCIL_SEAT_SETS_V1 = {
+    "default": (
+        ("Alpha", "gpt_5_mini"),
+        ("Beta", "gemini_3_7_flash_standard"),
+        ("Gamma", "gpt_4_1_mini"),
+    ),
+    # Same three models as "default", Beta and Gamma exchanged. Role assignment
+    # is derived from the fixed session id, so the Beta seat always asks the
+    # opening Socratic question: under "default" that is Gemini, the strongest
+    # seat, which in every Q4 run opened with a question already naming the
+    # symmetric profiles and setting responsiveness aside. GPT-4.1 Mini, which
+    # alone calls the impossibility false in two draws of three, then produced
+    # the correct proof five times out of five. This set moves the weakest seat
+    # into the opening chair to find out whether the result depends on who asks
+    # first.
+    "opener_weak": (
+        ("Alpha", "gpt_5_mini"),
+        ("Beta", "gpt_4_1_mini"),
+        ("Gamma", "gemini_3_7_flash_standard"),
+    ),
+    "weak": (
+        ("Alpha", "qwen3_32b"),
+        ("Beta", "llama_4_maverick"),
+        ("Gamma", "gpt_4_1_mini"),
+    ),
+}
+
+COUNCIL_SEAT_SET_NAME_V1 = os.environ.get("SOCRATES_COUNCIL_SEATS", "default")
+if COUNCIL_SEAT_SET_NAME_V1 not in COUNCIL_SEAT_SETS_V1:
+    raise SystemExit(
+        f"unknown council seat set {COUNCIL_SEAT_SET_NAME_V1!r}; "
+        f"choose from {sorted(COUNCIL_SEAT_SETS_V1)}"
+    )
+COUNCIL_SEATS_V1 = COUNCIL_SEAT_SETS_V1[COUNCIL_SEAT_SET_NAME_V1]
 
 
 def _sha(value: bytes) -> str:

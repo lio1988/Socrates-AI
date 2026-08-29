@@ -70,13 +70,28 @@ def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--question", required=True)
     parser.add_argument("--samples", type=int, default=SAMPLES_PER_MODEL_V1)
+    parser.add_argument(
+        "--families",
+        help=(
+            "comma-separated model families to sample; defaults to the three "
+            "council seats. Any family in run_multimodel_q1_v1.FAMILIES_V1 is "
+            "allowed, which is how the open-weight models are measured without "
+            "touching the frozen council topology."
+        ),
+    )
     parser.add_argument("--plan-only", action="store_true")
     args = parser.parse_args(argv[1:])
 
     name = args.question
     samples_per_model = args.samples
     question = _question_v1(name)
-    families = [family for _alias, family in q1.COUNCIL_SEATS_V1]
+    if args.families:
+        families = [f.strip() for f in args.families.split(",") if f.strip()]
+        unknown = [f for f in families if f not in q1.FAMILIES_V1]
+        if unknown:
+            raise SystemExit(f"unknown families: {unknown}")
+    else:
+        families = [family for _alias, family in q1.COUNCIL_SEATS_V1]
     bounds = {
         key: conservative_turn_cost_bound_v1(
             policy=q1.build_policy_v1(key, OUTPUT_TOKENS_V1),
@@ -183,7 +198,8 @@ def main(argv: List[str]) -> int:
             rows.append(row)
 
     bundle = load_bundle_v1(name)
-    out = q1.RUNS / f"{name}_baselines_v1.json"
+    suffix = "" if not args.families else "_" + "_".join(families)
+    out = q1.RUNS / f"{name}_baselines{suffix}_v1.json"
     out.write_text(
         canonical_json(
             {

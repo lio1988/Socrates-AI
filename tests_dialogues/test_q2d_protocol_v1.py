@@ -43,9 +43,9 @@ RUNS = (
 )
 
 Q2D_FROZEN_PROTOCOL_SHA256_V1 = (
-    "c7d49c4db0da67736a684d566eca1bb37f20a0a71fe181125556281db52b4265"
+    "85cc917bd0173842e7703e6959b65ed2e57436225c44dcaf17d5f50be3d43057"
 )
-Q2D_FROZEN_PROTOCOL_BYTE_LENGTH_V1 = 32_416
+Q2D_FROZEN_PROTOCOL_BYTE_LENGTH_V1 = 32_687
 
 
 def _task(kind: TaskKind) -> AgentTask:
@@ -154,7 +154,7 @@ def test_q2d_fixed_session_and_one_model_one_agent_call_plan_are_exact() -> None
         "agent_1": "gemini_3_7_flash_standard",
         "agent_2": "gpt_4_1_mini",
     }
-    assert plan["maximum_calls"] == 115
+    assert plan["maximum_calls"] == 235
     assert plan["stage_calls"] == {
         "deliberation": 20,
         "move_scores": 40,
@@ -165,6 +165,11 @@ def test_q2d_fixed_session_and_one_model_one_agent_call_plan_are_exact() -> None
         # can still read the reason. Ratification objections are excluded
         # because they are raised after the last round, with no reader left.
         "round_objection_rulings": 8,
+        # Conditional, so absent from the deterministic schedule: without
+        # headroom the process latch would cut a run at the moment a rescue was
+        # needed. One reroute per deliberation slot, plus peer scoring of each
+        # rescued move by the two seats that did not author it.
+        "phase_rescue_headroom": 120,
     }
     assert plan["elenchus_objections_by_seat"] == {
         "gpt_5_mini": 1,
@@ -938,8 +943,6 @@ def test_guard_requires_consumed_latch_and_binds_session_question_and_body(
         outbound_task_state_projector=q2d.normal.make_worker_payload_projector_v1(),
     )
     guard(round_one, rendered_for(round_one_user, round_one))
-    with pytest.raises(ContractValidationError, match="retries are prohibited"):
-        guard(task.model_copy(update={"attempt_index": 1}), valid_rendered)
     with pytest.raises(ContractValidationError, match="schedule signature"):
         guard(task.model_copy(update={"round_number": 2}), valid_rendered)
 
@@ -1221,9 +1224,12 @@ def test_q2d_protocol_payload_binds_exact_plan_and_retained_controls() -> None:
     assert payload["scientific_classification"] == (
         "new_protocol_exploratory_reliability_run_not_confirmatory_replication"
     )
-    assert payload["maximum_ced_calls"] == 115
+    assert payload["maximum_ced_calls"] == 235
     assert payload["required_cumulative_spend_picodollars"] == 21_405_568_760_000
-    assert payload["retries"] == 0
+    assert payload["retries"] == "same_seat_prohibited"
+    assert payload["phase_rescue"] == (
+        "one_reroute_to_a_distinct_seat_per_failed_slot_recorded"
+    )
     assert payload["substitution"] == "prohibited"
     assert payload["topology_repair"] == {
         "q2b_q2c_logical_agents": 4,
@@ -1436,3 +1442,84 @@ def test_q2d_frozen_protocol_is_exact_canonical_builder_output() -> None:
     assert not raw.endswith(b"\n")
     assert raw == expected
     assert frozen == expected_payload
+
+
+# --------------------------------------------------------------------------
+# Two chairs in the schedule are privileged and neither rotates.
+#
+# Role rotation is complete when counted by role: across five Q4 runs each of
+# the three seats held socrates, elenchus_critic, empiricist, reflector and
+# synthesizer. Counted by *position* it is not. The opening Socratic turn is the
+# only one that precedes all content, and it went to the same seat every time;
+# the reconstruction turn happens once per run and so cannot rotate at all.
+#
+# That is a design choice, not a defect. What was a defect is that it was
+# invisible - it had to be reconstructed from dispatch-evidence timestamps. The
+# plan now derives it, so a run states who held the privileged chairs.
+# --------------------------------------------------------------------------
+
+
+def test_privileged_positions_are_derived_and_named() -> None:
+    plan = q2d.derive_q2d_call_plan_v1()
+    privileged = plan["privileged_positions"]
+    assert set(privileged) == {
+        "opening_socratic_question",
+        "maieutic_reconstruction",
+    }
+    # The default seat order puts the strongest seat in the opening chair. This
+    # is asserted so that changing seat order is a visible decision rather than
+    # a side effect: five Q4 councils were opened by a question that already
+    # named the symmetric profiles, and every other seat searched where it
+    # pointed.
+    assert privileged["opening_socratic_question"] == "gemini_3_7_flash_standard"
+    assert privileged["maieutic_reconstruction"] == "gpt_5_mini"
+
+
+def test_privileged_positions_reach_the_authorized_payload() -> None:
+    """Whoever holds them must be in the evidence, not inferable from it."""
+
+    payload = q2d.build_q2d_protocol_payload_v1()
+    assert (
+        payload["call_plan"]["privileged_positions"]
+        == q2d.derive_q2d_call_plan_v1()["privileged_positions"]
+    )
+
+
+def test_the_bounded_rescue_attempt_is_admitted_and_nothing_further(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three attempts, then nothing.
+
+    The rule is not "never ask twice". Asking the same interlocutor again is the
+    elenchus: an answer that changes on the second asking has shown it was
+    opinion, and that inconsistency is evidence. What is forbidden is discarding
+    - replacing a failure with a success and recording only the success. CED's
+    rescue keeps every attempt in the task log, so the second answer cannot erase
+    the first, and it is bounded to one. Refusing it cost a whole dialectic - Gemini
+    returned an empty content object on an elenchus Socratic turn, and with no
+    question there was nothing for REFLECTION to answer, so every remaining round
+    was skipped.
+    """
+
+    from backend.dialogues.models import AgentRole, AgentTask, DialogPhase, TaskKind
+
+    seat_key = q2d.q1.COUNCIL_SEATS_V1[0][1]
+
+    def _task(attempt: int) -> AgentTask:
+        return AgentTask(
+            task_id="t", session_id=q2d.Q2D_SESSION_ID_V1, agent_id="agent_0",
+            role=AgentRole.SOCRATES, phase=DialogPhase.ELENCHUS,
+            question="Assess this argument.", context={},
+            task_kind=TaskKind.SOCRATIC_QUESTION, round_number=1,
+            attempt_index=attempt,
+        )
+
+    for admitted in (0, 1, 2):
+        try:
+            q2d._assert_q2d_seat_task_mapping_v1(seat_key, _task(admitted))
+        except ContractValidationError as exc:
+            assert "three attempts" not in str(exc), (
+                f"attempt_index {admitted} must not be refused as a retry"
+            )
+    with pytest.raises(ContractValidationError, match="three attempts"):
+        q2d._assert_q2d_seat_task_mapping_v1(seat_key, _task(3))
