@@ -24,6 +24,10 @@ from backend.dialogues.socrates_zero.ced_structured_output_v1 import (
     assert_interrogative_text_v1,
     assert_substantive_text_v1,
 )
+from backend.dialogues.semantic_floor import (
+    SemanticFloorError,
+    assert_substantive,
+)
 from backend.dialogues.socrates_zero.contracts import ContractValidationError
 
 # --------------------------------------------------------------------------
@@ -351,3 +355,52 @@ def test_substantive_move_content_passes_the_floor() -> None:
             "epistemic_marker": "reasonable_hypothesis",
         }
     )
+
+
+# --------------------------------------------------------------------------
+# Regression: formal derivations are content, not padding.
+#
+# The floor was calibrated on prose placeholders and counted only alphabetic
+# words. A symbolic derivation therefore looked like repetition: the live
+# string below carries four inference steps but just three distinct words, so
+# it was refused as failing the distinct-word rule. That is backwards for this
+# research line — in a logic benchmark a derivation is the highest-value
+# contribution a seat can make, so the floor was preferentially discarding the
+# evidence the experiment exists to collect.
+#
+# Observed live: Q3 heterogeneous council, GPT-5 Mini, empiricist seat,
+# initial_response, HTTP 200, 3510 completion tokens, rejected by this module
+# as ced_schema_error:semantic_floor_rejected.
+# --------------------------------------------------------------------------
+
+LIVE_REJECTED_DERIVATION_V1 = (
+    "(5) ¬Fair; (6) ¬Fair -> OughtAbolish; therefore OughtAbolish"
+)
+
+FORMAL_DERIVATIONS_THAT_MUST_PASS_V1 = (
+    LIVE_REJECTED_DERIVATION_V1,
+    "P1: Fair -> Contest. P2: Contest -> Know. ¬Know, so ¬Contest.",
+    "From (2) and (3): ¬Know → ¬Contest, hence ¬Fair by (1).",
+)
+
+
+@pytest.mark.parametrize("text", FORMAL_DERIVATIONS_THAT_MUST_PASS_V1)
+def test_formal_derivation_is_substantive(text):
+    """Symbols and step numbers carry the proposition; they must count."""
+
+    assert assert_substantive(text) == text
+
+
+DEGENERATE_SYMBOL_STRINGS_THAT_MUST_STILL_FAIL_V1 = (
+    "-> -> -> -> <-> <-> => => ¬ ¬ ∀ ∃ 1 2 3 4 5 6 7",
+    "a -> b -> c ¬ d ∀ e ∃ f 1 2 3 4 5 6 7 8 9",
+    "(1) (2) (3) (4) (5) (6) (7) (8) (9) (10) (11) (12)",
+)
+
+
+@pytest.mark.parametrize("text", DEGENERATE_SYMBOL_STRINGS_THAT_MUST_STILL_FAIL_V1)
+def test_symbols_alone_are_not_content(text):
+    """Counting symbols must not open a hole: prose is still required."""
+
+    with pytest.raises(SemanticFloorError):
+        assert_substantive(text)

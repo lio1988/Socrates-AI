@@ -43,6 +43,25 @@ QUOTED_SPAN_MIN_DISTINCT_LETTERS = 6
 
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 
+#: Operators and step references carry the proposition in a formal derivation.
+#: Counting only alphabetic words made "(5) not-Fair; (6) not-Fair -> Abolish"
+#: look like three-word repetition, so the floor discarded exactly the dense,
+#: symbolic reasoning this research line is trying to elicit. These tokens count
+#: toward *distinctness* only; the prose requirements below are untouched, so a
+#: string of bare symbols still fails for want of content words.
+_FORMAL_TOKEN_RE = re.compile(
+    r"<->|->|=>|\|-|[¬∧∨→←↔⊃⊢⊨∀∃≠≤≥≡∈∉∪∩⊂⊆∴∵±×÷√∑∏]|\d+",
+    re.UNICODE,
+)
+
+
+def _distinct_semantic_units(text: str, words):
+    """Distinct meaning-bearing units: words plus formal tokens."""
+
+    units = {w.lower() for w in words}
+    units.update(_FORMAL_TOKEN_RE.findall(text))
+    return units
+
 
 class SemanticFloorError(ValueError):
     """Content satisfied the schema without carrying a proposition."""
@@ -66,9 +85,11 @@ def assert_substantive(value: str, field: str = "content") -> str:
     words = _WORD_RE.findall(text)
     if len(words) < SUBSTANTIVE_MIN_WORDS:
         raise _fail(field, f"needs at least {SUBSTANTIVE_MIN_WORDS} words", value)
-    if len({w.lower() for w in words}) < SUBSTANTIVE_MIN_DISTINCT_WORDS:
+    if len(_distinct_semantic_units(text, words)) < SUBSTANTIVE_MIN_DISTINCT_WORDS:
         raise _fail(
-            field, f"needs at least {SUBSTANTIVE_MIN_DISTINCT_WORDS} distinct words",
+            field,
+            f"needs at least {SUBSTANTIVE_MIN_DISTINCT_WORDS} distinct words or "
+            "formal tokens",
             value,
         )
     if sum(1 for w in words if len(w) >= 3) < SUBSTANTIVE_MIN_CONTENT_WORDS:
