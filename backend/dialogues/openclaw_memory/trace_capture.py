@@ -10,6 +10,7 @@ No provider calls, no network, no API keys.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import re
 from datetime import datetime, timezone
@@ -51,7 +52,10 @@ def _move_summary(move, *, include_content: bool = False) -> Dict[str, Any]:
     if move.task_kind:
         entry["task_kind"] = move.task_kind.value
     if include_content:
-        entry["content"] = move.content
+        # Freeze the accepted public payload before the secret scan. Keeping a
+        # live alias would let later SessionState mutation change an already
+        # scanned in-memory trace.
+        entry["content"] = deepcopy(move.content)
     else:
         entry["content_keys"] = (
             sorted(move.content.keys()) if isinstance(move.content, dict) else [])

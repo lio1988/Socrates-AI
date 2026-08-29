@@ -24,6 +24,9 @@ Optional feature switches (env-only, cost-conscious defaults):
     CED_TRACE_CAPTURE=0      # OFF switch — auditable JSONL trace per run is
                              # written by default (local file, free)
     CED_TRACE_DIR=path       # where traces go (default runs/openclaw_traces)
+    CED_TRACE_INCLUDE_CONTENT=1
+                             # opt in to accepted PUBLIC AgentMove.content;
+                             # default off (no raw/private provider payloads)
     CED_TREE_EXPANSIONS=2    # deliberation tree search: N revision expansions
                              # (default 0 = off; EACH one adds real model calls
                              # on a live run — enable deliberately)
@@ -79,14 +82,22 @@ def _resolve_features(env=None):
     else:
         notes.append("lessons: off")
 
-    if env.get("CED_TRACE_CAPTURE", "1") != "0":
+    trace_enabled = env.get("CED_TRACE_CAPTURE", "1") != "0"
+    include_trace_content = (
+        trace_enabled and env.get("CED_TRACE_INCLUDE_CONTENT", "0") == "1"
+    )
+    if trace_enabled:
         from backend.dialogues.openclaw_memory import TraceCapturer
         trace_dir = env.get("CED_TRACE_DIR",
                             str(_ROOT / "runs" / "openclaw_traces"))
-        features["trace_capturer"] = TraceCapturer(output_dir=trace_dir)
+        features["trace_capturer"] = TraceCapturer(
+            output_dir=trace_dir,
+            include_content=include_trace_content,
+        )
         notes.append(f"trace: {trace_dir}")
     else:
         notes.append("trace: off")
+    notes.append(f"trace content: {'on' if include_trace_content else 'off'}")
 
     try:
         expansions = int(env.get("CED_TREE_EXPANSIONS", "0"))
