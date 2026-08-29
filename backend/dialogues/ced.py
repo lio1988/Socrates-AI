@@ -1718,11 +1718,63 @@ class CEDOrchestrator:
                 taken.add(self._adapter_for_agent(
                     state, aid, failover_offset=offset).provider_id)
                 plan.append((slot, aid, role, offset))
-            retry_pairs = list(await asyncio.gather(
-                *(_one(slot, aid, role, attempt=1, offset=offset)
+            # Two further attempts, and they are not the same attempt twice.
+            #
+            # The first repeats the question to the SAME seat (offset 0). A first
+            # failure may be nothing more than not having understood, and asking
+            # again is the elenchus itself rather than a way around it: what is
+            # forbidden is discarding an answer, and nothing here is discarded -
+            # every attempt stays in the task log, so a later answer can never
+            # erase an earlier one, and a seat that answers differently the
+            # second time has told us its first answer was not knowledge.
+            #
+            # Only if it fails again does the question pass to a DIFFERENT seat.
+            # A second failure after being asked again is no longer ignorance,
+            # and independence is what is needed at that point.
+            #
+            # A seat that fails all three is not absorbed as an unlucky round.
+            # The count stands in the phase record as a fact about that seat.
+            # Whether the same seat is asked again depends on whether it spoke.
+            #
+            # A seat that answered and was refused - empty content, a rejected
+            # schema - has said something, and a second answer that differs from
+            # the first tells us the first was opinion. That is worth asking for.
+            # A seat that timed out or errored never spoke at all: there is no
+            # answer to weigh against a second one, only a line that went quiet,
+            # and re-dialling it is an infrastructure retry rather than an
+            # elenchus. Those go straight to a different seat.
+            spoke = {
+                task.slot_index
+                for task, response in pairs
+                if response.status is ProviderStatus.OK
+            }
+            first_pairs = list(await asyncio.gather(
+                *(_one(slot, aid, role, attempt=1,
+                       offset=0 if slot in spoke else offset)
                   for slot, aid, role, offset in plan)))
-            retry_responses = _absorb(retry_pairs)
-            merged = [r for _, r in pairs if r.ok] + retry_responses
+            retry_responses = _absorb(first_pairs)
+
+            def _still_missing() -> bool:
+                return missing_socratic and not self._socratic_followups_for_round(state)
+
+            second_plan = [
+                (slot, aid, role, offset)
+                for (slot, aid, role, offset), (_t, r) in zip(plan, first_pairs)
+                if not r.ok
+            ]
+            reroute_ok: List[Any] = []
+            if second_plan and (
+                sum(1 for r in ([x for _, x in pairs if x.ok] + retry_responses) if r.ok)
+                < effective_quorum
+                or _still_missing()
+            ):
+                second_pairs = list(await asyncio.gather(
+                    *(_one(slot, aid, role, attempt=2, offset=offset)
+                      for slot, aid, role, offset in second_plan)))
+                reroute_ok = _absorb(second_pairs)
+            merged = (
+                [r for _, r in pairs if r.ok] + retry_responses + reroute_ok
+            )
             role_critical_rescued = (
                 not missing_socratic
                 or bool(self._socratic_followups_for_round(state))
@@ -1740,6 +1792,11 @@ class CEDOrchestrator:
                                     "provider was reused" if degraded else None),
                 "first_failed_providers": [r.provider_id for _, r in pairs if not r.ok],
                 "retry_ok_providers": [r.provider_id for r in retry_responses if r.ok],
+                "reasked_same_seat_slots": [slot for slot, _, _, _ in plan],
+                "rerouted_distinct_seat_slots": [
+                    slot for slot, _, _, _ in second_plan
+                ],
+                "reroute_ok_providers": [r.provider_id for r in reroute_ok if r.ok],
                 "rescued": rescued,
             })
             responses = merged

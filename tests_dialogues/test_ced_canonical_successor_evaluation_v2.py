@@ -1150,8 +1150,11 @@ def test_core_and_predecessor_locks_are_exact_and_clean() -> None:
     # Re-pinned a second time to gate the pass behind
     # mid_round_objection_rulings_v1, so a control arm can switch it off on
     # identical code instead of an older build.
+    # Re-pinned a third time for the three-attempt rescue: the same seat is
+    # asked again before the question passes to another, because a first
+    # failure may be misunderstanding and a second is not.
     assert lock.lock_id == (
-        "cedcorebloblockv2_abfbbabe644ecf5c5398bf150b553c20f2cdde681b7b002ea98cd69e1642599a"
+        "cedcorebloblockv2_ee49e244ad929e6b988a3c65323e56ef1afa0ee829000b22c0703092a98af8e4"
     )
     assert evaluation.SEALED_PHASE8_ARTIFACT_ID == (
         "cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0"

@@ -121,9 +121,16 @@ def test_audit_shape_is_complete():
     ced = _council(phase_retry=True, providers=providers)
     final = asyncio.run(ced.run_registry_session(Q, session_id="shape"))
     pr = final.audit_summary["phase_retries"][0]
+    # The two rescue attempts are recorded apart, because they are different
+    # acts: the first repeats the question to a seat that answered and was
+    # refused, the second hands it to another seat after that failed too. A seat
+    # that never spoke - a timeout - skips the repeat, since there is no first
+    # answer for a second one to contradict.
     assert set(pr) == {"phase", "failed_slots", "retried_slots",
                        "degraded_duplicate_slots", "degraded_reason",
-                       "first_failed_providers", "retry_ok_providers", "rescued"}
+                       "first_failed_providers", "retry_ok_providers",
+                       "reasked_same_seat_slots", "rerouted_distinct_seat_slots",
+                       "reroute_ok_providers", "rescued"}
     # A reroute onto a seat already serving a sibling is now recorded rather
     # than invisible: the four-seat council took that path silently for two
     # live runs and halved its own peer pool.
