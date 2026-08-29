@@ -139,8 +139,15 @@ FAMILIES_V1: Dict[str, Dict[str, Any]] = {
         "model": "google/gemini-3.7-flash",
         "selector": "google-vertex/global",
         "output_field": "max_tokens",
-        "prompt_ceiling": "0.375",
-        "completion_ceiling": "1.875",
+        # Raised 2026-08-29 from 0.375/1.875. Google doubled the published
+        # google-vertex/global price after this protocol froze, so the old
+        # ceiling excluded the endpoint and the router refused the opening
+        # call with HTTP 404. The endpoint, model and evidence are unchanged,
+        # so the frozen Gemini baseline measured here stays comparable; only
+        # what we authorise paying moves. Live listing:
+        # runs/q2d_gemini_endpoints_repriced_v1.json
+        "prompt_ceiling": "0.75",
+        "completion_ceiling": "3.75",
         "provider_display": ("Google",),
         "evidence_file": "q1_gemini_3_7_flash_endpoints_v1.json",
         "evidence_tag": "google-vertex/global",

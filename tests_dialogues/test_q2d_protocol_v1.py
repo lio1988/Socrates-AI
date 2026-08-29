@@ -43,9 +43,9 @@ RUNS = (
 )
 
 Q2D_FROZEN_PROTOCOL_SHA256_V1 = (
-    "2729d4bd82af1ddc29ba6526daa4cd00ee3132540e01dbee7a73dba723581075"
+    "c7d49c4db0da67736a684d566eca1bb37f20a0a71fe181125556281db52b4265"
 )
-Q2D_FROZEN_PROTOCOL_BYTE_LENGTH_V1 = 32_320
+Q2D_FROZEN_PROTOCOL_BYTE_LENGTH_V1 = 32_416
 
 
 def _task(kind: TaskKind) -> AgentTask:
@@ -154,23 +154,30 @@ def test_q2d_fixed_session_and_one_model_one_agent_call_plan_are_exact() -> None
         "agent_1": "gemini_3_7_flash_standard",
         "agent_2": "gpt_4_1_mini",
     }
-    assert plan["maximum_calls"] == 107
+    assert plan["maximum_calls"] == 115
     assert plan["stage_calls"] == {
         "deliberation": 20,
         "move_scores": 40,
         "section_scores": 30,
         "ratification": 3,
         "objection_verification": 14,
+        # Non-governing: rules on the four elenchus objections while the round
+        # can still read the reason. Ratification objections are excluded
+        # because they are raised after the last round, with no reader left.
+        "round_objection_rulings": 8,
     }
     assert plan["elenchus_objections_by_seat"] == {
         "gpt_5_mini": 1,
         "gemini_3_7_flash_standard": 2,
         "gpt_4_1_mini": 1,
     }
+    # Eight short-output calls added by rule_on_round_objections_v1: each of the
+    # four elenchus objections is ruled on by the two seats whose model differs
+    # from the raiser.
     assert plan["calls_by_seat_and_output_limit"] == {
-        "gpt_5_mini": {"4096": 30, "8192": 5, "16384": 1},
-        "gemini_3_7_flash_standard": {"4096": 31, "8192": 3, "16384": 1},
-        "gpt_4_1_mini": {"4096": 32, "8192": 3, "16384": 1},
+        "gpt_5_mini": {"4096": 33, "8192": 5, "16384": 1},
+        "gemini_3_7_flash_standard": {"4096": 33, "8192": 3, "16384": 1},
+        "gpt_4_1_mini": {"4096": 35, "8192": 3, "16384": 1},
     }
 
 
@@ -178,14 +185,18 @@ def test_q2d_cost_bound_proves_the_five_dollar_ceiling_is_impossible() -> None:
     bound = q2d.conservative_q2d_bound_v1()
     assert q2d.conservative_ced_bound_v1() == bound
     assert bound["seat_total_picodollars"] == {
-        "gpt_5_mini": 770_048_000_000,
-        "gemini_3_7_flash_standard": 2_035_200_000_000,
-        "gpt_4_1_mini": 2_378_956_800_000,
+        "gpt_5_mini": 2_109_440_000_000,
+        "gemini_3_7_flash_standard": 11_572_224_000_000,
+        "gpt_4_1_mini": 7_071_989_760_000,
     }
-    assert bound["total_picodollars"] == 5_184_204_800_000
-    assert bound["maximum_per_call_picodollars"] == 86_507_520_000
+    assert bound["total_picodollars"] == 20_753_653_760_000
+    assert bound["maximum_per_call_picodollars"] == 356_352_000_000
+    # The point of this test is the ceiling, not the figure: whatever the budget,
+    # the worst case must stay provably above $5 so no run can be authorized
+    # against that ceiling by arithmetic accident.
+    assert bound["total_picodollars"] > 5_000_000_000_000
     assert bound["prior_observed_picodollars"] == 651_915_000_000
-    assert bound["required_cumulative_picodollars"] == 5_836_119_800_000
+    assert bound["required_cumulative_picodollars"] == 21_405_568_760_000
     assert bound["required_cumulative_picodollars"] > 5_000_000_000_000
 
 
@@ -1210,8 +1221,8 @@ def test_q2d_protocol_payload_binds_exact_plan_and_retained_controls() -> None:
     assert payload["scientific_classification"] == (
         "new_protocol_exploratory_reliability_run_not_confirmatory_replication"
     )
-    assert payload["maximum_ced_calls"] == 107
-    assert payload["required_cumulative_spend_picodollars"] == 5_836_119_800_000
+    assert payload["maximum_ced_calls"] == 115
+    assert payload["required_cumulative_spend_picodollars"] == 21_405_568_760_000
     assert payload["retries"] == 0
     assert payload["substitution"] == "prohibited"
     assert payload["topology_repair"] == {
@@ -1307,7 +1318,18 @@ def test_all_six_frozen_controls_are_recomputed_not_copied(
 
     with monkeypatch.context() as scoped:
         scoped.setattr(q2_key, "QUESTION_V1", q2_key.QUESTION_V1 + " drift")
-        with pytest.raises(ContractValidationError, match="digests drifted"):
+        with pytest.raises(
+            ContractValidationError,
+            # Three guards can fire first depending on which control was
+            # tampered with: the bundle's own question check, the bundle/module
+            # comparison, or the frozen-control comparison. Any of them proves
+            # the control was recomputed rather than copied.
+            match=(
+                "digests drifted"
+                "|drifted from its digest"
+                "|disagrees with the question module"
+            ),
+        ):
             q2d.build_q2d_protocol_payload_v1()
     with monkeypatch.context() as scoped:
         scoped.setattr(
@@ -1315,11 +1337,33 @@ def test_all_six_frozen_controls_are_recomputed_not_copied(
             "CRITERIA_V1",
             q2_key.CRITERIA_V1 + (("DRIFT", "drift", 0),),
         )
-        with pytest.raises(ContractValidationError, match="digests drifted"):
+        with pytest.raises(
+            ContractValidationError,
+            # Three guards can fire first depending on which control was
+            # tampered with: the bundle's own question check, the bundle/module
+            # comparison, or the frozen-control comparison. Any of them proves
+            # the control was recomputed rather than copied.
+            match=(
+                "digests drifted"
+                "|drifted from its digest"
+                "|disagrees with the question module"
+            ),
+        ):
             q2d.build_q2d_protocol_payload_v1()
     with monkeypatch.context() as scoped:
         scoped.setattr(q2_key, "DIAGNOSIS_V1", q2_key.DIAGNOSIS_V1 + " drift")
-        with pytest.raises(ContractValidationError, match="digests drifted"):
+        with pytest.raises(
+            ContractValidationError,
+            # Three guards can fire first depending on which control was
+            # tampered with: the bundle's own question check, the bundle/module
+            # comparison, or the frozen-control comparison. Any of them proves
+            # the control was recomputed rather than copied.
+            match=(
+                "digests drifted"
+                "|drifted from its digest"
+                "|disagrees with the question module"
+            ),
+        ):
             q2d.build_q2d_protocol_payload_v1()
     with monkeypatch.context() as scoped:
         original = q2d.q1.reduced.baseline_response_format_v1
@@ -1328,7 +1372,18 @@ def test_all_six_frozen_controls_are_recomputed_not_copied(
             "baseline_response_format_v1",
             lambda: {**original(), "drift": True},
         )
-        with pytest.raises(ContractValidationError, match="digests drifted"):
+        with pytest.raises(
+            ContractValidationError,
+            # Three guards can fire first depending on which control was
+            # tampered with: the bundle's own question check, the bundle/module
+            # comparison, or the frozen-control comparison. Any of them proves
+            # the control was recomputed rather than copied.
+            match=(
+                "digests drifted"
+                "|drifted from its digest"
+                "|disagrees with the question module"
+            ),
+        ):
             q2d.build_q2d_protocol_payload_v1()
     with monkeypatch.context() as scoped:
         scoped.setattr(
@@ -1336,7 +1391,18 @@ def test_all_six_frozen_controls_are_recomputed_not_copied(
             "BASELINE_SYSTEM_PROMPT_V1",
             q2d.q1.BASELINE_SYSTEM_PROMPT_V1 + " drift",
         )
-        with pytest.raises(ContractValidationError, match="digests drifted"):
+        with pytest.raises(
+            ContractValidationError,
+            # Three guards can fire first depending on which control was
+            # tampered with: the bundle's own question check, the bundle/module
+            # comparison, or the frozen-control comparison. Any of them proves
+            # the control was recomputed rather than copied.
+            match=(
+                "digests drifted"
+                "|drifted from its digest"
+                "|disagrees with the question module"
+            ),
+        ):
             q2d.build_q2d_protocol_payload_v1()
     with monkeypatch.context() as scoped:
         original_load = q2d.q1.load_profile_v1

@@ -378,7 +378,25 @@ def execute_bounded_text_turn_v1(
             stage = "pre_dispatch_guard"
             pre_dispatch_guard(task, rendered)
         stage = "cost_bound"
-        worst_case = conservative_turn_cost_bound_v1(policy, int(max_input_tokens))
+        # Reserve against what this request actually is, not against the
+        # ceiling it is allowed to reach.
+        #
+        # The body is already rendered here, so its size is known. Reserving
+        # the full ceiling on every call forced one number to serve two
+        # incompatible jobs: a prompt bound loose enough for a long dialogue,
+        # and a reservation tight enough to stay under the operator's spend
+        # ceiling. That conflict refused all eleven ratification and
+        # objection-verification calls of one council run, so the dialogue
+        # completed every phase and then never voted.
+        #
+        # Using the measured size is strictly more accurate and never
+        # under-reserves: the byte count is still an upper bound on tokens,
+        # and the ceiling still applies as a cap.
+        measured_input_tokens = min(
+            int(max_input_tokens),
+            len(rendered.canonical_body_json.encode("utf-8")) + 64,
+        )
+        worst_case = conservative_turn_cost_bound_v1(policy, measured_input_tokens)
         stage = "ledger_admission"
         ledger.check_admits(worst_case)
         stage = "claim_mint"
@@ -678,6 +696,89 @@ def execute_bounded_text_turn_v1(
     )
 
 
+# ---------------------------------------------------------------------------
+# Objection rulings re-entering the dialogue.
+#
+# Measured over three ratified councils: 80% of calls and ~60% of generated
+# tokens are evaluator output no seat ever sees. Almost all of that is quality
+# scores, which must stay hidden - a seat that can see what the scorer rewards
+# optimises for the scorer. Nine outputs per run are different: objection
+# verifications, which decide whether an objection raised by a seat holds
+# against the task text, and carry `condition_tested`, `objection_holds`,
+# `rationale` and `cited_spans`.
+#
+# Those are not performance judgements and there is no score in them to chase.
+# Withholding them costs the dialectic directly: in the Q4 council the seats
+# circled the same specification gap for six rounds while six reasoned rulings
+# on exactly that gap were produced and discarded - two of which contradicted
+# each other on whether the task settled the question. Neither reached the room.
+#
+# So rulings are recorded when they come back and injected into later
+# deliberation contexts. The ledger is process-wide because the three seats hold
+# separate adapters within one run, and it is keyed by session so two runs in a
+# process cannot bleed into each other.
+OBJECTION_RULING_CONTEXT_KEY_V1 = "objection_rulings_so_far"
+OBJECTION_RULING_FIELDS_V1 = (
+    "condition_tested",
+    "objection_holds",
+    "objection_targets",
+    "rationale",
+    "cited_spans",
+)
+_OBJECTION_RULINGS_V1: Dict[str, List[Dict[str, Any]]] = {}
+
+
+def reset_objection_rulings_v1(session_id: Optional[str] = None) -> None:
+    """Drop recorded rulings, for one session or all of them."""
+    if session_id is None:
+        _OBJECTION_RULINGS_V1.clear()
+    else:
+        _OBJECTION_RULINGS_V1.pop(session_id, None)
+
+
+def recorded_objection_rulings_v1(session_id: str) -> Tuple[Dict[str, Any], ...]:
+    return tuple(dict(row) for row in _OBJECTION_RULINGS_V1.get(session_id, ()))
+
+
+def _record_objection_ruling_v1(task: AgentTask, content: Any) -> None:
+    """Keep the allowlisted fields of one verification, never the score."""
+    if not isinstance(content, Mapping):
+        return
+    kept = {
+        field: content[field]
+        for field in OBJECTION_RULING_FIELDS_V1
+        if field in content
+    }
+    if "rationale" not in kept:
+        return
+    schema = task.output_schema if isinstance(task.output_schema, Mapping) else {}
+    kept["objection_id"] = schema.get("_objection")
+    _OBJECTION_RULINGS_V1.setdefault(task.session_id or "", []).append(kept)
+
+
+def _with_objection_rulings_v1(task: AgentTask) -> AgentTask:
+    """Return the task with prior rulings visible, or the task unchanged.
+
+    Evaluator tasks are left alone: the rulings are for the room, not for the
+    scorer, and feeding a verifier its own prior verdicts would make the second
+    one dependent on the first.
+    """
+    rulings = _OBJECTION_RULINGS_V1.get(task.session_id or "")
+    if not rulings:
+        return task
+    if getattr(task.task_kind, "name", "") in {
+        "OBJECTION_VERIFICATION",
+        "MOVE_SCORE",
+        "SECTION_SCORE",
+    }:
+        return task
+    context = dict(task.context or {})
+    if OBJECTION_RULING_CONTEXT_KEY_V1 in context:
+        return task
+    context[OBJECTION_RULING_CONTEXT_KEY_V1] = [dict(row) for row in rulings]
+    return task.model_copy(update={"context": context})
+
+
 class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
     """One council seat, served by the proven one-shot live transport."""
 
@@ -903,6 +1004,16 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
         self, task: AgentTask, agent_state: AgentState
     ) -> ProviderResponse:
         start = time.perf_counter()
+        # Substituted once, before anything downstream reads the task, so the
+        # render and the pre-dispatch guard both see the same object.
+        task = _with_objection_rulings_v1(task)
+        # Recorded because request sizes cannot answer this. Two runs of the
+        # same council diverge on their own - the seat answers differ, and every
+        # later prompt inherits the difference - so a bigger body is not
+        # evidence that a ruling was carried. The count is.
+        carried_rulings = len(
+            (task.context or {}).get(OBJECTION_RULING_CONTEXT_KEY_V1) or ()
+        )
         if not self.is_available():
             return ProviderResponse(
                 provider_id=self.provider_id,
@@ -940,6 +1051,8 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             repair_attempts=self.ced_parse_repair_attempts,
             meta=meta,
         )
+        if move is not None and status is ProviderStatus.OK:
+            _record_objection_ruling_v1(task, move.content)
         accepted = status is ProviderStatus.OK
         # Semantic contribution floor.
         #
@@ -989,6 +1102,10 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
                 }
             )
             self.turn_records[-1] = OpenRouterTurnRecordV1(**updated)
+        if self.turn_records:
+            self.__dict__.setdefault("_rulings_in_context_v1", {})[
+                self.turn_records[-1].record_id
+            ] = carried_rulings
         return ProviderResponse(
             provider_id=self.provider_id,
             agent_id=task.agent_id,
@@ -1003,10 +1120,13 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
 
     def observability_rows(self) -> List[Dict[str, Any]]:
         """Per-turn rows for a live view. No credentials, no reasoning traces."""
-        return [
-            record.model_dump(mode="json", exclude_none=False)
-            for record in self.turn_records
-        ]
+        carried = self.__dict__.get("_rulings_in_context_v1", {})
+        rows = []
+        for record in self.turn_records:
+            row = record.model_dump(mode="json", exclude_none=False)
+            row["objection_rulings_in_context"] = carried.get(record.record_id, 0)
+            rows.append(row)
+        return rows
 
     def session_totals(self) -> Dict[str, Any]:
         return {

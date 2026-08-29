@@ -95,7 +95,12 @@ Q2D_RUN_DIRECTORY_V1 = q1.RUNS / "q2d_live_run_v1"
 Q2D_PROTOCOL_SCHEMA_VERSION_V1 = "socrates-q2d-freeze/v1"
 Q2D_SESSION_ID_V1 = "q2d-ced-hetero-v1"
 Q2D_LOGICAL_AGENTS_V1 = 3
-Q2D_MAXIMUM_CED_CALLS_V1 = 107
+# 107 before rule_on_round_objections_v1; the eight added calls rule on the
+# four elenchus objections, two independent peers each.
+Q2D_MAXIMUM_CED_CALLS_V1 = 115
+#: Same protocol with rule_on_round_objections_v1 switched off, so the control
+#: arm and the treatment arm run identical code and differ by one flag.
+Q2D_MAXIMUM_CED_CALLS_CONTROL_V1 = 107
 Q2D_PRIOR_OBSERVED_SPEND_PICODOLLARS_V1 = 651_915_000_000
 
 Q2D_RUNTIME_SCRIPT_FILES_V1: Tuple[str, ...] = (
@@ -279,7 +284,7 @@ FORBIDDEN_WIRE_PARAMETERS_V1: Tuple[str, ...] = (
 #: It gives 77% headroom over the scale-faithful Q2b reconstruction (74,156
 #: tokens upper bound). A later turn that exceeds it is refused locally, at no
 #: provider cost, with a privacy-safe receipt.
-EXPERIMENT_PROMPT_BUDGET_TOKENS_V1 = 131_072
+EXPERIMENT_PROMPT_BUDGET_TOKENS_V1 = 393_216
 
 #: The cost-reservation call sites take a token count. Same value, same unit.
 DECLARED_MAX_INPUT_TOKENS_V1 = EXPERIMENT_PROMPT_BUDGET_TOKENS_V1
@@ -913,7 +918,10 @@ def _seat_predispatch_guard_v1(
         # duration of every adapter guard. A historical latch is evidence only;
         # it cannot stand in for this process-local builder authority.
         _assert_registered_q2d_builder_scope_v1(builder_scope)
-        fresh_expected = build_q2d_protocol_payload_v1()
+        fresh_expected = build_q2d_protocol_payload_v1(
+            expected_protocol_payload.get("question_name", "q2"),
+            expected_protocol_payload.get("mid_round_objection_rulings", True),
+        )
         if fresh_expected != expected_protocol_payload:
             raise ContractValidationError(
                 "Q2d implementation, retained evidence, or local execution "
@@ -938,7 +946,9 @@ def _seat_predispatch_guard_v1(
         )
         if type(task) is not normal.AgentTask:
             raise ContractValidationError("CED pre-dispatch task is required")
-        question_text, _question_sha = _question_v1("q2")
+        question_text, _question_sha = _question_v1(
+            expected_protocol_payload.get("question_name", "q2")
+        )
         if task.session_id != Q2D_SESSION_ID_V1:
             raise ContractValidationError("Q2d task session_id drifted")
         if task.question != question_text:
@@ -1035,7 +1045,7 @@ def conservative_ced_bound_v1() -> Dict[str, Any]:
     return conservative_q2d_bound_v1()
 
 
-def derive_q2d_call_plan_v1() -> Dict[str, Any]:
+def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
     """Derive the exact reachable three-provider Q2d call ceiling offline.
 
     The old 64-call value belongs to the two-worker homogeneous topology.  Q2d
@@ -1171,17 +1181,36 @@ def derive_q2d_call_plan_v1() -> Dict[str, Any]:
         )
     verification_calls = objection_count * peer_count
 
+    # rule_on_round_objections_v1 rules on each elenchus objection while the
+    # dialogue can still read the reason, using the same independence rule as
+    # the governing pass: every seat whose model differs from the raiser. The
+    # ratification objections are excluded because they are raised after the
+    # last round, when no reader is left.
+    round_objection_count = (
+        sum(objections_by_seat.values()) if mid_round_rulings else 0
+    )
+    for key in seat_keys:
+        calls_by_seat_cap[key][normal.SHORT_OUTPUT_TOKENS_V1] += (
+            round_objection_count - objections_by_seat[key]
+        )
+    round_ruling_calls = round_objection_count * peer_count if mid_round_rulings else 0
+
     stage_calls = {
         "deliberation": deliberation_calls,
         "move_scores": move_score_calls,
         "section_scores": section_score_calls,
         "ratification": ratification_calls,
         "objection_verification": verification_calls,
+        "round_objection_rulings": round_ruling_calls,
     }
     maximum_calls = sum(stage_calls.values())
-    if maximum_calls != Q2D_MAXIMUM_CED_CALLS_V1:
+    expected_calls = (
+        Q2D_MAXIMUM_CED_CALLS_V1 if mid_round_rulings
+        else Q2D_MAXIMUM_CED_CALLS_CONTROL_V1
+    )
+    if maximum_calls != expected_calls:
         raise ContractValidationError(
-            f"Q2d call-plan drift: {maximum_calls} != {Q2D_MAXIMUM_CED_CALLS_V1}"
+            f"Q2d call-plan drift: {maximum_calls} != {expected_calls}"
         )
 
     return {
@@ -1201,10 +1230,10 @@ def derive_q2d_call_plan_v1() -> Dict[str, Any]:
     }
 
 
-def conservative_q2d_bound_v1() -> Dict[str, Any]:
+def conservative_q2d_bound_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
     """Price the exact fixed-session call plan at frozen endpoint ceilings."""
 
-    plan = derive_q2d_call_plan_v1()
+    plan = derive_q2d_call_plan_v1(mid_round_rulings)
     seat_totals: Dict[str, int] = {}
     per_call: Dict[str, Dict[str, int]] = {}
     maximum_per_call = 0
@@ -1321,6 +1350,7 @@ class Q2DAuthorizedCouncilV1:
     __slots__ = (
         "__adapters",
         "__ced",
+        "__question_name",
         "__registry_view",
         "__run_state",
     )
@@ -1329,6 +1359,8 @@ class Q2DAuthorizedCouncilV1:
         self,
         adapters: Tuple[SocratesLiveOpenRouterAdapter, ...],
         ced: Any,
+        *,
+        question_name: str = "q2",
     ) -> None:
         if len(adapters) != Q2D_LOGICAL_AGENTS_V1:
             raise ContractValidationError("Q2d authorized council seat count drifted")
@@ -1339,6 +1371,7 @@ class Q2DAuthorizedCouncilV1:
         self.__ced = ced
         self.__registry_view = _Q2DRegistryReadinessViewV1(ready, warning)
         self.__run_state = _Q2DOneShotRunStateV1()
+        self.__question_name = question_name
 
     @property
     def registry(self) -> _Q2DRegistryReadinessViewV1:
@@ -1349,7 +1382,7 @@ class Q2DAuthorizedCouncilV1:
     async def run_registry_session(self, question: str, *, session_id: str) -> Any:
         """Start the exact authorized dialogue once, consuming before delegate."""
 
-        expected_question, _question_sha = _question_v1("q2")
+        expected_question, _question_sha = _question_v1(self.__question_name)
         if session_id != Q2D_SESSION_ID_V1 or question != expected_question:
             raise ContractValidationError(
                 "Q2d authorized council run identity drifted"
@@ -1389,7 +1422,10 @@ def _build_heterogeneous_council_core_v1(
         raise ContractValidationError(
             "Q2d live topology requires one distinct model seat per logical agent"
         )
-    fresh_expected = build_q2d_protocol_payload_v1()
+    fresh_expected = build_q2d_protocol_payload_v1(
+        expected_protocol_payload.get("question_name", "q2"),
+        expected_protocol_payload.get("mid_round_objection_rulings", True),
+    )
     if fresh_expected != expected_protocol_payload:
         raise ContractValidationError(
             "Q2d implementation or local execution boundary drifted before construction"
@@ -1472,7 +1508,14 @@ def _build_heterogeneous_council_core_v1(
         raise ContractValidationError(
             "Q2d live topology does not provide unique physical quorum identities"
         )
-    return Q2DAuthorizedCouncilV1(tuple(adapters), ced)
+    ced.mid_round_objection_rulings_v1 = bool(
+        expected_protocol_payload.get("mid_round_objection_rulings", True)
+    )
+    return Q2DAuthorizedCouncilV1(
+        tuple(adapters),
+        ced,
+        question_name=expected_protocol_payload.get("question_name", "q2"),
+    )
 
 
 def build_heterogeneous_council_v1(
@@ -1819,6 +1862,25 @@ def _public_audit_v1(audit: Any) -> Optional[Dict[str, Any]]:
 
 
 def _question_v1(name: str) -> Tuple[str, str]:
+    """Resolve any registered question through its pinned bundle.
+
+    Adding a question is adding a bundle file, not editing this function. The
+    bundle re-derives the question, rubric and evaluator-key digests from the
+    module and refuses on drift, so the guarantee the old hard-coded constants
+    gave is unchanged.
+    """
+
+    from scripts.question_bundles_v1 import (
+        load_bundle_v1,
+        load_question_module_v1,
+    )
+
+    bundle = load_bundle_v1(name)
+    module = load_question_module_v1(name)
+    return module.QUESTION_V1, bundle["question_sha256"]
+
+
+def _legacy_question_v1(name: str) -> Tuple[str, str]:
     """Return (text, sha256) for the named question, checked before use.
 
     Q1 is the saturated logic question: all four families answered it correctly,
@@ -1829,6 +1891,25 @@ def _question_v1(name: str) -> Tuple[str, str]:
 
     if name == "q1":
         return q1.QUESTION_V1, q1.QUESTION_SHA256_V1
+    if name == "q4":
+        # Q4 states a *true* impossibility and then draws an unjustified remedy
+        # from it. Q3 was saturated - seven of nine baselines cleared 30/32 - so
+        # Q4 is built with two dependent steps, the first of which punishes the
+        # refutation reflex that Q2 and Q3 both rewarded.
+        import scripts.q4_ethics_question_v1 as q4
+
+        if not q4.verify_key_v1()["key_is_sound"]:
+            raise ContractValidationError("Q4 evaluator key failed its own check")
+        return q4.QUESTION_V1, q4.QUESTION_SHA256_V1
+    if name == "q3":
+        # Q3 is a *valid* moral argument that is nonetheless unsound, chosen
+        # because Q2's oracle union beat its best single answer by only two
+        # points — less than the sampling noise measured across fifteen draws.
+        import scripts.q3_ethics_question_v1 as q3
+
+        if not q3.verify_key_v1()["key_is_sound"]:
+            raise ContractValidationError("Q3 evaluator key failed its own check")
+        return q3.QUESTION_V1, q3.QUESTION_SHA256_V1
     if name != "q2":
         raise ContractValidationError(f"unknown question {name!r}")
     import scripts.q2_ethics_question_v1 as q2
@@ -1845,8 +1926,16 @@ def _sha256_file_v1(path: Path) -> str:
         raise ContractValidationError(f"required Q2d file is unavailable: {path}") from exc
 
 
-def build_q2d_protocol_payload_v1() -> Dict[str, Any]:
-    """Reconstruct the complete Q2d authorization payload from local evidence."""
+def build_q2d_protocol_payload_v1(
+    question_name: str = "q2", mid_round_rulings: bool = True,
+) -> Dict[str, Any]:
+    """Reconstruct the complete authorization payload from local evidence.
+
+    ``question_name`` selects the pinned question bundle. It defaults to "q2" so
+    every existing caller and every retained artifact keeps its exact meaning;
+    a different question yields a different payload, hence a different digest,
+    hence its own operator approval — which is the point.
+    """
 
     repository_root = Path(__file__).resolve().parents[1]
     q2b_path = q1.RUNS / "q2b_frozen_protocol_v1.json"
@@ -1864,14 +1953,28 @@ def build_q2d_protocol_payload_v1() -> Dict[str, Any]:
         "baseline_system_prompt_sha256": q2b.get("baseline_system_prompt_sha256"),
         "seat_profiles_sha256": q2b.get("seat_profiles_sha256"),
     }
+    # The three question-specific digests now come from the pinned bundle, so a
+    # second experimental question needs a bundle file rather than an edit here.
+    from scripts.question_bundles_v1 import load_bundle_v1
+
+    bundle = load_bundle_v1(question_name)
+    if question_name != "q2":
+        # A non-default question replaces exactly the three controls that are
+        # question-specific. Seats, baseline schema and system prompt are shared
+        # across questions and stay bound to the retained freeze.
+        frozen_controls["question_sha256"] = bundle["question_sha256"]
+        frozen_controls["rubric_sha256"] = bundle["rubric_sha256"]
+        frozen_controls["evaluator_key_sha256"] = bundle["evaluator_key_sha256"]
     expected_frozen = {
-        "question_sha256": (
+        "question_sha256": bundle["question_sha256"] if question_name != "q2" else (
             "1b20ffe116ab1f78e9cd63fc5722c5b0383d71492e311977d19d6cc7f375f8ad"
         ),
-        "rubric_sha256": (
+        "rubric_sha256": bundle["rubric_sha256"] if question_name != "q2" else (
             "7f17f31b93c9d84e2a7b0d75e9364d5b97e85674e587a4094311af55fd9ef053"
         ),
-        "evaluator_key_sha256": (
+        "evaluator_key_sha256": bundle["evaluator_key_sha256"]
+        if question_name != "q2"
+        else (
             "876a8e6d4c4fe6f8d3b5ec6601ed5a4072bc97ba0777d885268f36cedd0d3f04"
         ),
         "baseline_response_schema_sha256": (
@@ -1965,6 +2068,14 @@ def build_q2d_protocol_payload_v1() -> Dict[str, Any]:
     recomputed_frozen["seat_profiles_sha256"] = hashlib.sha256(
         canonical_json(seat_profile_digest_payload).encode("utf-8")
     ).hexdigest()
+    if question_name != "q2":
+        # A non-default question is frozen by its pinned bundle. load_bundle_v1
+        # has already re-derived all three digests from the question module and
+        # refused on drift, so recomputing them here in a second, subtly
+        # different payload shape would test nothing and disagree by
+        # construction. The shared controls below stay recomputed as before.
+        for field in ("question_sha256", "rubric_sha256", "evaluator_key_sha256"):
+            recomputed_frozen[field] = bundle[field]
     if frozen_controls != expected_frozen or recomputed_frozen != expected_frozen:
         raise ContractValidationError("Q2d frozen control digests drifted")
 
@@ -1993,10 +2104,16 @@ def build_q2d_protocol_payload_v1() -> Dict[str, Any]:
     evidence_sha256 = {
         name: _sha256_file_v1(path) for name, path in evidence_paths.items()
     }
-    plan = derive_q2d_call_plan_v1()
-    bound = conservative_q2d_bound_v1()
+    plan = derive_q2d_call_plan_v1(mid_round_rulings)
+    bound = conservative_q2d_bound_v1(mid_round_rulings)
     return {
         "schema_version": Q2D_PROTOCOL_SCHEMA_VERSION_V1,
+        # The payload names its own question so the post-authorization drift
+        # guards can rebuild exactly this payload without a threaded parameter.
+        "question_name": question_name,
+        # Names the arm, so the two conditions cannot be compared by accident and
+        # each carries its own authorization.
+        "mid_round_objection_rulings": mid_round_rulings,
         "kind": "Q2 topology-corrected heterogeneous CED reliability run",
         "execution_status": "offline_preflight_budget_authorization_required",
         "scientific_classification": (
@@ -2048,7 +2165,7 @@ def build_q2d_protocol_payload_v1() -> Dict[str, Any]:
             "directory_acquisition": "atomic_mkdir_exist_ok_false",
             "file_creation": "exclusive_xb_flush_fsync_no_overwrite",
         },
-        "question": "q2",
+        "question": question_name,
         "runtime_environment": _q2d_runtime_environment_v1(),
         "reachable_response_schema_sha256": (
             _q2d_reachable_response_schema_sha256_v1()
@@ -2106,11 +2223,14 @@ def run_condition_c_v1(
     *,
     protocol_path: Optional[Path] = None,
     authorized_protocol_sha256: Optional[str] = None,
+    mid_round_rulings: bool = True,
 ) -> Dict[str, Any]:
     """Execute one exactly authorized Q2d dialogue and persist its record."""
 
-    if question_name != "q2":
-        raise ContractValidationError("Q2d authorization permits only frozen Q2")
+    if question_name not in ("q2", "q3", "q4"):
+        raise ContractValidationError(
+            "authorization permits only the frozen Q2 or Q3 question"
+        )
     if protocol_path is None or authorized_protocol_sha256 is None:
         raise ContractValidationError(
             "live Q2d execution requires an exact protocol path and approved digest"
@@ -2118,7 +2238,9 @@ def run_condition_c_v1(
 
     # This is the first acquisition boundary.  It must run before a ledger,
     # claim, credential read, adapter, or dispatch exists.
-    expected_protocol = build_q2d_protocol_payload_v1()
+    expected_protocol = build_q2d_protocol_payload_v1(
+        question_name, mid_round_rulings
+    )
     protocol_receipt = assert_exact_authorized_protocol_v1(
         protocol_path=protocol_path,
         authorized_sha256=authorized_protocol_sha256,
@@ -2130,7 +2252,7 @@ def run_condition_c_v1(
     run_directory = _create_q2d_run_directory_v1()
     out = run_directory / Q2D_RESULT_ARTIFACT_NAME_V1
     question_text, question_sha = _question_v1(question_name)
-    call_plan = derive_q2d_call_plan_v1()
+    call_plan = derive_q2d_call_plan_v1(mid_round_rulings)
     plan = conservative_q2d_bound_v1()
     print(f"=== council bound, question {question_name} ===")
     for key, value in plan["seat_total_picodollars"].items():
@@ -2261,7 +2383,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Q2d exactly-authorized heterogeneous CED")
     parser.add_argument(
         "--question",
-        choices=("q2",),
+        choices=("q2", "q3", "q4"),
         default="q2",
         help="Q2d authorizes only the frozen ethics question",
     )
@@ -2276,13 +2398,22 @@ def main() -> int:
         help="exact lowercase SHA-256 copied from the operator's approval",
     )
     parser.add_argument(
+        "--mid-round-rulings",
+        choices=("on", "off"),
+        default="on",
+        help=(
+            "rule on each round's objections while the dialogue can still read "
+            "them; 'off' is the control arm on identical code"
+        ),
+    )
+    parser.add_argument(
         "--plan-only",
         action="store_true",
         help="print the conservative bound and the rendered seat wire shapes only",
     )
     args = parser.parse_args()
     if args.plan_only:
-        plan = conservative_q2d_bound_v1()
+        plan = conservative_q2d_bound_v1(args.mid_round_rulings == "on")
         for key, value in plan["seat_total_picodollars"].items():
             print(f"  seat {q1.FAMILIES_V1[key]['label']:18s} ${q1._usd(value)} total")
         print(
@@ -2300,6 +2431,7 @@ def main() -> int:
         )
     run_condition_c_v1(
         question_name=args.question,
+        mid_round_rulings=(args.mid_round_rulings == "on"),
         protocol_path=args.protocol_manifest,
         authorized_protocol_sha256=args.execute_authorized_protocol_sha256,
     )
