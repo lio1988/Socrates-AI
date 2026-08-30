@@ -2482,9 +2482,16 @@ def run_condition_c_v1(
 ) -> Dict[str, Any]:
     """Execute one exactly authorized Q2d dialogue and persist its record."""
 
-    if question_name not in ("q2", "q3", "q4", "q5", "q6"):
+    # An explicit list, not a lookup in the bundle registry. Registering a
+    # question is how a question becomes runnable offline; this is a second and
+    # independent gate on which of them may reach the network, and deriving it
+    # from the registry would collapse the two into one.
+    #
+    # The message used to say "Q2 or Q3" long after the list held five, which is
+    # how this refusal read as a policy decision rather than an unextended tuple.
+    if question_name not in ("q2", "q3", "q4", "q5", "q6", "q7"):
         raise ContractValidationError(
-            "authorization permits only the frozen Q2 or Q3 question"
+            f"authorization does not cover the question {question_name!r}"
         )
     if protocol_path is None or authorized_protocol_sha256 is None:
         raise ContractValidationError(
