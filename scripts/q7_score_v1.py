@@ -67,30 +67,55 @@ def extract_scored_text_v1(raw: str) -> str:
         envelope = json.loads(text)
     except (ValueError, TypeError):
         return text
-    if isinstance(envelope, str):
-        return envelope
-    if not isinstance(envelope, dict):
-        return text
-    parts = [value for _key, value in sorted(envelope.items())
-             if isinstance(value, str)]
+    parts: List[str] = []
+
+    def _walk(node: object) -> None:
+        # Recursive, because the council nests its answer one level down under
+        # "content" while a baseline puts it at the top. A collector that reads
+        # only the top level finds the baseline and misses the council, and
+        # scored a correct synthesis zero on the first pass over this run.
+        if isinstance(node, str):
+            parts.append(node)
+        elif isinstance(node, dict):
+            for _key, value in sorted(node.items()):
+                _walk(value)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                _walk(value)
+
+    _walk(envelope)
     return "\n".join(parts) if parts else text
 
 
-def _field(text: str, name: str) -> Optional[str]:
-    """The literal text after `NAME =` in the certificate block, if present.
+#: The one relaxation available, and the only one. ANCHORED requires the field
+#: to begin a line, which is what the question asked for; UNANCHORED accepts it
+#: anywhere on a line, so "Bottom-line: M = 11" counts.
+#:
+#: Both are reported, never blended. The anchored score is the pre-declared one
+#: and stays authoritative. The unanchored score exists because on this run the
+#: anchored score turned out to measure formatting: three baselines and two
+#: council moves stated a fully correct, machine-checkable certificate in prose
+#: and scored zero. Reporting only the first would say those answers were wrong,
+#: and they were not.
+#:
+#: The negative lookbehind matters: an unanchored search for "M =" would
+#: otherwise match inside "ADD_EDGE_NEW_M = 12" and read the wrong number.
+def _field(text: str, name: str, anchored: bool = True) -> Optional[str]:
+    """The literal text after `NAME =`, if present.
 
     Reads the LAST occurrence, because a model that restates its certificate
     after a correction means the later one. Nothing else is inferred.
     """
+    prefix = r"^\s*" if anchored else r"(?<![A-Za-z0-9_])"
     found = None
-    for match in re.finditer(rf"^\s*{re.escape(name)}\s*=\s*(.*)$", text,
-                             re.MULTILINE | re.IGNORECASE):
+    pattern = prefix + re.escape(name) + r"\s*=\s*([^\n]*)"
+    for match in re.finditer(pattern, text, re.MULTILINE | re.IGNORECASE):
         found = match.group(1).strip()
     return found
 
 
-def _int_field(text: str, name: str) -> Optional[int]:
-    raw = _field(text, name)
+def _int_field(text: str, name: str, anchored: bool = True) -> Optional[int]:
+    raw = _field(text, name, anchored)
     if raw is None:
         return None
     numbers = re.findall(r"-?\d+", raw)
@@ -99,16 +124,17 @@ def _int_field(text: str, name: str) -> Optional[int]:
     return int(numbers[0])
 
 
-def _pairs_field(text: str, name: str) -> Optional[List[Edge]]:
-    raw = _field(text, name)
+def _pairs_field(text: str, name: str, anchored: bool = True) -> Optional[List[Edge]]:
+    raw = _field(text, name, anchored)
     if raw is None:
         return None
     pairs = [(f"L{int(l)}", f"R{int(r)}") for l, r in _PAIR.findall(raw)]
     return pairs or None
 
 
-def _vertices_field(text: str, name: str, side: str) -> Optional[List[str]]:
-    raw = _field(text, name)
+def _vertices_field(text: str, name: str, side: str,
+                    anchored: bool = True) -> Optional[List[str]]:
+    raw = _field(text, name, anchored)
     if raw is None:
         return None
     out: List[str] = []
@@ -120,20 +146,21 @@ def _vertices_field(text: str, name: str, side: str) -> Optional[List[str]]:
     return out or None
 
 
-def parse_certificate_v1(raw: str) -> Dict[str, object]:
+def parse_certificate_v1(raw: str, anchored: bool = True) -> Dict[str, object]:
     """Everything the answer literally committed to, and nothing more."""
     text = extract_scored_text_v1(raw)
+    a = anchored
     return {
-        "M": _int_field(text, "M"),
-        "MATCHING": _pairs_field(text, "MATCHING"),
-        "MIN_VERTEX_COVER": _vertices_field(text, "MIN_VERTEX_COVER", "any"),
-        "HALL_SET": _vertices_field(text, "HALL_SET", "L"),
-        "HALL_NEIGHBORHOOD": _vertices_field(text, "HALL_NEIGHBORHOOD", "R"),
-        "HALL_DEFICIENCY": _int_field(text, "HALL_DEFICIENCY"),
-        "ADD_EDGE_NEW_M": _int_field(text, "ADD_EDGE_NEW_M"),
-        "ADD_EDGE_CERTIFICATE": _pairs_field(text, "ADD_EDGE_CERTIFICATE"),
-        "DELETE_EDGE_NEW_M": _int_field(text, "DELETE_EDGE_NEW_M"),
-        "DELETE_EDGE_CERTIFICATE": _pairs_field(text, "DELETE_EDGE_CERTIFICATE"),
+        "M": _int_field(text, "M", a),
+        "MATCHING": _pairs_field(text, "MATCHING", a),
+        "MIN_VERTEX_COVER": _vertices_field(text, "MIN_VERTEX_COVER", "any", a),
+        "HALL_SET": _vertices_field(text, "HALL_SET", "L", a),
+        "HALL_NEIGHBORHOOD": _vertices_field(text, "HALL_NEIGHBORHOOD", "R", a),
+        "HALL_DEFICIENCY": _int_field(text, "HALL_DEFICIENCY", a),
+        "ADD_EDGE_NEW_M": _int_field(text, "ADD_EDGE_NEW_M", a),
+        "ADD_EDGE_CERTIFICATE": _pairs_field(text, "ADD_EDGE_CERTIFICATE", a),
+        "DELETE_EDGE_NEW_M": _int_field(text, "DELETE_EDGE_NEW_M", a),
+        "DELETE_EDGE_CERTIFICATE": _pairs_field(text, "DELETE_EDGE_CERTIFICATE", a),
         "has_certificate_block": "ANSWER_CERTIFICATE" in text.upper(),
     }
 
@@ -149,9 +176,9 @@ def _both_agree_matching(edges: Sequence[Edge], pairs: Sequence[Edge]) -> bool:
     return bool(left)
 
 
-def score_v1(raw: str) -> Dict[str, object]:
+def score_v1(raw: str, anchored: bool = True) -> Dict[str, object]:
     """Criteria 1-6 only. 7-9 are added by hand, blind, afterwards."""
-    parsed = parse_certificate_v1(raw)
+    parsed = parse_certificate_v1(raw, anchored)
     edges = list(Q.EDGES_V1)
     adjacency = A.build_adjacency_v1(edges, Q.LEFT_V1, Q.RIGHT_V1)
     masks = B.adjacency_masks_v1(edges, Q.LEFT_V1, Q.RIGHT_V1)
