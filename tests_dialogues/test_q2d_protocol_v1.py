@@ -76,14 +76,14 @@ def _task(kind: TaskKind) -> AgentTask:
     )
 
 
-def test_only_gpt5_elenchus_receives_the_proven_8192_envelope() -> None:
+def test_only_proven_gpt5_tasks_receive_larger_envelopes() -> None:
     assert q2d.output_limit_for_seat_task_v1(
         "gpt_5_mini", _task(TaskKind.ELENCHUS_OBJECTION)
     ) == 8_192
 
     for kind, expected in (
         (TaskKind.SOCRATIC_QUESTION, 4_096),
-        (TaskKind.INITIAL_RESPONSE, 8_192),
+        (TaskKind.INITIAL_RESPONSE, 14_000),
         (TaskKind.REFLECTION_REVISION, 8_192),
         (TaskKind.RECONSTRUCTION_PROPOSAL, 8_192),
         (TaskKind.SYNTHESIS_DRAFT, 16_384),
@@ -110,6 +110,64 @@ def test_seat_policy_factory_uses_the_same_task_specific_router() -> None:
         policies = q2d.build_seat_policy_family_v1(seat)
         selected = q2d.seat_policy_for_task_factory_v1(seat, policies)(task)
         assert selected.output_limit_tokens == expected
+
+
+@pytest.mark.parametrize(
+    ("seat", "kind", "expected_field", "expected_limit"),
+    (
+        ("gpt_5_mini", TaskKind.INITIAL_RESPONSE, "max_tokens", 14_000),
+        ("gpt_5_mini", TaskKind.ELENCHUS_OBJECTION, "max_tokens", 8_192),
+        ("gpt_5_mini", TaskKind.REFLECTION_REVISION, "max_tokens", 8_192),
+        ("gpt_5_mini", TaskKind.SYNTHESIS_DRAFT, "max_tokens", 16_384),
+        (
+            "gemini_3_7_flash_standard",
+            TaskKind.INITIAL_RESPONSE,
+            "max_tokens",
+            8_192,
+        ),
+        (
+            "gpt_4_1_mini",
+            TaskKind.INITIAL_RESPONSE,
+            "max_completion_tokens",
+            8_192,
+        ),
+    ),
+)
+def test_task_selected_policy_renders_the_exact_seat_specific_output_limit(
+    seat: str,
+    kind: TaskKind,
+    expected_field: str,
+    expected_limit: int,
+) -> None:
+    task = _task(kind)
+    policies = q2d.build_seat_policy_family_v1(seat)
+    selected = q2d.seat_policy_for_task_factory_v1(seat, policies)(task)
+    turn = OpenRouterDynamicTurnRequestV1(
+        system_prompt="Use the declared schema.",
+        user_content="Assess the argument.",
+        role_seat=task.role.value,
+        dialogue_id=task.session_id,
+        turn_id=task.task_id,
+        dialogue_phase=task.phase.value,
+    )
+    rendered = render_dynamic_turn_v1(
+        selected,
+        q2d.q1.load_profile_v1(seat),
+        turn,
+    )
+    body = json.loads(rendered.canonical_body_json)
+
+    assert selected.output_limit_tokens == expected_limit
+    assert body[expected_field] == expected_limit
+    assert not (
+        {"max_tokens", "max_completion_tokens"} - {expected_field}
+    ) & body.keys()
+    assert set(policies) == (
+        {4_096, 8_192, 14_000, 16_384}
+        if seat == "gpt_5_mini"
+        else {4_096, 8_192, 16_384}
+    )
+    assert max(policies) == 16_384
 
 
 def test_q2d_preserves_each_endpoint_output_parameter_name() -> None:
@@ -180,7 +238,7 @@ def test_q2d_fixed_session_and_one_model_one_agent_call_plan_are_exact() -> None
     # four elenchus objections is ruled on by the two seats whose model differs
     # from the raiser.
     assert plan["calls_by_seat_and_output_limit"] == {
-        "gpt_5_mini": {"4096": 33, "8192": 5, "16384": 1},
+        "gpt_5_mini": {"4096": 33, "8192": 4, "14000": 1, "16384": 1},
         "gemini_3_7_flash_standard": {"4096": 33, "8192": 3, "16384": 1},
         "gpt_4_1_mini": {"4096": 35, "8192": 3, "16384": 1},
     }
@@ -190,19 +248,52 @@ def test_q2d_cost_bound_proves_the_five_dollar_ceiling_is_impossible() -> None:
     bound = q2d.conservative_q2d_bound_v1()
     assert q2d.conservative_ced_bound_v1() == bound
     assert bound["seat_total_picodollars"] == {
-        "gpt_5_mini": 2_109_440_000_000,
+        "gpt_5_mini": 2_115_248_000_000,
         "gemini_3_7_flash_standard": 11_572_224_000_000,
         "gpt_4_1_mini": 7_071_989_760_000,
     }
-    assert bound["total_picodollars"] == 20_753_653_760_000
+    assert bound["total_picodollars"] == 20_759_461_760_000
     assert bound["maximum_per_call_picodollars"] == 356_352_000_000
     # The point of this test is the ceiling, not the figure: whatever the budget,
     # the worst case must stay provably above $5 so no run can be authorized
     # against that ceiling by arithmetic accident.
     assert bound["total_picodollars"] > 5_000_000_000_000
     assert bound["prior_observed_picodollars"] == 651_915_000_000
-    assert bound["required_cumulative_picodollars"] == 21_405_568_760_000
+    assert bound["required_cumulative_picodollars"] == 21_411_376_760_000
     assert bound["required_cumulative_picodollars"] > 5_000_000_000_000
+
+
+def test_q7_prices_the_14000_initial_response_once_in_its_exact_authorization() -> None:
+    plan = q2d.derive_q2d_call_plan_v1(phase_retry=False)
+    expected_counts = {
+        "gpt_5_mini": {"4096": 33, "8192": 4, "14000": 1, "16384": 1},
+        "gemini_3_7_flash_standard": {"4096": 33, "8192": 3, "16384": 1},
+        "gpt_4_1_mini": {"4096": 35, "8192": 3, "16384": 1},
+    }
+    assert plan["maximum_calls"] == 115
+    assert plan["calls_by_seat_and_output_limit"] == expected_counts
+    assert sum(
+        count
+        for counts in plan["calls_by_seat_and_output_limit"].values()
+        for count in counts.values()
+    ) == plan["maximum_calls"]
+
+    bound = q2d.conservative_q2d_bound_v1(question_name="q7")
+    assert (
+        bound["per_call_picodollars"]["gpt_5_mini"]["14000"]
+        == 46_768_000_000
+    )
+    assert bound["seat_total_picodollars"]["gpt_5_mini"] == 1_476_272_000_000
+    assert bound["total_picodollars"] == 14_234_042_240_000
+    assert bound["maximum_per_call_picodollars"] == 258_048_000_000
+    assert bound["required_cumulative_picodollars"] == 14_885_957_240_000
+
+    payload = q2d.build_q2d_protocol_payload_v1("q7")
+    assert payload["phase_retry"] is False
+    assert payload["maximum_ced_calls"] == 115
+    assert payload["call_plan"]["calls_by_seat_and_output_limit"] == expected_counts
+    assert payload["cost_bound"] == bound
+    assert payload["required_cumulative_spend_picodollars"] == 14_885_957_240_000
 
 
 def _finish_rows() -> list[dict]:
@@ -1247,7 +1338,7 @@ def test_q2d_protocol_payload_binds_exact_plan_and_retained_controls() -> None:
         "new_protocol_exploratory_reliability_run_not_confirmatory_replication"
     )
     assert payload["maximum_ced_calls"] == 235
-    assert payload["required_cumulative_spend_picodollars"] == 21_405_568_760_000
+    assert payload["required_cumulative_spend_picodollars"] == 21_411_376_760_000
     assert payload["retries"] == "same_seat_prohibited"
     assert payload["phase_rescue"] == (
         "one_reroute_to_a_distinct_seat_per_failed_slot_recorded"
@@ -1267,6 +1358,7 @@ def test_q2d_protocol_payload_binds_exact_plan_and_retained_controls() -> None:
     assert payload["failure_repairs"] == {
         "gemini_socratic_question": "no_change_provider_contract_violation",
         "gpt_5_mini_elenchus_objection": "output_limit_4096_to_8192",
+        "gpt_5_mini_initial_response": "output_limit_8192_to_14000",
     }
     assert payload["privacy_evidence"] == {
         "schema_version": "socrates-q2d-dispatch-evidence/v1",

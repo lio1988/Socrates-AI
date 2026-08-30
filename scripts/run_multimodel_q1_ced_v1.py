@@ -244,12 +244,33 @@ def _q2d_runtime_environment_v1() -> Dict[str, str]:
         "pydantic_core_version": pydantic_core.__version__,
     }
 
-#: The three output envelopes the CED task router can ask for.
+#: The common output envelopes the CED task router can ask for.
 OUTPUT_ENVELOPES_V1: Tuple[int, ...] = (
     normal.SHORT_OUTPUT_TOKENS_V1,
     normal.REVISION_OUTPUT_TOKENS_V1,
     normal.SYNTHESIS_OUTPUT_TOKENS_V1,
 )
+
+#: Q5 and Q7 each lost GPT-5 Mini's opening answer at exactly 8,192 tokens
+#: with no visible payload.  The retained Q5 baseline shows that this seat can
+#: need 12,676 tokens for the same task, so only this observed seat/task pair
+#: receives additional room.  The shared revision envelope remains unchanged:
+#: widening it would also alter every seat's reflection and reconstruction.
+GPT5_MINI_INITIAL_RESPONSE_OUTPUT_TOKENS_V1 = 14_000
+
+
+def output_envelopes_for_seat_v1(key: str) -> Tuple[int, ...]:
+    """Return exactly the policy envelopes declared for one physical seat."""
+
+    if key == "gpt_5_mini":
+        return tuple(
+            sorted(
+                OUTPUT_ENVELOPES_V1
+                + (GPT5_MINI_INITIAL_RESPONSE_OUTPUT_TOKENS_V1,)
+            )
+        )
+    return OUTPUT_ENVELOPES_V1
+
 
 #: Wire parameters the frozen Flex guard forbids, kept identical here.
 FORBIDDEN_WIRE_PARAMETERS_V1: Tuple[str, ...] = (
@@ -336,7 +357,7 @@ def build_seat_policy_v1(
 ) -> OpenRouterFrozenExecutionPolicyV1:
     """One seat's execution policy at one declared output envelope."""
 
-    if output_limit_tokens not in OUTPUT_ENVELOPES_V1:
+    if output_limit_tokens not in output_envelopes_for_seat_v1(key):
         raise ContractValidationError("CED output envelope is not declared")
     spec = q1.FAMILIES_V1[key]
     if spec["output_field"] not in ("max_tokens", "max_completion_tokens"):
@@ -360,22 +381,32 @@ def build_seat_policy_v1(
 def build_seat_policy_family_v1(
     key: str,
 ) -> Dict[int, OpenRouterFrozenExecutionPolicyV1]:
-    return {limit: build_seat_policy_v1(key, limit) for limit in OUTPUT_ENVELOPES_V1}
+    return {
+        limit: build_seat_policy_v1(key, limit)
+        for limit in output_envelopes_for_seat_v1(key)
+    }
 
 
 def output_limit_for_seat_task_v1(key: str, task: Any) -> int:
-    """Return the frozen task envelope with one evidence-backed exception.
+    """Return the frozen task envelope with evidence-backed exceptions.
 
     Q2c proved that GPT-5 Mini exhausted the 4,096-token elenchus envelope
-    before it could finish a valid visible JSON payload.  No other seat/task
-    pair receives a larger envelope: Gemini's failed Socratic turn stopped
-    normally and violated the provider-side structured-output contract.
+    before it could finish a valid visible JSON payload.  Q5 and Q7 then each
+    observed its initial response consume exactly 8,192 tokens and return no
+    visible payload; a Q5 baseline reached 12,676 tokens on that task.  No other
+    seat/task pair receives a larger envelope: Gemini's failed Socratic turn
+    stopped normally and violated the provider-side structured-output contract.
     """
 
     if key not in dict(q1.COUNCIL_SEATS_V1).values():
         raise ContractValidationError(f"unknown Q2d council seat {key!r}")
     if type(task) is not normal.AgentTask or task.task_kind is None:
         raise ContractValidationError("a CED task kind is required for seat routing")
+    if (
+        key == "gpt_5_mini"
+        and task.task_kind is normal.TaskKind.INITIAL_RESPONSE
+    ):
+        return GPT5_MINI_INITIAL_RESPONSE_OUTPUT_TOKENS_V1
     if (
         key == "gpt_5_mini"
         and task.task_kind is normal.TaskKind.ELENCHUS_OBJECTION
@@ -467,7 +498,7 @@ def assert_output_budgets_fit_v1(seat_keys) -> Dict[str, int]:
             )
         ceilings[key] = ceiling
     tightest = min(ceilings.values())
-    largest = max(OUTPUT_ENVELOPES_V1)
+    largest = max(max(output_envelopes_for_seat_v1(key)) for key in ceilings)
     if largest + OUTPUT_BUDGET_HEADROOM_TOKENS_V1 > tightest:
         raise ContractValidationError(
             f"output budget {largest} leaves under "
@@ -1303,7 +1334,8 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True,
         )
 
     calls_by_seat_cap: Dict[str, Dict[int, int]] = {
-        key: {limit: 0 for limit in OUTPUT_ENVELOPES_V1} for key in seat_keys
+        key: {limit: 0 for limit in output_envelopes_for_seat_v1(key)}
+        for key in seat_keys
     }
     deliberation_by_seat = {key: 0 for key in seat_keys}
     objections_by_seat = {key: 0 for key in seat_keys}
@@ -1423,7 +1455,7 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True,
         "privileged_positions": privileged_positions,
         "synthesis_drafts_by_seat": syntheses_by_seat,
         "calls_by_seat_and_output_limit": {
-            key: {str(limit): counts[limit] for limit in OUTPUT_ENVELOPES_V1}
+            key: {str(limit): count for limit, count in counts.items()}
             for key, counts in calls_by_seat_cap.items()
         },
     }
@@ -2451,6 +2483,7 @@ def build_q2d_protocol_payload_v1(
         "failure_repairs": {
             "gemini_socratic_question": "no_change_provider_contract_violation",
             "gpt_5_mini_elenchus_objection": "output_limit_4096_to_8192",
+            "gpt_5_mini_initial_response": "output_limit_8192_to_14000",
         },
         "privacy_evidence": {
             "schema_version": "socrates-q2d-dispatch-evidence/v1",
