@@ -1,127 +1,101 @@
-# PRESENT — feature/socrates-zero-openrouter-live-routing-repair-v1
+# Present state
 
-State as of 2026-08-29. Five live councils, 33 baselines, about $4.06 of spend.
-Nothing pushed.
+Branch: `feature/socrates-zero-openrouter-live-routing-repair-v1`
+HEAD at last commit: `7bc589a` (working tree is ahead, uncommitted)
+`backend/dialogues/ced.py` blob: `5413ec166591a38a88e548b378c3684c5ec4d5d5`
+Core lock: `cedcorebloblockv2_401cd7ac5d7afa835142541ae122a0ef23bb74693a0e5999e70c232b5db8b3c2`
 
-## Where the work stands
-
-The protocol now runs any registered question without a code edit, three
-observability defects that were silently corrupting results are fixed, and the
-frozen canonical core has been deliberately unlocked once to let objection
-rulings reach the dialogue while it is still running.
-
-The research question — does a council beat one model — is **not** answered.
-Three questions produced three ties. That branch is parked by decision, not by
-failure to try.
-
-## Completed
-
-**Question parameterisation.** `scripts/question_bundles_v1.py` pins a
-question's three digests in a write-once bundle and re-derives them on every
-load, so adding a question adds a file. `q3` and `q4` are registered. The runner
-takes `--question`, and five hard-coded `"q2"` sites that silently refused any
-other question were bound to the authorized payload.
-
-**Three observability repairs.** A prompt-size guard was refusing ratification
-calls by a 2% margin, which read as model variance; the guard now compares
-against the endpoint window and the cost reservation is computed from the
-measured request. The semantic floor was rejecting formal derivations because it
-counted only alphabetic words — in a logic benchmark it was discarding the
-highest-value contributions. And scoring read two of six synthesis fields, which
-understates CED by construction because the extra fields are what the contract
-adds; `scripts/dump_scorable_answers_v1.py` prints every field and the field
-count.
-
-**Q4.** A true impossibility followed by an unjustified remedy, machine-checked
-by enumerating all 65_536 rules. It is the first question in the series whose
-error is refuted by computation: two GPT-4.1 Mini samples offered a rule that
-does not exist, and running it over the 16 profiles shows it fails impartiality
-on exactly the four symmetric profiles.
-
-**Mid-round objection rulings.** `CEDOrchestrator.rule_on_round_objections_v1`
-rules on a round's objections while the dialogue can still read them. It governs
-nothing: no verdict, no claim movement, no release. The adapter records the
-allowlisted fields and injects them into later deliberation contexts, and
-`objection_rulings_in_context` on every turn record says how many each request
-carried.
-
-## Frozen core
-
-`backend/dialogues/ced.py` was re-pinned **twice**, deliberately:
-
-    9faaf048d3b3f6fb…  →  cf7ce4e5376c0be5…   added the ruling pass
-    cf7ce4e5376c0be5…  →  a7cb71b095538f7c…   gated it for a control arm
-
-Lock id is now `cedcorebloblockv2_abfbbabe644ecf5c…`. Every governing path is
-untouched: `run_objection_verification`, claim state and the release seam are
-unchanged. The reason is recorded in the lock and beside the test assertion, so
-this line moving without that being the intended change is a defect.
-
-## What the runs showed
-
-| run | calls | result | cost |
-|---|---|---|---|
-| Q2 #1, #3 | 101 | ratified, 23/23 | $0.364, $0.368 |
-| Q2 #2 | 90 | ratification refused by our own guard | $0.346 |
-| Q3 | 93 | ratified, 30/32 | $0.302 |
-| Q4 baseline | 101 | ratified, 46/46 | $0.368 |
-| Q4 arms off / on | 101 / 103 | ratified, both 46/46 | $0.388 / $0.394 |
-| Q4 on, instrumented | 93 | ratified | $0.354 |
-
-Baselines: Q2d 15 samples (7–23), Q3 9 samples, Q4 9 samples. Q4 discriminates
-between models — Gemini 46.0, GPT-5 Mini 45.7, GPT-4.1 Mini **7.7**.
-
-## Two retracted claims
-
-Both are recorded because the retraction is the result.
-
-The council was first scored 30/32 on Q3 against a best baseline of 32/32,
-supporting a conclusion that CED had lost a distinction one of its own seats
-found unaided. That was an artifact of reading two synthesis fields. Corrected
-to 46/46 on the same evidence.
-
-Six content markers appeared to show the rulings' content entering the
-synthesis and absent from the baseline. Under a controlled A/B on identical
-code, five of six were absent from both arms and the sixth appeared in the
-control. It was run-to-run variance. The first comparison was invalid as an
-experiment: the control ran on an older build.
-
-## Verified, and not
-
-The delivery chain is proven end to end — rulings are produced mid-dialogue,
-recorded, injected, and 13 of 20 seat moves carried at least one, written in the
-turn records rather than inferred. Request sizes cannot show this: two runs of
-one council diverge on their own, so a larger body is not evidence.
-
-No measured benefit. Both arms scored 46/46. Position revisions fall
-consistently with rulings on (10, 6 without; 4, 4 with) but with the score at
-ceiling there is no way to tell whether that is questions closing early or seats
-anchoring. Q4 cannot answer it — a question the council already aces has no
-headroom.
+Live testing is **stopped** by operator instruction until the retry architecture
+is settled. No live call has been made since the Q6 council was aborted.
 
 ## Tests
 
-17 failures, all pre-existing from the reconciliation, in
-`ced_canonical_successor_*` (7), `structured_socratic_experiment` (7),
-`reduced_socrates_benchmark` (2) and `benchmark_safety` (1). 4024 pass. Run with
-`-p no:randomly`: ordering is randomised by default and one one-shot acquisition
-test fails or passes depending on it.
+`4074 passed, 18 failed, 9 skipped` — the 18 are exactly the failures present at
+`7bc589a` before any of this work. Zero new failures, zero regressions,
+verified by diffing against a clean worktree at HEAD rather than by recollection.
 
-## Evidence and its limits
+## Completed
 
-`turn_order_v1.json` in each run directory records chronological order. It is
-derived from dispatch-evidence file mtimes, which **git does not preserve**, so
-it is written down rather than recoverable from a clone. The `turns` array in a
-council record is grouped by seat, not chronological; reading it as
-chronological produces phase orders that cannot have happened.
+### 1. Q6 key independently confirmed
 
-`runs/` and `*.md` are gitignored, so evidence is force-added.
+`scripts/q6_independent_verifier_v1.py` re-derives every Q6 figure sharing no
+code with `scripts/q6_ethics_question_v1.py`: it imports nothing of ours
+(enforced by an AST check on its imports), represents a rule as an
+ordered-profile → winning-proposal map rather than an orientation of vector
+pairs, and settles the small cases by brute force over every rule on the domain.
+
+Calibration runs first and gates everything: `n=2` must return `2`, the figure
+established independently in Q5 and the exact case the first verifier's first
+version got wrong. Only then are the other widths reported.
+
+| N | method | rules examined | result |
+|---|---|---|---|
+| 1 | exhaustive | 4 | no satisfying rule exists |
+| 2 | exhaustive | 4096 | 48 satisfying, minimum **2** |
+| 3 | exhaustive over the zero-departure family | 64 | **0** |
+| 4 | one construction, checked over all 240 profiles | 1 | **0** |
+
+`n=3` came back stronger than claimed: **all 64** zero-departure rules satisfy
+the three conditions, so at three criteria the tie-break is entirely free.
+
+Zero is minimal without enumerating `2**28` rules, because a departure count is
+a number of profiles and is never negative.
+
+`tests_dialogues/test_q6_independent_verifier_v1.py` (12 tests) checks that the
+verifier can say **no**: a mutated claim must be contradicted, and a failed
+calibration must suppress every reading.
+
+### 2. Cross-seat reroute removed
+
+An existing `task_id` can no longer reach a seat its logical agent is not bound
+to. Two paths did this and both are gone:
+
+- the phase rescue handed a twice-failed slot to another seat;
+- `rule_on_round_objections_v1` sent **one** task to every peer under the
+  *raiser's* agent id — found by the new binding test, not by review.
+
+Policy now: `failure → same-seat re-ask → second failure → VOICE_LOST`. Quorum
+decides only whether the phase proceeds. The phase record carries
+`voice_lost_slots`; `reroute_permitted_v1` and the degraded-duplicate path are
+deleted, not disabled.
+
+### 3. Scope
+
+The termination that follows a lost Socratic voice is **pre-existing generic CED
+behaviour**, asserted at HEAD in
+`test_without_rescue_one_silent_answer_ends_the_dialectic` and untouched here:
+REFLECTION has never run without an accepted Socratic question. The handover was
+the only thing that ever masked it.
+
+Three tests were rescoped after an operator correction: they had stated
+termination as a universal law. They now state the condition — a council with no
+authorized replacement task — and say explicitly that a future protocol may
+authorize a NEW Socratic task with its own id, owner and provenance.
+
+### 4. Q6 evidence held
+
+`runs/q6_aborted_evidence_v1.json` marks the 10-call aborted council as
+`ABORTED_BY_OPERATOR`, not a benchmark. The nine Q6 baselines ($0.068) were
+held unscored pending independent confirmation of the key, which
+`runs/q6_independent_verification_v1.json` now supplies.
+
+## Not done, deliberately
+
+- **Replacement-task mechanism.** Deferred by operator instruction: it opens a
+  new protocol surface and is not needed to proceed. The architecture records
+  that coverage would require a new `task_id`, a new logical owner, explicit
+  authorization and its own provenance. Disabled in every current protocol.
+- **Output budgets** remain 4096/8192/16384 in `run_socrates_live_v1.py`.
+
+## Known cost of the change
+
+A council with one permanently dead seat can no longer finish if that seat holds
+a Socratic chair in any cycle. Previously the handover covered it. This is the
+capability a replacement task would restore, and it is the reason that item
+exists rather than being dropped.
 
 ## Next safe step
 
-Either park the mechanism as proven-but-unproven-useful, or test it where there
-is headroom. The obvious probe is a council of three GPT-4.1 Mini seats on Q4,
-where that model scores 7.7/46 alone: if three weak seats reach 30, the
-dialectic demonstrably adds something. About $0.15.
-
-Do not push.
+Commit. Then either build the replacement-task mechanism, or reframe Q6 around
+the question the confirmed key makes interesting: why the forced departure is 2
+at two criteria and vanishes at three.

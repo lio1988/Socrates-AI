@@ -69,9 +69,13 @@ def test_no_real_provider_required():
 # ── Quorum success with partial failures ─────────────────────────────────────
 
 def test_quorum_success_with_partial_failures():
+    # The session id fixes the seating, and under "p8c-partial" the dead seat
+    # holds the opening Socratic chair - which is a lost role, not a quorum
+    # question, and is the case in the test below. This id seats it elsewhere so
+    # the quorum path is the one actually exercised.
     ced = _ced([ScriptedMockProvider("mock_a"), ScriptedMockProvider("mock_b"),
                 TimeoutScriptedProvider()], n_agents=3, phase_retry=True)
-    final, state = _run(ced, "p8c-partial")
+    final, state = _run(ced, "p8c-partial-quorum")
     assert final.ratified is True
     # at least one phase recorded a failed provider, but the session still proceeded
     rounds = final.audit_summary["registry_phase_rounds"]
@@ -79,6 +83,35 @@ def test_quorum_success_with_partial_failures():
     assert all(r["proceed"] for r in rounds)
     # no fabricated moves: task_log has entries without a move for the failures
     assert any(e.move_id is None for e in state.task_log)
+
+
+def test_a_dead_socratic_seat_stops_a_run_with_no_replacement_task():
+    """The cost of removing the handover, and the exact condition for it.
+
+    A seat that never answers used to have its chair passed to a healthy seat,
+    so a council could finish with one seat wholly dead. It cannot any more: the
+    chair belongs to a logical agent, and moving the same task to another seat
+    is the topology change a bound protocol refuses at dispatch.
+
+    What follows is NOT a universal law that a dead Socratic seat always ends
+    every CED dialogue. It is what happens under a council that has no
+    authorized replacement task, which is every council today. The termination
+    itself is not new and is not this change: REFLECTION has always refused to
+    run without an accepted Socratic question, and CED has always refused to
+    reuse an older one - see test_without_rescue_one_silent_answer_ends_the
+    _dialectic, which asserts exactly this with no rescue at all. The handover
+    was the only thing that ever masked it.
+
+    A future protocol may lift this by authorizing a NEW Socratic task with its
+    own task_id, its own logical owner and its own provenance. This test must
+    not be read as forbidding that, and must be revisited when one exists.
+    """
+    ced = _ced([ScriptedMockProvider("mock_a"), ScriptedMockProvider("mock_b"),
+                TimeoutScriptedProvider()], n_agents=3, phase_retry=True)
+    final, state = _run(ced, "p8c-partial")
+    assert final.ratified is False
+    assert state.moves == []
+    assert final.answer == ""
 
 
 # ── Quorum failure → safe fallback ───────────────────────────────────────────

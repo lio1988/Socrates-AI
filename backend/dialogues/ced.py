@@ -397,8 +397,8 @@ class CEDOrchestrator:
             raise ValueError(f"ratification_repair must be 'block' or 'runner_up', "
                              f"got {ratification_repair!r}")
         self.ratification_repair = ratification_repair
-        # Phase 20: phase rescue — retry ONLY the failed slots of a quorum-failed
-        # phase, once, rerouted to the next seat. Off by default (strict legacy
+        # Phase 20: phase rescue — ask ONLY the failed slots of a quorum-failed
+        # phase once more, at their own seats. Off by default (strict legacy
         # behavior); build_council enables it for the capable/live path.
         self.phase_retry = phase_retry
         #: Q1 opening + at most this many follow-up questions. CED enforces it;
@@ -1427,22 +1427,21 @@ class CEDOrchestrator:
         )
         return order[(base_index + failover_offset) % len(order)]
 
-    def _distinct_retry_offset(
-        self, state: SessionState, agent_id: str, taken: Set[str],
-    ) -> Optional[int]:
-        """First failover offset landing on a seat no sibling slot is using.
+    def _seat_owners_v1(self, state: SessionState) -> Dict[str, str]:
+        """Which logical agent sits at each physical seat, for this session.
 
-        Returns None when every seat in the frozen order is already serving this
-        phase. Rerouting onto a busy seat would leave two slots authored by one
-        provider, which reads as a full council and is not one.
+        Written for the objection rulings, which poll several seats about one
+        objection. A poll is still N acts by N agents: labelling all of them with
+        the raiser's agent id sent one task id to three seats under the name of
+        somebody who wrote none of them.
         """
-        order = self._session_adapter_orders.get(state.session_id, [])
-        for offset in range(1, len(order)):
-            candidate = self._adapter_for_agent(state, agent_id,
-                                                failover_offset=offset)
-            if candidate.provider_id not in taken:
-                return offset
-        return None
+        if state.session_id not in self._session_adapter_bindings:
+            self._bind_session_adapters(state)
+        owners: Dict[str, str] = {}
+        for agent_id, adapter in self._session_adapter_bindings.get(
+                state.session_id, {}).items():
+            owners.setdefault(adapter.provider_id, agent_id)
+        return owners
 
     def _apply_registry_response(
         self,
@@ -1495,8 +1494,8 @@ class CEDOrchestrator:
                 )
 
         # Who actually served which slot. Recorded from the dispatch itself
-        # rather than reconstructed from moves afterwards, so a rerouted retry
-        # is visible as a reroute.
+        # rather than reconstructed from moves afterwards, so the seat a task
+        # reached is evidence rather than an inference.
         served = next(
             (
                 adapter
@@ -1626,18 +1625,23 @@ class CEDOrchestrator:
             return task, resp
 
         dispatch: List[Dict[str, Any]] = []
+        applications: Dict[
+            Tuple[str, int], CanonicalRegistryResponseApplication
+        ] = {}
 
         def _absorb(pairs) -> List[ProviderResponse]:
             """Validate responses into moves + task-log entries (no fabrication)."""
             out: List[ProviderResponse] = []
             for task, resp in pairs:
                 out.append(resp)
-                self._apply_registry_response(
-                    state,
-                    phase,
-                    task,
-                    resp,
-                    dispatch,
+                applications[(task.task_id, task.attempt_index)] = (
+                    self._apply_registry_response(
+                        state,
+                        phase,
+                        task,
+                        resp,
+                        dispatch,
+                    )
                 )
             return out
 
@@ -1660,14 +1664,14 @@ class CEDOrchestrator:
         effective_quorum = self._effective_registry_quorum(len(items))
 
         # Phase 20 — phase rescue (opt-in): a transient failure in one phase must
-        # not destroy the whole session (and everything already paid for). Retry
-        # ONLY the failed slots, ONCE, REROUTED to the next seat (offset+1), with
-        # attempt_index=1 so move identity stays deterministic and duplicate-free.
+        # not destroy the whole session (and everything already paid for). Ask
+        # ONLY the failed slots, ONCE more, at the SAME seat, with attempt_index=1
+        # so move identity stays deterministic and duplicate-free.
         #
         # A Socratic follow-up is role-critical inside ELENCHUS: two successful
         # critics may satisfy aggregate quorum, but they cannot substitute for the
         # question that the following REFLECTION is supposed to answer. Therefore
-        # a missing/rejected Socrates move gets the same one bounded rerouted retry
+        # a missing/rejected Socrates move gets the same one bounded retry
         # even when aggregate phase quorum has already been met.
         # All attempts remain in the task_log — nothing is hidden or rewritten.
         ok_count = sum(1 for r in responses if r.ok)
@@ -1687,9 +1691,9 @@ class CEDOrchestrator:
         # and ratified, without an argument it was supposed to have heard, and
         # the only trace was a rejected move in the evidence nobody was reading.
         #
-        # So any failed slot in a deliberation phase is now asked again, under
-        # the same bounded terms as before: once to the same seat, once onward,
-        # every attempt kept. Quorum still decides whether the phase proceeds;
+        # So any failed slot in a deliberation phase is now asked again, once,
+        # at its own seat, every attempt kept. Quorum still decides whether
+        # the phase proceeds;
         # it no longer decides whether a missing seat is worth asking twice.
         voice_lost = ok_count < len(items)
         if (self.phase_retry and adapters and items
@@ -1711,97 +1715,46 @@ class CEDOrchestrator:
                             items[task.slot_index][1],
                         ))
                         failed_slots.add(task.slot_index)
-            # Seats already serving this phase: the successful siblings, plus
-            # each reroute as it is planned, so two failed slots cannot both be
-            # sent to the same free seat.
-            taken = {r.provider_id for _, r in pairs if r.ok}
-            plan: List[Tuple[int, str, AgentRole, int]] = []
-            degraded: List[int] = []
-            for slot, aid, role in failed:
-                offset = self._distinct_retry_offset(state, aid, taken)
-                if offset is None:
-                    # Nowhere distinct to go — a two-seat council whose sibling
-                    # already holds the only alternative. The reroute proceeds
-                    # so the phase can still be rescued, and the duplication is
-                    # recorded rather than left to be discovered in a trace.
-                    # Independence is already unreachable at this council size;
-                    # what must not happen is losing it silently at a size where
-                    # it was available, which is the case above.
-                    offset, was_degraded = 1, True
-                else:
-                    was_degraded = False
-                if was_degraded:
-                    degraded.append(slot)
-                taken.add(self._adapter_for_agent(
-                    state, aid, failover_offset=offset).provider_id)
-                plan.append((slot, aid, role, offset))
-            # Two further attempts, and they are not the same attempt twice.
+            # One more question, and it goes to the same seat.
             #
-            # The first repeats the question to the SAME seat (offset 0). A first
-            # failure may be nothing more than not having understood, and asking
-            # again is the elenchus itself rather than a way around it: what is
-            # forbidden is discarding an answer, and nothing here is discarded -
-            # every attempt stays in the task log, so a later answer can never
-            # erase an earlier one, and a seat that answers differently the
-            # second time has told us its first answer was not knowledge.
+            # A first failure may be nothing more than not having understood,
+            # and asking again is the elenchus itself rather than a way around
+            # it: what is forbidden is discarding an answer, and nothing here is
+            # discarded - every attempt stays in the task log, so a later answer
+            # can never erase an earlier one, and a seat that answers differently
+            # the second time has told us its first answer was not knowledge.
             #
-            # Only if it fails again does the question pass to a DIFFERENT seat.
-            # A second failure after being asked again is no longer ignorance,
-            # and independence is what is needed at that point.
+            # A second failure is where it stops. The question is not handed to
+            # another seat, and that is not a tuning choice about which protocols
+            # happen to allow a handover. A task is bound to one logical agent,
+            # at one seat, on one model, for its whole life, and that binding is
+            # what the run was authorized and priced on. A rerouted call is
+            # therefore not the task it claims to be: in the Q5 council the
+            # pre-dispatch guard refused every one of them - "deliberation task
+            # is not bound to agent_1" - and the run collapsed at four calls. The
+            # guard was right. The orchestration that walked into it is what is
+            # gone.
             #
-            # A seat that fails all three is not absorbed as an unlucky round.
-            # The count stands in the phase record as a fact about that seat.
-            # Whether the same seat is asked again depends on whether it spoke.
+            # So a seat that fails twice loses its voice, and the loss is
+            # recorded as a loss. Quorum then decides one thing only: whether the
+            # phase proceeds. It does not decide who answers, and it never
+            # licenses moving one agent's question to another.
             #
-            # A seat that answered and was refused - empty content, a rejected
-            # schema - has said something, and a second answer that differs from
-            # the first tells us the first was opinion. That is worth asking for.
-            # A seat that timed out or errored never spoke at all: there is no
-            # answer to weigh against a second one, only a line that went quiet,
-            # and re-dialling it is an infrastructure retry rather than an
-            # elenchus. Those go straight to a different seat.
-            spoke = {
-                task.slot_index
-                for task, response in pairs
-                if response.status is ProviderStatus.OK
-            }
-            first_pairs = list(await asyncio.gather(
-                *(_one(slot, aid, role, attempt=1,
-                       offset=0 if slot in spoke else offset)
-                  for slot, aid, role, offset in plan)))
-            retry_responses = _absorb(first_pairs)
-
-            def _still_missing() -> bool:
-                return missing_socratic and not self._socratic_followups_for_round(state)
-
-            second_plan = [
-                (slot, aid, role, offset)
-                for (slot, aid, role, offset), (_t, r) in zip(plan, first_pairs)
-                if not r.ok
+            # Should a later protocol want a lost voice covered, that is a NEW
+            # task - new task_id, new logical owner, its own authorization and
+            # its own provenance - not this one wearing a different seat. Nothing
+            # here builds that, deliberately.
+            retry_pairs = list(await asyncio.gather(
+                *(_one(slot, aid, role, attempt=1)
+                  for slot, aid, role in failed)))
+            retry_responses = _absorb(retry_pairs)
+            voice_lost_slots = [
+                slot for (slot, _aid, _role), (task, _resp)
+                in zip(failed, retry_pairs)
+                if applications[(task.task_id, task.attempt_index)].outcome
+                is not CanonicalRegistryApplicationOutcome.ACCEPTED
             ]
-            # The reroute fires whenever the second attempt still failed, not
-            # only when quorum is short. Gating it on quorum stopped the
-            # doctrine halfway: a lost voice was asked again and then dropped,
-            # so a seat that failed twice never had its question handed on. A
-            # second failure after being asked again is the point at which
-            # another seat should answer.
-            # Some protocols bind each logical agent to one physical seat and
-            # price the run on that binding. Rerouting is then not a weaker form
-            # of the same act - it is a different topology, and the pre-dispatch
-            # guard refuses it: "deliberation task is not bound to agent_1".
-            # Enabling the rescue under such a protocol without saying so cost a
-            # Q5 council its initial_response phase and collapsed the run at four
-            # calls, because every rerouted task was refused at the wire.
-            #
-            # So the second step of the doctrine is available only where seats
-            # are interchangeable. Where they are not, a seat is asked again and
-            # that is the end of it; the failure stays in the record either way.
-            reroute_ok: List[Any] = []
-            if second_plan and getattr(self, "reroute_permitted_v1", True):
-                second_pairs = list(await asyncio.gather(
-                    *(_one(slot, aid, role, attempt=2, offset=offset)
-                      for slot, aid, role, offset in second_plan)))
-                reroute_ok = _absorb(second_pairs)
+
             # The failed originals stay in. Dropping them made a rescued round
             # look like a round that never failed - failed_providers empty, no
             # trace in the summary - which is the discarding this whole mechanism
@@ -1810,7 +1763,7 @@ class CEDOrchestrator:
             #
             # Quorum counts only responses that are ok, so carrying the failures
             # changes no decision. It changes what the record says happened.
-            merged = [r for _, r in pairs] + retry_responses + reroute_ok
+            merged = [r for _, r in pairs] + retry_responses
             role_critical_rescued = (
                 not missing_socratic
                 or bool(self._socratic_followups_for_round(state))
@@ -1822,34 +1775,20 @@ class CEDOrchestrator:
             self._phase_retries.setdefault(state.session_id, []).append({
                 "phase": phase.value,
                 "failed_slots": [slot for slot, _, _ in failed],
-                "retried_slots": [slot for slot, _, _, _ in plan],
-                "degraded_duplicate_slots": degraded,
-                "degraded_reason": ("no distinct healthy seat; the sibling's "
-                                    "provider was reused" if degraded else None),
+                # With the handover gone every failed slot is asked again at its
+                # own seat, so this repeats failed_slots. It is kept because the
+                # record should state the policy in the policy's own words
+                # rather than leave it to be inferred from an absence.
+                "reasked_same_seat_slots": [slot for slot, _, _ in failed],
+                # Asked twice, silent twice. The phase may still proceed on
+                # quorum, but it proceeds knowing which argument it never heard.
+                "voice_lost_slots": voice_lost_slots,
                 "quorum_held_but_a_voice_was_lost": bool(
                     voice_lost and ok_count >= effective_quorum
                     and not missing_socratic
                 ),
                 "first_failed_providers": [r.provider_id for _, r in pairs if not r.ok],
                 "retry_ok_providers": [r.provider_id for r in retry_responses if r.ok],
-                # Only the slots whose seat actually spoke were re-asked; a
-                # seat that timed out was rerouted on the first attempt. Listing
-                # every retried slot here said the same seat had been asked
-                # twice when it had not, which is a false entry in the record.
-                "reasked_same_seat_slots": [
-                    slot for slot, _, _, _ in plan if slot in spoke
-                ],
-                "rerouted_on_first_attempt_slots": [
-                    slot for slot, _, _, _ in plan if slot not in spoke
-                ],
-                "rerouted_distinct_seat_slots": (
-                    [slot for slot, _, _, _ in second_plan]
-                    if getattr(self, "reroute_permitted_v1", True) else []
-                ),
-                "reroute_withheld_seats_are_bound": (
-                    bool(second_plan) and not getattr(self, "reroute_permitted_v1", True)
-                ),
-                "reroute_ok_providers": [r.provider_id for r in reroute_ok if r.ok],
                 "rescued": rescued,
             })
             responses = merged
@@ -2191,26 +2130,44 @@ class CEDOrchestrator:
             if not peers:
                 continue
             already.add(move.move_id)
-            task = AgentTask(
-                task_id=f"rule_{move.move_id}",
-                session_id=state.session_id,
-                agent_id=move.agent_id,
-                role=AgentRole.FINAL_EVALUATOR,
-                phase=DialogPhase.ELENCHUS,
-                question=state.question,
-                context={"objection_under_test": text,
-                         "original_task": state.question},
-                output_schema={"_role": "__objection_verification__",
-                               "_objection": move.move_id},
-                task_kind=TaskKind.OBJECTION_VERIFICATION,
-            )
-            agent_state = AgentState(agent_id=move.agent_id,
-                                     primary_role=AgentRole.FINAL_EVALUATOR,
-                                     assigned_role=AgentRole.FINAL_EVALUATOR)
-            await asyncio.gather(*(
-                self.registry.run_adapter(a, task, agent_state, timeout_seconds)
-                for a in peers), return_exceptions=True)
-            requested += len(peers)
+            # One task per ruling seat, owned by the agent sitting there.
+            #
+            # This began as a single task handed to every peer, carrying the
+            # RAISER's agent id. A poll of three seats is three acts by three
+            # agents, so that put one task id on three seats under the name of
+            # somebody who wrote none of the rulings - the same confusion of task
+            # with binding that the reroute was, arriving by a different door.
+            # A seat with no logical owner does not rule: it has no standing in
+            # the council, and borrowing an id to give it one is the defect.
+            owners = self._seat_owners_v1(state)
+            calls = []
+            for adapter in peers:
+                owner = owners.get(adapter.provider_id)
+                if owner is None:
+                    continue
+                task = AgentTask(
+                    task_id=f"rule_{move.move_id}_{adapter.provider_id}",
+                    session_id=state.session_id,
+                    agent_id=owner,
+                    role=AgentRole.FINAL_EVALUATOR,
+                    phase=DialogPhase.ELENCHUS,
+                    question=state.question,
+                    context={"objection_under_test": text,
+                             "objection_raised_by": move.agent_id,
+                             "original_task": state.question},
+                    output_schema={"_role": "__objection_verification__",
+                                   "_objection": move.move_id},
+                    task_kind=TaskKind.OBJECTION_VERIFICATION,
+                )
+                agent_state = AgentState(agent_id=owner,
+                                         primary_role=AgentRole.FINAL_EVALUATOR,
+                                         assigned_role=AgentRole.FINAL_EVALUATOR)
+                calls.append(self.registry.run_adapter(
+                    adapter, task, agent_state, timeout_seconds))
+            if not calls:
+                continue
+            await asyncio.gather(*calls, return_exceptions=True)
+            requested += len(calls)
         return requested
 
     @staticmethod

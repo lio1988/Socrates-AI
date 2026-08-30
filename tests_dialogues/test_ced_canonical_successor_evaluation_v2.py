@@ -1153,8 +1153,19 @@ def test_core_and_predecessor_locks_are_exact_and_clean() -> None:
     # Re-pinned a third time for the three-attempt rescue: the same seat is
     # asked again before the question passes to another, because a first
     # failure may be misunderstanding and a second is not.
+    # Re-pinned a fourth time to delete the step that third pin added. An
+    # existing task_id may no longer reach a seat its logical agent is not bound
+    # to - not by a failed slot being handed onward, and not by one objection
+    # ruling being sent to every peer. A failed slot is asked once more at its
+    # own seat and then recorded as a lost voice. This closes moving an existing
+    # task; it says nothing about a protocol authorizing a NEW task, with its own
+    # id and owner, to cover the loss. The previous lock was
+    # cedcorebloblockv2_234f0c5fc23941772da222fc0ba544a221b12a3f4e6ae3353c9125cf44f50675
+    # Re-pinned a fifth time so a provider-OK Socratic retry rejected by the
+    # canonical screen is recorded as a lost voice. The previous lock was
+    # cedcorebloblockv2_401cd7ac5d7afa835142541ae122a0ef23bb74693a0e5999e70c232b5db8b3c2
     assert lock.lock_id == (
-        "cedcorebloblockv2_234f0c5fc23941772da222fc0ba544a221b12a3f4e6ae3353c9125cf44f50675"
+        "cedcorebloblockv2_be956b47dbb50711641bd52f9ddbb00bff09319f0245abb3f169459c1dfa3d82"
     )
     assert evaluation.SEALED_PHASE8_ARTIFACT_ID == (
         "cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0"

@@ -1651,10 +1651,6 @@ def _build_heterogeneous_council_core_v1(
         raise ContractValidationError(
             "Q2d live topology does not provide unique physical quorum identities"
         )
-    # Q2d binds one physical seat to each logical agent and prices the run on
-    # that binding, so a rerouted task is refused at dispatch. The rescue may ask
-    # a seat again; it may not hand the question to another one here.
-    ced.reroute_permitted_v1 = False
     ced.mid_round_objection_rulings_v1 = bool(
         expected_protocol_payload.get("mid_round_objection_rulings", True)
     )

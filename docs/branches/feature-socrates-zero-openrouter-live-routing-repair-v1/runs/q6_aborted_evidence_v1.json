@@ -1,0 +1,107 @@
+{
+ "schema_version": "socrates-q6-aborted-evidence/v1",
+ "status": "ABORTED_BY_OPERATOR",
+ "is_a_benchmark_result": false,
+ "why_it_is_not_a_benchmark": "The run was terminated by the operator part-way through, before any phase completed. Ten calls were dispatched and no synthesis was produced. Nothing here may be scored, compared against a baseline, or cited as a council result. It is kept because deleting evidence of a stopped run is how a record becomes a story.",
+ "reason_for_abort": "The operator halted live testing until the retry architecture is repaired. The preceding Q5 council had attempted a cross-seat reroute of a task bound to agent_1, which the seat-binding firewall refused; the orchestration logic that produced that attempt is being removed rather than tuned.",
+ "provenance": {
+  "branch": "feature/openrouter-live-provider",
+  "head_at_run": "7bc589a067e370f8a8ff18640410e430a0ccc1db",
+  "ced_py_blob_at_run": "a791b75c5a29b4f584238f67a49294a4f0f9b61d",
+  "question": "q6",
+  "mid_round_rulings": "on",
+  "run_directory": "docs\\branches\\feature-socrates-zero-openrouter-live-routing-repair-v1\\runs\\q6_council_stopped_by_operator"
+ },
+ "dispatched_calls": {
+  "count": 10,
+  "all_succeeded": true,
+  "detail": [
+   {
+    "model_requested": "openai/gpt-4.1-mini",
+    "finish_reason": "stop",
+    "prompt_tokens": 4923,
+    "completion_tokens": 539,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "google/gemini-3.7-flash",
+    "finish_reason": "stop",
+    "prompt_tokens": 5186,
+    "completion_tokens": 2515,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "google/gemini-3.7-flash",
+    "finish_reason": "stop",
+    "prompt_tokens": 9671,
+    "completion_tokens": 1730,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "google/gemini-3.7-flash",
+    "finish_reason": "stop",
+    "prompt_tokens": 5158,
+    "completion_tokens": 620,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "openai/gpt-4.1-mini",
+    "finish_reason": "stop",
+    "prompt_tokens": 16332,
+    "completion_tokens": 194,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "openai/gpt-5-mini",
+    "finish_reason": "stop",
+    "prompt_tokens": 4936,
+    "completion_tokens": 4727,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "google/gemini-3.7-flash",
+    "finish_reason": "stop",
+    "prompt_tokens": 3694,
+    "completion_tokens": 2924,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "openai/gpt-5-mini",
+    "finish_reason": "stop",
+    "prompt_tokens": 9401,
+    "completion_tokens": 2705,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "openai/gpt-5-mini",
+    "finish_reason": "stop",
+    "prompt_tokens": 14284,
+    "completion_tokens": 4154,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   },
+   {
+    "model_requested": "openai/gpt-4.1-mini",
+    "finish_reason": "stop",
+    "prompt_tokens": 3828,
+    "completion_tokens": 312,
+    "transport_failure_class": null,
+    "provider_error_class": null
+   }
+  ]
+ },
+ "q6_baselines": {
+  "status": "HELD_UNSCORED_PENDING_INDEPENDENT_CONFIRMATION",
+  "samples": 9,
+  "observed_cost_usd": 0.068,
+  "note": "Drawn before the Q6 key had any independent check. Not deleted, not scored. Released for scoring only by the confirmation recorded alongside this file in q6_independent_verification_v1.json."
+ }
+}

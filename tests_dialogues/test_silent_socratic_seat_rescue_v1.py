@@ -14,10 +14,15 @@ happens not to produce one proves nothing about the rescue: it was simply never
 needed. Constructing the silence makes the answer deterministic, repeatable and
 free, and turns a one-off observation into a standing guarantee.
 
-The failure scripted is deliberately the *content* kind, not a timeout. A seat
-that times out never spoke, and re-dialling it is an infrastructure retry; a
-seat that answered and was refused has said something a second answer can
-contradict, which is why it is asked again before the question passes on.
+The failure scripted is deliberately the *content* kind, not a timeout: a seat
+that answered and was refused has said something a second answer can contradict,
+which is exactly what asking again tests.
+
+The question never passes on. That distinction - re-ask a seat that spoke, hand
+on a seat that went quiet - was how this file read until the handover was
+removed altogether. Both kinds of failure now get the same one re-ask at their
+own seat, and a second failure is a lost voice, because a task is bound to one
+logical agent at one seat for its whole life.
 """
 
 from __future__ import annotations
@@ -123,20 +128,24 @@ def test_the_same_seat_is_asked_again_before_the_question_moves_on():
     assert any(r["reasked_same_seat_slots"] for r in retries)
 
 
-def test_a_seat_silent_twice_hands_the_question_to_another():
-    """A second silence after being asked again is no longer not knowing."""
+def test_a_seat_silent_twice_loses_its_voice():
+    """A second silence after being asked again ends it, and is recorded.
+
+    This asserted the opposite: that the question passed to a different seat.
+    It does not any more. What a second silence buys is an entry saying which
+    argument the council never heard, which is the thing that was missing when
+    a seat dropped out of a live Q5 phase and nothing said so.
+    """
 
     ced, silent = _council(phase_retry=True, silent_attempts=99)
     asyncio.run(ced.run_registry_session(QUESTION_V1, session_id=SESSION_WITH_SILENT_SOCRATES_V1))
     assert silent.attempts_seen[:2] == [0, 1], (
         f"expected the same seat asked twice, saw {silent.attempts_seen[:2]}"
     )
+    assert 2 not in silent.attempts_seen, "a third attempt was dispatched"
     retries = ced._phase_retries.get(SESSION_WITH_SILENT_SOCRATES_V1, [])
-    assert any(r["rerouted_distinct_seat_slots"] for r in retries), (
-        "the question never passed to a different seat"
-    )
-    assert any(r["reroute_ok_providers"] for r in retries), (
-        "the seat it passed to produced nothing either"
+    assert any(r["voice_lost_slots"] for r in retries), (
+        "a seat fell silent twice and no voice was recorded as lost"
     )
 
 
@@ -160,35 +169,38 @@ def test_every_attempt_stays_in_the_record():
     for entry in retries:
         assert "first_failed_providers" in entry
         assert "reasked_same_seat_slots" in entry
-        assert "rerouted_distinct_seat_slots" in entry
+        assert "voice_lost_slots" in entry
     assert silent.attempts_seen, "the silent seat's attempts were not observable"
 
 
-def test_a_lost_voice_is_handed_on_even_when_quorum_holds():
-    """The doctrine must not stop halfway.
+def test_a_lost_voice_is_asked_again_even_when_quorum_holds():
+    """Quorum decides whether the phase proceeds. Nothing else.
 
-    A first failure is asked again at the same seat; a second, after being asked
-    again, is handed to another. Gating the hand-off on quorum broke that: a seat
-    could fail twice and never have its question passed on, because two of three
-    voices were enough for the phase to proceed. Quorum decides whether the phase
-    continues, not whether a missing argument is worth asking someone else for.
+    A seat could fail and never be asked again, because two of three voices were
+    enough for the phase to go on. Quorum is the right test for a vote and the
+    wrong one for a dialectic, where each seat is an argument rather than a
+    ballot: a missing argument is worth asking for twice whether or not the
+    count already stands.
     """
 
     ced, silent = _council(phase_retry=True, silent_attempts=99)
     asyncio.run(ced.run_registry_session(QUESTION_V1, session_id=SESSION_WITH_SILENT_SOCRATES_V1))
     retries = ced._phase_retries.get(SESSION_WITH_SILENT_SOCRATES_V1, [])
-    handed_on = [r for r in retries if r["rerouted_distinct_seat_slots"]]
-    assert handed_on, "a seat failed twice and the question was never handed on"
+    assert any(r["reasked_same_seat_slots"] for r in retries), (
+        "a seat failed and was never asked again"
+    )
     assert silent.attempts_seen[:2] == [0, 1]
 
 
-def test_a_rerouted_slot_is_not_recorded_as_re_asked():
-    """A seat that never spoke is rerouted at once, and the record must say so.
+def test_a_seat_that_went_quiet_is_asked_again_at_its_own_seat_too():
+    """A timeout and a refused answer are now treated the same way.
 
-    Listing every retried slot as re-asked claimed the same seat had been asked
-    twice when it had not. The distinction is the whole point: re-asking tests
-    whether a first answer was opinion, and there is no first answer to test
-    when the line went quiet.
+    They were not. A seat that never spoke was handed on immediately, on the
+    reasoning that re-dialling a dead line is an infrastructure retry rather
+    than an elenchus. That reasoning is sound about what a re-ask *means* and
+    irrelevant to where the task may go: handing it on changes which agent
+    answers, which is the binding, and the binding is not ours to trade for a
+    better chance of an answer.
     """
 
     from backend.dialogues.provider_registry import TimeoutScriptedProvider
@@ -196,42 +208,52 @@ def test_a_rerouted_slot_is_not_recorded_as_re_asked():
     fake = FakeProvider()
     agents = [SocraticAgent(f"agent_{i}", fake) for i in range(4)]
     registry = CouncilProviderRegistry()
-    registry.register(TimeoutScriptedProvider())
+    dead = TimeoutScriptedProvider()
+    registry.register(dead)
     registry.register(ScriptedMockProvider("m_ok"))
     ced = CEDOrchestrator(agents, fake, registry=registry, phase_retry=True)
     asyncio.run(ced.run_registry_session(QUESTION_V1, session_id="timeout_label"))
-    for entry in ced._phase_retries.get("timeout_label", []):
-        assert not entry["reasked_same_seat_slots"], (
-            "a seat that timed out was recorded as having been asked twice"
+    records = ced._phase_retries.get("timeout_label", [])
+    assert records, "the rescue never fired"
+    for entry in records:
+        assert entry["reasked_same_seat_slots"] == entry["failed_slots"], (
+            "a seat that went quiet was not asked again at its own seat"
         )
-        assert entry["rerouted_on_first_attempt_slots"], (
-            "the reroute of a silent line was not recorded"
+        assert entry["voice_lost_slots"], (
+            "the line stayed quiet and no voice was recorded as lost"
+        )
+        assert "m_ok" not in entry["retry_ok_providers"], (
+            "the healthy seat answered in place of the one that went quiet"
         )
 
 
-def test_where_seats_are_bound_the_question_is_not_handed_on():
-    """Some protocols cannot reroute at all, and must not try.
+def test_an_existing_task_stays_at_its_seat_without_a_protocol_switch():
+    """A task_id keeps its binding by default, not by configuration.
 
     Q2d binds one physical seat to each logical agent and prices the run on that
     binding, so its pre-dispatch guard refuses any task arriving at the wrong
-    seat: "deliberation task is not bound to agent_1". Enabling the rescue there
-    without saying so cost a live council its initial_response phase - every
-    rerouted task was refused at the wire and the run collapsed at four calls.
+    seat: "deliberation task is not bound to agent_1". A live council paid for
+    that - every handed-on task was refused at the wire and the run collapsed at
+    four calls - and the repair was briefly a per-protocol switch.
 
-    Asking the same seat again stays available; handing the question on does not.
-    The withholding is recorded rather than left to look like a rescue that
-    simply found nowhere to go.
+    A switch was the wrong shape for THIS invariant. Whether an existing task_id
+    may change its logical agent, seat and model is not a protocol preference:
+    it is what the run was authorized and priced on, and leaving it reachable by
+    default meant every protocol that had not thought about it inherited the
+    unsafe path.
+
+    That is a narrow claim, and deliberately so. It says nothing about whether a
+    protocol may authorize a NEW task to cover a lost voice - new task_id, new
+    logical owner, explicit authorization, its own provenance. That remains open
+    and is where coverage belongs; what is closed is moving an existing task.
     """
 
     ced, silent = _council(phase_retry=True, silent_attempts=99)
-    ced.reroute_permitted_v1 = False
     asyncio.run(ced.run_registry_session(QUESTION_V1, session_id=SESSION_WITH_SILENT_SOCRATES_V1))
     retries = ced._phase_retries.get(SESSION_WITH_SILENT_SOCRATES_V1, [])
     assert retries, "the rescue did not run at all"
     assert 1 in silent.attempts_seen, "the seat was not asked again"
-    assert all(not r["rerouted_distinct_seat_slots"] for r in retries), (
-        "a task was rerouted under a protocol that binds seats to agents"
-    )
-    assert any(r["reroute_withheld_seats_are_bound"] for r in retries), (
-        "the withheld reroute was not recorded"
+    assert 2 not in silent.attempts_seen, "a third attempt was dispatched"
+    assert any(r["voice_lost_slots"] for r in retries), (
+        "the lost voice was not recorded"
     )

@@ -3,7 +3,7 @@
 The role planner was never wrong. For session "live_dialogue" it gave ELENCHUS
 to agent_0 and agent_3, and the frozen binding put those on seat0 and seat3 —
 distinct, as promised. seat3 was the Mistral seat, which fails structurally on
-the JSON contract, and the phase-retry rerouted the failed slot with a fixed
+the JSON contract, and the phase-retry re-asked the failed slot with a fixed
 `offset=1`: order[(3 + 1) % 4] = seat0, already serving agent_0.
 
 Both objections were then authored by one physical seat, and the peers left to
@@ -129,13 +129,17 @@ def test_a_failed_slot_never_reroutes_onto_a_seat_serving_a_sibling():
 
 
 def test_only_the_failed_slot_is_retried():
+    # Read from the orchestrator rather than the final audit summary: with the
+    # handover gone a wholly dead seat can end the session before a summary
+    # exists, and this test is about which slots were re-asked, not about
+    # whether the council reached a verdict.
     ced = _council(broken_seat=3, quorum=ELENCHUS_SLOTS)
-    final = _run(ced)
-    retries = [r for r in final.audit_summary["phase_retries"]
+    _run(ced)
+    retries = [r for r in ced._phase_retries.get(SESSION, [])
                if r["phase"] == DialogPhase.ELENCHUS.value]
     assert len(retries) == 1
-    assert retries[0]["failed_slots"] == retries[0]["retried_slots"]
-    assert len(retries[0]["retried_slots"]) == 1
+    assert retries[0]["failed_slots"] == retries[0]["reasked_same_seat_slots"]
+    assert len(retries[0]["reasked_same_seat_slots"]) == 1
 
 
 def test_the_successful_sibling_slot_never_moves():
@@ -150,7 +154,13 @@ def test_the_successful_sibling_slot_never_moves():
                if d["logical_agent_id"] == primaries[0]["logical_agent_id"]) == 1
 
 
-def test_the_reroute_is_recorded_as_a_retry_on_a_different_seat():
+def test_the_retry_is_recorded_on_the_seat_that_failed():
+    """The second ask goes back to the same seat, and the record shows it.
+
+    This asserted the opposite until the cross-seat handover was removed: the
+    retry used to land on a different provider, which is precisely the topology
+    change a bound protocol refuses at dispatch.
+    """
     ced = _council(broken_seat=3, quorum=ELENCHUS_SLOTS)
     _run(ced)
     slots = _elenchus(ced)
@@ -160,33 +170,7 @@ def test_the_reroute_is_recorded_as_a_retry_on_a_different_seat():
     failed_primary = [d for d in slots
                       if d["attempt_index"] == 0 and not d["ok"]][0]
     assert retried[0]["logical_agent_id"] == failed_primary["logical_agent_id"]
-    assert retried[0]["provider_id"] != failed_primary["provider_id"]
-
-
-def test_with_no_distinct_seat_left_the_duplication_is_recorded_not_hidden():
-    """Two seats, one broken: the only alternative IS the busy sibling.
-
-    Independence is already unreachable at this council size, and refusing the
-    rescue would only lose the phase as well. So the reuse proceeds and is
-    written down. What must never happen is losing independence silently at a
-    size where it was available — the four-seat case above.
-    """
-    ced = _council(broken_seat=1, seats=2)
-    _run(ced)
-    retries = [r for r in ced._phase_retries.get(SESSION, [])
-               if r["phase"] == DialogPhase.ELENCHUS.value]
-    if not retries:
-        pytest.skip("this council did not need a rescue")
-    assert retries[0]["degraded_duplicate_slots"], "the reuse must be recorded"
-    assert "no distinct healthy seat" in (retries[0]["degraded_reason"] or "")
-
-
-def test_a_four_seat_council_never_needs_the_degraded_path():
-    """Where a distinct seat exists it is used, and nothing is degraded."""
-    ced = _council(broken_seat=3, quorum=ELENCHUS_SLOTS)
-    _run(ced)
-    for record in ced._phase_retries.get(SESSION, []):
-        assert record["degraded_duplicate_slots"] == [], record
+    assert retried[0]["provider_id"] == failed_primary["provider_id"]
 
 
 # ══ determinism ══════════════════════════════════════════════════════════════

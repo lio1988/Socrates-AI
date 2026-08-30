@@ -402,7 +402,8 @@ def test_contract_rejection_uses_bounded_retry_and_never_reuses_stale_question()
         row for row in ced._phase_retries.get(state.session_id, [])
         if row["phase"] == DialogPhase.ELENCHUS.value
     ]
-    assert retries[-1]["retried_slots"] == retries[-1]["failed_slots"]
+    assert retries[-1]["reasked_same_seat_slots"] == retries[-1]["failed_slots"]
+    assert retries[-1]["voice_lost_slots"] == retries[-1]["failed_slots"]
     assert retries[-1]["rescued"] is False
     rejected_rows = [
         row for row in ced._socratic_audit_rows[state.session_id]

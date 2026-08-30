@@ -204,13 +204,29 @@ _CORE_BLOBS = (
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/ced.py",
-        # Re-pinned once, deliberately, to admit rule_on_round_objections_v1:
-        # a non-governing pass that rules on a round's objections while the
-        # dialogue can still read them. Every governing path is untouched -
-        # run_objection_verification, the claim state and the release seam are
-        # byte-identical. Re-pinning is the authorization, not a formality: the
-        # previous id was 9faaf048d3b3f6fbd84057997c421623a96ae724.
-        git_blob_id="a791b75c5a29b4f584238f67a49294a4f0f9b61d",
+        # Re-pinned three times, deliberately. First to admit
+        # rule_on_round_objections_v1: a non-governing pass that rules on a
+        # round's objections while the dialogue can still read them.
+        #
+        # Second, to remove the cross-seat reroute from the phase rescue and to
+        # give each objection ruling its own task. Both are the same defect seen
+        # twice: an existing task_id arriving at a seat its logical agent is not
+        # bound to. The rescue did it by handing a failed task onward, which a
+        # bound protocol refuses at dispatch; the rulings did it by sending one
+        # task to every peer under the raiser's agent id. A failed slot is now
+        # asked once more at its own seat and then recorded as a lost voice.
+        #
+        # Third, to make that lost-voice record use the canonical response
+        # application: a provider-OK Socratic envelope that the CED rejects is
+        # still a lost voice when the same-seat retry is rejected too.
+        #
+        # Every governing path is untouched - run_objection_verification, the
+        # claim state and the release seam are byte-identical. Re-pinning is the
+        # authorization, not a formality: the previous ids were
+        # 9faaf048d3b3f6fbd84057997c421623a96ae724,
+        # a791b75c5a29b4f584238f67a49294a4f0f9b61d, and
+        # 5413ec166591a38a88e548b378c3684c5ec4d5d5.
+        git_blob_id="cf763d31ceac2db8945b46132ae2ede8e5b5df23",
         role="CED-owned scheduling, task, response-application, and finalization seam",
     ),
     FrozenCoreBlobEntry(
