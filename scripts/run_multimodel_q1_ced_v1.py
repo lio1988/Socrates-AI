@@ -286,6 +286,32 @@ FORBIDDEN_WIRE_PARAMETERS_V1: Tuple[str, ...] = (
 #: provider cost, with a privacy-safe receipt.
 EXPERIMENT_PROMPT_BUDGET_TOKENS_V1 = 393_216
 
+#: Per-question prompt budgets. A question absent from here uses the value above,
+#: so every retained protocol keeps the budget it was authorized and priced at -
+#: lowering the shared constant instead would have rewritten the economics of
+#: Q2d, Q4, Q5 and Q6 after the fact, which two pinned tests caught.
+#:
+#: Q7 is tightened to 262,144. This reduces what the guard permits, never what it
+#: refuses to catch: a request above it is refused locally, at no provider cost,
+#: exactly as before. The reason is that every permitted call is priced at this
+#: ceiling, so it alone decides whether the authorization fits the operator's
+#: available funds: 393,216 gives a worst case of $21.33 against $17.40
+#: available, and 262,144 gives $14.81.
+#:
+#: The margin that makes it safe: the largest request this protocol has ever
+#: rendered was the Q5 council's 117,697 bytes, and the estimator is a UTF-8 byte
+#: upper bound, so that is at most 117,697 tokens. 262,144 is 2.2x that and 3.5x
+#: the scale-faithful Q2b reconstruction of 74,156 tokens. It is not reduced to
+#: whatever would just fit: 131,072 also fits the funds and was rejected as too
+#: close to a request this protocol has actually produced.
+PROMPT_BUDGET_TOKENS_BY_QUESTION_V1: Dict[str, int] = {"q7": 262_144}
+
+
+def prompt_budget_tokens_for_question_v1(question_name: str) -> int:
+    return PROMPT_BUDGET_TOKENS_BY_QUESTION_V1.get(
+        question_name, EXPERIMENT_PROMPT_BUDGET_TOKENS_V1
+    )
+
 #: The cost-reservation call sites take a token count. Same value, same unit.
 DECLARED_MAX_INPUT_TOKENS_V1 = EXPERIMENT_PROMPT_BUDGET_TOKENS_V1
 
@@ -438,9 +464,15 @@ def assert_output_budgets_fit_v1(seat_keys) -> Dict[str, int]:
 
 
 def assert_input_within_bound_v1(
-    key: str, body: Dict[str, Any], reserved_output_tokens: int
+    key: str, body: Dict[str, Any], reserved_output_tokens: int,
+    max_prompt_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Bound one rendered request, never comparing across units.
+
+    ``max_prompt_tokens`` defaults to the shared constant. The pre-dispatch guard
+    passes the value carried by the authorized protocol payload instead, so what
+    is enforced is what the operator approved rather than whatever the module
+    happens to hold at import time.
 
     Returns the measurement so a refusal can record what it saw.
     """
@@ -460,7 +492,11 @@ def assert_input_within_bound_v1(
         raise ContractValidationError(f"{key}: {exc}") from exc
     try:
         assert_request_within_bounds_v1(
-            measurement, max_prompt_tokens=EXPERIMENT_PROMPT_BUDGET_TOKENS_V1
+            measurement,
+            max_prompt_tokens=(
+                EXPERIMENT_PROMPT_BUDGET_TOKENS_V1 if max_prompt_tokens is None
+                else max_prompt_tokens
+            ),
         )
     except RequestBoundError as exc:
         _persist_refusal_receipt_v1(key, body, measurement, exc)
@@ -1095,7 +1131,9 @@ def _seat_predispatch_guard_v1(
         if rendered.profile_id != q1.load_profile_v1(key).profile_id:
             raise ContractValidationError(f"{key}: rendered profile identity drifted")
         assert_input_within_bound_v1(
-            key, body, reserved_output_tokens=expected_limit
+            key, body, reserved_output_tokens=expected_limit,
+            max_prompt_tokens=expected_protocol_payload.get(
+                "experiment_prompt_budget_tokens"),
         )
         if body.get("model") != spec["model"]:
             raise ContractValidationError(f"{key}: rendered model drifted")
@@ -1373,10 +1411,16 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
     }
 
 
-def conservative_q2d_bound_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
-    """Price the exact fixed-session call plan at frozen endpoint ceilings."""
+def conservative_q2d_bound_v1(mid_round_rulings: bool = True,
+                              question_name: str = "q2") -> Dict[str, Any]:
+    """Price the exact fixed-session call plan at frozen endpoint ceilings.
+
+    Priced at the question's own prompt budget, so a question that tightens the
+    ceiling is priced at the ceiling it will actually be run under.
+    """
 
     plan = derive_q2d_call_plan_v1(mid_round_rulings)
+    budget = prompt_budget_tokens_for_question_v1(question_name)
     seat_totals: Dict[str, int] = {}
     per_call: Dict[str, Dict[str, int]] = {}
     maximum_per_call = 0
@@ -1387,7 +1431,7 @@ def conservative_q2d_bound_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
             limit = int(limit_text)
             bound = normal.conservative_turn_cost_bound_v1(
                 policy=build_seat_policy_v1(key, limit),
-                max_input_tokens=DECLARED_MAX_INPUT_TOKENS_V1,
+                max_input_tokens=budget,
             )
             per_call[key][limit_text] = bound
             seat_total += call_count * bound
@@ -1603,7 +1647,10 @@ def _build_heterogeneous_council_core_v1(
                 profile=profile,
                 ledger=ledger,
                 claim_directory=claim_directory,
-                max_input_tokens=DECLARED_MAX_INPUT_TOKENS_V1,
+                max_input_tokens=expected_protocol_payload.get(
+                    "experiment_prompt_budget_tokens",
+                    DECLARED_MAX_INPUT_TOKENS_V1,
+                ),
                 dispatch=dispatch,
                 response_format_factory=normal.ced_structured_response_format_v1,
                 structured_output_validator=normal.validate_ced_structured_output_v1,
@@ -2356,7 +2403,9 @@ def build_q2d_protocol_payload_v1(
         "frozen_controls": frozen_controls,
         "seat_profiles": seat_profiles,
         "prompt_token_estimator_id": "wire_utf8_byte_upper_bound_v1",
-        "experiment_prompt_budget_tokens": EXPERIMENT_PROMPT_BUDGET_TOKENS_V1,
+        "experiment_prompt_budget_tokens": prompt_budget_tokens_for_question_v1(
+            question_name
+        ),
         "maximum_ced_calls": plan["maximum_calls"],
         "call_plan": plan,
         "topology_repair": {
@@ -2568,7 +2617,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Q2d exactly-authorized heterogeneous CED")
     parser.add_argument(
         "--question",
-        choices=("q2", "q3", "q4", "q5", "q6"),
+        choices=("q2", "q3", "q4", "q5", "q6", "q7"),
         default="q2",
         help="Q2d authorizes only the frozen ethics question",
     )
