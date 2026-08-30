@@ -18,6 +18,7 @@ and to the council's synthesis.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -44,6 +45,35 @@ POINT_SPLITS_V1: Dict[str, Dict[str, int]] = {
 _VERTEX = re.compile(r"\b([LR])\s*(\d{1,2})\b", re.IGNORECASE)
 _PAIR = re.compile(r"\bL\s*(\d{1,2})\s*(?:-|–|—|,|:|→|->|\s)\s*R\s*(\d{1,2})\b",
                    re.IGNORECASE)
+
+
+def extract_scored_text_v1(raw: str) -> str:
+    """The text a certificate is read from.
+
+    Answers arrive as a JSON envelope whose fields hold the prose, so the
+    certificate lives inside a JSON string with escaped newlines. Reading the
+    envelope as raw text finds nothing at all - every line anchor fails against
+    a literal backslash-n - and scores a correct answer zero. That happened on
+    the first pass over the Q7 baselines and is the reason this function exists.
+
+    Every string value in the envelope is concatenated, in key order. Taking one
+    named field instead would be a choice about where a certificate is allowed
+    to appear, and models place it differently; concatenating everything is the
+    rule that does not advantage one layout over another. Nothing here is hidden
+    reasoning: it is all returned text.
+    """
+    text = raw or ""
+    try:
+        envelope = json.loads(text)
+    except (ValueError, TypeError):
+        return text
+    if isinstance(envelope, str):
+        return envelope
+    if not isinstance(envelope, dict):
+        return text
+    parts = [value for _key, value in sorted(envelope.items())
+             if isinstance(value, str)]
+    return "\n".join(parts) if parts else text
 
 
 def _field(text: str, name: str) -> Optional[str]:
@@ -90,8 +120,9 @@ def _vertices_field(text: str, name: str, side: str) -> Optional[List[str]]:
     return out or None
 
 
-def parse_certificate_v1(text: str) -> Dict[str, object]:
+def parse_certificate_v1(raw: str) -> Dict[str, object]:
     """Everything the answer literally committed to, and nothing more."""
+    text = extract_scored_text_v1(raw)
     return {
         "M": _int_field(text, "M"),
         "MATCHING": _pairs_field(text, "MATCHING"),
@@ -118,9 +149,9 @@ def _both_agree_matching(edges: Sequence[Edge], pairs: Sequence[Edge]) -> bool:
     return bool(left)
 
 
-def score_v1(text: str) -> Dict[str, object]:
+def score_v1(raw: str) -> Dict[str, object]:
     """Criteria 1-6 only. 7-9 are added by hand, blind, afterwards."""
-    parsed = parse_certificate_v1(text)
+    parsed = parse_certificate_v1(raw)
     edges = list(Q.EDGES_V1)
     adjacency = A.build_adjacency_v1(edges, Q.LEFT_V1, Q.RIGHT_V1)
     masks = B.adjacency_masks_v1(edges, Q.LEFT_V1, Q.RIGHT_V1)

@@ -312,6 +312,21 @@ def prompt_budget_tokens_for_question_v1(question_name: str) -> int:
         question_name, EXPERIMENT_PROMPT_BUDGET_TOKENS_V1
     )
 
+
+#: Questions that run without the phase rescue. Q7 measures reasoning, not the
+#: repaired retry mechanism, so it takes one attempt per planned task and no
+#: rescue: a failed slot is a lost voice and the run says so.
+#:
+#: Turning the rescue off also closes a gap this experiment exposed. With the
+#: rescue on, the plan authorises 235 calls and prices 115 - the headroom is
+#: reachable but unpriced. With it off the two numbers are the same 115, so the
+#: dispatch latch cannot permit a call that nothing paid for.
+PHASE_RETRY_BY_QUESTION_V1: Dict[str, bool] = {"q7": False}
+
+
+def phase_retry_for_question_v1(question_name: str) -> bool:
+    return PHASE_RETRY_BY_QUESTION_V1.get(question_name, True)
+
 #: The cost-reservation call sites take a token count. Same value, same unit.
 DECLARED_MAX_INPUT_TOKENS_V1 = EXPERIMENT_PROMPT_BUDGET_TOKENS_V1
 
@@ -1167,7 +1182,8 @@ def conservative_ced_bound_v1() -> Dict[str, Any]:
     return conservative_q2d_bound_v1()
 
 
-def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
+def derive_q2d_call_plan_v1(mid_round_rulings: bool = True,
+                            phase_retry: bool = True) -> Dict[str, Any]:
     """Derive the exact reachable three-provider Q2d call ceiling offline.
 
     The old 64-call value belongs to the two-worker homogeneous topology.  Q2d
@@ -1372,7 +1388,9 @@ def derive_q2d_call_plan_v1(mid_round_rulings: bool = True) -> Dict[str, Any]:
     # longer that.
     rescue_reroutes = deliberation_calls * 2
     rescue_scores = rescue_reroutes * peer_count
-    phase_rescue_headroom = rescue_reroutes + rescue_scores
+    phase_rescue_headroom = (
+        rescue_reroutes + rescue_scores if phase_retry else 0
+    )
 
     stage_calls = {
         "deliberation": deliberation_calls,
@@ -1419,7 +1437,8 @@ def conservative_q2d_bound_v1(mid_round_rulings: bool = True,
     ceiling is priced at the ceiling it will actually be run under.
     """
 
-    plan = derive_q2d_call_plan_v1(mid_round_rulings)
+    plan = derive_q2d_call_plan_v1(
+        mid_round_rulings, phase_retry_for_question_v1(question_name))
     budget = prompt_budget_tokens_for_question_v1(question_name)
     seat_totals: Dict[str, int] = {}
     per_call: Dict[str, Dict[str, int]] = {}
@@ -1686,7 +1705,8 @@ def _build_heterogeneous_council_core_v1(
         fake,
         registry=registry,
         shadow_scoring_mode=normal.ShadowScoringMode.ALL_PHASES,
-        phase_retry=True,
+        # Whatever the operator approved, not whatever this module defaults to.
+        phase_retry=bool(expected_protocol_payload.get("phase_retry", True)),
         max_socratic_followups=2,
         ratification_repair="block",
         tree_expansions=0,
@@ -2333,8 +2353,9 @@ def build_q2d_protocol_payload_v1(
     evidence_sha256 = {
         name: _sha256_file_v1(path) for name, path in evidence_paths.items()
     }
-    plan = derive_q2d_call_plan_v1(mid_round_rulings)
-    bound = conservative_q2d_bound_v1(mid_round_rulings)
+    plan = derive_q2d_call_plan_v1(
+        mid_round_rulings, phase_retry_for_question_v1(question_name))
+    bound = conservative_q2d_bound_v1(mid_round_rulings, question_name)
     return {
         "schema_version": Q2D_PROTOCOL_SCHEMA_VERSION_V1,
         # The payload names its own question so the post-authorization drift
@@ -2406,6 +2427,7 @@ def build_q2d_protocol_payload_v1(
         "experiment_prompt_budget_tokens": prompt_budget_tokens_for_question_v1(
             question_name
         ),
+        "phase_retry": phase_retry_for_question_v1(question_name),
         "maximum_ced_calls": plan["maximum_calls"],
         "call_plan": plan,
         "topology_repair": {
@@ -2485,8 +2507,9 @@ def run_condition_c_v1(
     run_directory = _create_q2d_run_directory_v1()
     out = run_directory / Q2D_RESULT_ARTIFACT_NAME_V1
     question_text, question_sha = _question_v1(question_name)
-    call_plan = derive_q2d_call_plan_v1(mid_round_rulings)
-    plan = conservative_q2d_bound_v1()
+    call_plan = derive_q2d_call_plan_v1(
+        mid_round_rulings, phase_retry_for_question_v1(question_name))
+    plan = conservative_q2d_bound_v1(mid_round_rulings, question_name)
     print(f"=== council bound, question {question_name} ===")
     for key, value in plan["seat_total_picodollars"].items():
         print(f"  seat {q1.FAMILIES_V1[key]['label']:18s} ${q1._usd(value)} total")
