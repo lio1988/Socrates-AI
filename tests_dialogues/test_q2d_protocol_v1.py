@@ -255,6 +255,28 @@ def test_q2c_failures_are_classified_separately_from_retained_evidence() -> None
     )
 
 
+def test_public_audit_retains_terminal_voice_loss_without_private_dispatch() -> None:
+    loss = {
+        "phase": "initial_response",
+        "failed_slots": [0],
+        "reasked_same_seat_slots": [],
+        "voice_lost_slots": [0],
+        "quorum_held_but_a_voice_was_lost": True,
+        "first_failed_providers": ["gpt_5_mini"],
+        "retry_ok_providers": [],
+        "rescued": False,
+    }
+    public = q2d._public_audit_v1(
+        {
+            "proceeded": True,
+            "phase_retries": [loss],
+            "phase_dispatch": [{"private": "do not publish"}],
+        }
+    )
+
+    assert public == {"proceeded": True, "phase_retries": [loss]}
+
+
 def test_gemini_failure_schema_really_required_all_seven_fields() -> None:
     task = AgentTask(
         task_id="q2d_socratic_schema",

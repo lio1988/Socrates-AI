@@ -113,6 +113,10 @@ def test_without_rescue_one_silent_answer_ends_the_dialectic():
     assert "reflection" not in _phases(ced, "silent_off"), (
         "REFLECTION cannot run without an accepted Socratic question"
     )
+    losses = ced._phase_retries.get("silent_off", [])
+    assert losses, "retry-disabled silence vanished from the audit"
+    assert all(record["reasked_same_seat_slots"] == [] for record in losses)
+    assert any(record["voice_lost_slots"] for record in losses)
 
 
 def test_the_same_seat_is_asked_again_before_the_question_moves_on():

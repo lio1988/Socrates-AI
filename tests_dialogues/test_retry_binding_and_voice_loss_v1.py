@@ -245,6 +245,9 @@ def test_a_first_failure_is_asked_again_at_the_same_seat_and_can_recover():
     assert all(not r["voice_lost_slots"] for r in retries), (
         "a voice that answered on the second ask is not lost"
     )
+    assert all(not r["quorum_held_but_a_voice_was_lost"] for r in retries), (
+        "a recovered voice must not remain labelled as lost"
+    )
     assert len(_seats_by_agent(providers)["agent_0"]) == 1
 
 
@@ -258,6 +261,39 @@ def test_a_first_failure_is_asked_again_at_the_same_seat_and_can_recover():
 #: two must not be conflated - the first says quorum works, the second says the
 #: dialogue cannot start without its first question.
 SESSION_WHERE_THE_REFUSER_IS_NOT_THE_OPENER_V1 = "quorum_survives_a_lost_voice"
+
+
+def test_retry_disabled_records_terminal_loss_without_redispatch():
+    """Q7's policy forbids a second ask; the first failure is therefore final."""
+    ced, providers = _council(
+        refuses_for=["agent_0"],
+        phase_retry=False,
+    )
+    session = SESSION_WHERE_THE_REFUSER_IS_NOT_THE_OPENER_V1
+    asyncio.run(ced.run_registry_session(QUESTION_V1, session_id=session))
+
+    attempts = _attempts_for(providers, "agent_0")
+    assert attempts and set(attempts) == {0}, (
+        f"retry-disabled policy dispatched another attempt: {attempts}"
+    )
+    assert "synthesis" in _phases(ced, session), (
+        "the council had quorum but did not proceed after naming the lost voice"
+    )
+
+    records = ced._phase_retries.get(session, [])
+    opening_loss = next(
+        record for record in records if record["phase"] == "initial_response"
+    )
+    assert opening_loss == {
+        "phase": "initial_response",
+        "failed_slots": [0],
+        "reasked_same_seat_slots": [],
+        "voice_lost_slots": [0],
+        "quorum_held_but_a_voice_was_lost": True,
+        "first_failed_providers": ["seat_0"],
+        "retry_ok_providers": [],
+        "rescued": False,
+    }
 
 
 def test_quorum_decides_whether_the_phase_proceeds_not_who_answers():

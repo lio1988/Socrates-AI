@@ -59,6 +59,10 @@ PreDispatchGuardV1 = Callable[
     [Optional[AgentTask], OpenRouterRenderedTurnV1], None
 ]
 
+COMPLETION_ENVELOPE_EXHAUSTED_FAILURE_V1 = (
+    "completion_envelope_exhausted_before_valid_visible_payload"
+)
+
 _PUBLIC_SECRET_PATTERNS_V1: Tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bsk-(?:or-v1-)?[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}"),
@@ -694,6 +698,12 @@ def execute_bounded_text_turn_v1(
         failure = failure or "returned_model_identity_mismatch"
     elif not provider_ok:
         failure = failure or "returned_provider_identity_mismatch"
+    elif (
+        (assistant_text is None or not assistant_text.strip())
+        and record_fields.get("s5_envelope_kind") == "SUCCESS"
+        and record_fields.get("completion_tokens") == policy.output_limit_tokens
+    ):
+        failure = failure or COMPLETION_ENVELOPE_EXHAUSTED_FAILURE_V1
     elif assistant_text is None:
         failure = failure or "no_assistant_content"
     if failure is not None:

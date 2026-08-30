@@ -204,7 +204,7 @@ _CORE_BLOBS = (
     ),
     FrozenCoreBlobEntry(
         path="backend/dialogues/ced.py",
-        # Re-pinned three times, deliberately. First to admit
+        # Re-pinned four times, deliberately. First to admit
         # rule_on_round_objections_v1: a non-governing pass that rules on a
         # round's objections while the dialogue can still read them.
         #
@@ -220,13 +220,20 @@ _CORE_BLOBS = (
         # application: a provider-OK Socratic envelope that the CED rejects is
         # still a lost voice when the same-seat retry is rejected too.
         #
+        # Fourth, to make loss accounting independent of retry dispatch. A
+        # protocol that forbids a second ask now records its first canonical
+        # rejection as terminal voice loss, and a voice recovered at the same
+        # seat is no longer labelled lost merely because the first ask failed.
+        # The fallback audit carries the same terminal-loss record.
+        #
         # Every governing path is untouched - run_objection_verification, the
         # claim state and the release seam are byte-identical. Re-pinning is the
         # authorization, not a formality: the previous ids were
         # 9faaf048d3b3f6fbd84057997c421623a96ae724,
         # a791b75c5a29b4f584238f67a49294a4f0f9b61d, and
-        # 5413ec166591a38a88e548b378c3684c5ec4d5d5.
-        git_blob_id="cf763d31ceac2db8945b46132ae2ede8e5b5df23",
+        # 5413ec166591a38a88e548b378c3684c5ec4d5d5, and
+        # cf763d31ceac2db8945b46132ae2ede8e5b5df23.
+        git_blob_id="4fe70c223968764fe5fcc788dedca9922cc57299",
         role="CED-owned scheduling, task, response-application, and finalization seam",
     ),
     FrozenCoreBlobEntry(

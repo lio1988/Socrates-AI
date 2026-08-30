@@ -15,7 +15,7 @@ transient case is therefore scripted as genuinely transient - it fails once and
 answers when asked again - and the permanent case now asserts the loss.
 
 Invariants checked:
-- off by default on bare CEDOrchestrator (legacy behavior unchanged);
+- off by default on bare CEDOrchestrator (no redispatch; loss still recorded);
 - build_council enables it by default;
 - a transient single-seat failure gets rescued at its own seat;
 - a seat that fails twice is a lost voice, never a handover;
@@ -84,12 +84,16 @@ def test_phase_retry_default_is_off():
     assert ced.phase_retry is False
 
 
-def test_off_by_default_a_transient_failure_kills_the_session():
+def test_off_by_default_records_terminal_loss_without_retrying():
     providers = [TimeoutScriptedProvider(), ScriptedMockProvider("m_ok")]
     ced = _council(phase_retry=False, providers=providers)
     final = asyncio.run(ced.run_registry_session(Q, session_id="off1"))
     assert final.ratified is False
-    assert "phase_retries" not in final.audit_summary or not final.audit_summary["phase_retries"]
+    records = final.audit_summary["phase_retries"]
+    assert records
+    assert all(record["reasked_same_seat_slots"] == [] for record in records)
+    assert all(record["retry_ok_providers"] == [] for record in records)
+    assert all(record["voice_lost_slots"] for record in records)
 
 
 # ── rescue succeeds on a transient single-seat failure ────────────────────────

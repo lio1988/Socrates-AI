@@ -1691,30 +1691,35 @@ class CEDOrchestrator:
         # and ratified, without an argument it was supposed to have heard, and
         # the only trace was a rejected move in the evidence nobody was reading.
         #
-        # So any failed slot in a deliberation phase is now asked again, once,
-        # at its own seat, every attempt kept. Quorum still decides whether
-        # the phase proceeds;
-        # it no longer decides whether a missing seat is worth asking twice.
-        voice_lost = ok_count < len(items)
+        # So any failed slot in a deliberation phase is either asked again once
+        # at its own seat, when the protocol authorizes rescue, or recorded at
+        # once as terminal voice loss when it does not. Every attempted ask is
+        # kept. Quorum still decides whether the phase proceeds; retry policy
+        # decides only whether the same seat is asked a second time.
+        failed = [
+            (task.slot_index, items[task.slot_index][0], items[task.slot_index][1])
+            for task, _response in pairs
+            if applications[(task.task_id, task.attempt_index)].outcome
+            is not CanonicalRegistryApplicationOutcome.ACCEPTED
+        ]
+        failed_slots = {slot for slot, _, _ in failed}
+        if missing_socratic:
+            # A firewall-rejected Socratic response can be provider-OK yet
+            # deliberately have no accepted move_id. Treat that logical slot
+            # as failed for both rescue and terminal-loss accounting.
+            for task, _resp in pairs:
+                if (task.task_kind is TaskKind.SOCRATIC_QUESTION
+                        and task.slot_index not in failed_slots):
+                    failed.append((
+                        task.slot_index,
+                        items[task.slot_index][0],
+                        items[task.slot_index][1],
+                    ))
+                    failed_slots.add(task.slot_index)
+        voice_lost = bool(failed)
         if (self.phase_retry and adapters and items
                 and (ok_count < effective_quorum or missing_socratic
                      or voice_lost)):
-            failed = [(t.slot_index, items[t.slot_index][0], items[t.slot_index][1])
-                      for t, r in pairs if not r.ok]
-            failed_slots = {slot for slot, _, _ in failed}
-            if missing_socratic:
-                # A firewall-rejected Socratic response can be provider-OK yet
-                # deliberately have no accepted move_id. Treat that logical slot
-                # as failed for rescue purposes too.
-                for task, _resp in pairs:
-                    if (task.task_kind is TaskKind.SOCRATIC_QUESTION
-                            and task.slot_index not in failed_slots):
-                        failed.append((
-                            task.slot_index,
-                            items[task.slot_index][0],
-                            items[task.slot_index][1],
-                        ))
-                        failed_slots.add(task.slot_index)
             # One more question, and it goes to the same seat.
             #
             # A first failure may be nothing more than not having understood,
@@ -1784,14 +1789,42 @@ class CEDOrchestrator:
                 # quorum, but it proceeds knowing which argument it never heard.
                 "voice_lost_slots": voice_lost_slots,
                 "quorum_held_but_a_voice_was_lost": bool(
-                    voice_lost and ok_count >= effective_quorum
-                    and not missing_socratic
+                    voice_lost_slots and rescued
                 ),
-                "first_failed_providers": [r.provider_id for _, r in pairs if not r.ok],
+                "first_failed_providers": [
+                    response.provider_id
+                    for task, response in pairs
+                    if task.slot_index in failed_slots
+                ],
                 "retry_ok_providers": [r.provider_id for r in retry_responses if r.ok],
                 "rescued": rescued,
             })
             responses = merged
+        elif failed:
+            # A protocol may forbid a second ask, as Q7 does. That prohibition
+            # controls dispatch only: the first failed attempt is already the
+            # terminal loss and must not disappear merely because no rescue was
+            # authorized. Keep the established audit shape so public artifacts
+            # can compare retrying and one-attempt councils without inference.
+            terminal_lost_slots = [slot for slot, _, _ in failed]
+            self._phase_retries.setdefault(state.session_id, []).append({
+                "phase": phase.value,
+                "failed_slots": terminal_lost_slots,
+                "reasked_same_seat_slots": [],
+                "voice_lost_slots": terminal_lost_slots,
+                "quorum_held_but_a_voice_was_lost": bool(
+                    terminal_lost_slots
+                    and ok_count >= effective_quorum
+                    and not missing_socratic
+                ),
+                "first_failed_providers": [
+                    response.provider_id
+                    for task, response in pairs
+                    if task.slot_index in failed_slots
+                ],
+                "retry_ok_providers": [],
+                "rescued": False,
+            })
 
         outcome = self._finalize_registry_phase(
             state,
@@ -2677,6 +2710,7 @@ class CEDOrchestrator:
             "shadow_scoring_mode": self.shadow_scoring_mode.value,
             "provider_status_summary": self.registry.status_summary(),
             "task_log_count": len(state.task_log),
+            "phase_retries": self._phase_retries.get(state.session_id, []),
         }
         if phase_results is not None:
             audit["registry_phase_rounds"] = [

@@ -377,12 +377,18 @@ def _success_body(content: str = '{"content": {"claim": "x"}, "confidence": 0.5}
     ).encode("utf-8")
 
 
-def _adapter(tmp_path: Path, dispatch):
+def _adapter(
+    tmp_path: Path,
+    dispatch,
+    *,
+    policy=None,
+    task_execution_policy_factory=None,
+):
     from backend.dialogues.socrates_zero.openrouter_live_session_adapter_v1 import (
         SocratesLiveOpenRouterAdapter,
     )
 
-    policy = _policy()
+    policy = policy or _policy()
     return SocratesLiveOpenRouterAdapter(
         provider_id="live_seat_1",
         policy=policy,
@@ -391,6 +397,7 @@ def _adapter(tmp_path: Path, dispatch):
         claim_directory=tmp_path,
         max_input_tokens=1_047_576,
         dispatch=dispatch,
+        task_execution_policy_factory=task_execution_policy_factory,
     )
 
 
@@ -462,6 +469,77 @@ def test_a_provider_error_consumes_one_call_and_does_not_retry(
     assert response.status.value != "ok"
     assert adapter.session_totals()["calls_consumed"] == 1
     assert adapter.observability_rows()[0]["http_status"] == 404
+
+
+@pytest.mark.parametrize("content", [None, "", "   "])
+def test_exact_output_limit_with_no_visible_payload_is_classified(
+    tmp_path: Path,
+    content: str | None,
+) -> None:
+    payload = json.loads(_success_body())
+    payload["choices"][0]["finish_reason"] = "length"
+    payload["choices"][0]["message"]["content"] = content
+    payload["usage"]["completion_tokens"] = 8_192
+    payload["usage"]["total_tokens"] = 8_224
+    selected_policy = _policy(output_limit_tokens=8_192)
+    adapter = _adapter(
+        tmp_path,
+        lambda **_kwargs: _FakeResult(json.dumps(payload).encode("utf-8")),
+        policy=_policy(output_limit_tokens=16_384),
+        task_execution_policy_factory=lambda _task: selected_policy,
+    )
+    task, state = _task_and_state()
+
+    response = asyncio.run(adapter.generate_agent_move(task, state))
+    row = adapter.observability_rows()[0]
+
+    assert response.status.value != "ok"
+    assert row["s5_envelope_kind"] == "SUCCESS"
+    assert row["completion_tokens"] == selected_policy.output_limit_tokens == 8_192
+    assert adapter.policy.output_limit_tokens == 16_384
+    assert not (row["assistant_text_excerpt"] or "").strip()
+    assert not (row["assistant_output_sanitized"] or "").strip()
+    assert row["ced_move_accepted"] is None, "no CED parse was attempted"
+    assert row["failure_class"] == (
+        "completion_envelope_exhausted_before_valid_visible_payload"
+    )
+
+
+@pytest.mark.parametrize(
+    ("completion_tokens", "content", "expected_failure"),
+    [
+        (255, None, "no_assistant_content"),
+        (256, '{"content":{"claim":"visible"},"confidence":0.5}', None),
+    ],
+)
+def test_ceiling_exhaustion_classification_requires_both_exact_limit_and_no_payload(
+    tmp_path: Path,
+    completion_tokens: int,
+    content: str | None,
+    expected_failure: str | None,
+) -> None:
+    payload = json.loads(_success_body())
+    payload["choices"][0]["finish_reason"] = "length"
+    payload["choices"][0]["message"]["content"] = content
+    payload["usage"]["completion_tokens"] = completion_tokens
+    payload["usage"]["total_tokens"] = 32 + completion_tokens
+    adapter = _adapter(
+        tmp_path,
+        lambda **_kwargs: _FakeResult(json.dumps(payload).encode("utf-8")),
+    )
+    task, state = _task_and_state()
+
+    if expected_failure is None:
+        assert asyncio.run(adapter._produce_raw_text(task, state)) == content
+    else:
+        with pytest.raises(RuntimeError):
+            asyncio.run(adapter._produce_raw_text(task, state))
+    row = adapter.observability_rows()[0]
+
+    assert row["failure_class"] == expected_failure
+    assert row["failure_class"] != (
+        "completion_envelope_exhausted_before_valid_visible_payload"
+    )
 
 
 def test_the_adapter_stops_at_the_session_call_limit(tmp_path: Path) -> None:

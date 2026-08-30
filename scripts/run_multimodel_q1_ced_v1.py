@@ -2067,6 +2067,7 @@ def _public_audit_v1(audit: Any) -> Optional[Dict[str, Any]]:
         "provider_status_summary",
         "registry_phase_rounds",
         "task_log_count",
+        "phase_retries",
     )
     return {k: audit[k] for k in keys if k in audit}
 

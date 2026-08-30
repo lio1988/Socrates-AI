@@ -1164,8 +1164,12 @@ def test_core_and_predecessor_locks_are_exact_and_clean() -> None:
     # Re-pinned a fifth time so a provider-OK Socratic retry rejected by the
     # canonical screen is recorded as a lost voice. The previous lock was
     # cedcorebloblockv2_401cd7ac5d7afa835142541ae122a0ef23bb74693a0e5999e70c232b5db8b3c2
+    # Re-pinned a sixth time so a retry-disabled protocol still records its
+    # first canonical rejection as terminal voice loss, while a same-seat
+    # recovery clears the loss flag. The previous lock was
+    # cedcorebloblockv2_be956b47dbb50711641bd52f9ddbb00bff09319f0245abb3f169459c1dfa3d82
     assert lock.lock_id == (
-        "cedcorebloblockv2_be956b47dbb50711641bd52f9ddbb00bff09319f0245abb3f169459c1dfa3d82"
+        "cedcorebloblockv2_21702aa2a45d60eb70f74821c6d06910284bacacf6b7f38483b71ab581e9bddc"
     )
     assert evaluation.SEALED_PHASE8_ARTIFACT_ID == (
         "cedparityartifactv1_893771ebb142e48b63dcdd623bdc734d7bb0da5697df251fadf73d3eda45f5e0"
