@@ -2670,7 +2670,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     if args.plan_only:
-        plan = conservative_q2d_bound_v1(args.mid_round_rulings == "on")
+        plan = conservative_q2d_bound_v1(
+            args.mid_round_rulings == "on", args.question
+        )
         for key, value in plan["seat_total_picodollars"].items():
             print(f"  seat {q1.FAMILIES_V1[key]['label']:18s} ${q1._usd(value)} total")
         print(
