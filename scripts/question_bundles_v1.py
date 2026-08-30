@@ -52,6 +52,7 @@ QUESTION_MODULES_V1: Mapping[str, str] = {
     "q4": "scripts.q4_ethics_question_v1",
     "q5": "scripts.q5_ethics_question_v1",
     "q6": "scripts.q6_ethics_question_v1",
+    "q7": "scripts.q7_bipartite_question_v1",
 }
 
 #: Fields of a question module that form the evaluator key. Kept explicit so a
@@ -86,6 +87,16 @@ _KEY_FIELDS_V1 = (
     "ANSWER_BY_CRITERIA_V1",
     "WHY_ONE_CRITERION_IS_IMPOSSIBLE_V1",
     "WHY_TWO_IS_THE_ONLY_COSTLY_WIDTH_V1",
+    # Q7 only. The instance is part of the key: a graph regenerated from a
+    # different seed would be a different benchmark wearing the same name, so
+    # the edges and the candidate index are pinned alongside the answers.
+    "CANDIDATE_INDEX_V1",
+    "SEED_SHA256_V1",
+    "GRAPH_SHA256_V1",
+    "EDGES_V1",
+    "ADD_EDGE_V1",
+    "DELETE_EDGE_V1",
+    "ANSWER_KEY_V1",
 )
 
 
