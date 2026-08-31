@@ -119,6 +119,10 @@ def test_phase_specific_extracts_still_present():
     ctx = ced._registry_phase_context(st, DialogPhase.SYNTHESIS, "agent_0")
     for key in ("critiques_raised", "reconstructed_positions", "socratic_opening_question"):
         assert key in ctx                              # targeted material kept too
+    assert ctx["critiques_raised"]
+    assert ctx["critiques_raised"] == [
+        move.content for move in st.moves_for_phase(DialogPhase.ELENCHUS)
+    ]
 
 
 # ── (2) whole-dialogue review instruction, deliberation only ─────────────────
@@ -150,6 +154,35 @@ def test_scoring_and_ratification_context_has_no_identity():
     for forbidden in ("council_roster", "dialogue_so_far", "company", "model", "by"):
         assert forbidden not in mtask.context, forbidden
     assert set(mtask.context) == {"output_to_score", "rubric_name", "rubric_focus"}
+
+
+def test_scorer_gets_only_compact_anonymous_prior_public_context():
+    ced, st = _session()
+    move = next(m for m in st.moves if m.phase == DialogPhase.ELENCHUS)
+    task = ced._build_move_score_task(st, move, "voter_x", move.phase, 0)
+
+    prior = task.context["prior_public_outputs"]
+    assert prior
+    assert all(set(item) == {"phase", "content"} for item in prior)
+    assert {item["phase"] for item in prior} <= {
+        DialogPhase.OPENING.value, DialogPhase.INITIAL_RESPONSE.value,
+    }
+
+    def all_keys(value):
+        if isinstance(value, dict):
+            return set(value) | {
+                key for child in value.values() for key in all_keys(child)
+            }
+        if isinstance(value, list):
+            return {key for child in value for key in all_keys(child)}
+        return set()
+
+    keys = all_keys(task.context)
+    assert keys.isdisjoint({
+        "agent_id", "author_agent_id", "provider_id", "model", "company", "by",
+        "previous_scores", "leaderboard", "assembly_winner", "winner",
+    })
+    assert "dialogue_so_far" not in task.context
 
 
 def test_backward_compatible_without_model():

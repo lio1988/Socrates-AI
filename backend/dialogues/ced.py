@@ -941,8 +941,10 @@ class CEDOrchestrator:
                     "DIVERSITY ALERT: the initial responses are nearly IDENTICAL in "
                     f"content (diversity {adaptive['response_diversity']}). Agreement "
                     "between similar answers is not independent evidence — it may be "
-                    "herding. Your mandate: find the angle every response missed, and "
-                    "press the shared assumption they all took for granted.")
+                    "herding. Test whether the similar responses share a missed "
+                    "assumption or common material defect. If one exists, expose it "
+                    "precisely; otherwise report that no material shared defect was "
+                    "found.")
             return ctx
         if phase == DialogPhase.REFLECTION:
             mine = next((m for m in state.moves_for_phase(DialogPhase.INITIAL_RESPONSE)
@@ -3493,11 +3495,49 @@ class CEDOrchestrator:
                         section, str(slot_index)])
         return "stask_" + format(stable_hash(key), "x")[:12]
 
+    _SCORER_PRIOR_PHASES = {
+        DialogPhase.OPENING: (),
+        DialogPhase.INITIAL_RESPONSE: (DialogPhase.OPENING,),
+        DialogPhase.ELENCHUS: (
+            DialogPhase.OPENING, DialogPhase.INITIAL_RESPONSE,
+        ),
+        DialogPhase.REFLECTION: (
+            DialogPhase.INITIAL_RESPONSE, DialogPhase.ELENCHUS,
+        ),
+        DialogPhase.RECONSTRUCTION: (
+            DialogPhase.ELENCHUS, DialogPhase.REFLECTION,
+        ),
+        DialogPhase.SYNTHESIS: (
+            DialogPhase.ELENCHUS, DialogPhase.REFLECTION,
+            DialogPhase.RECONSTRUCTION,
+        ),
+    }
+
+    @classmethod
+    def _anonymous_scorer_context(
+        cls, state: SessionState, phase: DialogPhase,
+    ) -> List[Dict[str, Any]]:
+        """Compact prior public material needed to judge impact, without attribution."""
+        relevant_phases = cls._SCORER_PRIOR_PHASES.get(phase, ())
+        return [
+            {"phase": prior.phase.value, "content": prior.content}
+            for prior in state.moves
+            if prior.phase in relevant_phases
+        ]
+
     def _build_move_score_task(
         self, state: SessionState, move: AgentMove, voter_id: str,
         phase: DialogPhase, slot_index: int,
     ) -> AgentTask:
         rubric_name, rubric_focus = rubric_for_move(move, phase)
+        context = {
+            "output_to_score": move.content,
+            "rubric_name": rubric_name,
+            "rubric_focus": rubric_focus,
+        }
+        prior = self._anonymous_scorer_context(state, phase)
+        if prior:
+            context["prior_public_outputs"] = prior
         return AgentTask(
             task_id=self._deterministic_score_task_id(
                 state, move.move_id, voter_id, TaskKind.MOVE_SCORE, slot_index),
@@ -3506,9 +3546,7 @@ class CEDOrchestrator:
             role=AgentRole.FINAL_EVALUATOR,
             phase=phase,
             question=state.question,
-            # Minimal-awareness context: only the output to score + rubric.
-            context={"output_to_score": move.content, "rubric_name": rubric_name,
-                     "rubric_focus": rubric_focus},
+            context=context,
             output_schema={"_role": "__move_score__", "_target": move.move_id,
                            "_question": state.question, "_rubric": rubric_name,
                            "_phase": phase.value},
@@ -3908,6 +3946,12 @@ class CEDOrchestrator:
         self, state: SessionState, draft: SectionDraft, section: SectionName,
         voter_id: str, content: str, slot_index: int,
     ) -> AgentTask:
+        context = {"output_to_score": content, "section": section.value}
+        prior = self._anonymous_scorer_context(
+            state, DialogPhase.SYNTHESIS,
+        )
+        if prior:
+            context["prior_public_outputs"] = prior
         return AgentTask(
             task_id=self._deterministic_score_task_id(
                 state, draft.draft_id, voter_id, TaskKind.SECTION_SCORE,
@@ -3917,7 +3961,7 @@ class CEDOrchestrator:
             role=AgentRole.FINAL_EVALUATOR,
             phase=DialogPhase.SYNTHESIS,
             question=state.question,
-            context={"output_to_score": content, "section": section.value},
+            context=context,
             output_schema={"_role": "__section_score__", "_target": draft.draft_id,
                            "_section": section.value, "_question": state.question},
             task_kind=TaskKind.SECTION_SCORE, slot_index=slot_index,

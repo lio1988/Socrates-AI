@@ -169,7 +169,9 @@ ROLE_EXEMPLARS = {
         'that compared different districts, not the same district before/after '
         'planting — so it supports correlation with greener districts, not the '
         'causal claim made." — quotes the exact claim, names the exact inferential '
-        'gap, nothing else.'
+        'gap, nothing else. If serious examination finds no such defect, report '
+        '"NO MATERIAL OBJECTION" rather than imitating this example by inventing '
+        'one.'
     ),
     AgentRole.EMPIRICIST: (
         'Form of an excellent evidence check (imitate the FORM, not the topic): '
@@ -190,8 +192,9 @@ ROLE_EXEMPLARS = {
         'Form of an excellent synthesis move: commit exactly where the evidence '
         'allows ("shade cooling: established"), scope the rest ("citywide claims: '
         'unsupported at present"), and take the stress test from the strongest '
-        'objection actually raised in this dialogue — never from a weaker invented '
-        'one.'
+        'material objection actually raised in this dialogue — never from a weaker '
+        'invented one. If no material objection survives, say "NO MATERIAL REMAINING '
+        'OBJECTION" instead of inventing one.'
     ),
     AgentRole.REFLECTOR: (
         'Form of an excellent revision (imitate the FORM, not the topic): "Prior '
@@ -223,12 +226,13 @@ ROLE_REASONING = {
         "already settled."
     ),
     AgentRole.ELENCHUS_CRITIC: (
-        "Find the strongest, most specific weakness — a real contradiction, an "
+        "Search aggressively for the strongest, most specific material weakness — a real contradiction, an "
         "unjustified leap (e.g. correlation→causation), or a load-bearing assumption "
-        "that fails. Quote the exact claim you challenge and show precisely why it "
-        "breaks. One decisive objection beats five shallow ones. Your objection "
-        "succeeds when the synthesis absorbs it and gets stronger — critique to "
-        "improve the final answer, not to win."
+        "that fails. If one survives serious examination, quote the exact claim and "
+        "show precisely why it breaks. One decisive objection beats five shallow ones. "
+        "If none survives, report exactly NO MATERIAL OBJECTION. Never manufacture "
+        "disagreement to satisfy the role. A real objection succeeds when the synthesis "
+        "absorbs it and gets stronger — critique to improve the final answer, not to win."
     ),
     AgentRole.EMPIRICIST: (
         "Test every factual claim against evidence. Flag each unsupported assertion, "
@@ -246,16 +250,20 @@ ROLE_REASONING = {
     AgentRole.SYNTHESIZER: (
         "Integrate the council's deliberation into a decisive, well-scoped answer. "
         "The core answer must commit where the evidence allows and qualify where it "
-        "does not; the stress test must be the STRONGEST honest counterargument, not "
-        "a token one; blind spots must be the ones you would least like to admit. "
+        "does not; the stress test must be the strongest REAL material objection "
+        "actually raised, not a token one. If no material objection survives, use "
+        "NO MATERIAL REMAINING OBJECTION rather than inventing one. Use NONE or "
+        "NOT_APPLICABLE for blind spots or nuance when none genuinely applies. "
         "Your synthesis is the answer the delta is measured on — it must beat the "
         "best initial response, or the dialogue added nothing."
     ),
     AgentRole.REFLECTOR: (
-        "Genuinely update. If the criticism is valid, change your position and state "
-        "exactly what changed and why. If it is not valid, explain precisely why it "
-        "fails. Never defend a claim out of ego. Each honest revision is the "
-        "mechanism by which the council's answer improves — that is the whole point."
+        "Examine whether an update is warranted. If the criticism establishes a "
+        "material defect, change your position and state exactly what changed and why. "
+        "If evidence_force is none or no material defect is established, retain the "
+        "defensible position and explain precisely why; do not manufacture an update. "
+        "Never defend a claim out of ego. Each honest revision or justified retention "
+        "is part of the mechanism by which the council's answer improves."
     ),
     AgentRole.FINAL_EVALUATOR: (
         "Judge whether the answer meets the epistemic-discipline bar. Approve only if "
@@ -307,8 +315,11 @@ Score/judge ONLY the epistemic quality of the output in front of you against the
 given rubric. You do not know — and must not consider — which agent or provider
 produced it. Do not reward confidence, length, or style; reward grounding, logical
 rigor, calibration, and honesty. Do not herd toward an apparent consensus; an
-output is not better because others seem to agree. Justify each judgement against
-the specific rubric criteria."""
+output is not better because others seem to agree. For numeric-only MOVE_SCORE and
+SECTION_SCORE tasks, reason privately against the rubric and return only the seven
+numeric fields required by the schema; do not add prose justification. For other
+judging tasks, explain only through textual fields explicitly supported by their
+task-specific schema."""
 
 # ── agent identity (who built me / who is in the room) ────────────────────────
 
@@ -385,17 +396,20 @@ SYNTHESIS_CONTENT_DIRECTIVE = """\
 Your `content` MUST be a JSON object with EXACTLY these six fields — use these
 exact names, do not rename, nest, translate, or add any other top-level field:
   "core_answer"         — the council's most defensible direct answer
-  "crucial_stress_test" — the strongest honest counterargument to it. Ground it in
-                          the strongest objection ACTUALLY RAISED in the dialogue
-                          (see `critiques_raised` in your context) — do not invent
-                          a weaker substitute if a stronger one was already made
-  "blind_spots"         — what this answer risks overlooking (draw on the critiques
-                          and the Socratic opening question where they apply)
-  "nuance"              — how the answer shifts with context
+  "crucial_stress_test" — the strongest material objection ACTUALLY RAISED that
+                          survives the dialogue (see `critiques_raised`). If none
+                          survives, use "NO MATERIAL REMAINING OBJECTION"; never
+                          invent a weaker substitute
+  "blind_spots"         — what this answer genuinely risks overlooking. If no
+                          material blind spot is supported, use "NONE"
+  "nuance"              — how the answer genuinely shifts with context. If no such
+                          qualification applies, use "NOT_APPLICABLE"
   "final_verdict"       — the calibrated bottom line
   "epistemic_marker"    — the honest status of your central claim: exactly one
                           of the marker values listed earlier
-The first five are substantive paragraphs. Example:
+The core answer and final verdict are substantive. The three diagnostic fields
+must contain genuine material or the explicit honest sentinel described above.
+Example:
 {"content": {"core_answer": "…", "crucial_stress_test": "…", "blind_spots": "…",
 "nuance": "…", "final_verdict": "…",
 "epistemic_marker": "reasonable_hypothesis"}, "confidence": 0.8}"""
@@ -651,6 +665,7 @@ Your `content` MUST be a JSON object with EXACTLY these seven numeric fields, ea
 a number from 0 to 10 (use these exact names; do not rename, nest, or add others):
   "epistemic_value", "logical_rigor", "factual_grounding", "constructive_impact",
   "intellectual_honesty", "clarity_precision", "grounded_creativity"
+Reason privately against the rubric. Do not add prose justification or any eighth field.
 Example: {"content": {"epistemic_value": 7, "logical_rigor": 6, "factual_grounding": 5,
 "constructive_impact": 7, "intellectual_honesty": 8, "clarity_precision": 7,
 "grounded_creativity": 6}, "confidence": 0.8}"""
@@ -745,6 +760,8 @@ Treat your revision as a probability update, and show the arithmetic of belief:
    decisive ⇒ posterior far below prior; strong ⇒ clearly below; weak ⇒
    slightly below or unchanged with a caveat; none ⇒ unchanged or higher.
    Your move's `confidence` field MUST equal the posterior.
+When evidence_force is "none", retain a defensible position and set what_changed
+to "NONE"; do not invent a belief change merely to appear reflective.
 An update that ignores the evidence force (unchanged confidence after a decisive
 hit, or a collapse after a weak one) is a calibration failure. Include all three
 fields in your content alongside your revised position.

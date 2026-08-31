@@ -94,8 +94,10 @@ _ROLE_INSTRUCTIONS: Dict[str, str] = {
         "Do NOT answer the question yourself."
     ),
     "elenchus_critic": (
-        "Identify specific contradictions, weak assumptions, and logic gaps "
-        "in the provided responses. Be precise — cite the exact claim you are challenging."
+        "Search aggressively for the strongest material contradiction, weak assumption, "
+        "or logic gap in the provided responses. If one survives serious examination, "
+        "cite the exact claim and explain precisely why it fails. If none does, report "
+        "exactly NO MATERIAL OBJECTION. Never manufacture disagreement to satisfy the role."
     ),
     "empiricist": (
         "Check documentation quality and factual validity. "
@@ -107,11 +109,16 @@ _ROLE_INSTRUCTIONS: Dict[str, str] = {
     ),
     "synthesizer": (
         "Produce a structured draft answer grounded in the council's deliberation. "
+        "Use the strongest real objection actually raised; if no material objection "
+        "survives, do not invent one and use NONE, NO MATERIAL REMAINING OBJECTION, "
+        "or NOT_APPLICABLE where appropriate. "
         "Mark epistemic status accurately."
     ),
     "reflector": (
-        "Revise your earlier position in light of the valid criticism you received. "
-        "State explicitly what changed and why."
+        "Revise your earlier position when valid criticism establishes a material defect. "
+        "If no material criticism survives, retain the defensible position and state why; "
+        "do not manufacture an update. State explicitly what changed, or that nothing did, "
+        "and why."
     ),
     "final_evaluator": (
         "Assess the assembled draft. Approve it if it meets the epistemic discipline bar. "

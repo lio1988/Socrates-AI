@@ -9,7 +9,8 @@ ignore the system prompt; the real effect appears only with real models.)
 from backend.dialogues.models import AgentRole, AgentState, AgentTask, DialogPhase, TaskKind
 from backend.dialogues.reasoning_prompts import (
     build_reasoning_system_prompt, REASONING_PROTOCOL, EVALUATION_DIRECTIVE,
-    ROLE_REASONING, PHASE_REASONING,
+    ROLE_REASONING, PHASE_REASONING, SYNTHESIS_CONTENT_DIRECTIVE,
+    SCORE_CONTENT_DIRECTIVE, BAYESIAN_UPDATE_DIRECTIVE,
 )
 from backend.dialogues.agent import CORE_AGENT_PROMPT
 from backend.dialogues.offline_provider_adapter import offline_scripted_adapter
@@ -78,3 +79,52 @@ def test_adapter_now_sends_full_reasoning_prompt():
     # request still shaped for a live Messages call (unchanged contract)
     kw = req.to_messages_kwargs()
     assert set(kw) == {"model", "max_tokens", "system", "messages", "thinking"}
+
+
+def test_elenchus_searches_hard_but_may_report_no_material_objection():
+    directive = ROLE_REASONING[AgentRole.ELENCHUS_CRITIC]
+    assert "Search aggressively" in directive
+    assert "NO MATERIAL OBJECTION" in directive
+    assert "Never manufacture disagreement" in directive
+    assert "not to win" in directive
+
+
+def test_reflection_may_retain_a_defensible_position():
+    directive = ROLE_REASONING[AgentRole.REFLECTOR]
+    assert "evidence_force is none" in directive
+    assert "retain the defensible position" in directive
+    assert "do not manufacture an update" in directive
+    assert 'evidence_force is "none"' in BAYESIAN_UPDATE_DIRECTIVE
+    assert "what_changed" in BAYESIAN_UPDATE_DIRECTIVE
+    assert '"NONE"' in BAYESIAN_UPDATE_DIRECTIVE
+
+
+def test_synthesis_uses_real_objections_or_honest_sentinels():
+    directive = ROLE_REASONING[AgentRole.SYNTHESIZER]
+    assert "strongest REAL material objection actually raised" in directive
+    for sentinel in ("NONE", "NO MATERIAL REMAINING OBJECTION", "NOT_APPLICABLE"):
+        assert sentinel in SYNTHESIS_CONTENT_DIRECTIVE
+    assert "`critiques_raised`" in SYNTHESIS_CONTENT_DIRECTIVE
+    assert "never\n                          invent" in SYNTHESIS_CONTENT_DIRECTIVE
+
+
+def test_numeric_score_prompt_matches_the_seven_field_contract():
+    for kind in (TaskKind.MOVE_SCORE, TaskKind.SECTION_SCORE):
+        prompt = build_reasoning_system_prompt(
+            AgentRole.FINAL_EVALUATOR, DialogPhase.RATIFICATION, kind,
+        )
+        assert "EXACTLY these seven numeric fields" in prompt
+        assert "do not add prose justification" in prompt.lower()
+        assert "Justify each judgement" not in prompt
+        assert '"rationale"' not in prompt
+    assert "seven numeric fields" in SCORE_CONTENT_DIRECTIVE
+
+
+def test_ratification_keeps_schema_supported_textual_reasoning():
+    prompt = build_reasoning_system_prompt(
+        AgentRole.FINAL_EVALUATOR,
+        DialogPhase.RATIFICATION,
+        TaskKind.COUNCIL_RATIFICATION,
+    )
+    assert '"rationale" string' in prompt
+    assert "task-specific schema" in prompt

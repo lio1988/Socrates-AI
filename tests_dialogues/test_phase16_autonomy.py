@@ -115,7 +115,12 @@ def test_identical_responses_trigger_diversity_alert():
     assert ad["response_diversity"] == 0.0 and ad["low_diversity_triggered"] is True
     ctx = ced._registry_phase_context(st, DialogPhase.ELENCHUS, "a0")
     assert "low_diversity_alert" in ctx
-    assert "shared assumption" in ctx["low_diversity_alert"]
+    alert = ctx["low_diversity_alert"]
+    assert "share a missed assumption" in alert
+    assert "If one exists, expose it" in alert
+    assert "no material shared defect was found" in alert
+    assert "find the angle every response missed" not in alert
+    assert "took for granted" not in alert
 
 
 def test_diverse_responses_do_not_trigger():
