@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 try:
     from sse_starlette.sse import EventSourceResponse
@@ -29,6 +29,10 @@ from backend.dialogues.normal_live import (
 
 router = APIRouter(prefix="/api/council", tags=["local-council"])
 Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
+PrivatePreflightId = Annotated[
+    str,
+    StringConstraints(pattern=r"^nlpf_[a-f0-9]{36}$"),
+]
 _DISALLOWED_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -46,11 +50,13 @@ class CouncilQuestion(BaseModel):
 
 class NormalLiveExecuteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+    preflight_id: PrivatePreflightId = Field(repr=False)
     confirmed: Literal[True]
 
 
 class NormalLiveCancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+    preflight_id: PrivatePreflightId = Field(repr=False)
 
 
 def _manager(request: Request) -> LocalCouncilManager:
@@ -123,7 +129,15 @@ async def start_council(payload: CouncilQuestion, request: Request) -> dict:
 
 
 @router.post("/live/preflight")
-async def normal_live_preflight(payload: CouncilQuestion, request: Request) -> dict:
+async def normal_live_preflight(
+    payload: CouncilQuestion,
+    request: Request,
+    response: Response,
+) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     try:
         return await _normal_manager(request).create_preflight(payload.question)
     except Exception as error:
@@ -131,33 +145,31 @@ async def normal_live_preflight(payload: CouncilQuestion, request: Request) -> d
 
 
 @router.post(
-    "/live/{preflight_id}/execute",
+    "/live/execute",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def execute_normal_live_preflight(
-    preflight_id: str,
-    _payload: NormalLiveExecuteRequest,
+    payload: NormalLiveExecuteRequest,
     request: Request,
 ) -> dict:
     try:
-        run = await _normal_manager(request).start_run(preflight_id)
+        run = await _normal_manager(request).start_run(payload.preflight_id)
     except Exception as error:
         _raise_normal_live_http(error)
     return {"run_id": run.run_id, "status": run.status}
 
 
 @router.post(
-    "/live/{preflight_id}/cancel",
+    "/live/cancel",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
 )
 async def cancel_normal_live_preflight(
-    preflight_id: str,
-    _payload: NormalLiveCancelRequest,
+    payload: NormalLiveCancelRequest,
     request: Request,
 ) -> Response:
     try:
-        await _normal_manager(request).cancel_preflight(preflight_id)
+        await _normal_manager(request).cancel_preflight(payload.preflight_id)
     except Exception as error:
         _raise_normal_live_http(error)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

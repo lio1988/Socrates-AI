@@ -60,23 +60,30 @@
             <span id="connection-status">Local CED not checked.</span>
             <button class="connection-retry" id="retry-connection" type="button" hidden>Retry connection</button>
           </div>
-          <section class="live-confirmation" id="live-confirmation-panel" tabindex="-1" aria-labelledby="live-confirmation-title" aria-describedby="live-confirmation-description" hidden>
+          <section class="live-confirmation" id="live-confirmation-panel" tabindex="-1" aria-labelledby="live-confirmation-title" aria-describedby="live-confirmation-description live-copy-status" hidden>
             <header class="live-confirmation-header">
               <div>
-                <p class="micro-label">NORMAL LIVE · EXPLICIT AUTHORIZATION</p>
+                <p class="micro-label">NORMAL LIVE COUNCIL</p>
                 <h2 id="live-confirmation-title">Review the server-owned execution plan</h2>
               </div>
               <span class="live-source-status" id="live-source-status">—</span>
             </header>
             <dl class="live-confirmation-metrics">
-              <div><dt>Authorized seats</dt><dd id="live-seat-count">—</dd></div>
-              <div><dt>Maximum provider calls</dt><dd id="live-maximum-calls">—</dd></div>
-              <div><dt>Conservative maximum cost</dt><dd id="live-maximum-cost">—</dd></div>
+              <div><dt>Council topology</dt><dd id="live-seat-count">—</dd></div>
+              <div><dt>Provider call ceiling</dt><dd id="live-maximum-calls">—</dd></div>
+              <div><dt>Spending ceiling</dt><dd id="live-maximum-cost">—</dd></div>
+            </dl>
+            <dl class="live-approval-details">
+              <div><dt>Approval reference</dt><dd><code id="live-approval-reference">—</code></dd></div>
+              <div><dt>Question fingerprint</dt><dd><code id="live-question-sha256">—</code></dd></div>
+              <div><dt>Valid until</dt><dd><time id="live-expires-at">—</time></dd></div>
             </dl>
             <p class="live-confirmation-description" id="live-confirmation-description">Normal Live uses real model-backed council seats. Confirm only after reviewing this server-derived call and cost ceiling.</p>
+            <p class="live-copy-status" id="live-copy-status" role="status" aria-live="polite" aria-atomic="true"></p>
             <div class="live-confirmation-actions">
+              <button class="secondary-button" id="live-copy-approval-button" type="button" disabled>Copy approval package</button>
               <button class="secondary-button" id="live-cancel-button" type="button">Cancel</button>
-              <button class="primary-button" id="live-confirm-button" type="button">Confirm and convene <span aria-hidden="true">↗</span></button>
+              <button class="primary-button" id="live-confirm-button" type="button" disabled>Confirm and convene <span aria-hidden="true">↗</span></button>
             </div>
           </section>
           <textarea id="question-input" name="question" rows="4" required placeholder="Ask Socrates anything worth examining..." aria-describedby="question-note question-error"></textarea>

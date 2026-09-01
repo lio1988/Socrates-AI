@@ -242,7 +242,13 @@ main { width: min(calc(100% - 64px), var(--max-width)); margin: 0 auto; }
 .live-confirmation-metrics > div:first-child { padding-left: 0; border-left: 0; }
 .live-confirmation-metrics dt { color: var(--dim); font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.06em; text-transform: uppercase; }
 .live-confirmation-metrics dd { margin: 6px 0 0; color: var(--text); font-family: var(--mono); font-size: 0.84rem; overflow-wrap: anywhere; }
+.live-approval-details { display: grid; gap: 11px; margin: 17px 0 0; }
+.live-approval-details > div { min-width: 0; }
+.live-approval-details dt { color: var(--dim); font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.live-approval-details dd { min-width: 0; margin: 4px 0 0; }
+.live-approval-details code, .live-approval-details time { color: var(--text-soft); font-family: var(--mono); font-size: 0.68rem; overflow-wrap: anywhere; user-select: all; }
 .live-confirmation-description { margin: 16px 0 0; color: var(--muted); font-size: 0.74rem; }
+.live-copy-status { min-height: 1.2em; margin: 9px 0 0; color: var(--accent-strong); font-family: var(--mono); font-size: 0.6rem; }
 .live-confirmation-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 textarea {

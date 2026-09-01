@@ -1,4 +1,17 @@
-# Stable branch memory — V0.3A additions
+# Stable branch memory — V0.3C additions
+
+- Authorized parent C is `d332acc886411e89fb1b6eea31288edea8984f55`; its production source-authorization artifact remains byte-for-byte unchanged in checkpoint D.
+- A raw `nlpf_<144-bit random>` preflight ID is an execution capability. It is permitted only in the initial same-origin response, private in-memory JavaScript state, and strict execute/cancel request bodies. It must never enter URLs, DOM, attributes, logs, clipboard, SSE, public results, artifacts, errors or reports.
+- Public references use `socrates-normal-live-approval-reference/v1` and the form `normalapprovalv1_<sha256>`. They bind the exact raw capability, question, plan, source receipt, private topology, call/cost ceilings, creation identity and authoritative expiry, but are never accepted as execute/cancel credentials.
+- Browser preflights have a non-sliding one-use maximum validity of 900 seconds. Monotonic server time is authoritative; the exact UTC expiry is informational and operator-visible.
+- Store creation accepts only a canonical preflight/binding pair. Binding and approval-reference identity are checked before atomic consume and again immediately before runtime/provider construction.
+- The UI copies exactly six public lines: authorization heading, approval reference, question SHA-256, maximum calls, exact USD ceiling and UTC expiry. No fallback copies additional state.
+- Any implementation change after artifact-only commit C intentionally makes production Normal Live fail closed. Reauthorization must be a later, separate artifact-only commit E.
+- V0.3C authorizes no provider dispatch, live call, spend, BYOK, deployment, push, tag or PR.
+
+---
+
+# Historical stable branch memory — V0.3A additions
 
 - Trusted V0.2 parent: `1b23e0d07880dd9cf61192b15fc9c823ff733027`.
 - `CEDOrchestrator.run_registry_session()` remains the sole protocol authority; Normal browser execution uses existing `socrates.runtime.execute()` and exactly three `SocratesLiveOpenRouterAdapter` seats.

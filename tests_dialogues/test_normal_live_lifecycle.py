@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import re
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -47,6 +49,14 @@ class _Clock:
         self.value = value
 
     def __call__(self) -> float:
+        return self.value
+
+
+class _UtcClock:
+    def __init__(self, value: datetime) -> None:
+        self.value = value
+
+    def __call__(self) -> datetime:
         return self.value
 
 
@@ -141,6 +151,318 @@ def _preflight(run_id: str = "normal-live-store-test"):
     )
 
 
+def test_approval_reference_is_canonical_stable_and_full_binding_sensitive() -> None:
+    from backend.dialogues.normal_live import (
+        APPROVAL_REFERENCE_PREFIX,
+        APPROVAL_REFERENCE_SCHEMA_VERSION,
+        NormalLivePreflightStore,
+        make_normal_live_approval_reference_v1,
+        make_normal_live_preflight_binding,
+    )
+    from backend.dialogues.socrates_zero.contracts import canonical_json
+
+    monotonic = _Clock()
+    utc = _UtcClock(datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc))
+    store = NormalLivePreflightStore(
+        ttl_seconds=900,
+        monotonic_clock=monotonic,
+        utc_clock=utc,
+    )
+    preflight = _preflight("normal-live-approval-reference")
+    binding = make_normal_live_preflight_binding(preflight, _receipt("a"))
+    record = asyncio.run(store.create(preflight, binding))
+
+    source = binding.source_receipt
+    expected_payload = {
+        "schema_version": APPROVAL_REFERENCE_SCHEMA_VERSION,
+        "preflight_id": record.preflight_id,
+        "run_id": preflight.run_id,
+        "session_id": preflight.session_id,
+        "preflight_created_at_utc": preflight.created_at_utc,
+        "store_created_at_utc": record.created_at_utc,
+        "validity_seconds": record.validity_seconds,
+        "expires_at_utc": record.expires_at_utc,
+        "created_monotonic": record.created_monotonic,
+        "expires_monotonic": record.expires_monotonic,
+        "question_sha256": binding.question_sha256,
+        "plan_digest": binding.plan_digest,
+        "source_authorization": {
+            "authorization_id": source.authorization_id,
+            "source_set_digest": source.source_set_digest,
+            "authorized_implementation_commit_sha": (
+                source.authorized_implementation_commit_sha
+            ),
+            "authorized_implementation_tree_sha": (
+                source.authorized_implementation_tree_sha
+            ),
+            "runtime_identity": source.runtime_identity,
+        },
+        "provider_topology": [
+            {
+                "alias": alias,
+                "provider_id": provider_id,
+                "model_id": model_id,
+                "policy_key": policy_key,
+            }
+            for alias, provider_id, model_id, policy_key in binding.private_topology
+        ],
+        "base_calls": binding.base_calls,
+        "retry_calls": binding.retry_calls,
+        "maximum_calls": binding.maximum_calls,
+        "maximum_cost_picodollars": binding.maximum_spend_picodollars,
+        "maximum_cost_usd": binding.maximum_cost_usd,
+    }
+    expected = APPROVAL_REFERENCE_PREFIX + hashlib.sha256(
+        canonical_json(expected_payload).encode("utf-8")
+    ).hexdigest()
+    assert record.approval_reference == expected
+    assert make_normal_live_approval_reference_v1(record) == expected
+    assert re.fullmatch(r"normalapprovalv1_[0-9a-f]{64}", expected)
+
+    source_mutations = tuple(
+        replace(binding, source_receipt=source.model_copy(update={field_name: value}))
+        for field_name, value in (
+            ("authorization_id", "normallivesourceauthv1_" + "b" * 64),
+            ("source_set_digest", "b" * 64),
+            ("authorized_implementation_commit_sha", "b" * 40),
+            ("authorized_implementation_tree_sha", "b" * 40),
+            ("runtime_identity", "normal-socrates-browser-runtime/test"),
+        )
+    )
+    topology_mutations = tuple(
+        replace(
+            binding,
+            private_topology=(
+                tuple(
+                    changed if index == field_index else value
+                    for index, value in enumerate(binding.private_topology[0])
+                ),
+                *binding.private_topology[1:],
+            ),
+        )
+        for field_index, changed in enumerate(
+            ("delta", "provider.changed", "model.changed", "policy.changed")
+        )
+    )
+    binding_mutations = (
+        replace(binding, question_sha256="b" * 64),
+        replace(binding, plan_digest="b" * 64),
+        replace(
+            binding,
+            private_topology=tuple(reversed(binding.private_topology)),
+        ),
+        replace(binding, base_calls=binding.base_calls + 1),
+        replace(binding, retry_calls=binding.retry_calls + 1),
+        replace(binding, maximum_calls=binding.maximum_calls + 1),
+        replace(
+            binding,
+            maximum_spend_picodollars=binding.maximum_spend_picodollars + 1,
+        ),
+        replace(binding, maximum_cost_usd=binding.maximum_cost_usd + "0"),
+        *source_mutations,
+        *topology_mutations,
+    )
+    for changed_binding in binding_mutations:
+        assert make_normal_live_approval_reference_v1(
+            record, current_binding=changed_binding
+        ) != expected
+
+    record_mutations = (
+        replace(record, preflight_id="nlpf_" + "b" * 36),
+        replace(record, preflight=replace(preflight, run_id=preflight.run_id + "x")),
+        replace(
+            record,
+            preflight=replace(preflight, session_id=preflight.session_id + "x"),
+        ),
+        replace(
+            record,
+            preflight=replace(
+                preflight, created_at_utc="2026-09-01T00:00:01Z"
+            ),
+        ),
+        replace(record, created_at_utc="2026-09-01T12:00:01Z"),
+        replace(record, validity_seconds=901),
+        replace(record, expires_at_utc="2026-09-01T12:15:01Z"),
+        replace(record, created_monotonic=record.created_monotonic + 1),
+        replace(record, expires_monotonic=record.expires_monotonic + 1),
+    )
+    for changed_record in record_mutations:
+        assert make_normal_live_approval_reference_v1(changed_record) != expected
+    assert make_normal_live_approval_reference_v1(
+        replace(record, state="consumed")
+    ) == expected
+
+
+def test_preflight_expiry_is_exact_monotonic_non_sliding_and_900_seconds() -> None:
+    from backend.dialogues.normal_live import (
+        NormalLivePreflightExpiredError,
+        NormalLivePreflightStore,
+        make_normal_live_preflight_binding,
+    )
+
+    async def exercise() -> None:
+        monotonic = _Clock(100.0)
+        utc = _UtcClock(datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc))
+        store = NormalLivePreflightStore(
+            ttl_seconds=900,
+            monotonic_clock=monotonic,
+            utc_clock=utc,
+        )
+        preflight = _preflight("normal-live-exact-expiry")
+        record = await store.create(
+            preflight, make_normal_live_preflight_binding(preflight, _receipt())
+        )
+        assert record.created_monotonic == 100.0
+        assert record.expires_monotonic == 1000.0
+        assert record.created_at_utc == "2026-09-01T12:00:00Z"
+        assert record.expires_at_utc == "2026-09-01T12:15:00Z"
+        assert record.validity_seconds == 900
+
+        monotonic.value = 999.999
+        before = await store.inspect_pending(record.preflight_id)
+        assert before.expires_monotonic == record.expires_monotonic
+        assert before.expires_at_utc == record.expires_at_utc
+        assert before.approval_reference == record.approval_reference
+        monotonic.value = 1000.0
+        with pytest.raises(NormalLivePreflightExpiredError):
+            await store.inspect_pending(record.preflight_id)
+        expired = store.records[record.preflight_id]
+        assert expired.state == "expired"
+        assert expired.approval_reference == record.approval_reference
+        utc.value += timedelta(seconds=900)
+        replacement_preflight = _preflight("normal-live-after-expiry")
+        replacement = await store.create(
+            replacement_preflight,
+            make_normal_live_preflight_binding(replacement_preflight, _receipt()),
+        )
+        assert replacement.preflight_id != record.preflight_id
+        assert replacement.approval_reference != record.approval_reference
+        with pytest.raises(NormalLivePreflightExpiredError):
+            await store.cancel(record.preflight_id)
+
+    asyncio.run(exercise())
+
+
+def test_public_reference_is_not_a_store_lookup_or_execution_capability(
+    tmp_path: Path,
+) -> None:
+    from backend.dialogues.normal_live import (
+        NormalLiveCouncilManager,
+        NormalLivePreflightNotFoundError,
+    )
+
+    manager = NormalLiveCouncilManager(
+        source_verifier=lambda: _receipt(),
+        transport=lambda **_kwargs: pytest.fail("transport must remain unreachable"),
+        run_root=tmp_path / "runs",
+        utc_clock=lambda: datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    public = asyncio.run(manager.create_preflight("Reference is not capability."))
+    reference = public["approval_reference"]
+    with pytest.raises(NormalLivePreflightNotFoundError):
+        asyncio.run(manager.start_run(reference))
+    with pytest.raises(NormalLivePreflightNotFoundError):
+        asyncio.run(manager.cancel_preflight(reference))
+    assert manager.runs == {}
+    assert not (tmp_path / "runs").exists()
+
+
+def test_raw_preflight_capability_is_repr_redacted_and_reference_tamper_fails(
+    tmp_path: Path,
+) -> None:
+    from backend.dialogues.normal_live import (
+        NormalLiveCouncilManager,
+        NormalLivePreflightConflictError,
+    )
+
+    manager = NormalLiveCouncilManager(
+        source_verifier=lambda: _receipt(),
+        transport=lambda **_kwargs: pytest.fail("transport must remain unreachable"),
+        run_root=tmp_path / "runs",
+        utc_clock=lambda: datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    public = asyncio.run(manager.create_preflight("Detect stored reference drift."))
+    raw_id = public["preflight_id"]
+    record = manager.preflight_store.records[raw_id]
+    assert raw_id not in repr(record)
+    manager.preflight_store._records[raw_id] = replace(
+        record,
+        approval_reference="normalapprovalv1_" + "0" * 64,
+    )
+    with pytest.raises(NormalLivePreflightConflictError):
+        asyncio.run(manager.start_run(raw_id))
+    assert manager.runs == {}
+    assert not (tmp_path / "runs").exists()
+
+
+def test_question_plan_topology_and_cost_drift_fail_before_execution(
+    tmp_path: Path,
+) -> None:
+    from backend.dialogues.normal_live import (
+        NormalLiveCouncilManager,
+        NormalLivePreflightConflictError,
+    )
+
+    def changed_question(preflight):
+        question = "A different immutable question."
+        return replace(
+            preflight,
+            question=question,
+            question_sha256=hashlib.sha256(question.encode("utf-8")).hexdigest(),
+            question_utf8_bytes=len(question.encode("utf-8")),
+        )
+
+    mutations = (
+        changed_question,
+        lambda preflight: replace(
+            preflight,
+            call_plan=replace(
+                preflight.call_plan,
+                agent_to_seat=tuple(reversed(preflight.call_plan.agent_to_seat)),
+            ),
+        ),
+        lambda preflight: replace(
+            preflight,
+            call_plan=replace(
+                preflight.call_plan,
+                seats=tuple(reversed(preflight.call_plan.seats)),
+            ),
+        ),
+        lambda preflight: replace(
+            preflight,
+            cost=replace(
+                preflight.cost,
+                maximum_cost_picodollars=(
+                    preflight.cost.maximum_cost_picodollars + 1
+                ),
+            ),
+        ),
+    )
+    for index, mutate in enumerate(mutations):
+        manager = NormalLiveCouncilManager(
+            source_verifier=lambda: _receipt(),
+            transport=lambda **_kwargs: pytest.fail(
+                "transport must remain unreachable"
+            ),
+            run_root=tmp_path / f"runs-{index}",
+            utc_clock=lambda: datetime(2026, 9, 1, tzinfo=timezone.utc),
+        )
+        manager._execute = AsyncMock(
+            side_effect=AssertionError("execution must remain unreachable")
+        )
+        public = asyncio.run(manager.create_preflight(f"Drift case {index}?"))
+        raw_id = public["preflight_id"]
+        record = manager.preflight_store.records[raw_id]
+        manager.preflight_store._records[raw_id] = replace(
+            record, preflight=mutate(record.preflight)
+        )
+        with pytest.raises(NormalLivePreflightConflictError):
+            asyncio.run(manager.start_run(raw_id))
+        assert manager._execute.await_count == 0
+        assert manager.runs == {}
+        assert not (tmp_path / f"runs-{index}").exists()
+
+
 def test_preflight_store_is_bounded_ttl_and_one_use() -> None:
     from backend.dialogues.normal_live import (
         NormalLivePreflightConflictError,
@@ -175,6 +497,28 @@ def test_preflight_store_is_bounded_ttl_and_one_use() -> None:
         clock.value += 11
         with pytest.raises(NormalLivePreflightExpiredError):
             await store.inspect_pending(expiring.preflight_id)
+
+    asyncio.run(exercise())
+
+
+def test_preflight_store_rejects_noncanonical_binding_and_ttl_above_900() -> None:
+    from backend.dialogues.normal_live import (
+        NormalLivePreflightConflictError,
+        NormalLivePreflightStore,
+        make_normal_live_preflight_binding,
+    )
+
+    with pytest.raises(ValueError, match="no greater than 900"):
+        NormalLivePreflightStore(ttl_seconds=901)
+
+    async def exercise() -> None:
+        store = NormalLivePreflightStore(ttl_seconds=900)
+        preflight = _preflight("normal-live-store-canonical-binding")
+        binding = make_normal_live_preflight_binding(preflight, _receipt())
+        mismatched = replace(binding, maximum_calls=binding.maximum_calls + 1)
+        with pytest.raises(NormalLivePreflightConflictError):
+            await store.create(preflight, mismatched)
+        assert store.records == {}
 
     asyncio.run(exercise())
 
@@ -348,8 +692,11 @@ def test_binding_detects_plan_source_question_topology_and_limit_drift() -> None
     preflight = _preflight("normal-live-binding")
     original = make_normal_live_preflight_binding(preflight, _receipt("a"))
     assert original.question_sha256 == preflight.question_sha256
+    assert original.base_calls == preflight.call_plan.base_call_count
+    assert original.retry_calls == preflight.call_plan.retry_call_count
     assert original.maximum_calls == preflight.call_plan.maximum_call_count
     assert original.maximum_spend_picodollars == preflight.cost.maximum_cost_picodollars
+    assert original.maximum_cost_usd == "24.95785344"
     assert len(original.private_topology) == 3
     assert make_normal_live_preflight_binding(preflight, _receipt("b")) != original
 
@@ -433,6 +780,8 @@ def test_manager_preflight_is_exact_safe_projection_of_canonical_plan(tmp_path: 
     public = asyncio.run(manager.create_preflight(SECRET_QUESTION))
     assert set(public) == {
         "preflight_id",
+        "approval_reference",
+        "question_sha256",
         "question",
         "run_mode",
         "seats",
@@ -443,6 +792,8 @@ def test_manager_preflight_is_exact_safe_projection_of_canonical_plan(tmp_path: 
         "maximum_cost_usd",
         "confirmation_required",
         "source_authorization_status",
+        "validity_seconds",
+        "expires_at_utc",
     }
     assert public["run_mode"] == "normal_live"
     assert public["confirmation_required"] is True
@@ -455,6 +806,10 @@ def test_manager_preflight_is_exact_safe_projection_of_canonical_plan(tmp_path: 
     ]
     assert public["maximum_calls"] == public["base_calls"] + public["retry_calls"]
     assert isinstance(public["maximum_cost_usd"], str)
+    assert re.fullmatch(r"normalapprovalv1_[0-9a-f]{64}", public["approval_reference"])
+    assert re.fullmatch(r"[0-9a-f]{64}", public["question_sha256"])
+    assert public["validity_seconds"] == 900
+    assert public["expires_at_utc"] == "2026-09-01T00:15:00Z"
     serialized = json.dumps(public).lower()
     for canary in SECRET_CANARIES:
         assert canary.lower() not in serialized

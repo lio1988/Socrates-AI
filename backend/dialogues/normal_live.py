@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import math
 import secrets
 import time
-from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Literal, Optional
 
@@ -35,7 +36,9 @@ from socrates.source_authorization import (
 
 
 PREFLIGHT_ID_PREFIX = "nlpf_"
-DEFAULT_PREFLIGHT_TTL_SECONDS = 300.0
+APPROVAL_REFERENCE_SCHEMA_VERSION = "socrates-normal-live-approval-reference/v1"
+APPROVAL_REFERENCE_PREFIX = "normalapprovalv1_"
+DEFAULT_PREFLIGHT_TTL_SECONDS = 900.0
 DEFAULT_MAX_PREFLIGHTS = 32
 DEFAULT_MAX_RETAINED_NORMAL_RUNS = 32
 
@@ -80,17 +83,24 @@ class NormalLivePreflightBinding:
     plan_digest: str
     source_receipt: VerifiedNormalLiveSourceAuthorizationV1
     private_topology: tuple[tuple[str, str, str, str], ...]
+    base_calls: int
+    retry_calls: int
     maximum_calls: int
     maximum_spend_picodollars: int
+    maximum_cost_usd: str
 
 
 @dataclass(frozen=True)
 class StoredNormalLivePreflight:
-    preflight_id: str
+    preflight_id: str = field(repr=False)
     preflight: NormalPreflight
     binding: NormalLivePreflightBinding
     created_monotonic: float
     expires_monotonic: float
+    created_at_utc: str
+    expires_at_utc: str
+    validity_seconds: int
+    approval_reference: str
     state: Literal["pending", "consumed", "cancelled", "expired"] = "pending"
 
 
@@ -114,9 +124,72 @@ def make_normal_live_preflight_binding(
             (seat.alias, seat.provider_id, seat.model_id, seat.policy_key)
             for seat in preflight.call_plan.seats
         ),
+        base_calls=preflight.call_plan.base_call_count,
+        retry_calls=preflight.call_plan.retry_call_count,
         maximum_calls=preflight.call_plan.maximum_call_count,
         maximum_spend_picodollars=preflight.cost.maximum_cost_picodollars,
+        maximum_cost_usd=normal_runtime.picodollars_to_usd_text(
+            preflight.cost.maximum_cost_picodollars
+        ),
     )
+
+
+def make_normal_live_approval_reference_v1(
+    record: StoredNormalLivePreflight,
+    *,
+    current_binding: Optional[NormalLivePreflightBinding] = None,
+) -> str:
+    """Content-address one exact stored preflight without granting authority."""
+
+    if type(record) is not StoredNormalLivePreflight:
+        raise NormalLivePreflightConflictError()
+    binding = record.binding if current_binding is None else current_binding
+    if type(binding) is not NormalLivePreflightBinding:
+        raise NormalLivePreflightConflictError()
+    source = binding.source_receipt
+    if type(source) is not VerifiedNormalLiveSourceAuthorizationV1:
+        raise NormalLivePreflightConflictError()
+    payload = {
+        "schema_version": APPROVAL_REFERENCE_SCHEMA_VERSION,
+        "preflight_id": record.preflight_id,
+        "run_id": record.preflight.run_id,
+        "session_id": record.preflight.session_id,
+        "preflight_created_at_utc": record.preflight.created_at_utc,
+        "store_created_at_utc": record.created_at_utc,
+        "validity_seconds": record.validity_seconds,
+        "expires_at_utc": record.expires_at_utc,
+        "created_monotonic": record.created_monotonic,
+        "expires_monotonic": record.expires_monotonic,
+        "question_sha256": binding.question_sha256,
+        "plan_digest": binding.plan_digest,
+        "source_authorization": {
+            "authorization_id": source.authorization_id,
+            "source_set_digest": source.source_set_digest,
+            "authorized_implementation_commit_sha": (
+                source.authorized_implementation_commit_sha
+            ),
+            "authorized_implementation_tree_sha": (
+                source.authorized_implementation_tree_sha
+            ),
+            "runtime_identity": source.runtime_identity,
+        },
+        "provider_topology": [
+            {
+                "alias": alias,
+                "provider_id": provider_id,
+                "model_id": model_id,
+                "policy_key": policy_key,
+            }
+            for alias, provider_id, model_id, policy_key in binding.private_topology
+        ],
+        "base_calls": binding.base_calls,
+        "retry_calls": binding.retry_calls,
+        "maximum_calls": binding.maximum_calls,
+        "maximum_cost_picodollars": binding.maximum_spend_picodollars,
+        "maximum_cost_usd": binding.maximum_cost_usd,
+    }
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return APPROVAL_REFERENCE_PREFIX + digest
 
 
 class NormalLivePreflightStore:
@@ -128,6 +201,7 @@ class NormalLivePreflightStore:
         max_entries: int = DEFAULT_MAX_PREFLIGHTS,
         ttl_seconds: float = DEFAULT_PREFLIGHT_TTL_SECONDS,
         monotonic_clock: Callable[[], float] = time.monotonic,
+        utc_clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if type(max_entries) is not int or max_entries <= 0:
             raise ValueError("max_entries must be a positive integer")
@@ -136,11 +210,17 @@ class NormalLivePreflightStore:
             or isinstance(ttl_seconds, bool)
             or not math.isfinite(float(ttl_seconds))
             or float(ttl_seconds) <= 0
+            or not float(ttl_seconds).is_integer()
+            or float(ttl_seconds) > DEFAULT_PREFLIGHT_TTL_SECONDS
         ):
-            raise ValueError("ttl_seconds must be finite and positive")
+            raise ValueError(
+                "ttl_seconds must be a positive whole number no greater than 900"
+            )
         self._max_entries = max_entries
         self._ttl_seconds = float(ttl_seconds)
+        self._validity_seconds = int(ttl_seconds)
         self._clock = monotonic_clock
+        self._utc_clock = utc_clock
         self._records: Dict[str, StoredNormalLivePreflight] = {}
         self._lock = asyncio.Lock()
 
@@ -153,6 +233,25 @@ class NormalLivePreflightStore:
         if not math.isfinite(value):
             raise NormalLiveCapacityError()
         return value
+
+    def _utc_now(self) -> datetime:
+        try:
+            value = self._utc_clock()
+        except Exception:
+            raise NormalLiveCapacityError() from None
+        if not isinstance(value, datetime) or value.tzinfo is None:
+            raise NormalLiveCapacityError()
+        try:
+            normalized = value.astimezone(timezone.utc)
+        except (OverflowError, ValueError):
+            raise NormalLiveCapacityError() from None
+        if normalized.utcoffset() != timedelta(0):
+            raise NormalLiveCapacityError()
+        return normalized
+
+    @staticmethod
+    def _utc_text(value: datetime) -> str:
+        return value.isoformat().replace("+00:00", "Z")
 
     def _transition_expired(self, now: float) -> None:
         for preflight_id, record in tuple(self._records.items()):
@@ -197,20 +296,41 @@ class NormalLivePreflightStore:
             raise NormalLivePreflightConflictError()
         if type(binding) is not NormalLivePreflightBinding:
             raise NormalLivePreflightConflictError()
+        try:
+            canonical_binding = make_normal_live_preflight_binding(
+                preflight, binding.source_receipt
+            )
+        except Exception:
+            raise NormalLivePreflightConflictError() from None
+        if binding != canonical_binding:
+            raise NormalLivePreflightConflictError()
         async with self._lock:
             now = self._now()
+            created_at_utc = self._utc_now()
             self._transition_expired(now)
             self._make_room()
             while True:
                 preflight_id = PREFLIGHT_ID_PREFIX + secrets.token_hex(18)
                 if preflight_id not in self._records:
                     break
-            record = StoredNormalLivePreflight(
+            provisional = StoredNormalLivePreflight(
                 preflight_id=preflight_id,
                 preflight=preflight,
                 binding=binding,
                 created_monotonic=now,
                 expires_monotonic=now + self._ttl_seconds,
+                created_at_utc=self._utc_text(created_at_utc),
+                expires_at_utc=self._utc_text(
+                    created_at_utc + timedelta(seconds=self._validity_seconds)
+                ),
+                validity_seconds=self._validity_seconds,
+                approval_reference="",
+            )
+            record = replace(
+                provisional,
+                approval_reference=make_normal_live_approval_reference_v1(
+                    provisional
+                ),
             )
             self._records[preflight_id] = record
             return record
@@ -229,6 +349,16 @@ class NormalLivePreflightStore:
             if type(current_binding) is not NormalLivePreflightBinding:
                 raise NormalLivePreflightConflictError()
             if current_binding != record.binding:
+                raise NormalLivePreflightConflictError()
+            recomputed_reference = make_normal_live_approval_reference_v1(
+                record, current_binding=current_binding
+            )
+            if (
+                not isinstance(record.approval_reference, str)
+                or not hmac.compare_digest(
+                    recomputed_reference, record.approval_reference
+                )
+            ):
                 raise NormalLivePreflightConflictError()
             consumed = replace(record, state="consumed")
             self._records[preflight_id] = consumed
@@ -269,6 +399,7 @@ class NormalLiveCouncilManager:
             max_entries=max_preflights,
             ttl_seconds=preflight_ttl_seconds,
             monotonic_clock=monotonic_clock,
+            utc_clock=utc_clock,
         )
         self._runs: Dict[str, LocalCouncilRun] = {}
         self._runs_lock = asyncio.Lock()
@@ -308,6 +439,8 @@ class NormalLiveCouncilManager:
             raise NormalLivePreflightConflictError()
         return {
             "preflight_id": record.preflight_id,
+            "approval_reference": record.approval_reference,
+            "question_sha256": preflight.question_sha256,
             "question": project_public_text(preflight.question, limit=8_000),
             "run_mode": "normal_live",
             "seats": seats,
@@ -320,6 +453,8 @@ class NormalLiveCouncilManager:
             ),
             "confirmation_required": True,
             "source_authorization_status": "authorized",
+            "validity_seconds": record.validity_seconds,
+            "expires_at_utc": record.expires_at_utc,
         }
 
     async def create_preflight(self, question: str) -> Dict[str, Any]:
@@ -344,6 +479,16 @@ class NormalLiveCouncilManager:
         except Exception:
             raise NormalLivePreflightConflictError() from None
         if binding != record.binding:
+            raise NormalLivePreflightConflictError()
+        recomputed_reference = make_normal_live_approval_reference_v1(
+            record, current_binding=binding
+        )
+        if (
+            not isinstance(record.approval_reference, str)
+            or not hmac.compare_digest(
+                recomputed_reference, record.approval_reference
+            )
+        ):
             raise NormalLivePreflightConflictError()
         return binding
 
@@ -426,8 +571,25 @@ class NormalLiveCouncilManager:
         )
 
         def pre_runtime_guard() -> None:
-            fresh = self._verify_source()
-            if fresh != record.binding.source_receipt:
+            try:
+                fresh = self._verify_source()
+                fresh_binding = make_normal_live_preflight_binding(
+                    record.preflight, fresh
+                )
+                fresh_reference = make_normal_live_approval_reference_v1(
+                    record, current_binding=fresh_binding
+                )
+            except Exception:
+                raise normal_runtime.NormalAuthorizationError(
+                    "Normal Live source authorization changed before execution"
+                ) from None
+            if (
+                fresh_binding != record.binding
+                or not isinstance(record.approval_reference, str)
+                or not hmac.compare_digest(
+                    fresh_reference, record.approval_reference
+                )
+            ):
                 raise normal_runtime.NormalAuthorizationError(
                     "Normal Live source authorization changed before execution"
                 )
@@ -515,6 +677,8 @@ class NormalLiveCouncilManager:
 
 
 __all__ = [
+    "APPROVAL_REFERENCE_PREFIX",
+    "APPROVAL_REFERENCE_SCHEMA_VERSION",
     "NormalLiveCapacityError",
     "NormalLiveCostBlockedError",
     "NormalLiveCouncilManager",
@@ -526,5 +690,6 @@ __all__ = [
     "NormalLivePreflightStore",
     "NormalLiveUnavailableError",
     "StoredNormalLivePreflight",
+    "make_normal_live_approval_reference_v1",
     "make_normal_live_preflight_binding",
 ]

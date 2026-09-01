@@ -32,8 +32,13 @@ const LOCAL_PHASE_IDS = Object.freeze([
 const LOCAL_RUN_ID = /^ced_[a-f0-9]{24}$/;
 const SAFE_PUBLIC_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/;
 const NORMAL_PREFLIGHT_ID = /^nlpf_[a-f0-9]{36}$/;
+const NORMAL_APPROVAL_REFERENCE = /^normalapprovalv1_[a-f0-9]{64}$/;
+const SHA256_HEX = /^[a-f0-9]{64}$/;
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
 const EXACT_PREFLIGHT_KEYS = Object.freeze([
   "preflight_id",
+  "approval_reference",
+  "question_sha256",
   "question",
   "run_mode",
   "seats",
@@ -44,6 +49,8 @@ const EXACT_PREFLIGHT_KEYS = Object.freeze([
   "maximum_cost_usd",
   "confirmation_required",
   "source_authorization_status",
+  "validity_seconds",
+  "expires_at_utc",
 ]);
 const EXACT_SEAT_KEYS = Object.freeze(["seat_id", "alias"]);
 const EXACT_EXECUTE_KEYS = Object.freeze(["run_id", "status"]);
@@ -88,6 +95,11 @@ const bridgeElements = {
   liveSeatCount: document.querySelector("#live-seat-count"),
   liveMaximumCalls: document.querySelector("#live-maximum-calls"),
   liveMaximumCost: document.querySelector("#live-maximum-cost"),
+  liveApprovalReference: document.querySelector("#live-approval-reference"),
+  liveQuestionSha256: document.querySelector("#live-question-sha256"),
+  liveExpiresAt: document.querySelector("#live-expires-at"),
+  liveCopyApproval: document.querySelector("#live-copy-approval-button"),
+  liveCopyStatus: document.querySelector("#live-copy-status"),
   liveCancel: document.querySelector("#live-cancel-button"),
   liveConfirm: document.querySelector("#live-confirm-button"),
 };
@@ -103,6 +115,7 @@ const localState = {
   requestController: null,
   terminal: false,
   ratification: null,
+  preflightCapability: null,
   preflight: null,
 };
 runState.sourceMode = "demo";
@@ -125,6 +138,10 @@ function hasExactKeys(value, expected) {
 function validateLivePreflight(payload) {
   if (!hasExactKeys(payload, EXACT_PREFLIGHT_KEYS)
       || !NORMAL_PREFLIGHT_ID.test(payload.preflight_id)
+      || typeof payload.approval_reference !== "string"
+      || !NORMAL_APPROVAL_REFERENCE.test(payload.approval_reference)
+      || typeof payload.question_sha256 !== "string"
+      || !SHA256_HEX.test(payload.question_sha256)
       || typeof payload.question !== "string"
       || payload.question.length < 1
       || payload.question.length > 8000
@@ -145,7 +162,11 @@ function validateLivePreflight(payload) {
       || payload.maximum_calls !== payload.base_calls + payload.retry_calls
       || typeof payload.maximum_cost_usd !== "string"
       || payload.maximum_cost_usd.length > 64
-      || !EXACT_DECIMAL.test(payload.maximum_cost_usd)) {
+      || !EXACT_DECIMAL.test(payload.maximum_cost_usd)
+      || payload.validity_seconds !== 900
+      || typeof payload.expires_at_utc !== "string"
+      || !UTC_TIMESTAMP.test(payload.expires_at_utc)
+      || !Number.isFinite(Date.parse(payload.expires_at_utc))) {
     throw new Error("invalid Normal Live preflight projection");
   }
   const seen = new Set();
@@ -163,8 +184,9 @@ function validateLivePreflight(payload) {
     seen.add(seat.seat_id);
     return Object.freeze({ seat_id: seat.seat_id, alias: seat.alias });
   });
-  return Object.freeze({
-    preflight_id: payload.preflight_id,
+  const publicProjection = Object.freeze({
+    approval_reference: payload.approval_reference,
+    question_sha256: payload.question_sha256,
     question: payload.question,
     run_mode: payload.run_mode,
     seats: Object.freeze(seats),
@@ -175,6 +197,12 @@ function validateLivePreflight(payload) {
     maximum_cost_usd: payload.maximum_cost_usd,
     confirmation_required: true,
     source_authorization_status: "authorized",
+    validity_seconds: payload.validity_seconds,
+    expires_at_utc: payload.expires_at_utc,
+  });
+  return Object.freeze({
+    privatePreflightId: payload.preflight_id,
+    publicProjection,
   });
 }
 
@@ -189,21 +217,88 @@ function validateExecuteResponse(payload) {
 }
 
 function clearLiveConfirmation() {
+  localState.preflightCapability = null;
   localState.preflight = null;
   bridgeElements.liveConfirmation.hidden = true;
   bridgeElements.liveSourceStatus.textContent = "—";
   bridgeElements.liveSeatCount.textContent = "—";
   bridgeElements.liveMaximumCalls.textContent = "—";
   bridgeElements.liveMaximumCost.textContent = "—";
+  bridgeElements.liveApprovalReference.textContent = "—";
+  bridgeElements.liveQuestionSha256.textContent = "—";
+  bridgeElements.liveExpiresAt.textContent = "—";
+  bridgeElements.liveExpiresAt.removeAttribute("datetime");
+  bridgeElements.liveCopyStatus.textContent = "";
 }
 
 function renderLiveConfirmation(preflight) {
   bridgeElements.liveSourceStatus.textContent = "SOURCE AUTHORIZED";
-  bridgeElements.liveSeatCount.textContent = String(preflight.provider_count);
-  bridgeElements.liveMaximumCalls.textContent = String(preflight.maximum_calls);
-  bridgeElements.liveMaximumCost.textContent = `$${preflight.maximum_cost_usd}`;
+  bridgeElements.liveSeatCount.textContent = `${preflight.provider_count} model seats`;
+  bridgeElements.liveMaximumCalls.textContent = `Up to ${preflight.maximum_calls} calls`;
+  bridgeElements.liveMaximumCost.textContent =
+    `Maximum authorized spend: $${preflight.maximum_cost_usd}`;
+  bridgeElements.liveApprovalReference.textContent = preflight.approval_reference;
+  bridgeElements.liveQuestionSha256.textContent = preflight.question_sha256;
+  bridgeElements.liveExpiresAt.textContent = preflight.expires_at_utc;
+  bridgeElements.liveExpiresAt.setAttribute("datetime", preflight.expires_at_utc);
+  bridgeElements.liveCopyStatus.textContent = "";
   bridgeElements.liveConfirmation.hidden = false;
   bridgeElements.liveConfirmation.focus({ preventScroll: true });
+}
+
+function liveConfirmationMatches(preflight) {
+  return Boolean(preflight)
+    && bridgeElements.liveConfirmation.hidden === false
+    && elements.activeQuestion.textContent === preflight.question
+    && bridgeElements.liveSourceStatus.textContent === "SOURCE AUTHORIZED"
+    && bridgeElements.liveSeatCount.textContent === `${preflight.provider_count} model seats`
+    && bridgeElements.liveMaximumCalls.textContent === `Up to ${preflight.maximum_calls} calls`
+    && bridgeElements.liveMaximumCost.textContent ===
+      `Maximum authorized spend: $${preflight.maximum_cost_usd}`
+    && bridgeElements.liveApprovalReference.textContent === preflight.approval_reference
+    && bridgeElements.liveQuestionSha256.textContent === preflight.question_sha256
+    && bridgeElements.liveExpiresAt.textContent === preflight.expires_at_utc
+    && bridgeElements.liveExpiresAt.getAttribute("datetime") === preflight.expires_at_utc;
+}
+
+function buildLiveApprovalPackage(preflight) {
+  return [
+    "AUTHORIZE ONE NORMAL LIVE RUN",
+    `APPROVAL_REFERENCE = ${preflight.approval_reference}`,
+    `QUESTION_SHA256 = ${preflight.question_sha256}`,
+    `MAXIMUM_CALLS = ${preflight.maximum_calls}`,
+    `MAXIMUM_COST_USD = ${preflight.maximum_cost_usd}`,
+    `EXPIRES_AT_UTC = ${preflight.expires_at_utc}`,
+  ].join("\n");
+}
+
+async function copyLiveApprovalPackage() {
+  const preflight = localState.preflight;
+  const generation = localState.generation;
+  if (runState.lifecycle !== "awaiting_confirmation"
+      || !preflight
+      || !liveConfirmationMatches(preflight)) {
+    bridgeElements.liveCopyStatus.textContent =
+      "Approval display mismatch · request a new preflight.";
+    return;
+  }
+  const approvalPackage = buildLiveApprovalPackage(preflight);
+  try {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+      throw new Error("clipboard unavailable");
+    }
+    await navigator.clipboard.writeText(approvalPackage);
+    if (generation === localState.generation
+        && preflight === localState.preflight
+        && liveConfirmationMatches(preflight)) {
+      bridgeElements.liveCopyStatus.textContent = "Approval package copied.";
+    }
+  } catch (_error) {
+    if (generation === localState.generation && preflight === localState.preflight) {
+      bridgeElements.liveCopyStatus.textContent =
+        "Approval package could not be copied.";
+    }
+  }
 }
 
 function closeLocalTransport() {
@@ -265,6 +360,7 @@ function syncSourceControls() {
       "running",
     ].includes(runState.lifecycle);
   elements.form.setAttribute("aria-busy", String(busy));
+  bridgeElements.liveCopyApproval.disabled = runState.lifecycle !== "awaiting_confirmation";
   bridgeElements.liveCancel.disabled = runState.lifecycle !== "awaiting_confirmation";
   bridgeElements.liveConfirm.disabled = runState.lifecycle !== "awaiting_confirmation";
   if (isNormal) {
@@ -772,11 +868,13 @@ async function startNormalPreflight(question) {
         : "Normal Live preflight was refused.", { providerStartImpossible: true });
       return;
     }
-    const preflight = validateLivePreflight(await response.json());
-    localState.preflight = preflight;
+    const validated = validateLivePreflight(await response.json());
+    localState.preflightCapability = validated.privatePreflightId;
+    localState.preflight = validated.publicProjection;
+    const preflight = localState.preflight;
     elements.activeQuestion.textContent = preflight.question;
     renderPublicSeatTopology(preflight.seats);
-    renderLiveConfirmation(preflight);
+    renderLiveConfirmation(localState.preflight);
     runState.lifecycle = "awaiting_confirmation";
     runState.stage = "confirmation";
     setConnection("Source authorized · explicit confirmation required", "available");
@@ -799,10 +897,12 @@ async function startNormalPreflight(question) {
 }
 
 async function cancelNormalPreflight({ focusQuestion = true } = {}) {
-  if (runState.lifecycle !== "awaiting_confirmation" || !localState.preflight) {
+  if (runState.lifecycle !== "awaiting_confirmation"
+      || !localState.preflight
+      || !localState.preflightCapability) {
     return;
   }
-  const preflightId = localState.preflight.preflight_id;
+  const preflightId = localState.preflightCapability;
   const generation = localState.generation;
   runState.lifecycle = "cancelling";
   setRunStatus("NORMAL LIVE · CANCELLING PREFLIGHT");
@@ -810,16 +910,13 @@ async function cancelNormalPreflight({ focusQuestion = true } = {}) {
   const controller = new AbortController();
   localState.requestController = controller;
   try {
-    const response = await fetch(
-      `/api/council/live/${encodeURIComponent(preflightId)}/cancel`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({}),
-        signal: controller.signal,
-        credentials: "same-origin",
-      },
-    );
+    const response = await fetch("/api/council/live/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ preflight_id: preflightId }),
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
     if (generation !== localState.generation) {
       return;
     }
@@ -843,10 +940,19 @@ async function cancelNormalPreflight({ focusQuestion = true } = {}) {
 }
 
 async function executeNormalPreflight() {
-  if (runState.lifecycle !== "awaiting_confirmation" || !localState.preflight) {
+  if (runState.lifecycle !== "awaiting_confirmation"
+      || !localState.preflight
+      || !localState.preflightCapability) {
     return;
   }
   const preflight = localState.preflight;
+  const preflightId = localState.preflightCapability;
+  if (!liveConfirmationMatches(preflight)) {
+    failNormalView("Normal Live approval display changed · execution blocked.", {
+      providerStartImpossible: true,
+    });
+    return;
+  }
   const generation = localState.generation;
   runState.mode = "running";
   runState.lifecycle = "executing";
@@ -858,16 +964,13 @@ async function executeNormalPreflight() {
   const controller = new AbortController();
   localState.requestController = controller;
   try {
-    const response = await fetch(
-      `/api/council/live/${encodeURIComponent(preflight.preflight_id)}/execute`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({ confirmed: true }),
-        signal: controller.signal,
-        credentials: "same-origin",
-      },
-    );
+    const response = await fetch("/api/council/live/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ preflight_id: preflightId, confirmed: true }),
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
     if (generation !== localState.generation) {
       return;
     }
@@ -1029,6 +1132,7 @@ bridgeElements.demoMode.addEventListener("click", selectDemoMode);
 bridgeElements.localMode.addEventListener("click", selectLocalMode);
 bridgeElements.normalLiveMode.addEventListener("click", selectNormalLiveMode);
 bridgeElements.retryConnection.addEventListener("click", checkLocalHealth);
+bridgeElements.liveCopyApproval.addEventListener("click", copyLiveApprovalPackage);
 bridgeElements.liveCancel.addEventListener("click", () => cancelNormalPreflight());
 bridgeElements.liveConfirm.addEventListener("click", executeNormalPreflight);
 

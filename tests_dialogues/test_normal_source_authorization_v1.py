@@ -1187,8 +1187,12 @@ def test_authorization_commit_must_be_the_direct_artifact_only_child(
     assert raised.value.code == "authorization_commit_not_artifact_only"
 
 
-def test_production_verifier_has_no_override_and_missing_artifact_is_safe() -> None:
+def test_production_verifier_has_no_override_and_missing_artifact_is_safe(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     import inspect
+    import socrates.source_authorization as source_authorization
 
     from socrates.source_authorization import (
         NormalLiveSourceAuthorizationError,
@@ -1200,6 +1204,18 @@ def test_production_verifier_has_no_override_and_missing_artifact_is_safe() -> N
             verify_production_normal_live_source_authorization_v1
         ).parameters
     ) == []
+    repository, paths, _commit_sha, _tree = _repository(tmp_path)
+    monkeypatch.setattr(source_authorization, "REPOSITORY_ROOT", repository)
+    monkeypatch.setattr(
+        source_authorization,
+        "NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1",
+        paths,
+    )
+    monkeypatch.setattr(
+        source_authorization,
+        "PRODUCTION_MANIFEST_RELATIVE_PATH",
+        "authorization/missing-normal-live-source-set-v1.json",
+    )
     with pytest.raises(NormalLiveSourceAuthorizationError) as raised:
         verify_production_normal_live_source_authorization_v1()
     assert raised.value.code == "manifest_absent"

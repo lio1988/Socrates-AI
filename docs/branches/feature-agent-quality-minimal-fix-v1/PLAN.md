@@ -1,4 +1,29 @@
-# Plan — V0.3A
+# Plan — V0.3C
+
+## Completed source-fix checkpoint
+
+1. [x] Invalidate the prior controlled preflight and stop its loopback server without execution or provider artifacts.
+2. [x] Verify clean artifact-only commit C as the exact parent.
+3. [x] Add a deterministic, content-bound, non-executable public approval reference.
+4. [x] Extend browser preflight validity to a server-enforced maximum of 900 seconds with exact UTC display and monotonic expiry authority.
+5. [x] Keep the raw preflight capability out of URLs and every public/render/copy surface; execute/cancel remain strict private-ID body operations.
+6. [x] Revalidate canonical binding, approval reference, source receipt, topology, call/cost ceiling and expiry before consume and immediately before runtime construction.
+7. [x] Add the minimal approval-reference/question/expiry/copy UI without redesigning the frozen visual language.
+8. [x] Prove reference sensitivity, expiry/replay, API capability separation, drift blocking, secret boundaries and Demo/Local regressions offline.
+9. [x] Run an isolated injected-auth browser preflight, exact clipboard readback, DOM/attribute/console/history privacy checks and cancel it with zero execute requests.
+10. [x] Preserve the commit-C authorization artifact unchanged so production fails closed after checkpoint D.
+
+## Separate future task—not authorized here
+
+1. Operator reviews exact source checkpoint D.
+2. Create one artifact-only direct child E binding D's reviewed source bytes.
+3. Rerun offline authorization/readiness gates and stop for a separate Stage B decision.
+
+No production reauthorization, real preflight, provider call, push, tag, PR or deployment belongs in V0.3C.
+
+---
+
+# Historical plan — V0.3A
 
 ## Completed checkpoint work
 
