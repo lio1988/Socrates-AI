@@ -1,7 +1,7 @@
 "use strict";
 
 /*
- * SOCRATES UI V0.2 — ADDITIVE LOCAL CED ADAPTER
+ * SOCRATES UI V0.3A — ADDITIVE LOCAL + NORMAL LIVE LIFECYCLE
  * ------------------------------------------------
  * DEMO MODE remains the V0.1 timer-driven fixture in app.js. LOCAL CED is a
  * separate source: it renders only the versioned public events emitted by the
@@ -30,6 +30,24 @@ const LOCAL_PHASE_IDS = Object.freeze([
   "ratification",
 ]);
 const LOCAL_RUN_ID = /^ced_[a-f0-9]{24}$/;
+const SAFE_PUBLIC_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/;
+const NORMAL_PREFLIGHT_ID = /^nlpf_[a-f0-9]{36}$/;
+const EXACT_PREFLIGHT_KEYS = Object.freeze([
+  "preflight_id",
+  "question",
+  "run_mode",
+  "seats",
+  "provider_count",
+  "base_calls",
+  "retry_calls",
+  "maximum_calls",
+  "maximum_cost_usd",
+  "confirmation_required",
+  "source_authorization_status",
+]);
+const EXACT_SEAT_KEYS = Object.freeze(["seat_id", "alias"]);
+const EXACT_EXECUTE_KEYS = Object.freeze(["run_id", "status"]);
+const EXACT_DECIMAL = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 
 const DEMO_VIEW = Object.freeze({
   commitments: [
@@ -53,6 +71,7 @@ const DEMO_VIEW = Object.freeze({
 const bridgeElements = {
   demoMode: document.querySelector("#demo-mode-button"),
   localMode: document.querySelector("#local-mode-button"),
+  normalLiveMode: document.querySelector("#normal-live-mode-button"),
   connectionPanel: document.querySelector("#connection-panel"),
   connectionStatus: document.querySelector("#connection-status"),
   retryConnection: document.querySelector("#retry-connection"),
@@ -64,6 +83,13 @@ const bridgeElements = {
   synthesisAnswer: document.querySelector("#synthesis-answer"),
   synthesisGrid: document.querySelector("#synthesis-grid"),
   governingNotice: document.querySelector("#governing-notice"),
+  liveConfirmation: document.querySelector("#live-confirmation-panel"),
+  liveSourceStatus: document.querySelector("#live-source-status"),
+  liveSeatCount: document.querySelector("#live-seat-count"),
+  liveMaximumCalls: document.querySelector("#live-maximum-calls"),
+  liveMaximumCost: document.querySelector("#live-maximum-cost"),
+  liveCancel: document.querySelector("#live-cancel-button"),
+  liveConfirm: document.querySelector("#live-confirm-button"),
 };
 
 const localState = {
@@ -77,12 +103,107 @@ const localState = {
   requestController: null,
   terminal: false,
   ratification: null,
+  preflight: null,
 };
 runState.sourceMode = "demo";
 runState.lifecycle = "idle";
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasExactKeys(value, expected) {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const actual = Object.keys(value).sort();
+  const required = [...expected].sort();
+  return actual.length === required.length
+    && actual.every((key, index) => key === required[index]);
+}
+
+function validateLivePreflight(payload) {
+  if (!hasExactKeys(payload, EXACT_PREFLIGHT_KEYS)
+      || !NORMAL_PREFLIGHT_ID.test(payload.preflight_id)
+      || typeof payload.question !== "string"
+      || payload.question.length < 1
+      || payload.question.length > 8000
+      || payload.run_mode !== "normal_live"
+      || payload.confirmation_required !== true
+      || payload.source_authorization_status !== "authorized"
+      || !Array.isArray(payload.seats)
+      || !Number.isInteger(payload.provider_count)
+      || payload.provider_count < 1
+      || payload.provider_count > defaultSeatTemplates.length
+      || payload.provider_count !== payload.seats.length
+      || !Number.isInteger(payload.base_calls)
+      || payload.base_calls < 0
+      || !Number.isInteger(payload.retry_calls)
+      || payload.retry_calls < 0
+      || !Number.isInteger(payload.maximum_calls)
+      || payload.maximum_calls <= 0
+      || payload.maximum_calls !== payload.base_calls + payload.retry_calls
+      || typeof payload.maximum_cost_usd !== "string"
+      || payload.maximum_cost_usd.length > 64
+      || !EXACT_DECIMAL.test(payload.maximum_cost_usd)) {
+    throw new Error("invalid Normal Live preflight projection");
+  }
+  const seen = new Set();
+  const seats = payload.seats.map((seat) => {
+    if (!hasExactKeys(seat, EXACT_SEAT_KEYS)
+        || typeof seat.seat_id !== "string"
+        || !SAFE_PUBLIC_ID.test(seat.seat_id)
+        || seen.has(seat.seat_id)
+        || typeof seat.alias !== "string"
+        || seat.alias.trim() !== seat.alias
+        || seat.alias.length < 1
+        || seat.alias.length > 80) {
+      throw new Error("invalid Normal Live public seat");
+    }
+    seen.add(seat.seat_id);
+    return Object.freeze({ seat_id: seat.seat_id, alias: seat.alias });
+  });
+  return Object.freeze({
+    preflight_id: payload.preflight_id,
+    question: payload.question,
+    run_mode: payload.run_mode,
+    seats: Object.freeze(seats),
+    provider_count: payload.provider_count,
+    base_calls: payload.base_calls,
+    retry_calls: payload.retry_calls,
+    maximum_calls: payload.maximum_calls,
+    maximum_cost_usd: payload.maximum_cost_usd,
+    confirmation_required: true,
+    source_authorization_status: "authorized",
+  });
+}
+
+function validateExecuteResponse(payload) {
+  if (!hasExactKeys(payload, EXACT_EXECUTE_KEYS)
+      || typeof payload.run_id !== "string"
+      || !SAFE_PUBLIC_ID.test(payload.run_id)
+      || !["queued", "running"].includes(payload.status)) {
+    throw new Error("invalid Normal Live execute response");
+  }
+  return Object.freeze({ run_id: payload.run_id, status: payload.status });
+}
+
+function clearLiveConfirmation() {
+  localState.preflight = null;
+  bridgeElements.liveConfirmation.hidden = true;
+  bridgeElements.liveSourceStatus.textContent = "—";
+  bridgeElements.liveSeatCount.textContent = "—";
+  bridgeElements.liveMaximumCalls.textContent = "—";
+  bridgeElements.liveMaximumCost.textContent = "—";
+}
+
+function renderLiveConfirmation(preflight) {
+  bridgeElements.liveSourceStatus.textContent = "SOURCE AUTHORIZED";
+  bridgeElements.liveSeatCount.textContent = String(preflight.provider_count);
+  bridgeElements.liveMaximumCalls.textContent = String(preflight.maximum_calls);
+  bridgeElements.liveMaximumCost.textContent = `$${preflight.maximum_cost_usd}`;
+  bridgeElements.liveConfirmation.hidden = false;
+  bridgeElements.liveConfirmation.focus({ preventScroll: true });
 }
 
 function closeLocalTransport() {
@@ -97,27 +218,72 @@ function closeLocalTransport() {
 }
 
 function setConnection(message, state, { retry = false } = {}) {
-  bridgeElements.connectionPanel.hidden = localState.sourceMode !== "local-ced";
+  bridgeElements.connectionPanel.hidden = localState.sourceMode === "demo";
   bridgeElements.connectionPanel.dataset.state = state;
   bridgeElements.connectionStatus.textContent = message;
-  bridgeElements.retryConnection.hidden = !retry;
+  bridgeElements.retryConnection.hidden = !retry || localState.sourceMode !== "local-ced";
+}
+
+function sourceLifecycleLocked() {
+  return [
+    "preflighting",
+    "awaiting_confirmation",
+    "cancelling",
+    "executing",
+    "starting",
+    "running",
+  ].includes(runState.lifecycle);
 }
 
 function syncSourceControls() {
   const isDemo = localState.sourceMode === "demo";
-  const running = isDemo
+  const isLocal = localState.sourceMode === "local-ced";
+  const isNormal = localState.sourceMode === "normal-live";
+  const locked = isDemo
     ? runState.mode === "running"
-    : ["starting", "running"].includes(runState.lifecycle);
+    : sourceLifecycleLocked();
   bridgeElements.demoMode.classList.toggle("is-selected", isDemo);
-  bridgeElements.localMode.classList.toggle("is-selected", !isDemo);
+  bridgeElements.localMode.classList.toggle("is-selected", isLocal);
+  bridgeElements.normalLiveMode.classList.toggle("is-selected", isNormal);
   bridgeElements.demoMode.setAttribute("aria-pressed", String(isDemo));
-  bridgeElements.localMode.setAttribute("aria-pressed", String(!isDemo));
-  bridgeElements.demoMode.disabled = running;
-  bridgeElements.localMode.disabled = running;
+  bridgeElements.localMode.setAttribute("aria-pressed", String(isLocal));
+  bridgeElements.normalLiveMode.setAttribute("aria-pressed", String(isNormal));
+  bridgeElements.demoMode.disabled = locked;
+  bridgeElements.localMode.disabled = locked;
+  bridgeElements.normalLiveMode.disabled = locked;
   elements.completeButton.hidden = !isDemo;
-  elements.conveneButton.disabled = running || (!isDemo && localState.available !== true);
-  elements.exampleButton.disabled = running;
-  bridgeElements.recordSource.textContent = isDemo ? "demonstration" : "canonical local CED";
+  elements.conveneButton.disabled = locked || (isLocal && localState.available !== true);
+  elements.exampleButton.disabled = locked;
+  elements.questionInput.readOnly = locked;
+  const busy = isDemo
+    ? runState.mode === "running"
+    : [
+      "preflighting",
+      "cancelling",
+      "executing",
+      "starting",
+      "running",
+    ].includes(runState.lifecycle);
+  elements.form.setAttribute("aria-busy", String(busy));
+  bridgeElements.liveCancel.disabled = runState.lifecycle !== "awaiting_confirmation";
+  bridgeElements.liveConfirm.disabled = runState.lifecycle !== "awaiting_confirmation";
+  if (isNormal) {
+    const labels = {
+      idle: "CHECK LIVE PREFLIGHT",
+      preflighting: "CHECKING AUTHORIZATION",
+      awaiting_confirmation: "AWAITING CONFIRMATION",
+      cancelling: "CANCELLING PREFLIGHT",
+      executing: "CONVENING NORMAL LIVE",
+      starting: "CONVENING NORMAL LIVE",
+      running: "COUNCIL IN SESSION",
+    };
+    elements.conveneLabel.textContent = labels[runState.lifecycle] || "CHECK LIVE PREFLIGHT";
+  }
+  bridgeElements.recordSource.textContent = isDemo
+    ? "demonstration"
+    : isNormal
+      ? "canonical Normal Live"
+      : "canonical local CED";
   bridgeElements.connectionPanel.hidden = isDemo;
 }
 
@@ -149,7 +315,9 @@ function renderFinal(final, { demo = false, ratification = null } = {}) {
   const sections = released && Array.isArray(final.sections) ? final.sections : [];
   bridgeElements.finalSource.textContent = demo
     ? "GOVERNED COUNCIL OUTPUT · DEMONSTRATION"
-    : "GOVERNED COUNCIL OUTPUT · CANONICAL LOCAL CED";
+    : localState.sourceMode === "normal-live"
+      ? "GOVERNED COUNCIL OUTPUT · NORMAL LIVE"
+      : "GOVERNED COUNCIL OUTPUT · CANONICAL LOCAL CED";
   const ratificationStatus = ratification && typeof ratification.status === "string"
     ? ratification.status.replaceAll("_", " ").toUpperCase()
     : released
@@ -186,12 +354,14 @@ function renderFinal(final, { demo = false, ratification = null } = {}) {
 }
 
 function renderDemoView() {
+  restoreDefaultSeatTopology();
   renderCommitments(DEMO_VIEW.commitments);
   renderFinal(DEMO_VIEW.final, { demo: true });
   elements.finalSynthesis.hidden = runState.mode !== "complete";
 }
 
 function renderLocalIdle(message = "LOCAL CED READY · ENTER A QUESTION") {
+  restoreDefaultSeatTopology();
   clearRenderedRun();
   renderIdleSeats();
   renderTimeline(-1);
@@ -202,6 +372,27 @@ function renderLocalIdle(message = "LOCAL CED READY · ENTER A QUESTION") {
   elements.phaseBrief.querySelector("p").textContent =
     "The browser will render only accepted public events from an isolated offline-mock CED run.";
   setRunStatus(message);
+  runState.mode = "idle";
+  runState.lifecycle = "idle";
+  runState.stage = "idle";
+  runState.phaseIndex = -1;
+  setControlState();
+  syncSourceControls();
+}
+
+function renderNormalIdle(message = "NORMAL LIVE READY · CHECK PREFLIGHT") {
+  clearRenderedRun();
+  clearSeatTopology();
+  renderTimeline(-1);
+  renderCommitments([]);
+  clearLiveConfirmation();
+  elements.activeQuestion.textContent = "Waiting for a question.";
+  elements.phaseBrief.querySelector("span").textContent = "NORMAL LIVE";
+  elements.phaseBrief.querySelector("h4").textContent = "Authorization preflight required";
+  elements.phaseBrief.querySelector("p").textContent =
+    "The server must authorize the exact source set, derive the full call plan, and present its conservative cost ceiling before confirmation.";
+  setRunStatus(message);
+  setConnection("Normal Live preflight has not been checked.", "checking");
   runState.mode = "idle";
   runState.lifecycle = "idle";
   runState.stage = "idle";
@@ -305,6 +496,26 @@ function failLocalView(message) {
   syncSourceControls();
 }
 
+function failNormalView(message, { providerStartImpossible = false } = {}) {
+  closeLocalTransport();
+  clearLiveConfirmation();
+  runState.mode = "failed";
+  runState.lifecycle = "unavailable";
+  runState.stage = "failed";
+  localState.terminal = true;
+  setConnection(message, "unavailable");
+  setRunStatus(message.toUpperCase());
+  elements.phaseBrief.querySelector("span").textContent = "NORMAL LIVE UNAVAILABLE";
+  elements.phaseBrief.querySelector("h4").textContent = providerStartImpossible
+    ? "Execution was not authorized"
+    : "Public completion could not be confirmed";
+  elements.phaseBrief.querySelector("p").textContent = providerStartImpossible
+    ? "No provider call was started and no private backend diagnostic was exposed."
+    : "The server run may have started or may continue. The browser failed closed without exposing a private backend diagnostic.";
+  setControlState();
+  syncSourceControls();
+}
+
 function validateEvent(payload) {
   if (!isPlainObject(payload)
       || payload.schema_version !== PUBLIC_EVENT_SCHEMA
@@ -341,7 +552,9 @@ function applyPublicEvent(payload) {
       runState.lifecycle = "running";
       runState.stage = "accepted";
       elements.activeQuestion.textContent = String(data.question || elements.questionInput.value.trim());
-      setRunStatus("CANONICAL LOCAL CED · COUNCIL STARTED");
+      setRunStatus(localState.sourceMode === "normal-live"
+        ? "NORMAL LIVE · CANONICAL COUNCIL STARTED"
+        : "CANONICAL LOCAL CED · COUNCIL STARTED");
       break;
     case "phase.started":
       renderLocalPhase(data);
@@ -376,7 +589,9 @@ function applyPublicEvent(payload) {
       renderTimeline(LOCAL_PHASE_IDS.length - 1, true);
       markLocalSeatsComplete();
       renderFinal(final, { ratification: localState.ratification });
-      elements.phaseBrief.querySelector("span").textContent = "CANONICAL COUNCIL COMPLETE";
+      elements.phaseBrief.querySelector("span").textContent = localState.sourceMode === "normal-live"
+        ? "NORMAL LIVE COUNCIL COMPLETE"
+        : "CANONICAL COUNCIL COMPLETE";
       elements.phaseBrief.querySelector("h4").textContent = final.answer_released
         ? "Governing release rendered"
         : "Public answer withheld";
@@ -390,7 +605,11 @@ function applyPublicEvent(payload) {
       break;
     }
     case "run.failed":
-      failLocalView("LOCAL CED RUN FAILED · PUBLIC DIAGNOSTIC WITHHELD");
+      if (localState.sourceMode === "normal-live") {
+        failNormalView("Normal Live run failed · public diagnostic withheld.");
+      } else {
+        failLocalView("LOCAL CED RUN FAILED · PUBLIC DIAGNOSTIC WITHHELD");
+      }
       break;
     default:
       throw new Error("unknown public event");
@@ -413,18 +632,26 @@ function attachEventStream(runId, generation) {
       }
       applyPublicEvent(payload);
     } catch (_error) {
-      failLocalView("LOCAL CED PUBLIC EVENT REJECTED · DISPLAY FAILED CLOSED");
+      if (localState.sourceMode === "normal-live") {
+        failNormalView("Normal Live public event rejected · display failed closed.");
+      } else {
+        failLocalView("LOCAL CED PUBLIC EVENT REJECTED · DISPLAY FAILED CLOSED");
+      }
     }
   };
   PUBLIC_EVENT_TYPES.forEach((eventType) => source.addEventListener(eventType, receive));
   source.addEventListener("open", () => {
-    if (!localState.terminal) {
-      setConnection("Connected · canonical CED · offline mock providers", "available");
+    if (!localState.terminal && generation === localState.generation) {
+      setConnection(localState.sourceMode === "normal-live"
+        ? "Connected · canonical Normal Live council"
+        : "Connected · canonical CED · offline mock providers", "available");
     }
   });
   source.addEventListener("error", () => {
     if (!localState.terminal && generation === localState.generation) {
-      setConnection("Connection interrupted · browser retrying safely", "checking");
+      setConnection(localState.sourceMode === "normal-live"
+        ? "Normal Live connection interrupted · browser retrying safely"
+        : "Connection interrupted · browser retrying safely", "checking");
     }
   });
 }
@@ -496,12 +723,181 @@ async function startLocalCouncil(question) {
   }
 }
 
+async function startNormalPreflight(question) {
+  closeLocalTransport();
+  invalidateRun();
+  clearRenderedRun();
+  renderCommitments([]);
+  clearLiveConfirmation();
+  clearSeatTopology();
+  localState.generation += 1;
+  const generation = localState.generation;
+  localState.runId = null;
+  localState.lastSequence = -1;
+  localState.fingerprints.clear();
+  localState.terminal = false;
+  localState.ratification = null;
+  runState.mode = "idle";
+  runState.lifecycle = "preflighting";
+  runState.stage = "preflight";
+  runState.phaseIndex = -1;
+  elements.activeQuestion.textContent = question;
+  renderTimeline(-1);
+  setConnection("Checking source authorization and canonical cost bounds…", "checking");
+  setRunStatus("NORMAL LIVE · CHECKING AUTHORIZATION");
+  elements.phaseBrief.querySelector("span").textContent = "NORMAL LIVE PREFLIGHT";
+  elements.phaseBrief.querySelector("h4").textContent = "Verifying the execution boundary";
+  elements.phaseBrief.querySelector("p").textContent =
+    "No provider call begins during preflight. The server derives all seats, calls, and cost authority.";
+  setControlState();
+  syncSourceControls();
+
+  const controller = new AbortController();
+  localState.requestController = controller;
+  try {
+    const response = await fetch("/api/council/live/preflight", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ question }),
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
+    if (generation !== localState.generation) {
+      return;
+    }
+    localState.requestController = null;
+    if (!response.ok) {
+      failNormalView(response.status === 503
+        ? "Normal Live is not yet authorized for this build."
+        : "Normal Live preflight was refused.", { providerStartImpossible: true });
+      return;
+    }
+    const preflight = validateLivePreflight(await response.json());
+    localState.preflight = preflight;
+    elements.activeQuestion.textContent = preflight.question;
+    renderPublicSeatTopology(preflight.seats);
+    renderLiveConfirmation(preflight);
+    runState.lifecycle = "awaiting_confirmation";
+    runState.stage = "confirmation";
+    setConnection("Source authorized · explicit confirmation required", "available");
+    setRunStatus("NORMAL LIVE · REVIEW CALL AND COST CEILING");
+    elements.phaseBrief.querySelector("h4").textContent = "Awaiting explicit confirmation";
+    elements.phaseBrief.querySelector("p").textContent =
+      "Cancel consumes no provider calls. Confirm starts this exact one-use server-owned preflight.";
+    setControlState();
+    syncSourceControls();
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    if (generation === localState.generation) {
+      failNormalView("Normal Live preflight could not be verified.", {
+        providerStartImpossible: true,
+      });
+    }
+  }
+}
+
+async function cancelNormalPreflight({ focusQuestion = true } = {}) {
+  if (runState.lifecycle !== "awaiting_confirmation" || !localState.preflight) {
+    return;
+  }
+  const preflightId = localState.preflight.preflight_id;
+  const generation = localState.generation;
+  runState.lifecycle = "cancelling";
+  setRunStatus("NORMAL LIVE · CANCELLING PREFLIGHT");
+  syncSourceControls();
+  const controller = new AbortController();
+  localState.requestController = controller;
+  try {
+    const response = await fetch(
+      `/api/council/live/${encodeURIComponent(preflightId)}/cancel`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({}),
+        signal: controller.signal,
+        credentials: "same-origin",
+      },
+    );
+    if (generation !== localState.generation) {
+      return;
+    }
+    localState.requestController = null;
+    if (response.status !== 204) {
+      throw new Error("cancel refused");
+    }
+    renderNormalIdle("NORMAL LIVE PREFLIGHT CANCELLED · NO RUN STARTED");
+    setConnection("Preflight cancelled · no provider call started", "available");
+    if (focusQuestion) {
+      elements.questionInput.focus();
+    }
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    if (generation === localState.generation) {
+      failNormalView("Normal Live preflight cancellation could not be confirmed.");
+    }
+  }
+}
+
+async function executeNormalPreflight() {
+  if (runState.lifecycle !== "awaiting_confirmation" || !localState.preflight) {
+    return;
+  }
+  const preflight = localState.preflight;
+  const generation = localState.generation;
+  runState.mode = "running";
+  runState.lifecycle = "executing";
+  runState.stage = "accepted";
+  setConnection("Confirmation received · consuming one-use preflight", "checking");
+  setRunStatus("NORMAL LIVE · CONVENING CANONICAL COUNCIL");
+  setControlState();
+  syncSourceControls();
+  const controller = new AbortController();
+  localState.requestController = controller;
+  try {
+    const response = await fetch(
+      `/api/council/live/${encodeURIComponent(preflight.preflight_id)}/execute`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ confirmed: true }),
+        signal: controller.signal,
+        credentials: "same-origin",
+      },
+    );
+    if (generation !== localState.generation) {
+      return;
+    }
+    localState.requestController = null;
+    if (!response.ok) {
+      throw new Error("execute refused");
+    }
+    const started = validateExecuteResponse(await response.json());
+    localState.runId = started.run_id;
+    clearLiveConfirmation();
+    runState.lifecycle = "starting";
+    attachEventStream(started.run_id, generation);
+    syncSourceControls();
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    if (generation === localState.generation) {
+      failNormalView("Normal Live execution response could not be confirmed.");
+    }
+  }
+}
+
 async function checkLocalHealth() {
   if (localState.sourceMode !== "local-ced") {
     return;
   }
   setConnection("Checking the local CED bridge…", "checking");
   localState.available = null;
+  const generation = localState.generation;
   syncSourceControls();
   try {
     const response = await fetch("/api/council/health", {
@@ -516,10 +912,16 @@ async function checkLocalHealth() {
         || payload.providers !== "offline_mock") {
       throw new Error("health contract mismatch");
     }
+    if (generation !== localState.generation || localState.sourceMode !== "local-ced") {
+      return;
+    }
     localState.available = true;
     setConnection("Connected · canonical CED · offline mock providers", "available");
     setRunStatus("LOCAL CED AVAILABLE · READY TO CONVENE");
   } catch (_error) {
+    if (generation !== localState.generation || localState.sourceMode !== "local-ced") {
+      return;
+    }
     localState.available = false;
     setConnection("Local CED unavailable · start the local server, then retry", "unavailable", { retry: true });
     setRunStatus("LOCAL CED UNAVAILABLE · DEMO MODE REMAINS AVAILABLE");
@@ -528,7 +930,7 @@ async function checkLocalHealth() {
 }
 
 function selectDemoMode() {
-  if (runState.mode === "running") {
+  if (sourceLifecycleLocked()) {
     return;
   }
   closeLocalTransport();
@@ -537,6 +939,7 @@ function selectDemoMode() {
   runState.sourceMode = "demo";
   localState.runId = null;
   localState.terminal = false;
+  clearLiveConfirmation();
   resetDemo({ focusQuestion: false });
   runState.lifecycle = "idle";
   renderDemoView();
@@ -545,7 +948,7 @@ function selectDemoMode() {
 }
 
 function selectLocalMode() {
-  if (runState.mode === "running") {
+  if (sourceLifecycleLocked()) {
     return;
   }
   invalidateRun();
@@ -555,8 +958,27 @@ function selectLocalMode() {
   runState.lifecycle = "idle";
   localState.runId = null;
   localState.terminal = false;
+  clearLiveConfirmation();
   renderLocalIdle("LOCAL CED · CHECKING CONNECTION");
   checkLocalHealth();
+}
+
+function selectNormalLiveMode() {
+  if (sourceLifecycleLocked()) {
+    return;
+  }
+  closeLocalTransport();
+  invalidateRun();
+  localState.generation += 1;
+  localState.sourceMode = "normal-live";
+  runState.sourceMode = "normal-live";
+  runState.lifecycle = "idle";
+  localState.runId = null;
+  localState.terminal = false;
+  localState.lastSequence = -1;
+  localState.fingerprints.clear();
+  localState.ratification = null;
+  renderNormalIdle();
 }
 
 function resetLocalView() {
@@ -577,37 +999,74 @@ function resetLocalView() {
   elements.questionInput.focus();
 }
 
+function resetNormalView() {
+  if (runState.lifecycle === "awaiting_confirmation") {
+    cancelNormalPreflight();
+    return;
+  }
+  if (runState.lifecycle === "cancelling") {
+    return;
+  }
+  const mayContinue = Boolean(localState.runId && !localState.terminal)
+    || ["executing", "starting", "running"].includes(runState.lifecycle);
+  closeLocalTransport();
+  invalidateRun();
+  localState.generation += 1;
+  localState.runId = null;
+  localState.lastSequence = -1;
+  localState.fingerprints.clear();
+  localState.terminal = false;
+  localState.ratification = null;
+  clearLiveConfirmation();
+  renderNormalIdle(mayContinue
+    ? "NORMAL LIVE VIEW RESET · THE SERVER RUN MAY CONTINUE"
+    : "NORMAL LIVE · READY FOR A NEW PREFLIGHT");
+  setQuestionError(false);
+  elements.questionInput.focus();
+}
+
 bridgeElements.demoMode.addEventListener("click", selectDemoMode);
 bridgeElements.localMode.addEventListener("click", selectLocalMode);
+bridgeElements.normalLiveMode.addEventListener("click", selectNormalLiveMode);
 bridgeElements.retryConnection.addEventListener("click", checkLocalHealth);
+bridgeElements.liveCancel.addEventListener("click", () => cancelNormalPreflight());
+bridgeElements.liveConfirm.addEventListener("click", executeNormalPreflight);
 
 elements.form.addEventListener("submit", (event) => {
-  if (localState.sourceMode !== "local-ced") {
+  if (localState.sourceMode === "demo") {
     window.queueMicrotask(syncSourceControls);
     return;
   }
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (runState.mode === "running") {
+  if (runState.mode === "running" || sourceLifecycleLocked()) {
     return;
   }
   const question = currentQuestion();
   if (question) {
-    startLocalCouncil(question);
+    if (localState.sourceMode === "normal-live") {
+      startNormalPreflight(question);
+    } else {
+      startLocalCouncil(question);
+    }
   }
 }, true);
 
 elements.resetButton.addEventListener("click", (event) => {
-  if (localState.sourceMode !== "local-ced") {
+  if (localState.sourceMode === "demo") {
     return;
   }
   event.preventDefault();
   event.stopImmediatePropagation();
-  resetLocalView();
+  if (localState.sourceMode === "normal-live") {
+    resetNormalView();
+  } else {
+    resetLocalView();
+  }
 }, true);
 
 elements.completeButton.addEventListener("click", (event) => {
-  if (localState.sourceMode === "local-ced") {
+  if (localState.sourceMode !== "demo") {
     event.preventDefault();
     event.stopImmediatePropagation();
   }

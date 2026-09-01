@@ -224,6 +224,8 @@ const elements = {
   resetButton: document.querySelector("#reset-button"),
   council: document.querySelector("#council"),
   runStatusText: document.querySelector("#run-status-text"),
+  seatGrid: document.querySelector("#seat-grid"),
+  seatTopologyTitle: document.querySelector("#seat-topology-title"),
   seats: Array.from(document.querySelectorAll(".seat-card")),
   phaseItems: Array.from(document.querySelectorAll("#phase-rail li")),
   phaseCount: document.querySelector("#phase-count"),
@@ -239,6 +241,9 @@ const elements = {
   finalSynthesis: document.querySelector("#final-synthesis"),
   synthesisTitle: document.querySelector("#synthesis-title"),
 };
+
+const defaultSeatTemplates = elements.seats.map((seat) => seat.cloneNode(true));
+const defaultSeatTopologyTitle = elements.seatTopologyTitle.textContent;
 
 const runState = {
   mode: "idle",
@@ -314,6 +319,42 @@ function setControlState() {
 
 function setRunStatus(message) {
   elements.runStatusText.textContent = message;
+}
+
+function replaceSeatCards(cards) {
+  elements.seatGrid.replaceChildren(...cards);
+  elements.seats = Array.from(cards);
+  elements.seatGrid.style.setProperty("--seat-count", String(cards.length || 1));
+}
+
+function restoreDefaultSeatTopology() {
+  replaceSeatCards(defaultSeatTemplates.map((seat) => seat.cloneNode(true)));
+  elements.seatTopologyTitle.textContent = defaultSeatTopologyTitle;
+}
+
+function clearSeatTopology() {
+  replaceSeatCards([]);
+  elements.seatTopologyTitle.textContent = "Seat topology supplied at preflight.";
+}
+
+function renderPublicSeatTopology(seats) {
+  const cards = seats.map((seat, index) => {
+    const card = defaultSeatTemplates[index].cloneNode(true);
+    const number = String(index + 1).padStart(2, "0");
+    card.dataset.seat = String(index);
+    card.dataset.seatId = seat.seat_id;
+    card.dataset.state = "idle";
+    card.querySelector(".seat-avatar").textContent = number;
+    card.querySelector(".seat-copy p").textContent = `AGENT ${number}`;
+    card.querySelector(".seat-copy h3").textContent = seat.alias;
+    card.querySelector(".seat-role span").textContent = "ROLE ROTATES BY PHASE";
+    card.querySelector(".seat-role strong").textContent = "Awaiting assignment";
+    card.querySelector(".seat-state-label").textContent = "Idle";
+    card.removeAttribute("aria-current");
+    return card;
+  });
+  replaceSeatCards(cards);
+  elements.seatTopologyTitle.textContent = `${cards.length} seats. Roles rotate.`;
 }
 
 function renderIdleSeats() {

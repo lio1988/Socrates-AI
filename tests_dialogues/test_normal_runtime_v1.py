@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -52,6 +53,7 @@ from socrates.runtime import (
     _build_live_runtime,
     execute,
     prepare,
+    validate_preflight,
 )
 
 
@@ -957,3 +959,172 @@ def test_normal_arbitrary_question_is_not_admitted_by_benchmark_bundle_loader() 
 
     with pytest.raises(ContractValidationError, match="no pinned question bundle"):
         load_bundle_v1(arbitrary_question)
+
+
+def test_public_preflight_validator_preserves_the_canonical_integrity_gate() -> None:
+    preflight = prepare(
+        "Validate this immutable plan.",
+        standing_cap_usd="1000",
+        run_id="normal-public-validation-seam",
+    )
+    assert validate_preflight(preflight) is None
+    with pytest.raises(NormalIntegrityError):
+        validate_preflight(
+            preflight.__class__(
+                **{
+                    **preflight.__dict__,
+                    "question_sha256": "0" * 64,
+                }
+            )
+        )
+
+
+def test_execute_runs_guard_before_runtime_construction_and_observer_only_around_ced(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    preflight = prepare(
+        "Observe the same canonical session without changing it.",
+        standing_cap_usd="1000",
+        run_id="normal-observer-runtime-seams",
+    )
+    scripted = _ScriptedRuntimeFactory()
+    order: list[str] = []
+
+    def guard() -> None:
+        order.append("guard")
+
+    def factory(*args, **kwargs):
+        assert order == ["guard"]
+        order.append("runtime")
+        return scripted(*args, **kwargs)
+
+    original = _CountingCanonicalCED.run_registry_session
+
+    async def observed_run(ced, *args, **kwargs):
+        assert getattr(ced, "_normal_test_observer_active", False) is True
+        order.append("canonical")
+        return await original(ced, *args, **kwargs)
+
+    monkeypatch.setattr(_CountingCanonicalCED, "run_registry_session", observed_run)
+
+    @contextmanager
+    def observer(ced):
+        assert order == ["guard", "runtime"]
+        order.append("observer.enter")
+        ced._normal_test_observer_active = True
+        try:
+            yield
+        finally:
+            ced._normal_test_observer_active = False
+            order.append("observer.exit")
+
+    result = _run(
+        execute(
+            preflight,
+            confirmed=True,
+            runtime_factory=factory,
+            run_root=tmp_path / "runs",
+            pre_runtime_guard=guard,
+            observer_factory=observer,
+        )
+    )
+
+    assert result.error_code is None
+    assert order == [
+        "guard",
+        "runtime",
+        "observer.enter",
+        "canonical",
+        "observer.exit",
+    ]
+
+
+def test_execute_guard_failure_prevents_runtime_construction(tmp_path: Path) -> None:
+    preflight = prepare(
+        "Refuse stale authority before provider construction.",
+        standing_cap_usd="1000",
+        run_id="normal-stale-authority-guard",
+    )
+    calls = 0
+
+    def forbidden_runtime(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("runtime construction must remain unreachable")
+
+    def stale_guard() -> None:
+        raise NormalAuthorizationError("stale test authority")
+
+    result = _run(
+        execute(
+            preflight,
+            confirmed=True,
+            runtime_factory=forbidden_runtime,
+            run_root=tmp_path / "runs",
+            pre_runtime_guard=stale_guard,
+        )
+    )
+    assert calls == 0
+    assert result.error_code is not None
+
+
+@pytest.mark.parametrize("persist_cancellation_result", (False, True))
+def test_execute_cancellation_default_is_unchanged_and_browser_can_persist(
+    tmp_path: Path,
+    monkeypatch,
+    persist_cancellation_result: bool,
+) -> None:
+    preflight = prepare(
+        "Finalize canonical provenance if server shutdown cancels execution.",
+        standing_cap_usd="1000",
+        run_id=(
+            "normal-cancelled-persisted"
+            if persist_cancellation_result
+            else "normal-cancelled-default"
+        ),
+    )
+    factory = _ScriptedRuntimeFactory()
+
+    async def exercise() -> None:
+        entered = asyncio.Event()
+        never = asyncio.Event()
+
+        async def blocked_run(self, *_args, **_kwargs):
+            entered.set()
+            await never.wait()
+
+        monkeypatch.setattr(
+            _CountingCanonicalCED,
+            "run_registry_session",
+            blocked_run,
+        )
+        task = asyncio.create_task(
+            execute(
+                preflight,
+                confirmed=True,
+                runtime_factory=factory,
+                run_root=tmp_path / "runs",
+                persist_cancellation_result=persist_cancellation_result,
+            )
+        )
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    _run(exercise())
+    run_directory = tmp_path / "runs" / preflight.run_id
+    assert (run_directory / "plan.json").is_file()
+    artifact_path = run_directory / "result.json"
+    assert artifact_path.is_file() is persist_cancellation_result
+    if not persist_cancellation_result:
+        return
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["status"] == "execution_error"
+    assert artifact["error_code"]
+    assert factory.runtime is not None
+    assert all(
+        adapter.normal_calls_consumed == 0
+        for adapter in factory.runtime.adapters
+    )

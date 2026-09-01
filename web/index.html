@@ -24,7 +24,7 @@
         <a href="#council">Council</a>
         <a href="#about">About</a>
       </nav>
-      <span class="prototype-label">PUBLIC PROTOTYPE · 0.2</span>
+      <span class="prototype-label">PUBLIC PROTOTYPE · 0.3A</span>
     </header>
 
     <main id="main-content">
@@ -52,6 +52,7 @@
             <div class="mode-switch" role="group" aria-label="Council source">
               <button class="mode-option is-selected" id="demo-mode-button" type="button" aria-pressed="true">DEMO MODE</button>
               <button class="mode-option" id="local-mode-button" type="button" aria-pressed="false">LOCAL CED</button>
+              <button class="mode-option" id="normal-live-mode-button" type="button" aria-pressed="false">NORMAL LIVE</button>
             </div>
           </div>
           <div class="connection-panel" id="connection-panel" role="status" aria-live="polite" hidden>
@@ -59,6 +60,25 @@
             <span id="connection-status">Local CED not checked.</span>
             <button class="connection-retry" id="retry-connection" type="button" hidden>Retry connection</button>
           </div>
+          <section class="live-confirmation" id="live-confirmation-panel" tabindex="-1" aria-labelledby="live-confirmation-title" aria-describedby="live-confirmation-description" hidden>
+            <header class="live-confirmation-header">
+              <div>
+                <p class="micro-label">NORMAL LIVE · EXPLICIT AUTHORIZATION</p>
+                <h2 id="live-confirmation-title">Review the server-owned execution plan</h2>
+              </div>
+              <span class="live-source-status" id="live-source-status">—</span>
+            </header>
+            <dl class="live-confirmation-metrics">
+              <div><dt>Authorized seats</dt><dd id="live-seat-count">—</dd></div>
+              <div><dt>Maximum provider calls</dt><dd id="live-maximum-calls">—</dd></div>
+              <div><dt>Conservative maximum cost</dt><dd id="live-maximum-cost">—</dd></div>
+            </dl>
+            <p class="live-confirmation-description" id="live-confirmation-description">Normal Live uses real model-backed council seats. Confirm only after reviewing this server-derived call and cost ceiling.</p>
+            <div class="live-confirmation-actions">
+              <button class="secondary-button" id="live-cancel-button" type="button">Cancel</button>
+              <button class="primary-button" id="live-confirm-button" type="button">Confirm and convene <span aria-hidden="true">↗</span></button>
+            </div>
+          </section>
           <textarea id="question-input" name="question" rows="4" required placeholder="Ask Socrates anything worth examining..." aria-describedby="question-note question-error"></textarea>
           <p class="field-error" id="question-error" role="alert" hidden>Enter a question, or load the example to preview the council.</p>
           <div class="console-actions">
@@ -118,7 +138,7 @@
         </div>
 
         <div class="seat-section-heading">
-          <div><p class="micro-label">STABLE COUNCIL IDENTITIES</p><h3>Four seats. Roles rotate.</h3></div>
+          <div><p class="micro-label">STABLE COUNCIL IDENTITIES</p><h3 id="seat-topology-title">Four seats. Roles rotate.</h3></div>
           <p>Aliases persist through the session; no model is permanently Socrates.</p>
         </div>
         <ul class="seat-grid" id="seat-grid" aria-label="Council seats">
@@ -264,7 +284,7 @@
     <footer class="site-footer">
       <div><span class="brand-crest" aria-hidden="true"><img src="assets/socrates-ai-logo.png" alt="" width="1254" height="1254"></span><p><strong>SOCRATES AI</strong><br>Multi-Agent Socratic Intelligence</p></div>
       <p>Ask · Challenge · Revise · Reconstruct · Synthesize</p>
-      <div class="local-command"><span>LOCAL CED</span><code>python -m uvicorn backend.local_ced_app:app --host 127.0.0.1 --port 8080</code></div>
+      <div class="local-command"><span>LOCAL CED</span><code>python -B -m uvicorn backend.local_ced_app:app --host 127.0.0.1 --port 8080</code></div>
     </footer>
   </body>
 </html>

@@ -1,8 +1,8 @@
 docs/branches/feature-socrates-zero-canonical-successor-parity-v2/artifacts/*.json text eol=lf
 
-# Q2d authorization hashes canonical checked-out bytes on Linux and Windows.
-# Keep the existing q1 runner's historical CRLF; pin every other live runtime
-# root and the dialogue backend to LF without renormalizing unrelated files.
+# Q2d and Normal Live authorization hash canonical blobs and deterministic
+# checkout bytes on Linux and Windows. Preserve reviewed legacy CRLF paths and
+# pin newer runtime/browser paths to LF without renormalizing unrelated files.
 .gitattributes text eol=lf
 backend/dialogues/**/*.py text eol=lf
 docs/branches/feature-socrates-zero-openrouter-live-routing-repair-v1/runs/** -text
@@ -14,3 +14,25 @@ scripts/run_multimodel_q1_ced_v1.py text eol=lf
 scripts/run_multimodel_q1_v1.py text eol=crlf
 scripts/run_reduced_socrates_benchmark_v1.py text eol=lf
 scripts/run_socrates_live_v1.py text eol=lf
+
+# Normal Live authorization compares deterministic checkout bytes. Pin the
+# remaining reviewed runtime paths explicitly instead of inheriting a user's
+# core.autocrlf or global attributes.
+backend/__init__.py text eol=lf
+backend/local_ced_app.py text eol=lf
+backend/api/__init__.py text eol=lf
+backend/api/routes_council.py text eol=lf
+scripts/q3_ethics_question_v1.py text eol=crlf
+scripts/q4_ethics_question_v1.py text eol=crlf
+scripts/q5_ethics_question_v1.py text eol=crlf
+scripts/q6_ethics_question_v1.py text eol=crlf
+scripts/question_bundles_v1.py text eol=crlf
+socrates/__init__.py text eol=crlf
+socrates/planning.py text eol=crlf
+socrates/rendering.py text eol=crlf
+socrates/runtime.py text eol=crlf
+socrates/source_authorization.py text eol=lf
+web/app.js text eol=lf
+web/ced-bridge.js text eol=lf
+web/index.html text eol=lf
+web/styles.css text eol=lf

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 try:
@@ -15,6 +16,15 @@ except ImportError:  # pragma: no cover - compatibility with older sse-starlette
     from sse_starlette.responses import EventSourceResponse
 
 from backend.dialogues.council_live import LocalCouncilManager
+from backend.dialogues.normal_live import (
+    NormalLiveCapacityError,
+    NormalLiveCostBlockedError,
+    NormalLiveCouncilManager,
+    NormalLivePreflightConflictError,
+    NormalLivePreflightExpiredError,
+    NormalLivePreflightNotFoundError,
+    NormalLiveUnavailableError,
+)
 
 
 router = APIRouter(prefix="/api/council", tags=["local-council"])
@@ -34,15 +44,67 @@ class CouncilQuestion(BaseModel):
         return value
 
 
+class NormalLiveExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    confirmed: Literal[True]
+
+
+class NormalLiveCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
 def _manager(request: Request) -> LocalCouncilManager:
     return request.app.state.local_council_manager
+
+
+def _normal_manager(request: Request) -> NormalLiveCouncilManager:
+    return request.app.state.normal_live_council_manager
 
 
 def _run_or_404(request: Request, run_id: str):
     run = _manager(request).get_run(run_id)
     if run is None:
+        run = _normal_manager(request).get_run(run_id)
+    if run is None:
         raise HTTPException(status_code=404, detail="Council run not found.")
     return run
+
+
+def _raise_normal_live_http(error: Exception) -> None:
+    if isinstance(error, NormalLiveUnavailableError):
+        raise HTTPException(
+            status_code=503,
+            detail="Normal Live is not yet authorized for this build.",
+        )
+    if isinstance(error, NormalLiveCapacityError):
+        raise HTTPException(
+            status_code=503,
+            detail="Normal Live is temporarily unavailable.",
+        )
+    if isinstance(error, NormalLiveCostBlockedError):
+        raise HTTPException(
+            status_code=403,
+            detail="Normal Live exceeds the configured spending limit.",
+        )
+    if isinstance(error, NormalLivePreflightNotFoundError):
+        raise HTTPException(
+            status_code=404,
+            detail="Normal Live preflight was not found.",
+        )
+    if isinstance(error, NormalLivePreflightExpiredError):
+        raise HTTPException(
+            status_code=410,
+            detail="Normal Live preflight has expired.",
+        )
+    if isinstance(error, NormalLivePreflightConflictError):
+        raise HTTPException(
+            status_code=409,
+            detail="Normal Live preflight is no longer usable.",
+        )
+    raise HTTPException(
+        status_code=503,
+        detail="Normal Live is temporarily unavailable.",
+    )
 
 
 @router.get("/health")
@@ -58,6 +120,47 @@ async def health() -> dict:
 async def start_council(payload: CouncilQuestion, request: Request) -> dict:
     run = await _manager(request).start_run(payload.question)
     return {"run_id": run.run_id, "status": run.status}
+
+
+@router.post("/live/preflight")
+async def normal_live_preflight(payload: CouncilQuestion, request: Request) -> dict:
+    try:
+        return await _normal_manager(request).create_preflight(payload.question)
+    except Exception as error:
+        _raise_normal_live_http(error)
+
+
+@router.post(
+    "/live/{preflight_id}/execute",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def execute_normal_live_preflight(
+    preflight_id: str,
+    _payload: NormalLiveExecuteRequest,
+    request: Request,
+) -> dict:
+    try:
+        run = await _normal_manager(request).start_run(preflight_id)
+    except Exception as error:
+        _raise_normal_live_http(error)
+    return {"run_id": run.run_id, "status": run.status}
+
+
+@router.post(
+    "/live/{preflight_id}/cancel",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def cancel_normal_live_preflight(
+    preflight_id: str,
+    _payload: NormalLiveCancelRequest,
+    request: Request,
+) -> Response:
+    try:
+        await _normal_manager(request).cancel_preflight(preflight_id)
+    except Exception as error:
+        _raise_normal_live_http(error)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{run_id}")
@@ -99,4 +202,9 @@ async def council_events(
     )
 
 
-__all__ = ["router"]
+__all__ = [
+    "CouncilQuestion",
+    "NormalLiveCancelRequest",
+    "NormalLiveExecuteRequest",
+    "router",
+]

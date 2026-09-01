@@ -24,7 +24,11 @@ from backend.dialogues.live_providers import build_council
 from backend.dialogues.models import AgentMove, DialogPhase, FinalResponse, SessionState
 from backend.dialogues.provider_registry import ScriptedMockProvider
 from backend.dialogues.socratic import CommitmentRecord, live_commitments
-from socrates.rendering import render_normal_response, sanitize_normal_text
+from socrates.rendering import (
+    NormalRenderResult,
+    render_normal_response,
+    sanitize_normal_text,
+)
 
 
 PUBLIC_EVENT_SCHEMA = "socrates.public-council.v1"
@@ -109,6 +113,12 @@ def _safe_text(value: Any, *, limit: int = 16_000) -> str:
     return text[:limit]
 
 
+def project_public_text(value: Any, *, limit: int = 16_000) -> str:
+    """Return text safe for the browser-visible public council surface."""
+
+    return _safe_text(value, limit=limit)
+
+
 def _safe_identifier(value: Any, *, fallback: str = "public_item") -> str:
     if not isinstance(value, str):
         return fallback
@@ -136,6 +146,18 @@ def _public_seat(seat_id: str, role: Optional[str]) -> Dict[str, Any]:
         "role": role,
         "role_label": ROLE_LABELS.get(role or "", "Awaiting role"),
     }
+
+
+def project_public_seat_identities(seat_ids: Sequence[str]) -> List[Dict[str, str]]:
+    """Project stable public identities without provider/model topology."""
+
+    return [
+        {
+            "seat_id": _safe_identifier(seat_id),
+            "alias": _seat_alias(seat_id),
+        }
+        for seat_id in seat_ids
+    ]
 
 
 def _phase_payload(phase: DialogPhase, round_index: int = 0) -> Dict[str, Any]:
@@ -255,10 +277,9 @@ def _public_sections(public_answer: str) -> List[Dict[str, str]]:
     return sections
 
 
-def project_final(final: FinalResponse) -> Dict[str, Any]:
-    """Publish only what the governing normal renderer authorizes."""
+def project_normal_render(rendered: NormalRenderResult) -> Dict[str, Any]:
+    """Publish only fields already authorized by the Normal renderer."""
 
-    rendered = render_normal_response(final)
     public_answer = _safe_text(rendered.public_answer)
     return {
         "outcome": rendered.outcome,
@@ -269,6 +290,12 @@ def project_final(final: FinalResponse) -> Dict[str, Any]:
         "public_answer": public_answer,
         "sections": _public_sections(public_answer) if rendered.candidate_authorized else [],
     }
+
+
+def project_final(final: FinalResponse) -> Dict[str, Any]:
+    """Publish only what the governing normal renderer authorizes."""
+
+    return project_normal_render(render_normal_response(final))
 
 
 class _PublicEventStore:
@@ -302,15 +329,18 @@ class _PublicEventStore:
         # loop cannot create a replay gap.
         existing = [copy.deepcopy(event) for event in self._events
                     if event["sequence"] > after_sequence]
+        terminal_at_snapshot = self.terminal
         self._subscribers.add(queue)
         try:
             for event in existing:
                 yield event
-            if self.terminal:
+            if terminal_at_snapshot:
                 return
             while True:
                 event = await queue.get()
                 if event["sequence"] <= after_sequence:
+                    if event["type"] in {"run.completed", "run.failed"}:
+                        return
                     continue
                 yield event
                 if event["type"] in {"run.completed", "run.failed"}:
@@ -502,6 +532,15 @@ class _CouncilObserver:
             ced.run_council_ratification = self._originals["ratify"]
 
 
+@contextmanager
+def observe_public_council(run: LocalCouncilRun, ced: CEDOrchestrator):
+    """Install the existing subordinate public observer for one Normal run."""
+
+    run.ced = ced
+    with _CouncilObserver(run).installed():
+        yield
+
+
 class LocalCouncilManager:
     """Own isolated local-mock CED runs and their public append-only streams."""
 
@@ -620,5 +659,9 @@ __all__ = [
     "LocalCouncilRun",
     "project_commitments",
     "project_final",
+    "project_normal_render",
+    "project_public_seat_identities",
+    "project_public_text",
     "project_public_move",
+    "observe_public_council",
 ]

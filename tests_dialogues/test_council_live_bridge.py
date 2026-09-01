@@ -399,6 +399,56 @@ def test_each_sse_subscriber_gets_an_independent_complete_replay(canonical_run):
     assert second == canonical_run.events
 
 
+def test_sse_does_not_drop_events_appended_while_replay_is_yielding():
+    async def exercise():
+        run = council_live_module.LocalCouncilRun("replay-race", "Question?")
+        run.emit("run.started", {"status": "running"})
+        subscription = run.subscribe(-1)
+        first = await anext(subscription)
+        run.emit("phase.started", {"phase": "opening"})
+        run.emit(
+            "run.failed",
+            {"status": "failed", "message": "Safe terminal."},
+            terminal=True,
+        )
+        remaining = [event async for event in subscription]
+        return first, remaining
+
+    first, remaining = asyncio.run(exercise())
+    assert first["type"] == "run.started"
+    assert [event["type"] for event in remaining] == [
+        "phase.started",
+        "run.failed",
+    ]
+    assert [event["sequence"] for event in [first, *remaining]] == [0, 1, 2]
+
+
+def test_future_sse_cursor_closes_on_terminal_for_live_and_completed_runs():
+    async def exercise_live():
+        run = council_live_module.LocalCouncilRun("future-live", "Question?")
+        subscription = run.subscribe(99)
+        pending = asyncio.create_task(anext(subscription, None))
+        await asyncio.sleep(0)
+        run.emit(
+            "run.failed",
+            {"status": "failed", "message": "Safe terminal."},
+            terminal=True,
+        )
+        return await asyncio.wait_for(pending, timeout=1)
+
+    async def exercise_completed():
+        run = council_live_module.LocalCouncilRun("future-complete", "Question?")
+        run.emit(
+            "run.failed",
+            {"status": "failed", "message": "Safe terminal."},
+            terminal=True,
+        )
+        return await asyncio.wait_for(anext(run.subscribe(99), None), timeout=1)
+
+    assert asyncio.run(exercise_live()) is None
+    assert asyncio.run(exercise_completed()) is None
+
+
 def test_observer_projection_failure_cannot_change_canonical_result(monkeypatch):
     def broken_projector(_move):
         raise RuntimeError(SECRET)

@@ -17,12 +17,13 @@ import os
 import re
 import uuid
 from collections import Counter
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, ContextManager, Dict, Mapping, Optional, Sequence, Tuple
 
 from backend.dialogues.agent import SocraticAgent
 from backend.dialogues.ced import CEDOrchestrator
@@ -433,6 +434,12 @@ def _validate_preflight(preflight: NormalPreflight) -> None:
     )
 
 
+def validate_preflight(preflight: NormalPreflight) -> None:
+    """Apply the canonical immutable-plan integrity gate without execution."""
+
+    _validate_preflight(preflight)
+
+
 @dataclass(frozen=True)
 class NormalAccounting:
     calls_consumed: int = 0
@@ -506,6 +513,8 @@ ProgressCallback = Callable[[str], None]
 RuntimeFactory = Callable[
     [NormalPreflight, Path, Optional[ProgressCallback]], NormalRuntime
 ]
+PreRuntimeGuard = Callable[[], None]
+ObserverFactory = Callable[[CEDOrchestrator], ContextManager[None]]
 
 
 class _ProgressReporter:
@@ -1386,6 +1395,9 @@ async def execute(
     runtime_factory: Optional[RuntimeFactory] = None,
     run_root: Path = DEFAULT_RUN_ROOT,
     progress: Optional[ProgressCallback] = None,
+    pre_runtime_guard: Optional[PreRuntimeGuard] = None,
+    observer_factory: Optional[ObserverFactory] = None,
+    persist_cancellation_result: bool = False,
 ) -> NormalResult:
     """Execute one confirmed full canonical council and write a safe artifact."""
 
@@ -1398,7 +1410,10 @@ async def execute(
     final: Any = None
     state: Any = None
     error_code: Optional[str] = None
+    cancelled: Optional[asyncio.CancelledError] = None
     try:
+        if pre_runtime_guard is not None:
+            pre_runtime_guard()
         if runtime_factory is None:
             runtime = _build_live_runtime(
                 preflight,
@@ -1412,11 +1427,29 @@ async def execute(
             raise NormalIntegrityError(
                 "Normal runtime factory returned an unsupported boundary"
             )
-        final = await runtime.ced.run_registry_session(
-            preflight.question,
-            session_id=preflight.session_id,
+        observer = (
+            observer_factory(runtime.ced)
+            if observer_factory is not None
+            else nullcontext()
         )
+        with observer:
+            final = await runtime.ced.run_registry_session(
+                preflight.question,
+                session_id=preflight.session_id,
+            )
         state = runtime.ced.get_session(preflight.session_id)
+    except asyncio.CancelledError as exc:
+        if not persist_cancellation_result:
+            raise
+        cancelled = exc
+        error_code = safe_public_exception_code_v1(
+            exc, context="orchestration"
+        )
+        if runtime is not None:
+            try:
+                state = runtime.ced.get_session(preflight.session_id)
+            except KeyError:
+                state = None
     except Exception as exc:
         error_code = safe_public_exception_code_v1(
             exc, context="orchestration"
@@ -1447,7 +1480,7 @@ async def execute(
     retries = _project_phase_retries(final)
     ratified = bool(getattr(final, "ratified", False))
     ratification_status = str(getattr(final, "ratification_status", "") or "")
-    return NormalResult(
+    result = NormalResult(
         schema_version=NORMAL_RESULT_SCHEMA_VERSION,
         run_id=preflight.run_id,
         session_id=preflight.session_id,
@@ -1476,6 +1509,9 @@ async def execute(
         artifact_sha256=artifact_sha256,
         error_code=error_code,
     )
+    if cancelled is not None:
+        raise cancelled
+    return result
 
 
 def run(
@@ -1513,9 +1549,12 @@ __all__ = [
     "NormalRunCollisionError",
     "NormalRuntime",
     "NormalSocratesError",
+    "ObserverFactory",
+    "PreRuntimeGuard",
     "STANDING_CAP_ENVIRONMENT_VARIABLE",
     "execute",
     "picodollars_to_usd_text",
     "prepare",
     "run",
+    "validate_preflight",
 ]
