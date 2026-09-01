@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#080b0e">
+    <meta name="description" content="Socrates AI — a public prototype for structured multi-agent Socratic intelligence.">
+    <title>Socrates AI — Multi-Agent Socratic Intelligence</title>
+    <link rel="icon" type="image/png" href="assets/socrates-ai-logo.png">
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+    <script src="ced-bridge.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="site-header" aria-label="Primary navigation">
+      <a class="wordmark" href="#top" aria-label="Socrates AI home">
+        <span class="brand-crest" aria-hidden="true"><img src="assets/socrates-ai-logo.png" alt="" width="1254" height="1254"></span>
+        <span>SOCRATES <span class="wordmark-ai">AI</span></span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#council">Council</a>
+        <a href="#about">About</a>
+      </nav>
+      <span class="prototype-label">PUBLIC PROTOTYPE · 0.2</span>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-intro">
+          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span><span class="eyebrow-copy">Structured multi-agent deliberation</span></p>
+          <h1 id="hero-title">SOCRATES <span>AI</span></h1>
+          <p class="hero-tagline">Multi-Agent Socratic Intelligence</p>
+          <p class="hero-promise">One question. A council of perspectives. An answer that had to survive the dialogue.</p>
+          <p class="hero-copy">Socrates AI challenges assumptions, revises positions and reconstructs what survives.</p>
+          <p class="process-line" aria-label="Ask, Challenge, Revise, Reconstruct, Synthesize">
+            <span>Ask</span><span><i aria-hidden="true">·</i>Challenge</span><span><i aria-hidden="true">·</i>Revise</span><span><i aria-hidden="true">·</i>Reconstruct</span><span><i aria-hidden="true">·</i>Synthesize</span>
+          </p>
+          <div class="hero-crest-large" aria-hidden="true">
+            <img src="assets/socrates-ai-logo.png" alt="" width="1254" height="1254" decoding="async">
+          </div>
+        </div>
+
+        <form class="question-console" id="question-form" novalidate>
+          <div class="console-heading">
+            <div>
+              <p class="micro-label">COUNCIL INTAKE · PUBLIC QUESTION</p>
+              <label for="question-input">What should the council examine?</label>
+            </div>
+            <div class="mode-switch" role="group" aria-label="Council source">
+              <button class="mode-option is-selected" id="demo-mode-button" type="button" aria-pressed="true">DEMO MODE</button>
+              <button class="mode-option" id="local-mode-button" type="button" aria-pressed="false">LOCAL CED</button>
+            </div>
+          </div>
+          <div class="connection-panel" id="connection-panel" role="status" aria-live="polite" hidden>
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="connection-status">Local CED not checked.</span>
+            <button class="connection-retry" id="retry-connection" type="button" hidden>Retry connection</button>
+          </div>
+          <textarea id="question-input" name="question" rows="4" required placeholder="Ask Socrates anything worth examining..." aria-describedby="question-note question-error"></textarea>
+          <p class="field-error" id="question-error" role="alert" hidden>Enter a question, or load the example to preview the council.</p>
+          <div class="console-actions">
+            <button class="primary-button" id="convene-button" type="submit">
+              <span class="button-label">CONVENE COUNCIL</span>
+              <span aria-hidden="true">↗</span>
+            </button>
+            <button class="text-button" id="example-button" type="button">Use example question</button>
+            <p id="question-note">A structured multi-agent deliberation will begin. Press Ctrl/⌘ + Enter to convene.</p>
+          </div>
+        </form>
+      </section>
+
+      <section class="council-shell" id="council" aria-labelledby="council-title" data-run-state="idle">
+        <header class="section-heading council-heading">
+          <div>
+            <p class="eyebrow"><span class="eyebrow-index">01</span> Public council record · <span id="record-source-label">demonstration</span></p>
+            <h2 id="council-title">One council. Rotating responsibilities.</h2>
+            <p>Agent identity remains stable. Socratic roles change with each phase.</p>
+          </div>
+          <div class="council-controls">
+            <button class="secondary-button" id="complete-button" type="button">Show complete run</button>
+            <button class="quiet-button" id="reset-button" type="button">Reset</button>
+          </div>
+        </header>
+
+        <div class="status-row">
+          <p class="run-status" id="run-status" role="status" aria-live="polite" aria-atomic="true">
+            <span class="status-light" aria-hidden="true"></span>
+            <span id="run-status-text">READY TO CONVENE</span>
+          </p>
+          <p class="identity-note">Seats persist · roles rotate by phase</p>
+        </div>
+
+        <div class="protocol-panel" aria-labelledby="protocol-title">
+          <div class="protocol-header">
+            <div><p class="micro-label">THE COUNCIL PATH</p><h3 id="protocol-title">Seven stages. One governed answer.</h3></div>
+            <div class="phase-progress" role="progressbar" aria-label="Council phase progress" aria-valuemin="0" aria-valuemax="7" aria-valuenow="0">
+              <p><span id="phase-count">00</span> / 07</p>
+              <span class="progress-track"><span id="progress-fill"></span></span>
+            </div>
+          </div>
+          <ol class="phase-rail" id="phase-rail">
+            <li data-phase="0" data-state="upcoming"><span class="phase-number">01</span><strong>Opening</strong><small>Isolate the assumption</small><em>Upcoming</em></li>
+            <li data-phase="1" data-state="upcoming"><span class="phase-number">02</span><strong>Initial responses</strong><small>Form independent positions</small><em>Upcoming</em></li>
+            <li data-phase="2" data-state="upcoming"><span class="phase-number">03</span><strong>Elenchus</strong><small>Attack the reasoning</small><em>Upcoming</em></li>
+            <li data-phase="3" data-state="upcoming"><span class="phase-number">04</span><strong>Reflection</strong><small>Revise under criticism</small><em>Upcoming</em></li>
+            <li data-phase="4" data-state="upcoming"><span class="phase-number">05</span><strong>Reconstruction</strong><small>Build what survives</small><em>Upcoming</em></li>
+            <li data-phase="5" data-state="upcoming"><span class="phase-number">06</span><strong>Synthesis</strong><small>Assemble the answer</small><em>Upcoming</em></li>
+            <li data-phase="6" data-state="upcoming"><span class="phase-number">07</span><strong>Ratification</strong><small>Check before release</small><em>Upcoming</em></li>
+          </ol>
+          <div class="phase-brief" id="phase-brief" tabindex="-1">
+            <span>NOT YET STARTED</span>
+            <h4>Council standing by</h4>
+            <p>The process begins by identifying the assumption on which the question turns.</p>
+          </div>
+        </div>
+
+        <div class="seat-section-heading">
+          <div><p class="micro-label">STABLE COUNCIL IDENTITIES</p><h3>Four seats. Roles rotate.</h3></div>
+          <p>Aliases persist through the session; no model is permanently Socrates.</p>
+        </div>
+        <ul class="seat-grid" id="seat-grid" aria-label="Council seats">
+          <li class="seat-card" data-seat="0" data-seat-id="agent_0" data-state="idle">
+            <div class="seat-avatar" aria-hidden="true">01</div>
+            <div class="seat-copy"><p>AGENT 01</p><h3>Aletheia</h3></div>
+            <div class="seat-role"><span>ROLE ROTATES BY PHASE</span><strong>Awaiting assignment</strong></div>
+            <span class="seat-state"><span class="state-dot" aria-hidden="true"></span><span class="seat-state-label">Idle</span></span>
+          </li>
+          <li class="seat-card" data-seat="1" data-seat-id="agent_1" data-state="idle">
+            <div class="seat-avatar" aria-hidden="true">02</div>
+            <div class="seat-copy"><p>AGENT 02</p><h3>Logos</h3></div>
+            <div class="seat-role"><span>ROLE ROTATES BY PHASE</span><strong>Awaiting assignment</strong></div>
+            <span class="seat-state"><span class="state-dot" aria-hidden="true"></span><span class="seat-state-label">Idle</span></span>
+          </li>
+          <li class="seat-card" data-seat="2" data-seat-id="agent_2" data-state="idle">
+            <div class="seat-avatar" aria-hidden="true">03</div>
+            <div class="seat-copy"><p>AGENT 03</p><h3>Praxis</h3></div>
+            <div class="seat-role"><span>ROLE ROTATES BY PHASE</span><strong>Awaiting assignment</strong></div>
+            <span class="seat-state"><span class="state-dot" aria-hidden="true"></span><span class="seat-state-label">Idle</span></span>
+          </li>
+          <li class="seat-card" data-seat="3" data-seat-id="agent_3" data-state="idle">
+            <div class="seat-avatar" aria-hidden="true">04</div>
+            <div class="seat-copy"><p>AGENT 04</p><h3>Metis</h3></div>
+            <div class="seat-role"><span>ROLE ROTATES BY PHASE</span><strong>Awaiting assignment</strong></div>
+            <span class="seat-state"><span class="state-dot" aria-hidden="true"></span><span class="seat-state-label">Idle</span></span>
+          </li>
+        </ul>
+
+        <article class="final-synthesis" id="final-synthesis" aria-labelledby="synthesis-title" hidden>
+          <div class="synthesis-arrival"><span>07 / 07</span><p>Dialogue complete · strongest surviving position reconstructed</p></div>
+          <div class="synthesis-topline">
+            <div><p class="micro-label" id="final-source-label">GOVERNED COUNCIL OUTPUT · DEMONSTRATION</p><h3 id="synthesis-title" tabindex="-1">Final synthesis</h3></div>
+            <span class="ratified-badge" id="ratification-badge">RATIFIED WITH CAVEAT</span>
+          </div>
+          <p class="synthesis-answer" id="synthesis-answer"></p>
+          <div class="synthesis-grid" id="synthesis-grid"></div>
+          <p class="governing-notice" id="governing-notice" hidden></p>
+          <p class="ratification-note" id="ratification-note">Ratification checks whether the synthesis meets the council's epistemic discipline before release. It does not guarantee factual truth.</p>
+        </article>
+
+        <div class="council-workspace">
+          <section class="transcript-panel" aria-labelledby="transcript-title">
+            <header class="panel-heading">
+              <div><p class="micro-label">PUBLIC COUNCIL WINDOW</p><h3 id="transcript-title">Latest council contributions</h3></div>
+              <span class="visibility-label">PUBLIC CONTENT ONLY</span>
+            </header>
+            <div class="question-record">
+              <span>QUESTION UNDER EXAMINATION</span>
+              <p id="active-question">Waiting for a question.</p>
+            </div>
+            <div class="record-toolbar">
+              <p id="record-summary">Showing 0 contributions</p>
+              <button class="record-toggle" id="record-toggle" type="button" aria-controls="contribution-list" aria-expanded="false" hidden>Show complete public record</button>
+            </div>
+            <div class="contribution-list" id="contribution-list" role="list" aria-label="Public council contributions"></div>
+            <div class="feed-empty" id="feed-empty">
+              <span aria-hidden="true">···</span>
+              <p>Convene the council to reveal the newest public contributions as the dialectic advances.</p>
+            </div>
+          </section>
+
+          <aside class="docket-panel" aria-labelledby="docket-title">
+            <header class="panel-heading compact-heading">
+              <div><p class="micro-label">COUNCIL MEMORY</p><h3 id="docket-title">What changed—and what survived</h3></div>
+            </header>
+
+            <details class="commitments" id="commitments-panel">
+              <summary>
+                <span>Council Commitments</span>
+                <small id="commitment-summary">0 tracked positions · position history</small>
+              </summary>
+              <div class="commitment-body">
+                <p>The council preserves the history of its positions while separately tracking what still survives.</p>
+                <ul id="commitment-list"></ul>
+              </div>
+            </details>
+
+            <div class="privacy-note">
+              <span aria-hidden="true">○</span>
+              <div><strong>Public reasoning, not private scratchpads</strong><p>Only concise council contributions are shown. Hidden chain-of-thought is not exposed.</p></div>
+            </div>
+          </aside>
+        </div>
+
+        <noscript><p class="noscript-note">JavaScript is required only for the local phase demonstration. The product explanation remains available below.</p></noscript>
+      </section>
+
+      <section class="how-section" id="how-it-works" aria-labelledby="how-title">
+        <header class="section-heading narrative-heading">
+          <div>
+            <p class="eyebrow"><span class="eyebrow-index">02</span> The method</p>
+            <h2 id="how-title">Why a council instead of one answer?</h2>
+          </div>
+          <p>Socrates treats an answer as something to examine, revise and reconstruct—not something to accept because it arrived fluently.</p>
+        </header>
+        <ol class="method-grid">
+          <li><span>01</span><h3>Question</h3><p>Socrates isolates the assumption the answer depends on.</p></li>
+          <li><span>02</span><h3>Challenge</h3><p>Independent roles attack reasoning, evidence and hidden assumptions.</p></li>
+          <li><span>03</span><h3>Revision</h3><p>Agents are expected to update when criticism succeeds.</p></li>
+          <li><span>04</span><h3>Synthesis</h3><p>The surviving reasoning is reconstructed into a final answer.</p></li>
+        </ol>
+        <div class="ratification-strip">
+          <span>05</span>
+          <div><h3>Ratification</h3><p>The final synthesis is independently checked against the council's epistemic discipline before release.</p></div>
+          <p>Evaluation remains separate from individual agent positions.</p>
+        </div>
+      </section>
+
+      <section class="trust-section" id="about" aria-labelledby="trust-title">
+        <div class="trust-intro">
+          <p class="eyebrow"><span class="eyebrow-index">03</span> Transparency</p>
+          <h2 id="trust-title">Built in public reasoning.</h2>
+          <p>Inspect the process without pretending that private chain-of-thought is a product feature.</p>
+        </div>
+        <ul class="trust-list">
+          <li><span aria-hidden="true">01</span><p>Public council contributions can be inspected.</p></li>
+          <li><span aria-hidden="true">02</span><p>Revisions remain visible instead of silently replacing history.</p></li>
+          <li><span aria-hidden="true">03</span><p>Final synthesis remains separate from individual positions.</p></li>
+          <li><span aria-hidden="true">04</span><p>Scoring and evaluation remain blind where the protocol requires it.</p></li>
+          <li><span aria-hidden="true">05</span><p>Hidden chain-of-thought is not exposed.</p></li>
+        </ul>
+      </section>
+
+      <section class="token-section" id="founder-token" aria-labelledby="token-title">
+        <div>
+          <p class="micro-label">COMMUNITY EXPERIMENT · SEPARATE FROM THE PRODUCT</p>
+          <h2 id="token-title">The Founder Community Token</h2>
+        </div>
+        <div class="token-copy">
+          <p>A community meme created around the Socrates AI experiment.</p>
+          <p>It is not required to use Socrates and does not represent ownership, governance or revenue rights in Socrates AI.</p>
+          <p>A disclosed share of creator earnings received by the founder may be allocated to Socrates development and model-compute costs, including OpenRouter usage.</p>
+          <a href="#about">About the experiment <span aria-hidden="true">→</span></a>
+        </div>
+        <dl class="token-placeholder">
+          <div><dt>SYMBOL</dt><dd>$TOKEN</dd></div>
+          <div><dt>CONTRACT</dt><dd>Coming later</dd></div>
+        </dl>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div><span class="brand-crest" aria-hidden="true"><img src="assets/socrates-ai-logo.png" alt="" width="1254" height="1254"></span><p><strong>SOCRATES AI</strong><br>Multi-Agent Socratic Intelligence</p></div>
+      <p>Ask · Challenge · Revise · Reconstruct · Synthesize</p>
+      <div class="local-command"><span>LOCAL CED</span><code>python -m uvicorn backend.local_ced_app:app --host 127.0.0.1 --port 8080</code></div>
+    </footer>
+  </body>
+</html>
