@@ -1,4 +1,56 @@
-# Present state — V0.3C operator approval-reference checkpoint
+# Present state — V0.4 governing-audit persistence, awaiting reauthorization
+
+## Repository and authority boundary
+
+- Branch: `feature/agent-quality-minimal-fix-v1`.
+- HEAD: `ba9c628033b9e49d672c1a4b1e1b53bc5f51344c` (`Persist the governing records the audit id lists name`).
+- Tree: `92f0e72a98e0c658dc94e0a6d52f0f6085d6a2b0`.
+- Parent E: `a6624f630778413d5d418014206a6f0da6735e8c`. Working tree clean.
+- No push, tag, PR, deployment, BYOK, provider call, external network call, spend or new run artifact.
+- The Stage B execution worktree `C:\Users\spirc\Desktop\Socrates-AI-Controlled-Live-E-a6624f6` is untouched: still detached at `a6624f63`, clean, server stopped, and its 73-file terminal run directory byte-identical (`result.json` `5c7ec81d…8785f5`, `plan.json` `7c337147…4934173`).
+
+## What this checkpoint changes
+
+An offline audit of the Stage B `release_unresolved` result could not answer, from the frozen artifacts alone, which claim was unresolved, which objection targeted it, or what verdict left it there. `CEDOrchestrator._governing_release_audit` already builds `objections`, `objection_verdicts` and `deterministic_checks`; `socrates.runtime._governing_record` dropped all three through its allow-list. This checkpoint widens that allow-list and does nothing else.
+
+`quality_mean` and `legacy_epistemic_status` remain excluded by the same allow-list. The quality plane governs nothing and must not travel inside the governing record as though it did.
+
+Deliberately **not** changed, and why: verification retry and redundancy in `run_objection_verification`. `REQUIRED_CORROBORATION` is 2 and the peer set excludes the raiser's model, so with three seats the fan-out is exactly two — one unusable verifier output is enough to leave an objection `INCONCLUSIVE`. That is a real fragility, but the Stage B artifacts never persisted the verdicts, so whether it actually fired is not recoverable. The persisted verdicts this checkpoint adds are the evidence that would settle it. Building redundancy first would be building on an unproven cause.
+
+## Changed files
+
+- `socrates/runtime.py`: three names added to the `_governing_record` allow-list, with the reason recorded inline.
+- `tests_dialogues/test_normal_runtime_v1.py`: `test_governing_audit_keeps_the_records_its_id_lists_name`, plus `SimpleNamespace` and `NormalRenderResult` imports.
+
+No file inside `FROZEN_CANONICAL_SUCCESSOR_CORE_BLOB_LOCK_V2` was touched; the lock covers `backend/dialogues/**` only.
+
+## Validation
+
+- New test alone: `1 passed`. Verified failing before the fix by stashing `socrates/runtime.py` — `KeyError: 'objections'` — then restored.
+- `test_normal_runtime_v1.py`, `test_normal_rendering_v1.py`, `test_normal_cli_v1.py`, `test_normal_live_lifecycle.py`, `test_ced_canonical_successor_frozen_core_v2.py`: `2 failed, 96 passed, 1 skipped`.
+- Both failures are `test_ced_canonical_successor_frozen_core_v2.py::test_every_frozen_repository_blob_is_still_byte_exact` (`backend/dialogues/agent.py` blob drift) and `::test_sealed_predecessor_bytes_and_identity_remain_exact`. Both were reproduced at clean parent `a6624f63` with this checkpoint stashed, so both pre-date it. They are part of the inherited lock-failure set this branch has carried since V0.2.
+- Interpreter: `C:\Users\spirc\Desktop\Socrates-AI-OpenRouter\.venv\Scripts\python.exe` with `PYTHONPATH` at this checkout.
+
+## Blocker before any live run
+
+`socrates/runtime.py` is one of the 97 paths in `authorization/normal-live-source-set-v1.json`. Its sha256 moved from `d6f7181b…4615dc` to `bf2c1d97…eefc9f`, so that manifest no longer authorizes this tree and `verify_production_normal_live_source_authorization_v1` fails closed before provider construction. This is the gate behaving correctly, not a defect.
+
+Reauthorization requires an operator act that cannot be delegated: `build_normal_live_source_authorization_v1` takes an `operator_authorization_statement`, and its provenance basis is `explicit-operator-review`. The path list is unchanged — no source file was added or removed — so the successor manifest is built over the same 97 paths against commit `ba9c628` and tree `92f0e72a`.
+
+`tests_dialogues/test_normal_runtime_v1.py` is not in the authorized set, so the test change does not affect the manifest.
+
+## Next safe step
+
+1. Operator reviews this checkpoint and issues the successor `authorization/normal-live-source-set-v1.json` over the same 97 paths, bound to `ba9c628` / `92f0e72a`, with their own authorization statement.
+2. Commit that manifest alone, as commit E did.
+3. Run from a fresh cache-free worktree. This checkout still holds the 58 pre-existing ignored `.pyc` files in 5 `__pycache__` directories, and `_reject_authorized_bytecode_caches` fails closed against them.
+4. A new preflight with a new approval reference. The consumed Stage B reference must not be transferred.
+
+`NEXT_STEP = OPERATOR SOURCE REAUTHORIZATION OF ba9c628, THEN FRESH-WORKTREE LIVE RUN. BYOK IS THE TASK AFTER THAT AND IS NOT YET SCOPED.`
+
+---
+
+# Historical present state — V0.3C operator approval-reference checkpoint
 
 ## Repository and authority boundary
 
