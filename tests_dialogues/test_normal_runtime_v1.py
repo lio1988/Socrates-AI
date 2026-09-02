@@ -905,6 +905,18 @@ def test_high_level_execute_uses_real_canonical_three_seat_council_and_safe_arti
         "reconstruction",
         "synthesis",
     }
+    # End to end, in a result.json actually written to disk: the governing
+    # audit carries the records an offline reader needs, and still carries no
+    # quality-plane field.
+    governing_audit = payload["governing"]["audit"]
+    assert {
+        "objections",
+        "objection_verdicts",
+        "deterministic_checks",
+    } <= set(governing_audit)
+    assert "quality_mean" not in governing_audit
+    assert "legacy_epistemic_status" not in governing_audit
+
     artifact_text = encoded.decode("utf-8")
     assert "raw_text" not in artifact_text
     assert "debug_context" not in artifact_text
@@ -1132,15 +1144,20 @@ def test_execute_cancellation_default_is_unchanged_and_browser_can_persist(
     )
 
 
-def test_governing_audit_keeps_the_records_its_id_lists_name() -> None:
-    """An id list nobody can resolve is not an audit trail.
+def test_governing_audit_projection_keeps_objection_and_check_records() -> None:
+    """The projector must not drop the three records CED already built.
 
     A frozen run reported two unresolved objection ids and one unresolved claim,
     and carried nothing saying which claim either objection targeted, what
     verdict ended them there, or whether the deterministic checker applied at
-    all. The projection built every one of those fields and then dropped them,
-    so the only way to ask why a release was unresolved was to re-read the
-    source and guess. Offline is the only way a frozen run is ever audited.
+    all. `_apply_governing_release` built every one of those fields and the
+    allow-list here dropped them, so the only way to ask why a release was
+    unresolved was to re-read the source and guess. Offline is the only way a
+    frozen run is ever audited.
+
+    Scope: this covers objection and deterministic-check records only. An
+    unresolved id may also name an evidence, verification or contradiction
+    record, and none of those are projected yet.
     """
     objections = [
         {
@@ -1193,10 +1210,14 @@ def test_governing_audit_keeps_the_records_its_id_lists_name() -> None:
     assert audit["objections"] == objections
     assert audit["objection_verdicts"] == {"obj_1": "uncorroborated"}
     assert audit["deterministic_checks"]["reason"] == "no_roster"
-    # Every unresolved id resolves to a record naming its target and its fate.
-    named = {row["objection_id"] for row in audit["objections"]}
-    assert set(audit["unresolved_record_ids"]) <= named
-    assert set(audit["unresolved_record_ids"]) <= set(audit["objection_verdicts"])
+    # An unresolved id that names an objection now resolves to a record carrying
+    # its target and to the verdict that left it there. Ids naming evidence,
+    # verification or contradiction records still resolve to nothing, so this is
+    # deliberately not asserted over the whole list.
+    projected = {row["objection_id"] for row in audit["objections"]}
+    assert "obj_1" in audit["unresolved_record_ids"]
+    assert "obj_1" in projected
+    assert "obj_1" in audit["objection_verdicts"]
     # The quality plane still does not travel with the governing record.
     assert "quality_mean" not in audit
     assert "legacy_epistemic_status" not in audit
