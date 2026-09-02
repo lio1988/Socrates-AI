@@ -1,4 +1,53 @@
-# Present state — V0.7 BYOK public product checkpoint
+# Present state — V0.8 returned-identity classification and routing observability
+
+## Repository and authority boundary
+
+- Branch: `feature/agent-quality-minimal-fix-v1`.
+- Parent: `c90f9a8` (G, the BYOK authorization commit).
+- One source checkpoint, then one manifest-free anchor and one artifact-only reauthorization, in this task.
+- **The authorized path universe stays at 98.** The only new file is a test, which is outside the runtime universe by design.
+- No push, tag, PR, deployment, OpenRouter call, paid provider call or external network call.
+
+## What prompted this
+
+The first controlled BYOK live run stopped at 16 of 135 calls on an HTTP 200 whose body carried a top-level `error` and no `model`. The artifact preserved two `False` flags and the name `returned_model_identity_mismatch`, which reads as *a different model came back*. It took a full source audit to establish that nothing had been substituted at all — the response simply carried no identity, because OpenRouter delivers upstream errors inside HTTP 200.
+
+Three things were computed and then discarded on the way to that artifact: the mapper's `envelope_kind` and `actual_served_model_status`, the record's own `s5_envelope_kind`, and the ledger's exact fatal reason, which `NormalRuntime.accounting()` flattened to the constant `"session_fatal"`. This is the third instance of the same class of gap on this branch.
+
+## What changed
+
+**Classification.** `execute_bounded_text_turn_v1` now separates absence from error:
+
+| Condition | Verdict |
+| --- | --- |
+| Either identity absent | `returned_identity_absent_error_envelope` *(new)* |
+| Both present, both wrong | `returned_model_and_provider_mismatch` *(new)* |
+| Model present and wrong | `returned_model_identity_mismatch` *(unchanged)* |
+| Provider present and wrong | `returned_provider_identity_mismatch` *(unchanged)* |
+
+The two existing names are deliberately **not** renamed: two benchmark scripts and their tests share that vocabulary, and the audit's finding was about absence, not about them. All four trip the fatal latch through `RETURNED_IDENTITY_FATAL_FAILURES_V1`, so **fail-closed behaviour is byte-for-byte the same outcome** — only the name now matches the cause.
+
+**Observability.** Four new optional turn-record fields — `actual_served_model_status`, `router_metadata_presence`, `expected_model_identity`, `expected_provider_identity` — all added to the record's identity pop-list so historical record identities do not move. The artifact projection now carries those four plus `s5_envelope_kind`, which already existed on the record. `NormalRuntime.accounting()` carries the ledger's actual reason instead of one constant; every value reaching `trip_fatal` in this runtime is a literal from the adapter's own finite vocabulary, so nothing provider-controlled is exposed.
+
+**Public message.** A new `public_session_stop_notice()` in `socrates/rendering.py` maps a fatal code to one sentence from a closed table; an unrecognised code returns `None` rather than being echoed. Both managers emit it as a separate `provider_stop_notice` event field, and the UI renders it in its own element beside the governing notice. It is never merged into that notice: one says what the council may claim, the other says the council never got that far. `render_normal_response` is untouched.
+
+## What deliberately did not change
+
+Exact model and provider binding; `allow_fallbacks=False`; pinned `provider.only`/`order`; the fatal session latch; CED; corroboration; verification retry; structured-output schemas. The refuted non-string-`const` hypothesis produced no schema change, and the `missing=11` finding on its own justifies none.
+
+## Validation
+
+- `test_returned_identity_classification_v1.py`: **11 passed.** Verified failing before the change.
+- Eleven suites including BYOK, normal runtime, rendering, CLI, live lifecycle, source authorization, council bridge, reduced-benchmark safety, hybrid invariants and destructive path: **270 passed, 2 skipped, 1 failed.**
+- The single failure is `test_socrates_zero_openrouter_acquisition_reduced_benchmark_safety_v1.py::test_unknown_dispatch_exception_is_charged_and_never_retried`, an unsettled-reservation assertion. **Reproduced identically with the source changes stashed, and again in the pristine `Socrates-AI-Verify-c90f9a8` worktree at commit G.** It pre-dates this checkpoint and belongs to the inherited failure set; it was not forced green.
+
+## Deferred
+
+Per-attempt semantic parse outcomes (frozen core). The exact upstream error behind the incident remains unknown and would need an allowlisted, categorised upstream reason — never a raw error body. Shared multi-instance rate limiting. Deployment.
+
+---
+
+# Historical present state — V0.7 BYOK public product checkpoint
 
 ## Repository and authority boundary
 

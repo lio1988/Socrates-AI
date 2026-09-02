@@ -52,6 +52,7 @@ from backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 import (
     validate_bearer_credential_v1,
 )
 from socrates import runtime as normal_runtime
+from socrates.rendering import public_session_stop_notice
 from socrates.source_authorization import (
     VerifiedNormalLiveSourceAuthorizationV1,
     verify_production_normal_live_source_authorization_v1,
@@ -590,11 +591,19 @@ class ByokLiveCouncilManager:
                     run.state = None
             public_final = project_normal_render(result.render)
             run.status = "completed" if public_final["answer_released"] else "blocked"
-            run.emit(
-                "run.completed",
-                {"status": run.status, "final": public_final},
-                terminal=True,
+            completed: Dict[str, Any] = {
+                "status": run.status,
+                "final": public_final,
+            }
+            # A separate field, never folded into the governing notice: one says
+            # what the council may claim, the other says the council never got
+            # that far because a provider response could not be trusted.
+            stop_notice = public_session_stop_notice(
+                getattr(result.accounting, "fatal_failure_code", None)
             )
+            if stop_notice is not None:
+                completed["provider_stop_notice"] = stop_notice
+            run.emit("run.completed", completed, terminal=True)
         except asyncio.CancelledError:
             run.status = "failed"
             run.emit(

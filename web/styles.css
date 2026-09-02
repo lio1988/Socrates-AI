@@ -465,6 +465,9 @@ summary:focus-visible { outline: 0; border-radius: var(--radius-xs); box-shadow:
 .synthesis-grid > div:first-child p { color: var(--text); font-size: 0.96rem; }
 .ratification-note { max-width: 880px; margin: 24px 0 0; color: var(--muted); font-size: 0.74rem; }
 .governing-notice { max-width: 920px; margin: 24px 0 0; padding: 14px 16px; border: 1px solid rgba(216, 179, 106, 0.34); border-radius: var(--radius-sm); background: rgba(216, 179, 106, 0.055); color: var(--warning); font-size: 0.76rem; }
+/* Visually distinct from the governing notice: this reports a transport stop,
+   not an epistemic verdict, and the two must not read as one statement. */
+.provider-stop-notice { max-width: 920px; margin: 12px 0 0; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text-soft); font-size: 0.76rem; }
 .ratified-badge[data-outcome="withheld"] { border-color: rgba(224, 125, 115, 0.42); color: var(--blocked); }
 .noscript-note { padding: 14px; border: 1px solid rgba(216, 179, 106, 0.3); color: var(--warning); }
 

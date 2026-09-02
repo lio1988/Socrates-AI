@@ -28,6 +28,7 @@ from backend.dialogues.council_live import (
 )
 from backend.dialogues.socrates_zero.contracts import canonical_json
 from socrates import runtime as normal_runtime
+from socrates.rendering import public_session_stop_notice
 from socrates.runtime import NormalPreflight
 from socrates.source_authorization import (
     VerifiedNormalLiveSourceAuthorizationV1,
@@ -635,11 +636,18 @@ class NormalLiveCouncilManager:
                     run.state = None
             public_final = project_normal_render(result.render)
             run.status = "completed" if public_final["answer_released"] else "blocked"
-            run.emit(
-                "run.completed",
-                {"status": run.status, "final": public_final},
-                terminal=True,
+            completed: Dict[str, Any] = {
+                "status": run.status,
+                "final": public_final,
+            }
+            # Kept out of the governing notice on purpose: one says what the
+            # council may claim, the other says the council never got that far.
+            stop_notice = public_session_stop_notice(
+                getattr(result.accounting, "fatal_failure_code", None)
             )
+            if stop_notice is not None:
+                completed["provider_stop_notice"] = stop_notice
+            run.emit("run.completed", completed, terminal=True)
         except asyncio.CancelledError:
             run.status = "failed"
             run.emit(

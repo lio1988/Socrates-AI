@@ -1,3 +1,16 @@
+# Stable branch memory — V0.8 additions
+
+- OpenRouter delivers upstream errors inside HTTP 200. Such a body has a top-level `error` and no top-level `model`, so it carries no attributable identity. `actual_served_model` is assigned at exactly one site, only under a SUCCESS envelope, so `None` there means ERROR envelope and nothing else.
+- Absent identity and wrong identity are now different verdicts and must stay different. `returned_identity_absent_error_envelope` and `returned_model_and_provider_mismatch` are new; `returned_model_identity_mismatch` and `returned_provider_identity_mismatch` keep their names because two benchmark scripts and their tests share that vocabulary.
+- All four are fatal, listed in `RETURNED_IDENTITY_FATAL_FAILURES_V1`. Removing one weakens fail-closed behaviour and needs its own authorization.
+- Any new optional field on `OpenRouterTurnRecordV1` must join the pop-list inside `identify()`, or every historical record identity moves.
+- `NormalRuntime.accounting()` now carries the ledger's actual fatal reason. That is safe only because every `trip_fatal` argument in this runtime is a code-owned literal; if that ever stops being true, the flattening has to come back.
+- Public stop sentences live in a closed table in `socrates/rendering.py`. An unknown code returns `None`. They are emitted as `provider_stop_notice`, never merged into the governing notice.
+- The three observability gaps closed on this branch were all the same shape: a value computed and then dropped at a projection boundary. Look there first.
+- `test_socrates_zero_openrouter_acquisition_reduced_benchmark_safety_v1.py::test_unknown_dispatch_exception_is_charged_and_never_retried` fails at commit G in a pristine worktree. Inherited, not caused by V0.8.
+
+---
+
 # Stable branch memory — V0.7 additions
 
 - `openrouter_one_live_shadow_v1.py` holds the only credential read site and the only `Authorization` injection site. BYOK adds an explicit-credential dispatch entry beside the environment-reading one; both share `_dispatch_once_v1`. Never duplicate the transport and never mutate `os.environ` to switch credentials.

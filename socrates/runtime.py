@@ -481,11 +481,13 @@ class NormalRuntime:
             int(row.get("completion_tokens") or 0) for row in turns
         )
         if self.ledger is not None:
-            fatal = (
-                "session_fatal"
-                if self.ledger.fatal_failure is not None
-                else None
-            )
+            # The ledger already holds the exact reason it stopped. Flattening
+            # every cause to one constant is what made a live incident cost a
+            # source audit to explain. Every value reaching `trip_fatal` in this
+            # runtime is a literal from the adapter's own finite vocabulary, so
+            # carrying it exposes no provider-controlled text.
+            fatal = self.ledger.fatal_failure or None
+
             return NormalAccounting(
                 calls_consumed=self.ledger.calls_consumed,
                 observed_picodollars=self.ledger.observed_picodollars,
@@ -1148,6 +1150,17 @@ def _project_turn_row(row: Mapping[str, Any]) -> Dict[str, Any]:
         "provider_display_name",
         "returned_model_binding_ok",
         "returned_provider_binding_ok",
+        # Two booleans cannot say whether the returned identity was wrong or
+        # never arrived. One live run stopped on an unattributable HTTP 200 and
+        # the artifact preserved only `False, False`, so the cause took a source
+        # audit to establish. The mapper's own verdict, the envelope kind and
+        # the operands the comparison used are all closed enums or server-side
+        # configuration — none is provider-controlled text.
+        "s5_envelope_kind",
+        "actual_served_model_status",
+        "router_metadata_presence",
+        "expected_model_identity",
+        "expected_provider_identity",
         "provider_structured_output_valid",
         # A bare False says a seat failed and nothing else. Across two live
         # runs one model was 0/11 on two task kinds and 46/46 on the rest,

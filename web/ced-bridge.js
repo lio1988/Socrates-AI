@@ -116,6 +116,7 @@ const bridgeElements = {
   synthesisAnswer: document.querySelector("#synthesis-answer"),
   synthesisGrid: document.querySelector("#synthesis-grid"),
   governingNotice: document.querySelector("#governing-notice"),
+  providerStopNotice: document.querySelector("#provider-stop-notice"),
   liveConfirmation: document.querySelector("#live-confirmation-panel"),
   liveSourceStatus: document.querySelector("#live-source-status"),
   liveSeatCount: document.querySelector("#live-seat-count"),
@@ -643,6 +644,11 @@ function renderFinal(final, { demo = false, ratification = null } = {}) {
   const notice = !demo && typeof final.notice === "string" ? final.notice : "";
   bridgeElements.governingNotice.textContent = notice;
   bridgeElements.governingNotice.hidden = notice.length === 0;
+  // Cleared on every render so a stop notice from an earlier run can never
+  // survive beside a later run's answer. The completion handler sets it again
+  // immediately afterwards when the server sent one.
+  bridgeElements.providerStopNotice.textContent = "";
+  bridgeElements.providerStopNotice.hidden = true;
   elements.finalSynthesis.hidden = false;
 }
 
@@ -888,6 +894,13 @@ function applyPublicEvent(payload) {
       renderTimeline(LOCAL_PHASE_IDS.length - 1, true);
       markLocalSeatsComplete();
       renderFinal(final, { ratification: localState.ratification });
+      // Server-authored, drawn from a closed table, and shown beside the
+      // governing notice rather than inside it: the two say different things.
+      const stopNotice = typeof data.provider_stop_notice === "string"
+        ? data.provider_stop_notice.slice(0, 400)
+        : "";
+      bridgeElements.providerStopNotice.textContent = stopNotice;
+      bridgeElements.providerStopNotice.hidden = stopNotice.length === 0;
       elements.phaseBrief.querySelector("span").textContent = localState.sourceMode === "normal-live"
         ? "NORMAL LIVE COUNCIL COMPLETE"
         : "CANONICAL COUNCIL COMPLETE";

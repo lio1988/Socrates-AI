@@ -650,6 +650,16 @@ class OpenRouterTurnRecordV1(_FrozenLiveContract):
     provider_display_name: Optional[str] = None
     returned_model_binding_ok: Optional[bool] = None
     returned_provider_binding_ok: Optional[bool] = None
+    #: Why the served-model authority is what it is. A binding failure reads
+    #: identically whether the returned identity was *wrong* or simply never
+    #: *present*, and one live incident cost a full audit to tell those apart.
+    #: The mapper already knew; these carry what it knew.
+    actual_served_model_status: Optional[str] = None
+    router_metadata_presence: Optional[str] = None
+    #: The operands the comparison actually used. Server-side configuration,
+    #: never provider-controlled text.
+    expected_model_identity: Optional[str] = None
+    expected_provider_identity: Optional[str] = None
     provider_structured_output_valid: Optional[bool] = None
     provider_structured_output_error: Optional[str] = None
     s5_envelope_kind: Optional[str] = None
@@ -685,6 +695,10 @@ class OpenRouterTurnRecordV1(_FrozenLiveContract):
             "committed_cost_within_session_ceiling",
             "returned_model_binding_ok",
             "returned_provider_binding_ok",
+            "actual_served_model_status",
+            "router_metadata_presence",
+            "expected_model_identity",
+            "expected_provider_identity",
             "provider_structured_output_valid",
             "provider_structured_output_error",
             "assistant_output_sanitized",

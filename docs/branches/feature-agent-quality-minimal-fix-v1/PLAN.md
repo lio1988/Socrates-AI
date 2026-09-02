@@ -1,3 +1,31 @@
+# Plan — V0.8 returned-identity classification and routing observability
+
+## Success criterion
+
+The next provider-identity failure explains itself from the artifact alone, and
+the fail-closed outcome is unchanged.
+
+## Completed
+
+1. [x] Read-only audit established that the incident was an ERROR envelope with no attributable identity, not a substitution.
+2. [x] Separate absent identity from wrong identity with two new finite codes, keeping the two existing names so shared benchmark vocabulary is not churned.
+3. [x] Keep every identity verdict fatal through one explicit tuple.
+4. [x] Record the mapper verdict, the envelope kind and the comparison operands on the turn record, all added to the identity pop-list.
+5. [x] Project those five fields into the run artifact.
+6. [x] Carry the ledger reason into the accounting instead of one flattening constant.
+7. [x] Add a closed-table public sentence, emitted as its own field and rendered in its own element beside the governing notice.
+8. [x] Prove the new behaviour, prove the old names survive, prove historical record identity is undisturbed, prove the notice table never echoes an unknown code.
+9. [x] Full regression; identify the one failure as pre-existing at commit G rather than forcing it green.
+10. [x] One source checkpoint, then one manifest-free anchor and one artifact-only reauthorization.
+
+## Not done, deliberately
+
+- No rename of  / .
+- No schema, retry, corroboration, binding, fallback or CED change.
+- No live run, no provider call, no deployment, no push, tag or PR.
+
+---
+
 # Plan — V0.7 BYOK public product checkpoint
 
 ## Success criterion

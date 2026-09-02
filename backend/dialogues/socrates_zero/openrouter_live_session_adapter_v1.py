@@ -63,6 +63,27 @@ COMPLETION_ENVELOPE_EXHAUSTED_FAILURE_V1 = (
     "completion_envelope_exhausted_before_valid_visible_payload"
 )
 
+#: The response carried no attributable model or provider identity at all.
+#: OpenRouter returns upstream errors inside HTTP 200, and such a body has a
+#: top-level ``error`` and no top-level ``model``, so nothing can be bound to
+#: the seat. This is not a wrong identity; it is an absent one.
+RETURNED_IDENTITY_ABSENT_FAILURE_V1 = "returned_identity_absent_error_envelope"
+
+#: Both identities were present and both were wrong. Distinguished from the
+#: single-field cases so an auditor can see at a glance whether one field
+#: drifted or the whole attribution did.
+RETURNED_MODEL_AND_PROVIDER_MISMATCH_V1 = "returned_model_and_provider_mismatch"
+
+#: Every returned-identity verdict that trips the session fatal latch. Adding
+#: names to this tuple is how the vocabulary grows; removing one would weaken
+#: fail-closed behaviour and must not happen without its own authorization.
+RETURNED_IDENTITY_FATAL_FAILURES_V1: Tuple[str, ...] = (
+    RETURNED_IDENTITY_ABSENT_FAILURE_V1,
+    RETURNED_MODEL_AND_PROVIDER_MISMATCH_V1,
+    "returned_model_identity_mismatch",
+    "returned_provider_identity_mismatch",
+)
+
 _PUBLIC_SECRET_PATTERNS_V1: Tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bsk-(?:or-v1-)?[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}"),
@@ -661,17 +682,37 @@ def execute_bounded_text_turn_v1(
     record_fields["s5_envelope_kind"] = getattr(
         mapping.envelope_kind, "value", str(mapping.envelope_kind)
     )
+    # The comparison operands and the mapper's own epistemic verdict, recorded
+    # before any conclusion is drawn from them. Both are server-side
+    # configuration or a closed enum; neither is provider-controlled text.
+    record_fields["actual_served_model_status"] = getattr(
+        mapping.actual_served_model_status,
+        "value",
+        str(mapping.actual_served_model_status),
+    )
+    record_fields["router_metadata_presence"] = getattr(
+        mapping.router_metadata_presence,
+        "value",
+        str(mapping.router_metadata_presence),
+    )
+    record_fields["expected_model_identity"] = ",".join(expected_returned_models)
+    record_fields["expected_provider_identity"] = ",".join(
+        expected_provider_display_names
+    )
+
     actual_model = mapping.actual_served_model
+    model_present = actual_model is not None
     model_ok = actual_model in expected_returned_models
-    if actual_model is not None:
+    if model_present:
         record_fields["actual_served_model"] = (
             actual_model if model_ok else "unrecognized_model"
         )
     record_fields["returned_model_binding_ok"] = model_ok
 
     provider_display = payload.get("provider") if payload is not None else None
+    provider_present = isinstance(provider_display, str)
     provider_ok = provider_display in expected_provider_display_names
-    if isinstance(provider_display, str):
+    if provider_present:
         record_fields["provider_display_name"] = (
             provider_display if provider_ok else "unrecognized_provider"
         )
@@ -694,7 +735,16 @@ def execute_bounded_text_turn_v1(
                 ).hexdigest()
 
     failure: Optional[str] = accounting_failure
-    if not model_ok:
+    # An unattributable response and a wrongly attributed one are both fatal,
+    # and deliberately stay fatal. They are not the same event, and calling
+    # both "identity mismatch" sent one real incident to a full source audit
+    # before anyone could say the response had simply carried no identity at
+    # all. The outcome below is unchanged; only the name now matches the cause.
+    if not model_present or not provider_present:
+        failure = failure or RETURNED_IDENTITY_ABSENT_FAILURE_V1
+    elif not model_ok and not provider_ok:
+        failure = failure or RETURNED_MODEL_AND_PROVIDER_MISMATCH_V1
+    elif not model_ok:
         failure = failure or "returned_model_identity_mismatch"
     elif not provider_ok:
         failure = failure or "returned_provider_identity_mismatch"
@@ -708,10 +758,7 @@ def execute_bounded_text_turn_v1(
         failure = failure or "no_assistant_content"
     if failure is not None:
         record_fields["failure_class"] = failure
-        if failure in (
-            "returned_model_identity_mismatch",
-            "returned_provider_identity_mismatch",
-        ):
+        if failure in RETURNED_IDENTITY_FATAL_FAILURES_V1:
             ledger.trip_fatal(failure)
 
     record = OpenRouterTurnRecordV1(**record_fields)
@@ -1215,6 +1262,9 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
 
 
 __all__ = [
+    "RETURNED_IDENTITY_ABSENT_FAILURE_V1",
+    "RETURNED_IDENTITY_FATAL_FAILURES_V1",
+    "RETURNED_MODEL_AND_PROVIDER_MISMATCH_V1",
     "OpenRouterBoundedTextOutcomeV1",
     "OutboundTaskStateProjectorV1",
     "PreDispatchGuardV1",

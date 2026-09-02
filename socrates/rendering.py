@@ -36,6 +36,65 @@ INCONSISTENT_NOTICE = (
     "GOVERNING RELEASE INCONSISTENT. The council candidate was withheld."
 )
 
+#: Why a session stopped at the transport, in words a reader can act on.
+#:
+#: These are deliberately *not* governing notices and are never merged into
+#: one. A governing notice states what the council may claim; this states that
+#: the council never reached the point of claiming anything, because a provider
+#: response could not be trusted. Conflating the two planes is the mistake this
+#: project keeps refusing to make.
+#:
+#: The table is closed and keyed by the runtime's own finite fatal codes. An
+#: unrecognised code yields ``None`` rather than being echoed, so no internal
+#: string can reach a reader merely by being introduced somewhere else.
+_SESSION_STOP_NOTICES: dict[str, str] = {
+    "returned_identity_absent_error_envelope": (
+        "A provider returned an unattributable error response. The council "
+        "stopped safely before further calls."
+    ),
+    "returned_model_and_provider_mismatch": (
+        "A provider returned a response from a different model and provider "
+        "than the one requested. The council stopped safely before further "
+        "calls."
+    ),
+    "returned_model_identity_mismatch": (
+        "A provider returned a response from a different model than the one "
+        "requested. The council stopped safely before further calls."
+    ),
+    "returned_provider_identity_mismatch": (
+        "A provider returned a response from a different provider than the "
+        "one requested. The council stopped safely before further calls."
+    ),
+    "raw_mapping_refused": (
+        "A provider response could not be read safely. The council stopped "
+        "before further calls."
+    ),
+    "transport_retry_observed": (
+        "A provider connection was retried unexpectedly. The council stopped "
+        "before further calls."
+    ),
+    "observed_cost_exceeds_p19_reservation": (
+        "A provider reported a cost above its reserved bound. The council "
+        "stopped before further calls."
+    ),
+    "observed_session_cost_exceeds_authorized_total": (
+        "The run reached its authorized spending bound. The council stopped "
+        "before further calls."
+    ),
+}
+
+
+def public_session_stop_notice(fatal_failure_code: object) -> Optional[str]:
+    """The public sentence for a transport-level stop, or ``None``.
+
+    ``None`` for an absent or unrecognised code is the safe answer: silence is
+    always publishable, an unrecognised internal string is not.
+    """
+
+    if not isinstance(fatal_failure_code, str):
+        return None
+    return _SESSION_STOP_NOTICES.get(fatal_failure_code)
+
 _RECOGNIZED_RELEASES = frozenset(
     {RELEASE_SUPPORTED, RELEASE_UNRESOLVED, BLOCKED}
 )
@@ -307,6 +366,7 @@ __all__ = [
     "NormalRenderResult",
     "UNAVAILABLE_NOTICE",
     "UNRESOLVED_NOTICE",
+    "public_session_stop_notice",
     "render_normal_response",
     "sanitize_normal_text",
 ]
