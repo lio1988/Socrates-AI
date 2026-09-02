@@ -74,9 +74,12 @@ RETURNED_IDENTITY_ABSENT_FAILURE_V1 = "returned_identity_absent_error_envelope"
 #: drifted or the whole attribution did.
 RETURNED_MODEL_AND_PROVIDER_MISMATCH_V1 = "returned_model_and_provider_mismatch"
 
-#: Every returned-identity verdict that trips the session fatal latch. Adding
-#: names to this tuple is how the vocabulary grows; removing one would weaken
-#: fail-closed behaviour and must not happen without its own authorization.
+#: Every returned-identity verdict eligible to trip the session fatal latch.
+#: A well-formed ERROR envelope on the first council attempt remains rejected,
+#: but may consume the already-authorized same-seat retry before this latch is
+#: tripped. A repeated absence, an absence outside a council task, and every
+#: present-but-wrong identity remain immediately fatal. No unattributed text is
+#: ever returned as assistant output.
 RETURNED_IDENTITY_FATAL_FAILURES_V1: Tuple[str, ...] = (
     RETURNED_IDENTITY_ABSENT_FAILURE_V1,
     RETURNED_MODEL_AND_PROVIDER_MISMATCH_V1,
@@ -735,11 +738,11 @@ def execute_bounded_text_turn_v1(
                 ).hexdigest()
 
     failure: Optional[str] = accounting_failure
-    # An unattributable response and a wrongly attributed one are both fatal,
-    # and deliberately stay fatal. They are not the same event, and calling
-    # both "identity mismatch" sent one real incident to a full source audit
-    # before anyone could say the response had simply carried no identity at
-    # all. The outcome below is unchanged; only the name now matches the cause.
+    # An unattributable response and a wrongly attributed one are distinct. A
+    # top-level ERROR envelope contains no candidate answer to trust, so the
+    # first council attempt can reject it and use the already-planned same-seat
+    # retry. Missing identity anywhere else, a repeated ERROR envelope, and all
+    # present-but-wrong identities still trip the fatal latch.
     if not model_present or not provider_present:
         failure = failure or RETURNED_IDENTITY_ABSENT_FAILURE_V1
     elif not model_ok and not provider_ok:
@@ -758,7 +761,16 @@ def execute_bounded_text_turn_v1(
         failure = failure or "no_assistant_content"
     if failure is not None:
         record_fields["failure_class"] = failure
-        if failure in RETURNED_IDENTITY_FATAL_FAILURES_V1:
+        retryable_first_attempt_error_envelope = (
+            failure == RETURNED_IDENTITY_ABSENT_FAILURE_V1
+            and task is not None
+            and task.attempt_index == 0
+            and record_fields.get("s5_envelope_kind") == "ERROR"
+        )
+        if (
+            failure in RETURNED_IDENTITY_FATAL_FAILURES_V1
+            and not retryable_first_attempt_error_envelope
+        ):
             ledger.trip_fatal(failure)
 
     record = OpenRouterTurnRecordV1(**record_fields)

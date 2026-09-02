@@ -4,13 +4,15 @@ One live run stopped on an HTTP 200 whose body carried a top-level ``error``
 and no ``model``. The artifact preserved two ``False`` flags and the name
 ``returned_model_identity_mismatch``, which reads as "a different model came
 back" — and that cost a full source audit to disprove. These tests pin the
-distinction, pin the diagnostics that make it readable, and pin the thing that
-must not change: every verdict below is still fatal.
+distinction and the diagnostics that make it readable. An ERROR envelope on a
+first council attempt may now use one bounded same-seat retry; the response is
+still rejected, and a repeated absence or any actual mismatch remains fatal.
 """
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -55,7 +57,7 @@ def _error_envelope_bytes(
 _counter = [0]
 
 
-def _run_turn(body: bytes, tmp_path):
+def _run_turn(body: bytes, tmp_path, *, task=None):
     """One isolated turn.
 
     Each call gets its own claim directory and turn id: the claim store burns a
@@ -74,6 +76,7 @@ def _run_turn(body: bytes, tmp_path):
         response_format_override=_schema(),
         expected_returned_models=(REDUCED_MODEL_V1,),
         expected_provider_display_names=(REDUCED_PROVIDER_DISPLAY_NAME_V1,),
+        task=task,
         dispatch=lambda **_kwargs: _Result(body),
     )
     return outcome, ledger
@@ -97,6 +100,27 @@ def test_error_envelope_is_absent_identity_not_a_mismatch(tmp_path) -> None:
     # Fail-closed is unchanged.
     assert ledger.fatal_failure == RETURNED_IDENTITY_ABSENT_FAILURE_V1
     assert outcome.assistant_text is None
+
+
+def test_first_council_error_envelope_uses_bounded_retry_without_accepting_output(
+    tmp_path,
+) -> None:
+    task = SimpleNamespace(task_kind=None, attempt_index=0)
+    outcome, ledger = _run_turn(_error_envelope_bytes(), tmp_path, task=task)
+
+    assert outcome.failure_reason == RETURNED_IDENTITY_ABSENT_FAILURE_V1
+    assert outcome.record.failure_class == RETURNED_IDENTITY_ABSENT_FAILURE_V1
+    assert outcome.assistant_text is None
+    assert ledger.fatal_failure is None
+
+
+def test_repeated_council_error_envelope_trips_fatal_latch(tmp_path) -> None:
+    task = SimpleNamespace(task_kind=None, attempt_index=1)
+    outcome, ledger = _run_turn(_error_envelope_bytes(), tmp_path, task=task)
+
+    assert outcome.failure_reason == RETURNED_IDENTITY_ABSENT_FAILURE_V1
+    assert outcome.assistant_text is None
+    assert ledger.fatal_failure == RETURNED_IDENTITY_ABSENT_FAILURE_V1
 
 
 def test_both_identities_wrong_is_its_own_verdict(tmp_path) -> None:

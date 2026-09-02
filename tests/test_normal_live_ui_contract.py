@@ -157,3 +157,25 @@ def test_demo_and_local_restoration_and_normal_reset_are_explicit() -> None:
     assert "cancelNormalPreflight();" in BRIDGE
     assert "closeLocalTransport();" in BRIDGE
     assert "localState.generation += 1;" in BRIDGE
+
+
+def test_provider_stop_never_paints_false_council_completion() -> None:
+    terminal = re.search(
+        r'case "run\.completed": \{(?P<body>.*?)\n\s+break;',
+        BRIDGE,
+        flags=re.DOTALL,
+    )
+    assert terminal
+    body = terminal.group("body")
+
+    assert "const providerStopped = stopNotice.length > 0;" in body
+    assert 'runState.stage = providerStopped ? "blocked" : "complete";' in body
+    guarded_completion = re.search(
+        r"if \(!providerStopped\) \{\s*"
+        r"renderTimeline\(LOCAL_PHASE_IDS\.length - 1, true\);\s*"
+        r"markLocalSeatsComplete\(\);\s*\}",
+        body,
+    )
+    assert guarded_completion
+    assert '"NORMAL LIVE COUNCIL STOPPED"' in body
+    assert '"COUNCIL STOPPED · PROVIDER RESPONSE REJECTED"' in body

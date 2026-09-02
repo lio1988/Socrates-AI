@@ -889,31 +889,45 @@ function applyPublicEvent(payload) {
       if (!isPlainObject(final)) {
         throw new Error("invalid final projection");
       }
-      runState.mode = data.status === "completed" ? "complete" : "blocked";
-      runState.lifecycle = data.status === "completed" ? "completed" : "blocked";
-      runState.stage = "complete";
-      renderTimeline(LOCAL_PHASE_IDS.length - 1, true);
-      markLocalSeatsComplete();
-      renderFinal(final, { ratification: localState.ratification });
-      // Server-authored, drawn from a closed table, and shown beside the
-      // governing notice rather than inside it: the two say different things.
+      // A terminal lifecycle event can mean successful protocol completion or
+      // a fail-closed provider stop. Only the former may paint every phase and
+      // seat as complete.
       const stopNotice = typeof data.provider_stop_notice === "string"
         ? data.provider_stop_notice.slice(0, 400)
         : "";
+      const providerStopped = stopNotice.length > 0;
+      runState.mode = data.status === "completed" ? "complete" : "blocked";
+      runState.lifecycle = data.status === "completed" ? "completed" : "blocked";
+      runState.stage = providerStopped ? "blocked" : "complete";
+      if (!providerStopped) {
+        renderTimeline(LOCAL_PHASE_IDS.length - 1, true);
+        markLocalSeatsComplete();
+      }
+      renderFinal(final, { ratification: localState.ratification });
+      // Server-authored, drawn from a closed table, and shown beside the
+      // governing notice rather than inside it: the two say different things.
       bridgeElements.providerStopNotice.textContent = stopNotice;
       bridgeElements.providerStopNotice.hidden = stopNotice.length === 0;
-      elements.phaseBrief.querySelector("span").textContent = localState.sourceMode === "normal-live"
-        ? "NORMAL LIVE COUNCIL COMPLETE"
-        : "CANONICAL COUNCIL COMPLETE";
-      elements.phaseBrief.querySelector("h4").textContent = final.answer_released
-        ? "Governing release rendered"
-        : "Public answer withheld";
-      elements.phaseBrief.querySelector("p").textContent = final.answer_released
-        ? "The final text below is exactly the public answer authorized by the normal governing renderer."
-        : "The candidate remains private because the governing renderer did not authorize publication.";
-      setRunStatus(final.answer_released
-        ? "COUNCIL COMPLETE · GOVERNED ANSWER AVAILABLE"
-        : "COUNCIL COMPLETE · PUBLIC ANSWER WITHHELD");
+      elements.phaseBrief.querySelector("span").textContent = providerStopped
+        ? "NORMAL LIVE COUNCIL STOPPED"
+        : localState.sourceMode === "normal-live"
+          ? "NORMAL LIVE COUNCIL COMPLETE"
+          : "CANONICAL COUNCIL COMPLETE";
+      elements.phaseBrief.querySelector("h4").textContent = providerStopped
+        ? "Council stopped before completion"
+        : final.answer_released
+          ? "Governing release rendered"
+          : "Public answer withheld";
+      elements.phaseBrief.querySelector("p").textContent = providerStopped
+        ? "No council answer was produced because a provider response could not be safely attributed."
+        : final.answer_released
+          ? "The final text below is exactly the public answer authorized by the normal governing renderer."
+          : "The candidate remains private because the governing renderer did not authorize publication.";
+      setRunStatus(providerStopped
+        ? "COUNCIL STOPPED · PROVIDER RESPONSE REJECTED"
+        : final.answer_released
+          ? "COUNCIL COMPLETE · GOVERNED ANSWER AVAILABLE"
+          : "COUNCIL COMPLETE · PUBLIC ANSWER WITHHELD");
       elements.synthesisTitle.focus({ preventScroll: true });
       break;
     }
