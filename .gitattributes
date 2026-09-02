@@ -19,6 +19,7 @@ scripts/run_socrates_live_v1.py text eol=lf
 # remaining reviewed runtime paths explicitly instead of inheriting a user's
 # core.autocrlf or global attributes.
 backend/__init__.py text eol=lf
+backend/hosted_config.py text eol=lf
 backend/local_ced_app.py text eol=lf
 backend/api/__init__.py text eol=lf
 backend/api/routes_council.py text eol=lf
