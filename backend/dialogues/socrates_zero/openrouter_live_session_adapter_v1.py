@@ -12,7 +12,6 @@ inventing a second prompt dialect, so the harness measures Socrates as it is.
 from __future__ import annotations
 
 import asyncio
-import threading
 
 import hashlib
 import json
@@ -334,10 +333,9 @@ def _default_dispatcher_v1() -> Callable[..., Any]:
     return dispatch_openrouter_one_live_inference_v1
 
 
-# The exact-byte OpenRouter transport is deliberately synchronous. Keep every
-# charged dispatch serialized as before, but run it outside the application
-# event loop so HTTP/SSE clients can receive public council progress live.
-_LIVE_DISPATCH_SERIALIZER_V1 = threading.Lock()
+# The exact-byte OpenRouter transport is deliberately synchronous. Run each
+# seat outside the application event loop so the registry can preserve council
+# concurrency while HTTP/SSE clients receive public progress live.
 
 
 def execute_bounded_text_turn_v1(
@@ -1094,25 +1092,24 @@ class SocratesLiveOpenRouterAdapter(BaseProviderAdapter):
             # Compatibility for the original Azure harness.  Strict benchmark
             # construction always supplies the exact expected display name.
             expected_providers = ("Azure",)
-        def execute_serialized_turn() -> OpenRouterBoundedTextOutcomeV1:
-            with _LIVE_DISPATCH_SERIALIZER_V1:
-                return execute_bounded_text_turn_v1(
-                    policy=execution_policy,
-                    profile=self.profile,
-                    ledger=self.ledger,
-                    claim_directory=self.claim_directory,
-                    max_input_tokens=self.max_input_tokens,
-                    turn=turn,
-                    response_format_override=response_format,
-                    expected_returned_models=self.expected_returned_models,
-                    expected_provider_display_names=expected_providers,
-                    task=task,
-                    pre_dispatch_guard=self._pre_dispatch_guard,
-                    dispatch=self._dispatcher(),
-                )
+        def execute_live_turn() -> OpenRouterBoundedTextOutcomeV1:
+            return execute_bounded_text_turn_v1(
+                policy=execution_policy,
+                profile=self.profile,
+                ledger=self.ledger,
+                claim_directory=self.claim_directory,
+                max_input_tokens=self.max_input_tokens,
+                turn=turn,
+                response_format_override=response_format,
+                expected_returned_models=self.expected_returned_models,
+                expected_provider_display_names=expected_providers,
+                task=task,
+                pre_dispatch_guard=self._pre_dispatch_guard,
+                dispatch=self._dispatcher(),
+            )
 
         try:
-            outcome = await asyncio.to_thread(execute_serialized_turn)
+            outcome = await asyncio.to_thread(execute_live_turn)
         except Exception as exc:
             # A refusal before the dispatch boundary still has to appear in the
             # evidence exactly once.  Without this, the attempt raised straight
