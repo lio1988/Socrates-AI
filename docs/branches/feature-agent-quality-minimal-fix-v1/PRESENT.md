@@ -1,4 +1,70 @@
-# Present state — V0.5 governing-audit persistence, reauthorized source set
+# Present state — V0.6 turn-failure diagnostics, reauthorized source set
+
+## Repository and authority boundary
+
+- Branch: `feature/agent-quality-minimal-fix-v1`.
+- **This commit is the manifest-free reauthorization anchor.** Its sha is the parent of the manifest commit that follows and is recorded in that manifest's `authorized_implementation_commit_sha`.
+- Prior commits: … → `4ee891c` (V0.5 manifest, now superseded) → `b9254d3` (turn diagnostics) → this anchor.
+- The V0.5 authorization `normallivesourceauthv1_c7de71f3…` is **superseded**. It authorized commit `3d58774`, which no longer describes this tree.
+- No push, tag, PR, deployment, BYOK, provider call, external network call or spend.
+
+## What prompted this
+
+The first live run on the V0.5 checkpoint completed, ratified 3/3, `release_unresolved`. Its artifact carried the governing records the V0.5 change added, and they immediately showed something the Stage B artifacts could not:
+
+- All four objections targeted `core_answer`, scope `justification`, all ended `inconclusive`.
+- Verdicts were **not** uniform: two `uncorroborated`, two `no_records`.
+- `obj_c922b624` had two peers, neither of them the flagged model, **both** structurally valid, and still returned `no_records`. Retry or redundancy on that model would not have touched it.
+
+That is the evidence the retry question was gated on, and it says the obvious fix would have been the wrong one.
+
+Cross-run, the failure distribution is deterministic rather than flaky:
+
+| task_kind | first run | Stage B | total |
+| --- | --- | --- | --- |
+| `objection_verification` | 0/4 | 0/3 | **0/7** |
+| `socratic_question` | 0/2 | 0/2 | **0/4** |
+| every other task kind | 26/26 | 20/20 | **46/46** |
+
+All 33 of that model's turns completed transport with HTTP 200 and correct model and provider binding, and it voted in ratification. It is called normally; two specific schemas are refused.
+
+## What this checkpoint changes
+
+`socrates.runtime._project_turn_row` now carries `provider_structured_output_error` and `ced_rejection_reason`. The adapter already computed both; only this projection dropped them.
+
+Both are closed vocabularies by construction. `safe_public_exception_code_v1` reduces a `ValidationError` to counts by pydantic error type against a fixed allowlist; `_safe_ced_rejection_code_v1` maps to a fixed table. Neither can carry provider prose, messages, field paths or input values. Verified offline:
+
+- a `const` violation → `structured_output:ValidationError:literal_error=1`
+- a `minLength` violation → `structured_output:ValidationError:string_too_short=1`
+- malformed `objection_verification` → `structured_output:ValidationError:literal_error=2,missing=9`
+
+**No cause is asserted.** The one structural feature present in both failing schemas and absent from every passing one is a non-string `const`: `socratic_question` pins `introduces_new_proposition` to `const: false`, and `objection_verification` is an `anyOf` of two variants discriminated by `objection_concerns_the_task` `const: true` / `const: false`, with `cited_spans` `maxItems: 0` and `objection_holds` `const: null` on the non-task branch. `council_ratification` passes and carries four **string** consts. That is a hypothesis with a clean discriminator, not a finding: no raw response body was ever retained. The next live run decides it from the artifact.
+
+Still not persisted: the per-objection parse outcome inside `run_objection_verification`, which is what would explain a `no_records` verdict when every peer was structurally valid. That needs `backend/dialogues/ced.py`, a frozen-core file, and a separate authorization.
+
+## Changed files
+
+- `socrates/runtime.py`: two names added to the `_project_turn_row` allow-list. The only change inside the 97-path authorized set.
+- `tests_dialogues/test_normal_runtime_v1.py`: `_TURN_KEYS` extended, `test_turn_projection_keeps_the_codes_that_say_why_a_seat_failed`, and `test_a_const_violation_is_reported_as_literal_error`, which proves the retained code discriminates rather than merely existing.
+
+No frozen-core file was touched.
+
+## Validation
+
+- `test_normal_runtime_v1.py`, `test_normal_rendering_v1.py`, `test_normal_cli_v1.py`, `test_normal_live_lifecycle.py`, `test_normal_source_authorization_v1.py`: `143 passed, 2 skipped`.
+- `test_ced_canonical_successor_frozen_core_v2.py` still fails its two inherited blob-lock assertions, unchanged and pre-existing since V0.2.
+
+## Next safe step
+
+1. Production verification from a fresh cache-free worktree at the new manifest commit.
+2. A live run. Its artifact answers the schema question directly: read `provider_structured_output_error` on the `socratic_question` and `objection_verification` turns.
+3. Only then decide whether the schema needs changing, and how.
+
+`NEXT_STEP = OPERATOR PREFLIGHT AND LIVE RUN, THEN READ provider_structured_output_error ON THE FAILING TURNS. BYOK REMAINS UNSCOPED.`
+
+---
+
+# Historical present state — V0.5 governing-audit persistence, reauthorized source set
 
 ## Repository and authority boundary
 
