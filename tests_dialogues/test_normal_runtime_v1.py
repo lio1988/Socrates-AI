@@ -13,6 +13,7 @@ import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -44,6 +45,7 @@ from backend.dialogues.socrates_zero.openrouter_live_session_v1 import (
 )
 from scripts.question_bundles_v1 import load_bundle_v1
 from socrates import runtime as normal_runtime
+from socrates.rendering import NormalRenderResult
 from socrates.runtime import (
     NORMAL_PROMPT_BUDGET_TOKENS,
     NormalAuthorizationError,
@@ -1128,3 +1130,73 @@ def test_execute_cancellation_default_is_unchanged_and_browser_can_persist(
         adapter.normal_calls_consumed == 0
         for adapter in factory.runtime.adapters
     )
+
+
+def test_governing_audit_keeps_the_records_its_id_lists_name() -> None:
+    """An id list nobody can resolve is not an audit trail.
+
+    A frozen run reported two unresolved objection ids and one unresolved claim,
+    and carried nothing saying which claim either objection targeted, what
+    verdict ended them there, or whether the deterministic checker applied at
+    all. The projection built every one of those fields and then dropped them,
+    so the only way to ask why a release was unresolved was to re-read the
+    source and guess. Offline is the only way a frozen run is ever audited.
+    """
+    objections = [
+        {
+            "objection_id": "obj_1",
+            "target_claim_id": "claim_a",
+            "target_section": "core_answer",
+            "scope": "justification",
+            "targeting_provenance": "declared_identifier",
+            "state": "inconclusive",
+            "raised_by": "worker_alpha",
+            "raised_by_model_id": "vendor/model-a",
+        },
+    ]
+    final = SimpleNamespace(
+        audit_summary={
+            "governing_release": {
+                "available": True,
+                "release_decision": "release_unresolved",
+                "governing_epistemic_status": "unresolved",
+                "claim_states": {"claim_a": "unresolved"},
+                "basis_record_ids": [],
+                "unresolved_record_ids": ["obj_1"],
+                "objections": objections,
+                "objection_verdicts": {"obj_1": "uncorroborated"},
+                "deterministic_checks": {
+                    "applicable": False,
+                    "reason": "no_roster",
+                },
+                "blocked_reason": "",
+                "frozen_digest": "0" * 64,
+                # Built by the projection and deliberately not carried: the
+                # quality plane governs nothing and must not travel as if it did.
+                "quality_mean": 7.61,
+                "legacy_epistemic_status": "well_supported",
+            },
+        },
+    )
+    render = NormalRenderResult(
+        outcome="release_unresolved",
+        release_decision="release_unresolved",
+        governing_epistemic_status="unresolved",
+        public_answer="Answer",
+        notice="WARNING",
+        candidate_authorized=True,
+        candidate="Candidate",
+    )
+
+    audit = normal_runtime._governing_record(final, render)["audit"]
+
+    assert audit["objections"] == objections
+    assert audit["objection_verdicts"] == {"obj_1": "uncorroborated"}
+    assert audit["deterministic_checks"]["reason"] == "no_roster"
+    # Every unresolved id resolves to a record naming its target and its fate.
+    named = {row["objection_id"] for row in audit["objections"]}
+    assert set(audit["unresolved_record_ids"]) <= named
+    assert set(audit["unresolved_record_ids"]) <= set(audit["objection_verdicts"])
+    # The quality plane still does not travel with the governing record.
+    assert "quality_mean" not in audit
+    assert "legacy_epistemic_status" not in audit

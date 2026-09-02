@@ -1284,6 +1284,15 @@ def _governing_record(final: Any, render: NormalRenderResult) -> Dict[str, Any]:
         "claim_states",
         "basis_record_ids",
         "unresolved_record_ids",
+        # The three below name what the id lists above rest on. Without them a
+        # frozen run reports that two objections are unresolved and one claim is
+        # unresolved with it, and nothing on disk says which claim either
+        # objection targeted, what verdict ended them there, or whether the
+        # deterministic checker ever applied. That is not enough to audit the
+        # release offline, which is the only way it is ever audited.
+        "objections",
+        "objection_verdicts",
+        "deterministic_checks",
         "blocked_reason",
         "frozen_digest",
     )
