@@ -106,6 +106,21 @@ def _byok_manager(request: Request) -> ByokLiveCouncilManager:
     return request.app.state.byok_live_council_manager
 
 
+def _hosted_config(request: Request):
+    return getattr(request.app.state, "hosted_config", None)
+
+
+def _require_enabled(request: Request, attribute: str) -> None:
+    """A disabled mode is absent, not forbidden.
+
+    404 rather than 403 on purpose: a public deployment that has not enabled
+    operator-funded live has no reason to advertise that the route exists.
+    """
+    config = _hosted_config(request)
+    if config is not None and not getattr(config, attribute):
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
 def _client_identity(request: Request) -> str:
     """The direct connection, never a forwarded header.
 
@@ -120,23 +135,40 @@ def _client_identity(request: Request) -> str:
 
 
 def _require_byok_transport_security(request: Request) -> None:
-    """BYOK is permitted only on loopback HTTP or genuine same-origin HTTPS."""
+    """BYOK travels only over loopback HTTP or a genuinely secure origin.
+
+    The deployment contract decides which of those two worlds this is; the
+    request only decides whether it satisfied that world. A caller can never
+    talk its way from hosted into local, because the mode was fixed at startup.
+    """
+    config = _hosted_config(request)
     host = (request.client.host if request.client else "") or ""
     scheme = (request.url.scheme or "").lower()
     is_loopback = host in _LOOPBACK_HOSTS
-    if not is_loopback and scheme != "https":
-        raise HTTPException(
-            status_code=400,
-            detail="A secure connection is required for this request.",
-        )
-    origin = request.headers.get("origin")
-    if origin is not None:
-        expected = f"{scheme}://{request.headers.get('host', '')}"
-        if origin != expected:
+    hosted = bool(config is not None and config.https_required)
+
+    if hosted:
+        # Loopback is not an escape hatch once a public origin is declared.
+        if scheme != "https":
             raise HTTPException(
-                status_code=403,
-                detail="Cross-origin requests are not accepted.",
+                status_code=400,
+                detail="A secure connection is required for this request.",
             )
+        expected_origin = config.public_origin
+    else:
+        if not is_loopback and scheme != "https":
+            raise HTTPException(
+                status_code=400,
+                detail="A secure connection is required for this request.",
+            )
+        expected_origin = f"{scheme}://{request.headers.get('host', '')}"
+
+    origin = request.headers.get("origin")
+    if origin is not None and origin != expected_origin:
+        raise HTTPException(
+            status_code=403,
+            detail="Cross-origin requests are not accepted.",
+        )
 
 
 def _run_or_404(request: Request, run_id: str):
@@ -199,11 +231,24 @@ def _raise_normal_live_http(error: Exception) -> None:
 
 
 @router.get("/health")
-async def health() -> dict:
+async def health(request: Request) -> dict:
+    """Which modes this deployment offers, and nothing else.
+
+    Two booleans, so the interface can stop guessing which controls to show.
+    They say what is enabled, never why: no origin, no limits, no worker count,
+    no authorization identity and no filesystem detail.
+    """
+    config = _hosted_config(request)
     return {
         "status": "available",
         "ced": "real",
         "providers": "offline_mock",
+        "modes": {
+            "byok": bool(config is None or config.enable_byok),
+            "operator_normal_live": bool(
+                config is not None and config.enable_operator_normal_live
+            ),
+        },
     }
 
 
@@ -219,6 +264,7 @@ async def normal_live_preflight(
     request: Request,
     response: Response,
 ) -> dict:
+    _require_enabled(request, "enable_operator_normal_live")
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -237,6 +283,7 @@ async def execute_normal_live_preflight(
     payload: NormalLiveExecuteRequest,
     request: Request,
 ) -> dict:
+    _require_enabled(request, "enable_operator_normal_live")
     try:
         run = await _normal_manager(request).start_run(payload.preflight_id)
     except Exception as error:
@@ -253,6 +300,7 @@ async def cancel_normal_live_preflight(
     payload: NormalLiveCancelRequest,
     request: Request,
 ) -> Response:
+    _require_enabled(request, "enable_operator_normal_live")
     try:
         await _normal_manager(request).cancel_preflight(payload.preflight_id)
     except Exception as error:
@@ -267,6 +315,7 @@ async def byok_preflight(
     response: Response,
 ) -> dict:
     """Plan a user-funded run. The credential is not an input to this route."""
+    _require_enabled(request, "enable_byok")
     _require_byok_transport_security(request)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
@@ -286,6 +335,7 @@ async def byok_execute(
     request: Request,
     response: Response,
 ) -> dict:
+    _require_enabled(request, "enable_byok")
     _require_byok_transport_security(request)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
@@ -310,6 +360,7 @@ async def byok_execute(
     response_class=Response,
 )
 async def byok_cancel(payload: ByokCancelRequest, request: Request) -> Response:
+    _require_enabled(request, "enable_byok")
     _require_byok_transport_security(request)
     try:
         await _byok_manager(request).cancel_preflight(payload.preflight_id)

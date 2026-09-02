@@ -1,4 +1,45 @@
-# Present state — V0.8 returned-identity classification and routing observability
+# Present state — V0.9 public product and hosting preparation
+
+## Repository and authority boundary
+
+- Branch: `feature/agent-quality-minimal-fix-v1`, parent `8d2871c`.
+- One source checkpoint. **No manifest rotation in this task**; the next task reauthorizes.
+- `CURRENT_PRODUCTION_SOURCE_AUTHORIZATION = FAIL_CLOSED`, intentionally.
+- The authorized path universe moves **98 → 99**: one new runtime module, `backend/hosted_config.py`. A file that decides whether BYOK may run and whether HSTS may be promised has to be inside the authorized set, and burying it in the composition root would have made it harder to audit rather than easier. The two count assertions moved with it.
+- No push, tag, PR, deployment, OpenRouter call or external network call.
+
+## The deployment contract
+
+Every earlier transport guard answered "is this safe?" per request, from the client address and the URL scheme. That refuses a bad call and cannot refuse a bad *deployment*: a public preview served over plain HTTP would look correct until the first user typed a credential into it.
+
+`backend/hosted_config.py` decides once, at startup, from explicit environment values. The declared `SOCRATES_PUBLIC_ORIGIN` **is** the mode — absent means `LOCAL_DEVELOPMENT`, set means `HOSTED_PREVIEW`, and set-but-blank is refused rather than silently demoted. Nothing reads a header, a query or a body, so a caller cannot argue its way into hosted mode or out of one.
+
+Startup refuses: hosted BYOK without an `https://` origin, a wildcard origin, an origin carrying a path or credentials, an unsupported scheme, proxy trust with no named proxy, a per-client cap above the global cap, a malformed flag or limit. Multiple workers are *reported* by `/ready` as `degraded` rather than refused — the process can serve, it simply cannot honour in-memory limits.
+
+## What changed
+
+- **Mode gating.** BYOK and operator-funded Normal Live are refused **before routing**, so a disabled mode's endpoints are genuinely absent (404) rather than merely unhappy. Checking inside the route let body validation answer first with a 422, which tells a caller the route exists and what shape it wants.
+- **Operator live is off by default** and the interface asks `/api/council/health` which modes exist rather than assuming. Two booleans; no origin, limits, worker count or authorization identity.
+- **HSTS** now needs two independent conditions: the configuration says the deployment may promise it, and the request says it actually arrived over TLS.
+- **Cache policy.** Everything under `/api/` is `no-store`; static is `no-cache`.
+- **`/health`** is liveness only. **`/ready`** reports a finite status, the mode and finite reason codes — never a path, hash, Git identity, authorization id or provider detail.
+- **Copy.** "Each council seat is a separate LLM call" was inaccurate and is gone; contributions are separately dispatched model turns. The spend ceiling now reads as a ceiling: **Absolute maximum** over a large figure, with the caveat underneath.
+
+## Validation
+
+- `test_hosted_config_v1.py`: **29 passed**, including twelve startup refusals, forwarded-header rejection, HSTS conditions, cache policy, probe secrecy and limiter wiring.
+- Eleven suites: **274 passed, 2 skipped**, after the two path-count assertions moved to 99.
+- Browser QA at 1440/1024/768/375: overflow 0, console errors 0, warnings 0, mobile controls 44px, one mode selector, operator control hidden under default config.
+- A full BYOK stub council completed 7/7 with the key cleared and absent from the DOM. A second harness whose provider returns an HTTP-200 error envelope showed the governing notice and, separately, "A provider returned an unattributable error response. The council stopped safely before further calls."
+- Log redaction was **not** proven by the QA logs — those ran at `warning` level and were empty. It rests on the real controlled-run log, which recorded a genuine execute POST at info level with 0 key fragments, 0 `Authorization`, 0 `nlpf_` and no request bodies.
+
+## Deferred
+
+Per-attempt semantic verification parse outcomes; the exact upstream provider error reason; a shared limiter for multi-instance scale; the deployment itself.
+
+---
+
+# Historical present state — V0.8 returned-identity classification and routing observability
 
 ## Repository and authority boundary
 

@@ -1,3 +1,33 @@
+# Plan — V0.9 public product and hosting preparation
+
+## Success criterion
+
+A misconfigured public deployment refuses to start rather than reaching a user's
+credential, and the interface claims only what the topology proves.
+
+## Completed
+
+1. [x] Verify branch, HEAD, tree, clean status and the current authorization once.
+2. [x] Add a startup deployment contract deciding the mode from explicit configuration, never from a request, refusing every unsafe combination.
+3. [x] Gate BYOK and operator-funded live before routing, so a disabled mode is absent rather than merely unhappy.
+4. [x] Make operator-funded live off by default and let the interface ask which modes exist.
+5. [x] Require both configuration permission and a real TLS request before promising HSTS.
+6. [x] `no-store` on every API response; `no-cache` on static.
+7. [x] Add `/health` (liveness) and `/ready` (finite status, mode, finite reason codes, nothing private).
+8. [x] Wire the documented rate limits from configuration into the running limiter.
+9. [x] Correct the inaccurate "separate LLM call" copy and give the spend ceiling a hierarchy that reads as a ceiling.
+10. [x] Document Render deployment, the private backup procedure and the public showcase boundary.
+11. [x] Twenty-nine hosted-config tests; full regression; browser QA at four widths including the unattributable-provider notice.
+12. [x] One source checkpoint, then stop for operator review.
+
+## Not done, deliberately
+
+- No reauthorization in this task; the manifest rotation is the next one.
+- No deployment, no live run, no push, tag or PR.
+- No distributed limiter, no Docker, no configuration framework.
+
+---
+
 # Plan — V0.8 returned-identity classification and routing observability
 
 ## Success criterion

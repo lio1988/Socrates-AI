@@ -38,6 +38,23 @@ overwritten, and the code says so where it lives.
 Browser password managers may ignore `autocomplete="off"`. The application
 cannot guarantee third-party password-manager behaviour and does not claim to.
 
+## The deployment contract
+
+As of the public-preparation checkpoint these requirements are enforced at
+startup by `backend/hosted_config.py`, not inferred per request. The declared
+`SOCRATES_PUBLIC_ORIGIN` *is* the mode: absent means `LOCAL_DEVELOPMENT`, set
+means `HOSTED_PREVIEW`, blank is refused. A caller cannot argue its way between
+the two, because the decision was made before the first request arrived.
+
+The process refuses to start on hosted BYOK without an `https://` origin, a
+wildcard origin, an origin carrying a path or credentials, an unsupported
+scheme, proxy trust with no named proxy, a per-client cap above the global cap,
+or a malformed flag or limit. Multiple workers are reported by `/ready` as
+`degraded` rather than refused: the process can serve, it simply cannot honour
+the documented in-memory limits.
+
+See `docs/deployment-render-v1.md` for the concrete variable values.
+
 ## Required hosting configuration
 
 | Requirement | Why |

@@ -260,6 +260,9 @@ main { width: min(calc(100% - 64px), var(--max-width)); margin: 0 auto; }
 .byok-key-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .byok-reveal { flex: 0 0 auto; min-height: 44px; }
 .byok-note { margin: 10px 0 0; color: var(--muted); font-size: 0.7rem; }
+/* The ceiling should read as a ceiling: the figure carries the weight, the
+   label above it carries the meaning, and the caveat sits underneath. */
+.live-cost-metric dd { font-size: 1.35rem; letter-spacing: -0.01em; }
 
 textarea {
   width: 100%;

@@ -1,3 +1,16 @@
+# Stable branch memory — V0.9 additions
+
+- The deployment mode is decided at startup by `backend/hosted_config.py`, never per request. `SOCRATES_PUBLIC_ORIGIN` absent means local development, set means hosted preview, set-but-blank is refused. Do not reintroduce per-request mode guessing.
+- Hosted mode refuses plain HTTP **even from loopback**. Loopback is not an escape hatch once a public origin is declared.
+- A disabled mode is refused in middleware, before routing, so its endpoints 404 rather than 422. Gating inside a route lets body validation answer first and leaks that the route exists and what shape it wants.
+- HSTS needs both the configuration's permission and an actual TLS request. Either alone is not enough.
+- `/ready` degrades on multiple workers rather than refusing: the limiter is in-process, so the honest answer is "serving, but cannot honour the documented limits".
+- The authorized path universe is **99** as of V0.9. Any new runtime module joins `NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1` or it runs unauthorized, and the tuple must stay sorted.
+- Uvicorn access logs record the request line and status, never a body, which is why a BYOK credential cannot reach them. Verify that against an **info-level** log; a `warning`-level log is empty and proves nothing.
+- Copy discipline: separately dispatched model turns, not "a separate LLM call". No guaranteed truth, no AGI, no "always different models", and no provider-independence claim the topology does not prove.
+
+---
+
 # Stable branch memory — V0.8 additions
 
 - OpenRouter delivers upstream errors inside HTTP 200. Such a body has a top-level `error` and no top-level `model`, so it carries no attributable identity. `actual_served_model` is assigned at exactly one site, only under a SUCCESS envelope, so `None` there means ERROR envelope and nothing else.

@@ -128,6 +128,7 @@ NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1: tuple[str, ...] = (
     "backend/dialogues/socratic.py",
     "backend/dialogues/task_checker.py",
     "backend/dialogues/topic.py",
+    "backend/hosted_config.py",
     "backend/local_ced_app.py",
     "docs/branches/feature-socrates-zero-openrouter-live-routing-repair-v1/runs/hard_logic_live_test_collection_v1.json",
     "docs/branches/feature-socrates-zero-openrouter-live-routing-repair-v1/runs/q1_gemini_3_7_flash_endpoints_v1.json",

@@ -34,7 +34,7 @@
           <h1 id="hero-title">SOCRATES <span>AI</span></h1>
           <p class="hero-tagline">Multi-Agent Socratic Intelligence</p>
           <p class="hero-promise">One question. Multiple AI model seats. Rotating Socratic roles. One answer that had to survive the dialogue.</p>
-          <p class="hero-copy">Each council seat is a separate LLM call. Models challenge one another, revise positions and contribute to one governed synthesis.</p>
+          <p class="hero-copy">Socrates coordinates separately dispatched model turns through a governed dialogue. Models challenge assumptions, revise positions and contribute to one final synthesis.</p>
           <p class="process-line" aria-label="Ask, Challenge, Revise, Reconstruct, Synthesize">
             <span>Ask</span><span><i aria-hidden="true">·</i>Challenge</span><span><i aria-hidden="true">·</i>Revise</span><span><i aria-hidden="true">·</i>Reconstruct</span><span><i aria-hidden="true">·</i>Synthesize</span>
           </p>
@@ -72,7 +72,7 @@
             <dl class="live-confirmation-metrics">
               <div><dt>Council topology</dt><dd id="live-seat-count">—</dd></div>
               <div><dt>Provider call ceiling</dt><dd id="live-maximum-calls">—</dd></div>
-              <div><dt>Absolute maximum permitted for this run</dt><dd id="live-maximum-cost">—</dd></div>
+              <div class="live-cost-metric"><dt>Absolute maximum</dt><dd id="live-maximum-cost">—</dd></div>
             </dl>
             <dl class="live-approval-details">
               <div id="live-approval-reference-row"><dt>Approval reference</dt><dd><code id="live-approval-reference">—</code></dd></div>
@@ -80,9 +80,9 @@
               <div><dt>Valid until</dt><dd><time id="live-expires-at">—</time></dd></div>
             </dl>
             <p class="live-confirmation-description" id="live-confirmation-description">Normal Live uses real model-backed council seats. Confirm only after reviewing this server-derived call and cost ceiling.</p>
-            <p class="live-cost-note" id="live-cost-note">Actual cost may be lower. The run will not exceed the displayed Socrates call and spend bound.</p>
+            <p class="live-cost-note" id="live-cost-note">Actual cost may be lower. Socrates will not exceed this displayed call/spend bound.</p>
             <div class="byok-credential" id="byok-credential-block" hidden>
-              <label class="byok-label" for="byok-key-input">Your OpenRouter key</label>
+              <label class="byok-label" for="byok-key-input">Use your own OpenRouter key</label>
               <div class="byok-key-row">
                 <input
                   class="byok-key-input"
@@ -98,8 +98,9 @@
                   aria-describedby="byok-privacy-note byok-charge-note">
                 <button class="secondary-button byok-reveal" id="byok-reveal-button" type="button" aria-pressed="false">Show</button>
               </div>
-              <p class="byok-note" id="byok-charge-note">OpenRouter charges this run to your own OpenRouter account. One confirmation authorises exactly one council run, and the key is used across that run's council seats. No second council starts on its own.</p>
-              <p class="byok-note" id="byok-privacy-note">Your OpenRouter key is used only for this council run. It is not written to browser storage, Socrates run artifacts or public logs. It is held temporarily in server memory and released when the run ends. Use a dedicated OpenRouter key and review its account limits before running a council.</p>
+              <p class="byok-note" id="byok-charge-note">OpenRouter charges this run to your own account. One confirmation authorises exactly one council run, and the key is used across that run's council seats. No second council starts on its own.</p>
+              <p class="byok-note" id="byok-privacy-note">Your key is used only for this council run. Socrates does not write it to browser storage, public logs or run artifacts. It is held in server memory for the active run and released when the run reaches a terminal state.</p>
+              <p class="byok-note" id="byok-advice-note">Use a dedicated OpenRouter key with an account spending limit.</p>
             </div>
             <p class="live-copy-status" id="live-copy-status" role="status" aria-live="polite" aria-atomic="true"></p>
             <div class="live-confirmation-actions">

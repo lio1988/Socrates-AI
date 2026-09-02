@@ -386,8 +386,10 @@ function renderLiveConfirmation(preflight) {
     : "NORMAL LIVE COUNCIL";
   bridgeElements.liveSeatCount.textContent = `${preflight.provider_count} model seats`;
   bridgeElements.liveMaximumCalls.textContent = `Up to ${preflight.maximum_calls} calls`;
-  bridgeElements.liveMaximumCost.textContent =
-    `Absolute maximum permitted for this run: $${preflight.maximum_cost_usd}`;
+  // The figure alone, under an "Absolute maximum" label. A ceiling reads as a
+  // ceiling when it is the largest thing on the panel, not when it is buried
+  // in a sentence.
+  bridgeElements.liveMaximumCost.textContent = `$${preflight.maximum_cost_usd}`;
   bridgeElements.liveApprovalReferenceRow.hidden = byok;
   bridgeElements.liveApprovalReference.textContent = byok
     ? "—"
@@ -417,8 +419,7 @@ function byokConfirmationMatches(preflight) {
     && bridgeElements.liveSourceStatus.textContent === "SOURCE AUTHORIZED"
     && bridgeElements.liveSeatCount.textContent === `${preflight.provider_count} model seats`
     && bridgeElements.liveMaximumCalls.textContent === `Up to ${preflight.maximum_calls} calls`
-    && bridgeElements.liveMaximumCost.textContent
-      === `Absolute maximum permitted for this run: $${preflight.maximum_cost_usd}`
+    && bridgeElements.liveMaximumCost.textContent === `$${preflight.maximum_cost_usd}`
     && bridgeElements.liveQuestionSha256.textContent === preflight.question_sha256
     && bridgeElements.liveExpiresAt.textContent === preflight.expires_at_utc
     && bridgeElements.liveExpiresAt.getAttribute("datetime") === preflight.expires_at_utc;
@@ -432,7 +433,7 @@ function liveConfirmationMatches(preflight) {
     && bridgeElements.liveSeatCount.textContent === `${preflight.provider_count} model seats`
     && bridgeElements.liveMaximumCalls.textContent === `Up to ${preflight.maximum_calls} calls`
     && bridgeElements.liveMaximumCost.textContent ===
-      `Absolute maximum permitted for this run: $${preflight.maximum_cost_usd}`
+      `$${preflight.maximum_cost_usd}`
     && bridgeElements.liveApprovalReference.textContent === preflight.approval_reference
     && bridgeElements.liveQuestionSha256.textContent === preflight.question_sha256
     && bridgeElements.liveExpiresAt.textContent === preflight.expires_at_utc
@@ -1689,5 +1690,31 @@ new MutationObserver(syncSourceControls).observe(elements.council, {
   attributeFilter: ["data-run-state", "data-run-stage"],
 });
 
+// Which live modes exist is a server decision. The interface asks once and
+// never assumes: an operator-funded control the deployment has not enabled must
+// not be offered to a public visitor, and the browser is in no position to
+// decide that for itself.
+async function syncAvailableModes() {
+  try {
+    const response = await fetch("/api/council/health", {
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      return;
+    }
+    const modes = (await response.json()).modes;
+    if (!isPlainObject(modes)) {
+      return;
+    }
+    bridgeElements.byokMode.hidden = modes.byok !== true;
+    bridgeElements.normalLiveMode.hidden = modes.operator_normal_live !== true;
+  } catch (error) {
+    // A backend that cannot be reached leaves the conservative defaults alone:
+    // Demo works with no server at all, and no live control is advertised.
+  }
+}
+
 renderDemoView();
 syncSourceControls();
+syncAvailableModes();
