@@ -860,7 +860,9 @@ function applyPublicEvent(payload) {
       elements.activeQuestion.textContent = String(data.question || elements.questionInput.value.trim());
       setRunStatus(localState.sourceMode === "normal-live"
         ? "NORMAL LIVE · CANONICAL COUNCIL STARTED"
-        : "CANONICAL LOCAL CED · COUNCIL STARTED");
+        : localState.sourceMode === "byok-live"
+          ? "BYOK LIVE · CANONICAL COUNCIL STARTED"
+          : "CANONICAL LOCAL CED · COUNCIL STARTED");
       break;
     case "phase.started":
       renderLocalPhase(data);
@@ -932,8 +934,8 @@ function applyPublicEvent(payload) {
       break;
     }
     case "run.failed":
-      if (localState.sourceMode === "normal-live") {
-        failNormalView("Normal Live run failed · public diagnostic withheld.");
+      if (["normal-live", "byok-live"].includes(localState.sourceMode)) {
+        failNormalView("Live council run failed · public diagnostic withheld.");
       } else {
         failLocalView("LOCAL CED RUN FAILED · PUBLIC DIAGNOSTIC WITHHELD");
       }
@@ -971,14 +973,18 @@ function attachEventStream(runId, generation) {
     if (!localState.terminal && generation === localState.generation) {
       setConnection(localState.sourceMode === "normal-live"
         ? "Connected · canonical Normal Live council"
-        : "Connected · canonical CED · offline mock providers", "available");
+        : localState.sourceMode === "byok-live"
+          ? "Connected · canonical council · your OpenRouter key"
+          : "Connected · canonical CED · offline mock providers", "available");
     }
   });
   source.addEventListener("error", () => {
     if (!localState.terminal && generation === localState.generation) {
       setConnection(localState.sourceMode === "normal-live"
         ? "Normal Live connection interrupted · browser retrying safely"
-        : "Connection interrupted · browser retrying safely", "checking");
+        : localState.sourceMode === "byok-live"
+          ? "Live council connection interrupted · browser retrying safely"
+          : "Connection interrupted · browser retrying safely", "checking");
     }
   });
 }
