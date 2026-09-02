@@ -69,6 +69,18 @@ this is not a line-ending artifact of the checkout. The frozen canonical
 successor core lock and the repository have genuinely diverged. That predates
 this branch's V0.8A work, was out of scope here, and needs its own task.
 
+## Corrected during reauthorization
+
+One test written here was environment-dependent and had to be repaired before
+the manifest could be rotated. `test_ready_is_503_against_the_real_verifier_on_a
+_bytecode_shadowed_build` asserted that the real production verifier *refuses*.
+That holds in a development checkout carrying bytecode caches and fails in an
+authorized one — which is to say it would have failed on the deployed service
+it exists to protect. It is replaced by two tests: one that names the bytecode
+refusal explicitly through a verifier double, and one that asserts readiness
+tracks the real verifier whichever way that verifier goes. The mutation gate
+already proves the real verifier refuses a real bytecode shadow.
+
 ## Deferred
 
 Semantic verification parse outcomes; the exact upstream provider error

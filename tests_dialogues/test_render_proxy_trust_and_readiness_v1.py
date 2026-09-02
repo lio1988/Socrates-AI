@@ -320,24 +320,56 @@ def test_ready_is_503_for_an_unauthorized_build() -> None:
     assert "source_not_authorized" in body["reasons"]
 
 
-def test_ready_is_503_against_the_real_verifier_on_a_bytecode_shadowed_build() -> None:
-    """Not a stub: this development checkout genuinely cannot be authorized.
+def test_ready_is_503_when_the_verifier_reports_a_bytecode_shadow() -> None:
+    """The exact refusal a deployment hits if it ever starts without ``-B``.
 
-    It carries ignored bytecode caches beside authorized sources, which the
-    verifier refuses. That is the exact shape of the failure a deployment would
-    hit if it ever started without ``python -B``, so the real verifier is the
-    right thing to point at here.
+    Named rather than ambient: the mutation gate proves the real verifier
+    refuses a real bytecode shadow, and this proves what readiness does with
+    that refusal. Neither depends on how the checkout it runs in happens to be
+    arranged.
     """
-    with pytest.raises(NormalLiveSourceAuthorizationError):
+
+    def _bytecode_shadowed() -> VerifiedNormalLiveSourceAuthorizationV1:
+        raise NormalLiveSourceAuthorizationError("authorized_bytecode_cache_present")
+
+    with _client(HOSTED_TRUSTED, source_verifier=_bytecode_shadowed) as client:
+        response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["status"] == "not_ready"
+    assert "source_not_authorized" in response.json()["reasons"]
+
+
+def test_ready_follows_the_real_production_verifier_either_way() -> None:
+    """Readiness tracks real authorization in whichever state this tree is in.
+
+    An authorized checkout and an unauthorized one are both legitimate places
+    to run the suite — the deployed service is the first, a development
+    checkout carrying bytecode caches is the second. Asserting one of them
+    would make this test a statement about the environment rather than about
+    the behaviour, and it would fail on exactly the deployment it exists to
+    protect.
+    """
+    try:
         verify_production_normal_live_source_authorization_v1()
+    except Exception:
+        authorized = False
+    else:
+        authorized = True
 
     with _client(
         HOSTED_TRUSTED,
         source_verifier=verify_production_normal_live_source_authorization_v1,
     ) as client:
         response = client.get("/ready")
-    assert response.status_code == 503
-    assert response.json()["status"] == "not_ready"
+
+    if authorized:
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+    else:
+        assert response.status_code == 503
+        body = response.json()
+        assert body["status"] == "not_ready"
+        assert "source_not_authorized" in body["reasons"]
 
 
 def test_health_stays_200_while_the_service_is_not_ready() -> None:
