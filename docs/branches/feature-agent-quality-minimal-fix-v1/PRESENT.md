@@ -35,7 +35,9 @@ No file inside `FROZEN_CANONICAL_SUCCESSOR_CORE_BLOB_LOCK_V2` was touched; the l
 
 `socrates/runtime.py` is one of the 97 paths in `authorization/normal-live-source-set-v1.json`. Its sha256 moved from `d6f7181b…4615dc` to `bf2c1d97…eefc9f`, so that manifest no longer authorizes this tree and `verify_production_normal_live_source_authorization_v1` fails closed before provider construction. This is the gate behaving correctly, not a defect.
 
-Reauthorization requires an operator act that cannot be delegated: `build_normal_live_source_authorization_v1` takes an `operator_authorization_statement`, and its provenance basis is `explicit-operator-review`. The path list is unchanged — no source file was added or removed — so the successor manifest is built over the same 97 paths against commit `ba9c628` and tree `92f0e72a`.
+Reauthorization requires an operator act that cannot be delegated: `build_normal_live_source_authorization_v1` takes an `operator_authorization_statement`, and its provenance basis is `explicit-operator-review`. The path list is unchanged — no source file was added or removed — so the successor manifest is built over the same 97 paths.
+
+Bind it to the branch HEAD under review. The only change after `ba9c628` is this documentation file, which is outside the authorized set, so the 97 source blobs are byte-identical at `ba9c628` (tree `92f0e72a98e0c658dc94e0a6d52f0f6085d6a2b0`) and at the documentation commit that follows it. The manifest content is therefore the same either way; only `authorized_implementation_commit_sha` and `authorized_implementation_tree_sha` differ, and they should name whichever commit is HEAD when the operator signs.
 
 `tests_dialogues/test_normal_runtime_v1.py` is not in the authorized set, so the test change does not affect the manifest.
 
