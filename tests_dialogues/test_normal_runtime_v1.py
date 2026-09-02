@@ -36,8 +36,12 @@ from backend.dialogues.provider_registry import (
 )
 from backend.dialogues.reasoning_prompts import build_reasoning_system_prompt
 from backend.dialogues.socrates_zero.contracts import ContractValidationError
+from backend.dialogues.socrates_zero.ced_structured_output_v1 import (
+    validate_ced_structured_output_v1,
+)
 from backend.dialogues.socrates_zero.openrouter_live_session_adapter_v1 import (
     build_turn_user_content_v1,
+    safe_public_exception_code_v1,
 )
 from backend.dialogues.socrates_zero.openrouter_live_session_v1 import (
     OpenRouterDynamicTurnRequestV1,
@@ -105,7 +109,9 @@ _TURN_KEYS = {
     "returned_model_binding_ok",
     "returned_provider_binding_ok",
     "provider_structured_output_valid",
+    "provider_structured_output_error",
     "ced_move_accepted",
+    "ced_rejection_reason",
     "failure_class",
     "attempt_index",
     "attempt_failure_class",
@@ -1221,3 +1227,74 @@ def test_governing_audit_projection_keeps_objection_and_check_records() -> None:
     # The quality plane still does not travel with the governing record.
     assert "quality_mean" not in audit
     assert "legacy_epistemic_status" not in audit
+
+
+def test_turn_projection_keeps_the_codes_that_say_why_a_seat_failed() -> None:
+    """`provider_structured_output_valid: false` alone names no cause.
+
+    Across two live runs one served model was 0/11 on `socratic_question` and
+    `objection_verification` and 46/46 on every other task kind — deterministic,
+    not flaky — and the artifact carried nothing to say what failed. The adapter
+    already computes both codes; only this projection dropped them.
+    """
+    row = {
+        "turn_id": "t1",
+        "provider_structured_output_valid": False,
+        "provider_structured_output_error": "structured_output:ValidationError:literal_error=1",
+        "ced_move_accepted": False,
+        "ced_rejection_reason": "ced_schema_error:validation_failed",
+        "unexpected_field": "must not be projected",
+    }
+    projected = normal_runtime._project_turn_row(row)
+
+    assert projected["provider_structured_output_error"] == (
+        "structured_output:ValidationError:literal_error=1"
+    )
+    assert projected["ced_rejection_reason"] == "ced_schema_error:validation_failed"
+    assert "unexpected_field" not in projected
+    # A row without them projects None rather than raising.
+    assert normal_runtime._project_turn_row(
+        {"turn_id": "t2"}
+    )["provider_structured_output_error"] is None
+
+
+def test_a_const_violation_is_reported_as_literal_error() -> None:
+    """The retained code has to discriminate, not merely exist.
+
+    `socratic_question` pins `introduces_new_proposition` to `const: false`, and
+    that class of constraint — a non-string const — is the one structural
+    feature present in both failing schemas and absent from every passing one.
+    A seat that returns `true` there must surface as `literal_error`, so the
+    next live run answers the question from the artifact instead of a re-read
+    of the source.
+    """
+    task = AgentTask(
+        task_id="t",
+        session_id="s",
+        agent_id="a",
+        role=AgentRole.SOCRATES,
+        phase=DialogPhase.ELENCHUS,
+        question="q",
+        task_kind=TaskKind.SOCRATIC_QUESTION,
+    )
+    payload = {
+        "content": {
+            "question": "What exactly grounds the claim that the rule applies here?",
+            "operator": "request_grounds",
+            "grounded_in": [{"ref_type": "commitment", "ref_id": "cmt_1"}],
+            "introduces_new_proposition": True,      # schema pins this to False
+            "inquiry_state": "continue_inquiry",
+            "aporia": None,
+            "epistemic_marker": "open_uncertainty",
+        },
+        "confidence": 0.5,
+    }
+    with pytest.raises(Exception) as caught:
+        validate_ced_structured_output_v1(task, json.dumps(payload))
+    code = safe_public_exception_code_v1(caught.value, context="structured_output")
+
+    assert code.startswith("structured_output:ValidationError:")
+    assert "literal_error" in code
+    # Closed vocabulary: no provider prose, no field paths, no input values.
+    assert "introduces_new_proposition" not in code
+    assert "True" not in code

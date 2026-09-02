@@ -1149,7 +1149,16 @@ def _project_turn_row(row: Mapping[str, Any]) -> Dict[str, Any]:
         "returned_model_binding_ok",
         "returned_provider_binding_ok",
         "provider_structured_output_valid",
+        # A bare False says a seat failed and nothing else. Across two live
+        # runs one model was 0/11 on two task kinds and 46/46 on the rest,
+        # which is a deterministic incompatibility rather than flakiness, and
+        # the artifact carried nothing to say with what. The adapter already
+        # computes both codes below over closed vocabularies — pydantic error
+        # types by count, and a fixed rejection table — so neither carries
+        # provider prose, messages, locations or input values.
+        "provider_structured_output_error",
         "ced_move_accepted",
+        "ced_rejection_reason",
         "failure_class",
         "attempt_index",
         "attempt_failure_class",
