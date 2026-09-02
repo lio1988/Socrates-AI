@@ -1,4 +1,80 @@
-# Present state — V0.6 turn-failure diagnostics, reauthorized source set
+# Present state — V0.7 BYOK public product checkpoint
+
+## Repository and authority boundary
+
+- Branch: `feature/agent-quality-minimal-fix-v1`.
+- Parent: `7170f92bd84eb7ef62b0451f738d4a7589ddbb29` (V0.6 manifest commit).
+- One source checkpoint commit. **No manifest rotation, no anchor, no artifact-only commit.**
+- `CURRENT_PRODUCTION_SOURCE_AUTHORIZATION = FAIL_CLOSED`, intentionally: the authorized source set changed. The V0.6 authorization `normallivesourceauthv1_a5aba384…` no longer describes this tree.
+- The authorized path universe grew from **97 to 98** — one new runtime module, `backend/dialogues/byok_live.py`, added to `NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1`. A runtime file outside that tuple would run unauthorized, so it had to be added, and the two count assertions in `test_normal_source_authorization_v1.py` moved with it.
+- No push, tag, PR, deployment, OpenRouter call, paid provider call or external network call.
+
+## The one architectural decision
+
+`openrouter_one_live_shadow_v1.py:339` documents itself as *"the single place this process reads the credential"*. Every BYOK design reduces to what to do about that line. Three options existed:
+
+1. Mutate `os.environ` per run — globally racy, and two concurrent runs would fight over one variable. Refused.
+2. Duplicate `_dispatch_once_v1` for a second credential source — a second transport, a second dispatch latch, a second place that can send a charge. Refused.
+3. Make the credential an explicit parameter, with the environment read kept as the operator entry point.
+
+Option 3 shipped. `dispatch_openrouter_one_live_inference_with_credential_v1` shares the transport, the latch, the evidence and the single `Authorization` injection site with the operator path; it simply never reads the environment. The existing `dispatch_openrouter_one_live_inference_v1` now delegates to it after reading the environment, so operator Normal Live keeps one env-reading entry point and BYOK provably cannot reach it.
+
+## BYOK architecture
+
+```
+BYOK preflight (question only)
+  -> socrates.runtime.prepare()          [existing planner, existing arithmetic]
+  -> NormalLivePreflightStore            [existing 900s one-use capability]
+  -> user confirmation + credential
+  -> RunScopedCredential                 [new: validated, redacted, releasable]
+  -> make_byok_dispatch_v1 closure       [new: one credential, one run]
+  -> socrates.runtime.execute()          [existing]
+  -> _build_live_runtime(dispatch=...)   [existing parameter, already threaded]
+  -> CEDOrchestrator.run_registry_session[existing canonical council]
+  -> SocratesLiveOpenRouterAdapter x3    [existing live adapter class]
+  -> observe_public_council / SSE        [existing public projection]
+```
+
+No BYOK CED, no BYOK scheduler, no BYOK scoring, no BYOK ratifier, no browser-side orchestration. The browser supplies a question, a confirmation and a credential; every other decision stays server-side.
+
+## Credential boundary
+
+`RunScopedCredential` validates on construction, redacts `repr`/`str`/`format`, and refuses `copy`, `deepcopy` and `pickle`. `reveal()` is the only way out and is named to be greppable. `release()` is terminal and idempotent, called in the run's `finally` so completion, blocking, provider failure, transport failure, exception and cancellation all reach it. After release the run's dispatch closure raises rather than reaching the network.
+
+The credential lives in one closure. There is no ephemeral store, no module-level default, no cross-run lookup and no fingerprint.
+
+**Not claimed:** cryptographic zeroization. CPython is not asked to prove it overwrote an immutable string, and the code says so where it lives.
+
+Local validation only, per `validate_bearer_credential_v1`: type, non-empty after an explicit strip policy, bounded at 512 bytes, no NUL, no CR/LF, no control characters. No key-prefix rule is hard-coded as permanent truth, and no separate paid probe request is made — authentication is proven by the first canonical provider call.
+
+## Transport and headers
+
+BYOK is permitted only on loopback HTTP or genuine same-origin HTTPS; a mismatched `Origin` is refused with 403, and a non-loopback plain-HTTP request with 400. `X-Forwarded-For` and `X-Forwarded-Proto` are not read. CSP carries no `unsafe-inline` and no `unsafe-eval` because the UI has no inline script, style or handler. HSTS is emitted only on a genuine TLS non-loopback request. Bodies are bounded at 64 KiB.
+
+## Validation
+
+- `test_byok_live_v1.py`: **35 passed.** Two distinct key canaries throughout.
+- Full affected regression — BYOK, normal runtime, rendering, CLI, live lifecycle, source authorization, council bridge: **199 passed, 2 skipped** after the two path-count assertions moved to 98.
+- Browser QA at 1440 / 1024 / 768 / 375: horizontal overflow **0** at every width, console errors **0**, console warnings **0**, mobile controls 44px.
+- Full BYOK browser flow against a stub transport: preflight without a key, key entry, show/hide, confirm, `202`, key field cleared to length 0, 7/7 phases, governed answer, cancel path clearing the key, second isolated run, Demo and Local CED regressions.
+- Post-run browser scan: the canary appears in no DOM text, no attribute, no URL, no fragment, no `localStorage`, no `sessionStorage`, no cookie; history length unchanged at 1.
+- Server-side scan: 79 run artifacts written, **0** contain the canary, **0** contain `Authorization`; **0** secret-shaped strings in the whole server log.
+- `python -m compileall`, `node --check` on both scripts, `git diff --check`: see the commit gate below.
+
+## Deferred, explicitly
+
+- Per-attempt semantic parse outcome between structured-output validation and governing `VerificationRecord` creation. Frozen core; separate observability-only task.
+- Shared multi-instance rate limiting. Required before a second application worker.
+- Deployment.
+- A controlled BYOK live run.
+
+## Next safe step
+
+`NEXT_STEP = OPERATOR REVIEW OF THIS SOURCE CHECKPOINT, THEN ONE MANIFEST-FREE ANCHOR AND ONE ARTIFACT-ONLY SOURCE REAUTHORIZATION OVER 98 PATHS, THEN ONE CONTROLLED BYOK LIVE RUN.`
+
+---
+
+# Historical present state — V0.6 turn-failure diagnostics, reauthorized source set
 
 ## Repository and authority boundary
 

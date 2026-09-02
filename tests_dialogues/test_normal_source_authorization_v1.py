@@ -408,7 +408,7 @@ def test_fixed_production_universe_is_sorted_unique_and_material() -> None:
     assert len(set(NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1)) == len(
         NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1
     )
-    assert len(NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1) == 97
+    assert len(NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1) == 98
     for source_path in NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1:
         assert (REPOSITORY_ROOT / source_path).is_file()
     assert set(
@@ -434,7 +434,7 @@ def test_fixed_production_universe_is_sorted_unique_and_material() -> None:
         assert required in NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1
 
 
-def test_current_97_path_universe_round_trips_in_a_fresh_checkout(
+def test_current_98_path_universe_round_trips_in_a_fresh_checkout(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -492,7 +492,7 @@ def test_current_97_path_universe_round_trips_in_a_fresh_checkout(
         manifest_path=fresh / manifest_path.relative_to(repository),
         expected_source_paths=NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1,
     )
-    assert len(NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1) == 97
+    assert len(NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1) == 98
     assert git_calls <= 24
     assert verified.authorization_id == manifest.authorization_id
 

@@ -15,6 +15,11 @@ try:
 except ImportError:  # pragma: no cover - compatibility with older sse-starlette
     from sse_starlette.responses import EventSourceResponse
 
+from backend.dialogues.byok_live import (
+    ByokCredentialRejectedError,
+    ByokLiveCouncilManager,
+    ByokRateLimitedError,
+)
 from backend.dialogues.council_live import LocalCouncilManager
 from backend.dialogues.normal_live import (
     NormalLiveCapacityError,
@@ -25,6 +30,9 @@ from backend.dialogues.normal_live import (
     NormalLivePreflightNotFoundError,
     NormalLiveUnavailableError,
 )
+from backend.dialogues.socrates_zero.openrouter_one_live_shadow_v1 import (
+    MAX_BEARER_CREDENTIAL_BYTES_V1,
+)
 
 
 router = APIRouter(prefix="/api/council", tags=["local-council"])
@@ -34,6 +42,9 @@ PrivatePreflightId = Annotated[
     StringConstraints(pattern=r"^nlpf_[a-f0-9]{36}$"),
 ]
 _DISALLOWED_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+#: Loopback hosts that may use plain HTTP for BYOK. Everything else must be
+#: HTTPS, because a BYOK request body carries the user's own credential.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
 
 
 class CouncilQuestion(BaseModel):
@@ -59,6 +70,30 @@ class NormalLiveCancelRequest(BaseModel):
     preflight_id: PrivatePreflightId = Field(repr=False)
 
 
+class ByokExecuteRequest(BaseModel):
+    """The one request in the system that carries a user secret.
+
+    ``repr=False`` on both private fields means a logged model, a traceback
+    frame or a debugger line shows the field names and not their values. The
+    application's validation handler returns a fixed message, so a rejected body
+    is never echoed either.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    preflight_id: PrivatePreflightId = Field(repr=False)
+    confirmed: Literal[True]
+    openrouter_api_key: str = Field(
+        repr=False,
+        min_length=1,
+        max_length=MAX_BEARER_CREDENTIAL_BYTES_V1,
+    )
+
+
+class ByokCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    preflight_id: PrivatePreflightId = Field(repr=False)
+
+
 def _manager(request: Request) -> LocalCouncilManager:
     return request.app.state.local_council_manager
 
@@ -67,16 +102,66 @@ def _normal_manager(request: Request) -> NormalLiveCouncilManager:
     return request.app.state.normal_live_council_manager
 
 
+def _byok_manager(request: Request) -> ByokLiveCouncilManager:
+    return request.app.state.byok_live_council_manager
+
+
+def _client_identity(request: Request) -> str:
+    """The direct connection, never a forwarded header.
+
+    ``X-Forwarded-For`` is caller-controlled unless a specific proxy is known
+    and configured, and a limiter keyed on a value the caller picks is not a
+    limiter. Trusted-proxy support is a deliberate later configuration step.
+    """
+    client = request.client
+    if client is None or not client.host:
+        return "unknown"
+    return str(client.host)
+
+
+def _require_byok_transport_security(request: Request) -> None:
+    """BYOK is permitted only on loopback HTTP or genuine same-origin HTTPS."""
+    host = (request.client.host if request.client else "") or ""
+    scheme = (request.url.scheme or "").lower()
+    is_loopback = host in _LOOPBACK_HOSTS
+    if not is_loopback and scheme != "https":
+        raise HTTPException(
+            status_code=400,
+            detail="A secure connection is required for this request.",
+        )
+    origin = request.headers.get("origin")
+    if origin is not None:
+        expected = f"{scheme}://{request.headers.get('host', '')}"
+        if origin != expected:
+            raise HTTPException(
+                status_code=403,
+                detail="Cross-origin requests are not accepted.",
+            )
+
+
 def _run_or_404(request: Request, run_id: str):
     run = _manager(request).get_run(run_id)
     if run is None:
         run = _normal_manager(request).get_run(run_id)
+    if run is None:
+        run = _byok_manager(request).get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Council run not found.")
     return run
 
 
 def _raise_normal_live_http(error: Exception) -> None:
+    if isinstance(error, ByokRateLimitedError):
+        raise HTTPException(
+            status_code=429,
+            detail="Capacity for this preview was temporarily reached.",
+            headers={"Retry-After": str(error.retry_after_seconds)},
+        )
+    if isinstance(error, ByokCredentialRejectedError):
+        raise HTTPException(
+            status_code=400,
+            detail="The supplied OpenRouter key was rejected.",
+        )
     if isinstance(error, NormalLiveUnavailableError):
         raise HTTPException(
             status_code=503,
@@ -175,8 +260,67 @@ async def cancel_normal_live_preflight(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/byok/preflight")
+async def byok_preflight(
+    payload: CouncilQuestion,
+    request: Request,
+    response: Response,
+) -> dict:
+    """Plan a user-funded run. The credential is not an input to this route."""
+    _require_byok_transport_security(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    try:
+        return await _byok_manager(request).create_preflight(
+            payload.question, client=_client_identity(request)
+        )
+    except Exception as error:
+        _raise_normal_live_http(error)
+
+
+@router.post("/byok/execute", status_code=status.HTTP_202_ACCEPTED)
+async def byok_execute(
+    payload: ByokExecuteRequest,
+    request: Request,
+    response: Response,
+) -> dict:
+    _require_byok_transport_security(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    try:
+        run = await _byok_manager(request).start_run(
+            payload.preflight_id,
+            payload.openrouter_api_key,
+            client=_client_identity(request),
+        )
+    except Exception as error:
+        _raise_normal_live_http(error)
+    # Only the public run identity is returned. The credential is not echoed,
+    # acknowledged, fingerprinted or described.
+    return {"run_id": run.run_id, "status": run.status}
+
+
+@router.post(
+    "/byok/cancel",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def byok_cancel(payload: ByokCancelRequest, request: Request) -> Response:
+    _require_byok_transport_security(request)
+    try:
+        await _byok_manager(request).cancel_preflight(payload.preflight_id)
+    except Exception as error:
+        _raise_normal_live_http(error)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{run_id}")
-async def council_status(run_id: str, request: Request) -> dict:
+async def council_status(run_id: str, request: Request, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     return _run_or_404(request, run_id).public_snapshot()
 
 
@@ -215,6 +359,8 @@ async def council_events(
 
 
 __all__ = [
+    "ByokCancelRequest",
+    "ByokExecuteRequest",
     "CouncilQuestion",
     "NormalLiveCancelRequest",
     "NormalLiveExecuteRequest",

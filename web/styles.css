@@ -248,8 +248,18 @@ main { width: min(calc(100% - 64px), var(--max-width)); margin: 0 auto; }
 .live-approval-details dd { min-width: 0; margin: 4px 0 0; }
 .live-approval-details code, .live-approval-details time { color: var(--text-soft); font-family: var(--mono); font-size: 0.68rem; overflow-wrap: anywhere; user-select: all; }
 .live-confirmation-description { margin: 16px 0 0; color: var(--muted); font-size: 0.74rem; }
+.live-cost-note { margin: 7px 0 0; color: var(--dim); font-size: 0.7rem; }
 .live-copy-status { min-height: 1.2em; margin: 9px 0 0; color: var(--accent-strong); font-family: var(--mono); font-size: 0.6rem; }
 .live-confirmation-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+.byok-credential { margin: 18px 0 0; padding: 16px 17px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-soft); }
+.byok-label { display: block; color: var(--dim); font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.byok-key-row { display: flex; gap: 8px; margin-top: 9px; }
+.byok-key-input { flex: 1 1 auto; min-width: 0; padding: 11px 13px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg-recessed); color: var(--text); font-family: var(--mono); font-size: 0.72rem; }
+.byok-key-input::placeholder { color: var(--dim); }
+.byok-key-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.byok-reveal { flex: 0 0 auto; min-height: 44px; }
+.byok-note { margin: 10px 0 0; color: var(--muted); font-size: 0.7rem; }
 
 textarea {
   width: 100%;
@@ -566,8 +576,12 @@ summary:focus-visible { outline: 0; border-radius: var(--radius-xs); box-shadow:
   .protocol-header { align-items: stretch; flex-direction: column; }
   .phase-progress { width: 100%; min-width: 0; }
   .console-heading { display: block; }
-  .mode-switch { display: flex; width: 100%; margin-top: 13px; }
-  .mode-option { flex: 1; min-width: 0; min-height: 44px; }
+  /* Three visible modes, one of them a long label. Wrapping keeps the switch
+     inside 375px instead of forcing the console to scroll sideways. */
+  .mode-switch { display: flex; flex-wrap: wrap; width: 100%; margin-top: 13px; }
+  .mode-option { flex: 1 1 42%; min-width: 0; min-height: 44px; }
+  .byok-key-row { flex-direction: column; }
+  .byok-reveal { width: 100%; }
   .connection-panel { align-items: flex-start; flex-direction: column; }
   .connection-retry { width: 100%; min-height: 44px; margin-left: 0; }
   .live-confirmation-header { flex-direction: column; gap: 12px; }

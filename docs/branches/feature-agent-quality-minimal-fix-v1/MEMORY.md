@@ -1,3 +1,18 @@
+# Stable branch memory — V0.7 additions
+
+- `openrouter_one_live_shadow_v1.py` holds the only credential read site and the only `Authorization` injection site. BYOK adds an explicit-credential dispatch entry beside the environment-reading one; both share `_dispatch_once_v1`. Never duplicate the transport and never mutate `os.environ` to switch credentials.
+- `RunScopedCredential` is the only carrier of a user key. It validates on construction, redacts every rendering, refuses copy/deepcopy/pickle, and `release()` is terminal and idempotent. The credential lives in one dispatch closure per run — there is no store, no default and no fingerprint.
+- No zeroization is claimed anywhere. The truthful sentence is "held only in memory for the active run and released when the run reaches a terminal state".
+- BYOK never reads `OPENROUTER_API_KEY`. Operator Normal Live still does, through the unchanged entry point, and `NormalLiveCouncilManager.start_run` still takes no credential argument. That signature difference is the regression guard.
+- The authorized path universe is **98** paths as of V0.7. Any new runtime module must be added to `NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1` or it runs unauthorized.
+- The BYOK preflight accepts a question and nothing else. A credential field in it is a 422 with a fixed message.
+- The user's key is *supposed* to be in the same-origin execute body. A leak test that flags it there is testing the wrong thing.
+- Rate limits are per-process and in-memory. The public preview must run one worker until a shared limiter exists.
+- CSP carries no `unsafe-inline` because `web/` has no inline script, style or handler. Keep it that way; `innerHTML` and `setAttribute("style", …)` are both absent by design.
+- V0.7 authorizes no manifest rotation, live call, spend, BYOK run, deployment, push, tag or PR.
+
+---
+
 # Stable branch memory — V0.3C additions
 
 - Authorized parent C is `d332acc886411e89fb1b6eea31288edea8984f55`; its production source-authorization artifact remains byte-for-byte unchanged in checkpoint D.

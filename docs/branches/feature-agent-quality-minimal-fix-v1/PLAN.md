@@ -1,3 +1,43 @@
+# Plan — V0.7 BYOK public product checkpoint
+
+## Success criterion
+
+A user funds one canonical council run with their own OpenRouter key, through the
+existing planner, the existing runtime and the existing CED, with the credential
+provably absent from every surface except the same-origin execute request that
+exists to deliver it.
+
+## Completed
+
+1. [x] Read-only takeover: branch, HEAD, parent, tree, clean status, one source-authorization verification, three branch documents, and an implementation map of every credential and lifecycle seam.
+2. [x] Make the credential an explicit transport parameter instead of duplicating the transport or mutating the environment.
+3. [x] Add `RunScopedCredential`: validated on construction, redacted, unserializable, releasable, terminal.
+4. [x] Add `ByokLiveCouncilManager` reusing the Normal preflight store, planner, runtime, CED and public projection, with no environment read anywhere on its path.
+5. [x] Add `/api/council/byok/{preflight,execute,cancel}` with strict bodies, generic errors and no request echo.
+6. [x] Add bounded single-process rate limiting and capacity caps that store no credential.
+7. [x] Add transport security: loopback HTTP or same-origin HTTPS, no forwarded-header trust, cross-origin refused.
+8. [x] Add security headers with no `unsafe-inline`, and a bounded request body.
+9. [x] Add the third public mode, the password field, the show/hide control, truthful cost and privacy copy, and hide operator Normal Live by default.
+10. [x] Update the marketing copy to what the topology actually proves.
+11. [x] Add `byok_live.py` to the authorized path universe and move the two count assertions from 97 to 98.
+12. [x] Prove isolation with two canaries, release on every terminal path, no server-key fallback, and no leak into any public surface or artifact.
+13. [x] Run the offline end-to-end council through the real runtime, real CED and real live adapter classes with a stub wire only.
+14. [x] Browser QA at four widths with zero console errors and zero horizontal overflow.
+15. [x] Document hosting, security, limits and resource bounds.
+16. [x] One local atomic source checkpoint commit, then stop.
+
+## Separate future task—not authorized here
+
+1. Operator reviews the source checkpoint.
+2. One manifest-free anchor commit.
+3. One artifact-only authorization commit over the 98-path universe.
+4. Production verification from a fresh cache-free worktree.
+5. One controlled BYOK live run.
+
+No manifest rotation, real key, provider call, spend, deployment, push, tag or PR belongs in V0.7.
+
+---
+
 # Plan — V0.3C
 
 ## Completed source-fix checkpoint

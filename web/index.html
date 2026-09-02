@@ -33,8 +33,8 @@
           <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span><span class="eyebrow-copy">Structured multi-agent deliberation</span></p>
           <h1 id="hero-title">SOCRATES <span>AI</span></h1>
           <p class="hero-tagline">Multi-Agent Socratic Intelligence</p>
-          <p class="hero-promise">One question. A council of perspectives. An answer that had to survive the dialogue.</p>
-          <p class="hero-copy">Socrates AI challenges assumptions, revises positions and reconstructs what survives.</p>
+          <p class="hero-promise">One question. Multiple AI model seats. Rotating Socratic roles. One answer that had to survive the dialogue.</p>
+          <p class="hero-copy">Each council seat is a separate LLM call. Models challenge one another, revise positions and contribute to one governed synthesis.</p>
           <p class="process-line" aria-label="Ask, Challenge, Revise, Reconstruct, Synthesize">
             <span>Ask</span><span><i aria-hidden="true">·</i>Challenge</span><span><i aria-hidden="true">·</i>Revise</span><span><i aria-hidden="true">·</i>Reconstruct</span><span><i aria-hidden="true">·</i>Synthesize</span>
           </p>
@@ -52,7 +52,8 @@
             <div class="mode-switch" role="group" aria-label="Council source">
               <button class="mode-option is-selected" id="demo-mode-button" type="button" aria-pressed="true">DEMO MODE</button>
               <button class="mode-option" id="local-mode-button" type="button" aria-pressed="false">LOCAL CED</button>
-              <button class="mode-option" id="normal-live-mode-button" type="button" aria-pressed="false">NORMAL LIVE</button>
+              <button class="mode-option" id="byok-mode-button" type="button" aria-pressed="false">USE MY OPENROUTER KEY</button>
+              <button class="mode-option" id="normal-live-mode-button" type="button" aria-pressed="false" data-operator-only="true" hidden>NORMAL LIVE</button>
             </div>
           </div>
           <div class="connection-panel" id="connection-panel" role="status" aria-live="polite" hidden>
@@ -63,7 +64,7 @@
           <section class="live-confirmation" id="live-confirmation-panel" tabindex="-1" aria-labelledby="live-confirmation-title" aria-describedby="live-confirmation-description live-copy-status" hidden>
             <header class="live-confirmation-header">
               <div>
-                <p class="micro-label">NORMAL LIVE COUNCIL</p>
+                <p class="micro-label" id="live-confirmation-mode">NORMAL LIVE COUNCIL</p>
                 <h2 id="live-confirmation-title">Review the server-owned execution plan</h2>
               </div>
               <span class="live-source-status" id="live-source-status">—</span>
@@ -71,14 +72,35 @@
             <dl class="live-confirmation-metrics">
               <div><dt>Council topology</dt><dd id="live-seat-count">—</dd></div>
               <div><dt>Provider call ceiling</dt><dd id="live-maximum-calls">—</dd></div>
-              <div><dt>Spending ceiling</dt><dd id="live-maximum-cost">—</dd></div>
+              <div><dt>Absolute maximum permitted for this run</dt><dd id="live-maximum-cost">—</dd></div>
             </dl>
             <dl class="live-approval-details">
-              <div><dt>Approval reference</dt><dd><code id="live-approval-reference">—</code></dd></div>
+              <div id="live-approval-reference-row"><dt>Approval reference</dt><dd><code id="live-approval-reference">—</code></dd></div>
               <div><dt>Question fingerprint</dt><dd><code id="live-question-sha256">—</code></dd></div>
               <div><dt>Valid until</dt><dd><time id="live-expires-at">—</time></dd></div>
             </dl>
             <p class="live-confirmation-description" id="live-confirmation-description">Normal Live uses real model-backed council seats. Confirm only after reviewing this server-derived call and cost ceiling.</p>
+            <p class="live-cost-note" id="live-cost-note">Actual cost may be lower. The run will not exceed the displayed Socrates call and spend bound.</p>
+            <div class="byok-credential" id="byok-credential-block" hidden>
+              <label class="byok-label" for="byok-key-input">Your OpenRouter key</label>
+              <div class="byok-key-row">
+                <input
+                  class="byok-key-input"
+                  id="byok-key-input"
+                  type="password"
+                  name="openrouter-key"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  enterkeyhint="done"
+                  placeholder="Paste your OpenRouter key"
+                  aria-describedby="byok-privacy-note byok-charge-note">
+                <button class="secondary-button byok-reveal" id="byok-reveal-button" type="button" aria-pressed="false">Show</button>
+              </div>
+              <p class="byok-note" id="byok-charge-note">OpenRouter charges this run to your own OpenRouter account. One confirmation authorises exactly one council run, and the key is used across that run's council seats. No second council starts on its own.</p>
+              <p class="byok-note" id="byok-privacy-note">Your OpenRouter key is used only for this council run. It is not written to browser storage, Socrates run artifacts or public logs. It is held temporarily in server memory and released when the run ends. Use a dedicated OpenRouter key and review its account limits before running a council.</p>
+            </div>
             <p class="live-copy-status" id="live-copy-status" role="status" aria-live="polite" aria-atomic="true"></p>
             <div class="live-confirmation-actions">
               <button class="secondary-button" id="live-copy-approval-button" type="button" disabled>Copy approval package</button>
@@ -145,7 +167,7 @@
         </div>
 
         <div class="seat-section-heading">
-          <div><p class="micro-label">STABLE COUNCIL IDENTITIES</p><h3 id="seat-topology-title">Four seats. Roles rotate.</h3></div>
+          <div><p class="micro-label">STABLE COUNCIL IDENTITIES</p><h3 id="seat-topology-title">A council of models—not one model playing every part.</h3></div>
           <p>Aliases persist through the session; no model is permanently Socrates.</p>
         </div>
         <ul class="seat-grid" id="seat-grid" aria-label="Council seats">

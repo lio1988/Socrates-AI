@@ -52,6 +52,31 @@ const EXACT_PREFLIGHT_KEYS = Object.freeze([
   "validity_seconds",
   "expires_at_utc",
 ]);
+// The BYOK projection carries no approval reference: the user's own
+// confirmation is the spend authorization, and the six-line operator package
+// exists for the operator-funded path alone.
+const EXACT_BYOK_PREFLIGHT_KEYS = Object.freeze([
+  "preflight_id",
+  "question_sha256",
+  "question",
+  "run_mode",
+  "seats",
+  "provider_count",
+  "base_calls",
+  "retry_calls",
+  "maximum_calls",
+  "maximum_cost_usd",
+  "confirmation_required",
+  "credential_required",
+  "source_authorization_status",
+  "validity_seconds",
+  "expires_at_utc",
+]);
+const BYOK_ENDPOINTS = Object.freeze({
+  preflight: "/api/council/byok/preflight",
+  execute: "/api/council/byok/execute",
+  cancel: "/api/council/byok/cancel",
+});
 const EXACT_SEAT_KEYS = Object.freeze(["seat_id", "alias"]);
 const EXACT_EXECUTE_KEYS = Object.freeze(["run_id", "status"]);
 const EXACT_DECIMAL = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
@@ -78,6 +103,7 @@ const DEMO_VIEW = Object.freeze({
 const bridgeElements = {
   demoMode: document.querySelector("#demo-mode-button"),
   localMode: document.querySelector("#local-mode-button"),
+  byokMode: document.querySelector("#byok-mode-button"),
   normalLiveMode: document.querySelector("#normal-live-mode-button"),
   connectionPanel: document.querySelector("#connection-panel"),
   connectionStatus: document.querySelector("#connection-status"),
@@ -102,6 +128,11 @@ const bridgeElements = {
   liveCopyStatus: document.querySelector("#live-copy-status"),
   liveCancel: document.querySelector("#live-cancel-button"),
   liveConfirm: document.querySelector("#live-confirm-button"),
+  liveConfirmationMode: document.querySelector("#live-confirmation-mode"),
+  liveApprovalReferenceRow: document.querySelector("#live-approval-reference-row"),
+  byokBlock: document.querySelector("#byok-credential-block"),
+  byokKeyInput: document.querySelector("#byok-key-input"),
+  byokReveal: document.querySelector("#byok-reveal-button"),
 };
 
 const localState = {
@@ -206,6 +237,119 @@ function validateLivePreflight(payload) {
   });
 }
 
+function validateByokPreflight(payload) {
+  if (!hasExactKeys(payload, EXACT_BYOK_PREFLIGHT_KEYS)
+      || !NORMAL_PREFLIGHT_ID.test(payload.preflight_id)
+      || typeof payload.question_sha256 !== "string"
+      || !SHA256_HEX.test(payload.question_sha256)
+      || typeof payload.question !== "string"
+      || payload.question.length < 1
+      || payload.question.length > 8000
+      || payload.run_mode !== "byok_live"
+      || payload.confirmation_required !== true
+      || payload.credential_required !== true
+      || payload.source_authorization_status !== "authorized"
+      || !Array.isArray(payload.seats)
+      || !Number.isInteger(payload.provider_count)
+      || payload.provider_count < 1
+      || payload.provider_count > defaultSeatTemplates.length
+      || payload.provider_count !== payload.seats.length
+      || !Number.isInteger(payload.base_calls)
+      || payload.base_calls < 0
+      || !Number.isInteger(payload.retry_calls)
+      || payload.retry_calls < 0
+      || !Number.isInteger(payload.maximum_calls)
+      || payload.maximum_calls <= 0
+      || payload.maximum_calls !== payload.base_calls + payload.retry_calls
+      || typeof payload.maximum_cost_usd !== "string"
+      || payload.maximum_cost_usd.length > 64
+      || !EXACT_DECIMAL.test(payload.maximum_cost_usd)
+      || payload.validity_seconds !== 900
+      || typeof payload.expires_at_utc !== "string"
+      || !UTC_TIMESTAMP.test(payload.expires_at_utc)
+      || !Number.isFinite(Date.parse(payload.expires_at_utc))) {
+    throw new Error("invalid BYOK preflight projection");
+  }
+  const seen = new Set();
+  const seats = payload.seats.map((seat) => {
+    if (!hasExactKeys(seat, EXACT_SEAT_KEYS)
+        || typeof seat.seat_id !== "string"
+        || !SAFE_PUBLIC_ID.test(seat.seat_id)
+        || seen.has(seat.seat_id)
+        || typeof seat.alias !== "string"
+        || seat.alias.trim() !== seat.alias
+        || seat.alias.length < 1
+        || seat.alias.length > 80) {
+      throw new Error("invalid BYOK public seat");
+    }
+    seen.add(seat.seat_id);
+    return Object.freeze({ seat_id: seat.seat_id, alias: seat.alias });
+  });
+  const publicProjection = Object.freeze({
+    question_sha256: payload.question_sha256,
+    question: payload.question,
+    run_mode: payload.run_mode,
+    seats: Object.freeze(seats),
+    provider_count: payload.provider_count,
+    base_calls: payload.base_calls,
+    retry_calls: payload.retry_calls,
+    maximum_calls: payload.maximum_calls,
+    maximum_cost_usd: payload.maximum_cost_usd,
+    confirmation_required: true,
+    credential_required: true,
+    source_authorization_status: "authorized",
+    validity_seconds: payload.validity_seconds,
+    expires_at_utc: payload.expires_at_utc,
+  });
+  return Object.freeze({
+    privatePreflightId: payload.preflight_id,
+    publicProjection,
+  });
+}
+
+// The credential lives in the password input and in one local variable inside
+// the request that carries it. It is never copied into localState, never put in
+// a data attribute, and never rendered as text.
+function readByokKey() {
+  const input = bridgeElements.byokKeyInput;
+  return input && typeof input.value === "string" ? input.value : "";
+}
+
+function clearByokKey() {
+  const input = bridgeElements.byokKeyInput;
+  if (!input) {
+    return;
+  }
+  input.value = "";
+  input.type = "password";
+  if (bridgeElements.byokReveal) {
+    bridgeElements.byokReveal.textContent = "Show";
+    bridgeElements.byokReveal.setAttribute("aria-pressed", "false");
+  }
+}
+
+function toggleByokReveal() {
+  const input = bridgeElements.byokKeyInput;
+  const button = bridgeElements.byokReveal;
+  if (!input || !button) {
+    return;
+  }
+  const revealed = input.type === "text";
+  input.type = revealed ? "password" : "text";
+  button.textContent = revealed ? "Show" : "Hide";
+  button.setAttribute("aria-pressed", revealed ? "false" : "true");
+}
+
+function syncByokConfirmEnabled() {
+  if (localState.sourceMode !== "byok-live") {
+    return;
+  }
+  const ready = runState.lifecycle === "awaiting_confirmation"
+    && Boolean(localState.preflight)
+    && readByokKey().trim().length > 0;
+  bridgeElements.liveConfirm.disabled = !ready;
+}
+
 function validateExecuteResponse(payload) {
   if (!hasExactKeys(payload, EXACT_EXECUTE_KEYS)
       || typeof payload.run_id !== "string"
@@ -229,21 +373,54 @@ function clearLiveConfirmation() {
   bridgeElements.liveExpiresAt.textContent = "—";
   bridgeElements.liveExpiresAt.removeAttribute("datetime");
   bridgeElements.liveCopyStatus.textContent = "";
+  clearByokKey();
+  bridgeElements.byokBlock.hidden = true;
 }
 
 function renderLiveConfirmation(preflight) {
+  const byok = preflight.run_mode === "byok_live";
   bridgeElements.liveSourceStatus.textContent = "SOURCE AUTHORIZED";
+  bridgeElements.liveConfirmationMode.textContent = byok
+    ? "YOUR OPENROUTER KEY · ONE COUNCIL RUN"
+    : "NORMAL LIVE COUNCIL";
   bridgeElements.liveSeatCount.textContent = `${preflight.provider_count} model seats`;
   bridgeElements.liveMaximumCalls.textContent = `Up to ${preflight.maximum_calls} calls`;
   bridgeElements.liveMaximumCost.textContent =
-    `Maximum authorized spend: $${preflight.maximum_cost_usd}`;
-  bridgeElements.liveApprovalReference.textContent = preflight.approval_reference;
+    `Absolute maximum permitted for this run: $${preflight.maximum_cost_usd}`;
+  bridgeElements.liveApprovalReferenceRow.hidden = byok;
+  bridgeElements.liveApprovalReference.textContent = byok
+    ? "—"
+    : preflight.approval_reference;
   bridgeElements.liveQuestionSha256.textContent = preflight.question_sha256;
   bridgeElements.liveExpiresAt.textContent = preflight.expires_at_utc;
   bridgeElements.liveExpiresAt.setAttribute("datetime", preflight.expires_at_utc);
   bridgeElements.liveCopyStatus.textContent = "";
+  bridgeElements.byokBlock.hidden = !byok;
+  bridgeElements.liveCopyApproval.hidden = byok;
+  bridgeElements.liveConfirm.disabled = byok;
   bridgeElements.liveConfirmation.hidden = false;
   bridgeElements.liveConfirmation.focus({ preventScroll: true });
+  if (byok) {
+    clearByokKey();
+  }
+}
+
+function byokConfirmationMatches(preflight) {
+  // Same guarantee as the operator check: what the user saw is what is about to
+  // be authorized. The approval reference is absent by design, so the displayed
+  // ceilings, fingerprint and expiry carry the whole comparison.
+  return Boolean(preflight)
+    && !bridgeElements.liveConfirmation.hidden
+    && !bridgeElements.byokBlock.hidden
+    && elements.activeQuestion.textContent === preflight.question
+    && bridgeElements.liveSourceStatus.textContent === "SOURCE AUTHORIZED"
+    && bridgeElements.liveSeatCount.textContent === `${preflight.provider_count} model seats`
+    && bridgeElements.liveMaximumCalls.textContent === `Up to ${preflight.maximum_calls} calls`
+    && bridgeElements.liveMaximumCost.textContent
+      === `Absolute maximum permitted for this run: $${preflight.maximum_cost_usd}`
+    && bridgeElements.liveQuestionSha256.textContent === preflight.question_sha256
+    && bridgeElements.liveExpiresAt.textContent === preflight.expires_at_utc
+    && bridgeElements.liveExpiresAt.getAttribute("datetime") === preflight.expires_at_utc;
 }
 
 function liveConfirmationMatches(preflight) {
@@ -254,7 +431,7 @@ function liveConfirmationMatches(preflight) {
     && bridgeElements.liveSeatCount.textContent === `${preflight.provider_count} model seats`
     && bridgeElements.liveMaximumCalls.textContent === `Up to ${preflight.maximum_calls} calls`
     && bridgeElements.liveMaximumCost.textContent ===
-      `Maximum authorized spend: $${preflight.maximum_cost_usd}`
+      `Absolute maximum permitted for this run: $${preflight.maximum_cost_usd}`
     && bridgeElements.liveApprovalReference.textContent === preflight.approval_reference
     && bridgeElements.liveQuestionSha256.textContent === preflight.question_sha256
     && bridgeElements.liveExpiresAt.textContent === preflight.expires_at_utc
@@ -334,17 +511,21 @@ function syncSourceControls() {
   const isDemo = localState.sourceMode === "demo";
   const isLocal = localState.sourceMode === "local-ced";
   const isNormal = localState.sourceMode === "normal-live";
+  const isByok = localState.sourceMode === "byok-live";
   const locked = isDemo
     ? runState.mode === "running"
     : sourceLifecycleLocked();
   bridgeElements.demoMode.classList.toggle("is-selected", isDemo);
   bridgeElements.localMode.classList.toggle("is-selected", isLocal);
+  bridgeElements.byokMode.classList.toggle("is-selected", isByok);
   bridgeElements.normalLiveMode.classList.toggle("is-selected", isNormal);
   bridgeElements.demoMode.setAttribute("aria-pressed", String(isDemo));
   bridgeElements.localMode.setAttribute("aria-pressed", String(isLocal));
+  bridgeElements.byokMode.setAttribute("aria-pressed", String(isByok));
   bridgeElements.normalLiveMode.setAttribute("aria-pressed", String(isNormal));
   bridgeElements.demoMode.disabled = locked;
   bridgeElements.localMode.disabled = locked;
+  bridgeElements.byokMode.disabled = locked;
   bridgeElements.normalLiveMode.disabled = locked;
   elements.completeButton.hidden = !isDemo;
   elements.conveneButton.disabled = locked || (isLocal && localState.available !== true);
@@ -363,24 +544,40 @@ function syncSourceControls() {
   bridgeElements.liveCopyApproval.disabled = runState.lifecycle !== "awaiting_confirmation";
   bridgeElements.liveCancel.disabled = runState.lifecycle !== "awaiting_confirmation";
   bridgeElements.liveConfirm.disabled = runState.lifecycle !== "awaiting_confirmation";
-  if (isNormal) {
-    const labels = {
-      idle: "CHECK LIVE PREFLIGHT",
-      preflighting: "CHECKING AUTHORIZATION",
-      awaiting_confirmation: "AWAITING CONFIRMATION",
-      cancelling: "CANCELLING PREFLIGHT",
-      executing: "CONVENING NORMAL LIVE",
-      starting: "CONVENING NORMAL LIVE",
-      running: "COUNCIL IN SESSION",
-    };
-    elements.conveneLabel.textContent = labels[runState.lifecycle] || "CHECK LIVE PREFLIGHT";
+  if (isNormal || isByok) {
+    const labels = isByok
+      ? {
+        idle: "PLAN THIS COUNCIL",
+        preflighting: "CHECKING AUTHORIZATION",
+        awaiting_confirmation: "AWAITING YOUR KEY",
+        cancelling: "CANCELLING PREFLIGHT",
+        executing: "CONVENING COUNCIL",
+        starting: "CONVENING COUNCIL",
+        running: "COUNCIL IN SESSION",
+      }
+      : {
+        idle: "CHECK LIVE PREFLIGHT",
+        preflighting: "CHECKING AUTHORIZATION",
+        awaiting_confirmation: "AWAITING CONFIRMATION",
+        cancelling: "CANCELLING PREFLIGHT",
+        executing: "CONVENING NORMAL LIVE",
+        starting: "CONVENING NORMAL LIVE",
+        running: "COUNCIL IN SESSION",
+      };
+    elements.conveneLabel.textContent =
+      labels[runState.lifecycle] || (isByok ? "PLAN THIS COUNCIL" : "CHECK LIVE PREFLIGHT");
   }
   bridgeElements.recordSource.textContent = isDemo
     ? "demonstration"
     : isNormal
       ? "canonical Normal Live"
-      : "canonical local CED";
+      : isByok
+        ? "canonical council · your OpenRouter key"
+        : "canonical local CED";
   bridgeElements.connectionPanel.hidden = isDemo;
+  // In BYOK the confirmation is also a spend authorization, so it stays
+  // disabled until a key is actually present in the private input.
+  syncByokConfirmEnabled();
 }
 
 function renderCommitments(items) {
@@ -476,19 +673,25 @@ function renderLocalIdle(message = "LOCAL CED READY · ENTER A QUESTION") {
   syncSourceControls();
 }
 
-function renderNormalIdle(message = "NORMAL LIVE READY · CHECK PREFLIGHT") {
+function renderNormalIdle(
+  message = "NORMAL LIVE READY · CHECK PREFLIGHT",
+  {
+    eyebrow = "NORMAL LIVE",
+    connection = "Normal Live preflight has not been checked.",
+  } = {},
+) {
   clearRenderedRun();
   clearSeatTopology();
   renderTimeline(-1);
   renderCommitments([]);
   clearLiveConfirmation();
   elements.activeQuestion.textContent = "Waiting for a question.";
-  elements.phaseBrief.querySelector("span").textContent = "NORMAL LIVE";
+  elements.phaseBrief.querySelector("span").textContent = eyebrow;
   elements.phaseBrief.querySelector("h4").textContent = "Authorization preflight required";
   elements.phaseBrief.querySelector("p").textContent =
     "The server must authorize the exact source set, derive the full call plan, and present its conservative cost ceiling before confirmation.";
   setRunStatus(message);
-  setConnection("Normal Live preflight has not been checked.", "checking");
+  setConnection(connection, "checking");
   runState.mode = "idle";
   runState.lifecycle = "idle";
   runState.stage = "idle";
@@ -994,6 +1197,217 @@ async function executeNormalPreflight() {
   }
 }
 
+function renderByokIdle(message = "READY · PLAN YOUR COUNCIL") {
+  renderNormalIdle(message, {
+    eyebrow: "YOUR OPENROUTER KEY",
+    connection: "Plan a council to see its exact call and spend ceiling.",
+  });
+}
+
+async function startByokPreflight(question) {
+  closeLocalTransport();
+  invalidateRun();
+  clearRenderedRun();
+  renderCommitments([]);
+  clearLiveConfirmation();
+  clearSeatTopology();
+  localState.generation += 1;
+  const generation = localState.generation;
+  localState.runId = null;
+  localState.lastSequence = -1;
+  localState.fingerprints.clear();
+  localState.terminal = false;
+  localState.ratification = null;
+  runState.mode = "idle";
+  runState.lifecycle = "preflighting";
+  runState.stage = "preflight";
+  runState.phaseIndex = -1;
+  elements.activeQuestion.textContent = question;
+  renderTimeline(-1);
+  setConnection("Deriving the council plan and its spend ceiling…", "checking");
+  setRunStatus("PLANNING COUNCIL · NO KEY SENT YET");
+  elements.phaseBrief.querySelector("span").textContent = "COUNCIL PREFLIGHT";
+  elements.phaseBrief.querySelector("h4").textContent = "Deriving the execution boundary";
+  elements.phaseBrief.querySelector("p").textContent =
+    "No provider call begins during preflight, and your key is not part of this request.";
+  setControlState();
+  syncSourceControls();
+
+  const controller = new AbortController();
+  localState.requestController = controller;
+  try {
+    const response = await fetch(BYOK_ENDPOINTS.preflight, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ question }),
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
+    if (generation !== localState.generation) {
+      return;
+    }
+    localState.requestController = null;
+    if (!response.ok) {
+      failNormalView(
+        response.status === 429
+          ? "Capacity for this preview was temporarily reached. Try again shortly."
+          : response.status === 503
+            ? "This build is not authorized to convene a live council."
+            : "The council plan was refused.",
+        { providerStartImpossible: true },
+      );
+      return;
+    }
+    const validated = validateByokPreflight(await response.json());
+    localState.preflightCapability = validated.privatePreflightId;
+    localState.preflight = validated.publicProjection;
+    const preflight = localState.preflight;
+    elements.activeQuestion.textContent = preflight.question;
+    renderPublicSeatTopology(preflight.seats);
+    renderLiveConfirmation(preflight);
+    runState.lifecycle = "awaiting_confirmation";
+    runState.stage = "confirmation";
+    setConnection("Plan ready · enter your OpenRouter key to confirm", "available");
+    setRunStatus("REVIEW THE CEILING · THEN ENTER YOUR KEY");
+    elements.phaseBrief.querySelector("h4").textContent = "Awaiting your key and confirmation";
+    elements.phaseBrief.querySelector("p").textContent =
+      "Cancel consumes nothing. Confirming spends from your own OpenRouter account, once.";
+    setControlState();
+    syncSourceControls();
+    bridgeElements.byokKeyInput.focus({ preventScroll: true });
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    if (generation === localState.generation) {
+      failNormalView("The council plan could not be verified.", {
+        providerStartImpossible: true,
+      });
+    }
+  }
+}
+
+async function cancelByokPreflight({ focusQuestion = true } = {}) {
+  if (runState.lifecycle !== "awaiting_confirmation"
+      || !localState.preflight
+      || !localState.preflightCapability) {
+    return;
+  }
+  const preflightId = localState.preflightCapability;
+  const generation = localState.generation;
+  runState.lifecycle = "cancelling";
+  setRunStatus("CANCELLING · NO CHARGE");
+  clearByokKey();
+  syncSourceControls();
+  const controller = new AbortController();
+  localState.requestController = controller;
+  try {
+    const response = await fetch(BYOK_ENDPOINTS.cancel, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ preflight_id: preflightId }),
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
+    if (generation !== localState.generation) {
+      return;
+    }
+    localState.requestController = null;
+    if (response.status !== 204) {
+      throw new Error("cancel refused");
+    }
+    renderByokIdle("PREFLIGHT CANCELLED · NOTHING WAS CHARGED");
+    setConnection("Preflight cancelled · no provider call started", "available");
+    if (focusQuestion) {
+      elements.questionInput.focus();
+    }
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    if (generation === localState.generation) {
+      failNormalView("The cancellation could not be confirmed.");
+    }
+  }
+}
+
+async function executeByokPreflight() {
+  if (runState.lifecycle !== "awaiting_confirmation"
+      || !localState.preflight
+      || !localState.preflightCapability) {
+    return;
+  }
+  const preflight = localState.preflight;
+  const preflightId = localState.preflightCapability;
+  if (!byokConfirmationMatches(preflight)) {
+    failNormalView("The displayed plan changed · execution blocked.", {
+      providerStartImpossible: true,
+    });
+    clearByokKey();
+    return;
+  }
+  // Read once, into one local. It is never written to localState, never stored
+  // and never logged; the reference dies with this function's frame.
+  const key = readByokKey();
+  if (!key.trim()) {
+    syncByokConfirmEnabled();
+    return;
+  }
+  const generation = localState.generation;
+  runState.mode = "running";
+  runState.lifecycle = "executing";
+  runState.stage = "accepted";
+  setConnection("Confirmation received · consuming one-use preflight", "checking");
+  setRunStatus("CONVENING CANONICAL COUNCIL");
+  setControlState();
+  syncSourceControls();
+  const controller = new AbortController();
+  localState.requestController = controller;
+  try {
+    const response = await fetch(BYOK_ENDPOINTS.execute, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        preflight_id: preflightId,
+        confirmed: true,
+        openrouter_api_key: key,
+      }),
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
+    // Cleared on every outcome, before anything else can await again.
+    clearByokKey();
+    if (generation !== localState.generation) {
+      return;
+    }
+    localState.requestController = null;
+    if (!response.ok) {
+      failNormalView(
+        response.status === 429
+          ? "Capacity for this preview was temporarily reached. Try again shortly."
+          : response.status === 400
+            ? "That OpenRouter key was rejected. Check it and enter it again."
+            : "The council could not be started.",
+      );
+      return;
+    }
+    const started = validateExecuteResponse(await response.json());
+    localState.runId = started.run_id;
+    clearLiveConfirmation();
+    runState.lifecycle = "starting";
+    attachEventStream(started.run_id, generation);
+    syncSourceControls();
+  } catch (error) {
+    clearByokKey();
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    if (generation === localState.generation) {
+      failNormalView("The council response could not be confirmed.");
+    }
+  }
+}
+
 async function checkLocalHealth() {
   if (localState.sourceMode !== "local-ced") {
     return;
@@ -1084,6 +1498,52 @@ function selectNormalLiveMode() {
   renderNormalIdle();
 }
 
+function selectByokMode() {
+  if (sourceLifecycleLocked()) {
+    return;
+  }
+  closeLocalTransport();
+  invalidateRun();
+  localState.generation += 1;
+  localState.sourceMode = "byok-live";
+  runState.sourceMode = "byok-live";
+  runState.lifecycle = "idle";
+  localState.runId = null;
+  localState.terminal = false;
+  localState.lastSequence = -1;
+  localState.fingerprints.clear();
+  localState.ratification = null;
+  clearByokKey();
+  renderByokIdle();
+}
+
+function resetByokView() {
+  if (runState.lifecycle === "awaiting_confirmation") {
+    cancelByokPreflight();
+    return;
+  }
+  if (runState.lifecycle === "cancelling") {
+    return;
+  }
+  const mayContinue = Boolean(localState.runId && !localState.terminal)
+    || ["executing", "starting", "running"].includes(runState.lifecycle);
+  closeLocalTransport();
+  invalidateRun();
+  localState.generation += 1;
+  localState.runId = null;
+  localState.lastSequence = -1;
+  localState.fingerprints.clear();
+  localState.terminal = false;
+  localState.ratification = null;
+  clearLiveConfirmation();
+  clearByokKey();
+  renderByokIdle(mayContinue
+    ? "VIEW RESET · THE SERVER RUN MAY CONTINUE"
+    : "READY · PLAN YOUR COUNCIL");
+  setQuestionError(false);
+  elements.questionInput.focus();
+}
+
 function resetLocalView() {
   const mayContinue = Boolean(localState.runId && !localState.terminal);
   closeLocalTransport();
@@ -1130,11 +1590,42 @@ function resetNormalView() {
 
 bridgeElements.demoMode.addEventListener("click", selectDemoMode);
 bridgeElements.localMode.addEventListener("click", selectLocalMode);
+bridgeElements.byokMode.addEventListener("click", selectByokMode);
 bridgeElements.normalLiveMode.addEventListener("click", selectNormalLiveMode);
 bridgeElements.retryConnection.addEventListener("click", checkLocalHealth);
 bridgeElements.liveCopyApproval.addEventListener("click", copyLiveApprovalPackage);
-bridgeElements.liveCancel.addEventListener("click", () => cancelNormalPreflight());
-bridgeElements.liveConfirm.addEventListener("click", executeNormalPreflight);
+bridgeElements.liveCancel.addEventListener("click", () => {
+  if (localState.sourceMode === "byok-live") {
+    cancelByokPreflight();
+  } else {
+    cancelNormalPreflight();
+  }
+});
+bridgeElements.liveConfirm.addEventListener("click", () => {
+  if (localState.sourceMode === "byok-live") {
+    executeByokPreflight();
+  } else {
+    executeNormalPreflight();
+  }
+});
+bridgeElements.byokReveal.addEventListener("click", toggleByokReveal);
+bridgeElements.byokKeyInput.addEventListener("input", syncByokConfirmEnabled);
+// Enter inside the key field confirms rather than submitting the outer form,
+// which would otherwise start a second preflight and orphan the first.
+bridgeElements.byokKeyInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  if (!bridgeElements.liveConfirm.disabled) {
+    executeByokPreflight();
+  }
+});
+// Best effort only: a page teardown is not a guarantee, and the credential has
+// already left for the server by the time any run is under way.
+window.addEventListener("pagehide", clearByokKey);
+window.addEventListener("beforeunload", clearByokKey);
 
 elements.form.addEventListener("submit", (event) => {
   if (localState.sourceMode === "demo") {
@@ -1150,6 +1641,8 @@ elements.form.addEventListener("submit", (event) => {
   if (question) {
     if (localState.sourceMode === "normal-live") {
       startNormalPreflight(question);
+    } else if (localState.sourceMode === "byok-live") {
+      startByokPreflight(question);
     } else {
       startLocalCouncil(question);
     }
@@ -1164,6 +1657,8 @@ elements.resetButton.addEventListener("click", (event) => {
   event.stopImmediatePropagation();
   if (localState.sourceMode === "normal-live") {
     resetNormalView();
+  } else if (localState.sourceMode === "byok-live") {
+    resetByokView();
   } else {
     resetLocalView();
   }

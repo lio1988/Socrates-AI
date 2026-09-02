@@ -336,17 +336,60 @@ def build_openrouter_claim_store_grant_v1(
 # ------------------------------------------------------------ credential -----
 
 
+#: Upper bound on a bearer credential, in bytes.  Generous against any real
+#: provider key and small enough that an oversized body cannot be smuggled
+#: through the credential field.
+MAX_BEARER_CREDENTIAL_BYTES_V1 = 512
+
+#: Surrounding whitespace is stripped before validation and before use. The
+#: explicit policy exists because a key pasted from a shell or a file commonly
+#: carries a trailing newline, and a newline inside an ``Authorization`` value
+#: is header injection rather than a typo.
+_CREDENTIAL_SURROUNDING_WHITESPACE_V1 = " \t\r\n\x0b\x0c"
+
+
+def validate_bearer_credential_v1(value: object) -> str:
+    """Return the exact credential to send, or raise.
+
+    Local checks only: nothing here proves the credential authenticates. That is
+    settled by the first canonical provider call and by nothing else, because a
+    separate probe request would be a second charge for an answer the real call
+    already gives.
+
+    The error text never contains the value, its length, or any fragment of it.
+    """
+    if not isinstance(value, str):
+        raise ContractValidationError("credential must be exact text")
+    candidate = value.strip(_CREDENTIAL_SURROUNDING_WHITESPACE_V1)
+    if not candidate:
+        raise ContractValidationError("credential is empty")
+    if len(candidate.encode("utf-8")) > MAX_BEARER_CREDENTIAL_BYTES_V1:
+        raise ContractValidationError("credential exceeds the permitted length")
+    # An Authorization value is a single header line. Any control character
+    # inside it is a header-injection attempt, and CR/LF is the whole class.
+    if any(character < " " or character == "\x7f" for character in candidate):
+        raise ContractValidationError("credential contains control characters")
+    return candidate
+
+
 def _read_bearer_credential_v1() -> Optional[str]:
-    """The single place this process reads the credential.
+    """The single place this process reads the *operator* credential.
 
     One read site keeps the secret surface auditable, and lets offline tests
     supply a fake without going anywhere near the real environment variable -
     which the acquisition tripwire rightly treats as a credential access.
+
+    A user-supplied BYOK credential never passes through here. It reaches the
+    boundary as an explicit argument instead, so no code path can confuse the
+    two and no run can silently fall back to the operator's key.
     """
     value = os.environ.get(OPENROUTER_CREDENTIAL_VARIABLE_V1)
     if not isinstance(value, str) or value.strip() == "":
         return None
-    return value
+    try:
+        return validate_bearer_credential_v1(value)
+    except ContractValidationError:
+        return None
 
 
 def openrouter_credential_is_present_v1() -> bool:
@@ -689,6 +732,36 @@ def dispatch_openrouter_one_live_inference_v1(
     credential = _read_bearer_credential_v1()
     if credential is None:
         raise ContractValidationError("credential absent; no request may be made")
+    return dispatch_openrouter_one_live_inference_with_credential_v1(
+        bearer_credential=credential,
+        body_bytes=body_bytes,
+        semantic_headers=semantic_headers,
+        bounded_timeout_seconds=bounded_timeout_seconds,
+        process_dispatch_limit=process_dispatch_limit,
+    )
+
+
+def dispatch_openrouter_one_live_inference_with_credential_v1(
+    *,
+    bearer_credential: str,
+    body_bytes: bytes,
+    semantic_headers: Mapping[str, str],
+    bounded_timeout_seconds: int,
+    process_dispatch_limit: int = 1,
+) -> OpenRouterRawHttpResultV1:
+    """One inference POST against an explicitly supplied credential.
+
+    Same transport, same latch, same evidence, same single ``Authorization``
+    injection site as the operator entry point above — the only difference is
+    where the credential came from. Duplicating the transport to serve a second
+    credential source would have produced two places that can send a charge and
+    two places to audit, which is exactly the wrong trade.
+
+    This function never reads the environment, so a run driven through it cannot
+    silently fall back to the operator's key: an absent or malformed credential
+    raises here and no socket is opened.
+    """
+    credential = validate_bearer_credential_v1(bearer_credential)
     if not isinstance(body_bytes, (bytes, bytearray)) or not body_bytes:
         raise ContractValidationError("inference dispatch requires exact body bytes")
     return _dispatch_once_v1(
@@ -708,6 +781,7 @@ __all__ = [
     "FROZEN_OPENROUTER_PERMITTED_TARGETS_V1",
     "FROZEN_OPENROUTER_CLAIM_STORE_THREATS_INCLUDED_V1",
     "OPENROUTER_CLAIM_STORE_TRUST_MODEL_V1",
+    "MAX_BEARER_CREDENTIAL_BYTES_V1",
     "OPENROUTER_CREDENTIAL_VARIABLE_V1",
     "OPENROUTER_DISPATCH_LATCH_V1",
     "OPENROUTER_LIVE_API_HOST_V1",
@@ -722,8 +796,10 @@ __all__ = [
     "OpenRouterRawHttpResultV1",
     "build_openrouter_claim_store_grant_v1",
     "dispatch_openrouter_one_live_inference_v1",
+    "dispatch_openrouter_one_live_inference_with_credential_v1",
     "fetch_openrouter_model_detail_v1",
     "fetch_openrouter_family_endpoints_v1",
     "fetch_openrouter_model_endpoints_v1",
     "openrouter_credential_is_present_v1",
+    "validate_bearer_credential_v1",
 ]

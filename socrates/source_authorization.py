@@ -60,6 +60,7 @@ NORMAL_LIVE_RUNTIME_SOURCE_PATHS_V1: tuple[str, ...] = (
     "backend/api/routes_council.py",
     "backend/dialogues/__init__.py",
     "backend/dialogues/agent.py",
+    "backend/dialogues/byok_live.py",
     "backend/dialogues/ced.py",
     "backend/dialogues/conversation.py",
     "backend/dialogues/council_live.py",
