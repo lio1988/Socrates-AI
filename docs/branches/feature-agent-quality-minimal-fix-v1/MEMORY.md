@@ -1,3 +1,16 @@
+# Stable branch memory — V0.8A additions
+
+- `SOCRATES_TRUST_PROXY` is consumed by exactly one place: `_TrustedProxyNormalization` in `backend/local_ced_app.py`, added last so Starlette makes it outermost. It rewrites `scope["scheme"]` and `scope["client"]`. Nothing downstream knows a proxy exists, which is why the transport policy, the HSTS rule and `_client_identity` needed no changes.
+- Only the **last** value of `X-Forwarded-For` and `X-Forwarded-Proto` is believed. The caller can prepend; the platform appends. Reading the leftmost would let any user mint unlimited rate-limit identities.
+- `SOCRATES_TRUSTED_PROXY_HOSTS` has two bases and they may never mix: literal peer IPs (checked against the socket peer) or the single token `platform-edge` (no peer check, justified by the platform giving the service port no public route). `*` is refused. A name that is not an IP is refused.
+- Proxy trust cannot be enabled in local development, and naming a proxy without trusting it is refused. Both are startup refusals.
+- `/ready` runs the real production verifier when BYOK or operator live is enabled, once per process. `not_ready` + `source_not_authorized` + 503. `/health` stays 200 — Render needs to tell "restart" apart from "do not route".
+- The readiness probe applies the same exact-type check on the receipt that the live managers do. A verifier returning anything but `VerifiedNormalLiveSourceAuthorizationV1` is not an authorized build.
+- Test doubles for the verifier must return a real `VerifiedNormalLiveSourceAuthorizationV1`. That strict type check is what stops a loose double from ever authorizing production, so do not loosen it to make a test easier.
+- The development checkout genuinely cannot pass authorization: it carries ignored bytecode caches. That is not a defect to fix, it is the reason `python -B` is mandatory in the Render start command, and one test points the real verifier at it deliberately.
+
+---
+
 # Stable branch memory — V0.9 additions
 
 - The deployment mode is decided at startup by `backend/hosted_config.py`, never per request. `SOCRATES_PUBLIC_ORIGIN` absent means local development, set means hosted preview, set-but-blank is refused. Do not reintroduce per-request mode guessing.

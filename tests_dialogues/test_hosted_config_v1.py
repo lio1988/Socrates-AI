@@ -19,13 +19,38 @@ from backend.hosted_config import (
     readiness_report,
 )
 from backend.local_ced_app import create_local_ced_app
+from socrates.source_authorization import VerifiedNormalLiveSourceAuthorizationV1
 
 
 HOSTED = {"SOCRATES_PUBLIC_ORIGIN": "https://socrates.example"}
 
 
-def _client(env: dict, *, host: str = "127.0.0.1") -> TestClient:
-    app = create_local_ced_app(hosted_config=load_hosted_config(env))
+def _authorized_build() -> VerifiedNormalLiveSourceAuthorizationV1:
+    """Stand in for a verified build.
+
+    Readiness now consults the real source verifier, which cannot pass from a
+    development checkout carrying bytecode caches. These tests are about the
+    deployment contract, so they declare the build authorized and leave the
+    authorization behaviour itself to the tests that exist for it.
+    """
+    return VerifiedNormalLiveSourceAuthorizationV1(
+        authorization_id="normallivesourceauthv1_" + "0" * 64,
+        source_set_digest="1" * 64,
+        authorized_implementation_commit_sha="2" * 40,
+        authorized_implementation_tree_sha="3" * 40,
+        runtime_identity="socrates-normal-live-runtime/v1",
+    )
+
+
+def _client(
+    env: dict,
+    *,
+    host: str = "127.0.0.1",
+    source_verifier=_authorized_build,
+) -> TestClient:
+    app = create_local_ced_app(
+        hosted_config=load_hosted_config(env), source_verifier=source_verifier
+    )
     return TestClient(app, client=(host, 50000))
 
 
@@ -71,10 +96,23 @@ def test_plain_http_hosted_is_allowed_only_when_byok_is_off() -> None:
 
 def test_trusted_proxy_requires_an_explicit_named_proxy() -> None:
     ok = load_hosted_config(
-        {"SOCRATES_TRUST_PROXY": "1", "SOCRATES_TRUSTED_PROXY_HOSTS": "10.0.0.7"}
+        {
+            **HOSTED,
+            "SOCRATES_TRUST_PROXY": "1",
+            "SOCRATES_TRUSTED_PROXY_HOSTS": "10.0.0.7",
+        }
     )
     assert ok.trust_proxy is True
     assert ok.trusted_proxy_hosts == ("10.0.0.7",)
+    assert ok.may_trust_forwarded_headers is True
+
+
+def test_trusted_proxy_also_requires_a_hosted_origin() -> None:
+    """A loopback server has nothing in front of it to trust."""
+    with pytest.raises(HostedConfigError):
+        load_hosted_config(
+            {"SOCRATES_TRUST_PROXY": "1", "SOCRATES_TRUSTED_PROXY_HOSTS": "10.0.0.7"}
+        )
 
 
 def test_readiness_reports_multiple_workers_rather_than_pretending() -> None:

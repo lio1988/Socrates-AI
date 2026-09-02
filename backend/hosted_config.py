@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from enum import Enum
+from ipaddress import ip_address
 from typing import Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -52,6 +53,14 @@ DEFAULT_MAX_ACTIVE_BYOK_RUNS_GLOBAL = 2
 DEFAULT_MAX_ACTIVE_BYOK_RUNS_PER_CLIENT = 1
 DEFAULT_BYOK_PREFLIGHTS_PER_10_MIN = 10
 DEFAULT_BYOK_EXECUTIONS_PER_HOUR = 4
+
+#: The one trust basis that is not a peer allowlist. It says: this platform
+#: routes every connection to the service through its own edge, and the service
+#: port has no public route of its own, so there is no peer address to enumerate
+#: and the topology is the guarantee. Render is such a platform. Naming it costs
+#: one explicit word in the environment and buys the difference between a
+#: reviewed decision and a wildcard nobody remembers agreeing to.
+PLATFORM_EDGE_TRUST_BASIS = "platform-edge"
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
@@ -108,6 +117,41 @@ def _normalized_origin(raw: str) -> str:
     return f"{split.scheme}://{split.netloc}"
 
 
+def _trusted_proxy_hosts(raw: str) -> Tuple[str, ...]:
+    """Parse the proxy trust basis: literal peer addresses, or the named basis.
+
+    A host allowlist is only protection where the platform gives the service a
+    stable peer address to compare against. Where it does not, writing one down
+    anyway produces a setting that reads like a control and enforces nothing,
+    so the two bases are kept separate and neither may masquerade as the other.
+    """
+    entries = tuple(part.strip() for part in raw.split(",") if part.strip())
+    if not entries:
+        return ()
+    if PLATFORM_EDGE_TRUST_BASIS in entries:
+        if len(entries) > 1:
+            # Either the peer address is the evidence or the topology is. A
+            # list holding both describes a boundary nobody has decided.
+            raise HostedConfigError(
+                "SOCRATES_TRUSTED_PROXY_HOSTS cannot mix "
+                f"{PLATFORM_EDGE_TRUST_BASIS} with peer addresses"
+            )
+        return (PLATFORM_EDGE_TRUST_BASIS,)
+    for entry in entries:
+        if "*" in entry:
+            raise HostedConfigError(
+                "SOCRATES_TRUSTED_PROXY_HOSTS must not contain a wildcard"
+            )
+        try:
+            ip_address(entry)
+        except ValueError:
+            raise HostedConfigError(
+                "SOCRATES_TRUSTED_PROXY_HOSTS must list IP addresses or "
+                f"exactly {PLATFORM_EDGE_TRUST_BASIS}"
+            ) from None
+    return entries
+
+
 @dataclass(frozen=True)
 class HostedConfig:
     """What this process is allowed to do, decided once."""
@@ -151,6 +195,32 @@ class HostedConfig:
         """The limiter lives in this process's memory and nowhere else."""
         return self.workers == 1
 
+    @property
+    def may_trust_forwarded_headers(self) -> bool:
+        """Whether forwarded scheme and client information may be believed.
+
+        Hosted mode alone is not enough: an operator has to say that something
+        in front of this process actually rewrites those headers. Local
+        development can never reach this, so a developer cannot spoof their way
+        into HTTPS semantics on loopback.
+        """
+        return self.is_hosted and self.trust_proxy and bool(self.trusted_proxy_hosts)
+
+    @property
+    def trusts_any_peer(self) -> bool:
+        """True when the trust basis is the platform edge rather than a peer.
+
+        The distinction matters at review time: this is the configuration that
+        believes a forwarded header from whoever opened the socket, and it is
+        only sound because the platform gives the service port no public route.
+        """
+        return self.trusted_proxy_hosts == (PLATFORM_EDGE_TRUST_BASIS,)
+
+    @property
+    def requires_source_authorization(self) -> bool:
+        """Both live modes run authorized source or they do not run at all."""
+        return self.enable_byok or self.enable_operator_normal_live
+
 
 def load_hosted_config(
     env: Optional[Mapping[str, str]] = None,
@@ -181,9 +251,7 @@ def load_hosted_config(
     )
     trust_proxy = _flag(source, "SOCRATES_TRUST_PROXY", False)
     raw_hosts = source.get("SOCRATES_TRUSTED_PROXY_HOSTS", "") or ""
-    trusted_hosts = tuple(
-        part.strip() for part in raw_hosts.split(",") if part.strip()
-    )
+    trusted_hosts = _trusted_proxy_hosts(raw_hosts)
     workers = _positive_int(source, "SOCRATES_WORKERS", 1)
     run_root = (source.get("SOCRATES_RUN_ROOT") or "").strip() or None
 
@@ -239,24 +307,50 @@ def _refuse_unsafe_combinations(config: HostedConfig) -> None:
         raise HostedConfigError(
             "SOCRATES_TRUST_PROXY requires SOCRATES_TRUSTED_PROXY_HOSTS"
         )
+    if config.trust_proxy and not config.is_hosted:
+        # There is no proxy in front of a loopback development server, so this
+        # combination can only mean a hosted setting leaked into a local shell.
+        # Believing it would let anything on the host claim HTTPS semantics.
+        raise HostedConfigError(
+            "SOCRATES_TRUST_PROXY requires a hosted SOCRATES_PUBLIC_ORIGIN"
+        )
+    if config.trusted_proxy_hosts and not config.trust_proxy:
+        # Naming a proxy and then not trusting it reads as protection that is
+        # switched off, which is worse than either state chosen deliberately.
+        raise HostedConfigError(
+            "SOCRATES_TRUSTED_PROXY_HOSTS requires SOCRATES_TRUST_PROXY"
+        )
     if config.max_active_byok_runs_per_client > config.max_active_byok_runs_global:
         raise HostedConfigError(
             "per-client active BYOK runs cannot exceed the global cap"
         )
 
 
-def readiness_report(config: HostedConfig) -> Tuple[str, Tuple[str, ...]]:
+def readiness_report(
+    config: HostedConfig,
+    *,
+    source_authorized: Optional[bool] = None,
+) -> Tuple[str, Tuple[str, ...]]:
     """A finite status plus finite reason codes. Never a path or an identifier.
 
     Multiple workers are reported rather than refused: the process is genuinely
     able to serve, it simply cannot honour the documented limits, and a reader
     deserves to be told which of those two things is wrong.
+
+    ``source_authorized`` is ``None`` when no enabled feature needed the check.
+    ``False`` is not a degradation but a refusal: an unauthorized build cannot
+    accept a BYOK preflight at all, so a probe that answered "ok" would send a
+    load balancer's traffic to a service that refuses every real request.
     """
     reasons: list[str] = []
+    if source_authorized is False:
+        reasons.append("source_not_authorized")
     if not config.single_process_limits_are_sufficient:
         reasons.append("in_memory_limits_need_one_worker")
     if config.is_hosted and not config.may_emit_hsts:
         reasons.append("hosted_origin_is_not_https")
+    if source_authorized is False:
+        return "not_ready", tuple(reasons)
     status = "ok" if not reasons else "degraded"
     return status, tuple(reasons)
 
@@ -266,6 +360,7 @@ __all__ = [
     "DEFAULT_BYOK_PREFLIGHTS_PER_10_MIN",
     "DEFAULT_MAX_ACTIVE_BYOK_RUNS_GLOBAL",
     "DEFAULT_MAX_ACTIVE_BYOK_RUNS_PER_CLIENT",
+    "PLATFORM_EDGE_TRUST_BASIS",
     "DeploymentMode",
     "HostedConfig",
     "HostedConfigError",

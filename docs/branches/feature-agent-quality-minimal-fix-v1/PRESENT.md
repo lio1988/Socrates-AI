@@ -1,3 +1,82 @@
+# Present state — V0.8A Render deployment enablement
+
+## Repository and authority boundary
+
+- Branch: `feature/agent-quality-minimal-fix-v1`, parent `388a86d` (the V0.7A artifact commit).
+- One source checkpoint. **No manifest rotation in this task.**
+- `CURRENT_PRODUCTION_SOURCE_AUTHORIZATION = FAIL_CLOSED`, intentionally, from the first edit onward.
+- The authorized path universe stays at **99**. Every change lands in an existing authorized runtime path; no new production path was needed.
+- No push, tag, PR, deployment, OpenRouter call or external network call.
+
+## What prompted this
+
+Two blockers were reproduced as behaviour against `388a86d`, not asserted:
+
+| | prior build | patched |
+| --- | --- | --- |
+| BYOK behind a configured trusted proxy | `400 A secure connection is required` | passes transport |
+| `/ready` on an unauthorized build | `200 {"status":"ok"}` | `503 not_ready / source_not_authorized` |
+
+The first meant `SOCRATES_TRUST_PROXY` was parsed, validated, and consumed by
+nothing, so the setting that looked like the fix for Render did nothing at all.
+The second meant a platform health check would report a healthy service whose
+every BYOK request refuses.
+
+## The trust boundary
+
+`_TrustedProxyNormalization` is added last, so Starlette makes it outermost. It
+rewrites `scope["scheme"]` and `scope["client"]` from the forwarded headers and
+nothing else. That is why the transport policy, the HSTS rule and
+`_client_identity` are unchanged: they were already correct about the request,
+and the request is now true.
+
+Only the **last** value of each forwarded header is believed. A caller may
+prepend its own; the platform appends what it observed. Reading the leftmost
+would let any user mint unlimited rate-limit identities, which is worse than
+the shared-identity problem it would appear to solve.
+
+`SOCRATES_TRUSTED_PROXY_HOSTS` now has two bases that may never mix: literal
+peer addresses, which are checked, or the single token `platform-edge`, which
+says the platform gives the service port no public route and the topology is
+the guarantee. Render is the second case, and writing an IP allowlist for it
+would have been a setting that reads like a control and enforces nothing.
+
+Four new startup refusals: mixing the two bases, a wildcard, a non-address
+host, proxy trust in local development, and a named proxy that is not trusted.
+
+## Readiness
+
+`/ready` runs the real production verifier once per process when BYOK or
+operator live is enabled, applying the same exact-type check on the receipt
+that the live managers make. `/health` stays 200 throughout, so a platform can
+still tell "restart this" from "do not route to this".
+
+## Validation
+
+- `test_render_proxy_trust_and_readiness_v1.py`: **28 passed**, including the trusted/untrusted/spoofed matrix, the identity-minting attempt, both HSTS conditions, and one test that points the *real* verifier at this development checkout, which genuinely cannot be authorized because it carries bytecode caches.
+- `test_hosted_config_v1.py`: **30 passed** after two tests were updated — one stub now returns a real receipt, and one test encoded the old behaviour of enabling proxy trust without a hosted origin, which is now refused.
+- Full `tests_dialogues` + `tests_ced`: the patched build's failure set is **identical to `388a86d`'s**, measured by diffing both lists rather than comparing totals.
+- `compileall` clean, `node --check` clean on both scripts, `git diff --check` clean.
+
+## Inherited, not caused here
+
+74 tests fail at `388a86d` and continue to fail unchanged. They are entirely in
+evidence, artifact and frozen-hash suites. One was examined rather than assumed:
+`test_every_frozen_repository_blob_is_still_byte_exact` expects
+`backend/dialogues/agent.py` at blob `65254fe5…`, and both the working tree and
+the committed blob at this HEAD are `52c314e7…` — identical to each other, so
+this is not a line-ending artifact of the checkout. The frozen canonical
+successor core lock and the repository have genuinely diverged. That predates
+this branch's V0.8A work, was out of scope here, and needs its own task.
+
+## Deferred
+
+Semantic verification parse outcomes; the exact upstream provider error
+category; a shared limiter for multi-instance scale; durable artifact storage;
+the real hosted BYOK run.
+
+---
+
 # Present state — V0.9 public product and hosting preparation
 
 ## Repository and authority boundary

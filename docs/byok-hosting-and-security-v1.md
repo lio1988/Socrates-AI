@@ -62,7 +62,7 @@ See `docs/deployment-render-v1.md` for the concrete variable values.
 | HTTPS mandatory for hosted BYOK | The request body carries a user credential. `_require_byok_transport_security` fails closed on non-loopback plain HTTP. |
 | Same-origin UI and API | One FastAPI process serves `web/` and `/api`. A split origin would force CORS with credentials or a second trust boundary. |
 | No CORS middleware, no wildcard origin | None is installed. A cross-origin `Origin` header is refused with 403. |
-| Trusted proxy disabled by default | `X-Forwarded-For` and `X-Forwarded-Proto` are not read. A limiter keyed on a caller-supplied header is not a limiter. Enabling proxy trust must be an explicit, bounded configuration naming the known proxy. |
+| Trusted proxy disabled by default | `X-Forwarded-For` and `X-Forwarded-Proto` are not read at all until `SOCRATES_TRUST_PROXY` is on *and* a trust basis is named, and never in local development. When they are read, only the last value of each is believed, because that is the one the caller could not choose. See `deployment-render-v1.md`. |
 | One application worker for the first preview | Rate limits are per-process, in-memory. A second worker gets its own counters. |
 | Source authorization before provider construction | `verify_production_normal_live_source_authorization_v1` runs at preflight and again immediately before runtime construction. |
 | No server-key fallback for BYOK | The BYOK dispatch path never reads `OPENROUTER_API_KEY`. It is a separate transport entry point that takes the credential as an argument. |

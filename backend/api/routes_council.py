@@ -122,11 +122,14 @@ def _require_enabled(request: Request, attribute: str) -> None:
 
 
 def _client_identity(request: Request) -> str:
-    """The direct connection, never a forwarded header.
+    """The connection as this process sees it, never a header read here.
 
-    ``X-Forwarded-For`` is caller-controlled unless a specific proxy is known
-    and configured, and a limiter keyed on a value the caller picks is not a
-    limiter. Trusted-proxy support is a deliberate later configuration step.
+    ``X-Forwarded-For`` is caller-controlled, and a limiter keyed on a value the
+    caller picks is not a limiter. Where a trusted platform proxy is configured,
+    the composition root has already replaced the peer with the address that
+    proxy observed, before any of this ran. So this function keeps reading the
+    connection and gets the right answer in both deployments; the decision about
+    whom to believe lives in exactly one place, and it is not this one.
     """
     client = request.client
     if client is None or not client.host:

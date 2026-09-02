@@ -1,3 +1,31 @@
+# Plan — V0.8A Render deployment enablement
+
+## Success criterion
+
+A hosted deployment behind a TLS-terminating platform serves BYOK, and a probe
+that says "ready" means the build can actually accept a preflight.
+
+## Completed
+
+1. [x] Verify branch, HEAD, clean status and current authorization from a cache-free worktree.
+2. [x] Reproduce both gaps as behaviour against the prior authorized build, not as assertions.
+3. [x] Make `SOCRATES_TRUST_PROXY` real: one normalization layer outside every other, rewriting scheme and peer from the forwarded headers.
+4. [x] Give `SOCRATES_TRUSTED_PROXY_HOSTS` two honest bases — checked peer addresses, or the named `platform-edge` topology basis — and refuse every mixture, wildcard, malformed value and local-mode enablement.
+5. [x] Believe only the last forwarded value, so a caller cannot mint rate-limit identities.
+6. [x] Make `/ready` consult the real production verifier when a live mode is enabled, and answer `not_ready` with `source_not_authorized`.
+7. [x] Keep `/health` at 200 while not ready, so "restart me" and "do not route to me" stay different answers.
+8. [x] Twenty-eight new tests; update the two existing readiness tests that were written before readiness knew about authorization.
+9. [x] Document the actual Render contract, including why `platform-edge` is not a wildcard.
+10. [x] Full regression compared against the prior authorized build rather than judged alone.
+
+## Not done, deliberately
+
+- No manifest rotation, no push, no deployment, no provider call.
+- No change to CED, prompts, scoring, schemas, corroboration, ratification or the returned-identity policy.
+- No shared limiter, no durable artifacts, no Docker.
+
+---
+
 # Plan — V0.9 public product and hosting preparation
 
 ## Success criterion

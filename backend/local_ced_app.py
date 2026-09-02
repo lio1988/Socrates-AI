@@ -12,13 +12,15 @@ origin removes the question.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from ipaddress import ip_address
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.routes_council import router as council_router
 from backend.dialogues.byok_live import ByokLiveCouncilManager, ByokRateLimiter
@@ -28,6 +30,10 @@ from backend.hosted_config import (
     HostedConfig,
     load_hosted_config,
     readiness_report,
+)
+from socrates.source_authorization import (
+    VerifiedNormalLiveSourceAuthorizationV1,
+    verify_production_normal_live_source_authorization_v1,
 )
 
 
@@ -78,6 +84,91 @@ _STATIC_CACHE_CONTROL = "no-cache"
 _SENSITIVE_PATH_PREFIXES = ("/api/",)
 
 
+def _forwarded_values(
+    headers: Sequence[Tuple[bytes, bytes]], name: bytes
+) -> List[str]:
+    """Every comma-separated entry of a forwarded header, in wire order."""
+    values: List[str] = []
+    for key, value in headers:
+        if key.lower() != name:
+            continue
+        for part in value.decode("latin-1").split(","):
+            candidate = part.strip()
+            if candidate:
+                values.append(candidate)
+    return values
+
+
+class _TrustedProxyNormalization:
+    """Make a trusted platform proxy's forwarded headers *be* the request.
+
+    This runs outside every other layer, so by the time the transport policy,
+    the HSTS decision and the rate-limit identity look at the request, they are
+    looking at the connection the public client actually made. That is why none
+    of those three had to learn anything about proxies.
+
+    The entry believed is the **last** one, not the first. A client may send its
+    own ``X-Forwarded-For`` and the proxy appends the address it observed, so
+    the rightmost value is the only one this process did not let the caller
+    choose. Reading the leftmost instead would hand every user an unlimited
+    supply of rate-limit identities.
+
+    When the configuration does not establish a trust boundary this class is
+    inert: the headers are left in place, unread, and the request keeps the
+    scheme and peer that the socket actually had.
+    """
+
+    def __init__(self, app: Any, *, config: HostedConfig) -> None:
+        self._app = app
+        self._config = config
+
+    def _peer_is_trusted(self, scope: Dict[str, Any]) -> bool:
+        if self._config.trusts_any_peer:
+            # The platform gives the service port no public route, so there is
+            # no peer address to compare and the topology is the evidence.
+            return True
+        client = scope.get("client")
+        if not client:
+            return False
+        return str(client[0]) in self._config.trusted_proxy_hosts
+
+    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or not self._config.may_trust_forwarded_headers:
+            await self._app(scope, receive, send)
+            return
+        if not self._peer_is_trusted(scope):
+            await self._app(scope, receive, send)
+            return
+
+        headers = scope.get("headers") or ()
+        replacements: Dict[str, Any] = {}
+
+        protocols = _forwarded_values(headers, b"x-forwarded-proto")
+        if protocols:
+            scheme = protocols[-1].lower()
+            if scheme in {"http", "https"}:
+                replacements["scheme"] = scheme
+
+        forwarded_for = _forwarded_values(headers, b"x-forwarded-for")
+        if forwarded_for:
+            candidate = forwarded_for[-1]
+            try:
+                ip_address(candidate)
+            except ValueError:
+                # A malformed address is dropped rather than guessed at. The
+                # peer stays as it was, which over-counts one platform address
+                # instead of inventing a client that may not exist.
+                pass
+            else:
+                existing = scope.get("client")
+                port = existing[1] if existing else 0
+                replacements["client"] = (candidate, port)
+
+        if replacements:
+            scope = {**scope, **replacements}
+        await self._app(scope, receive, send)
+
+
 def _byok_manager_from_config(config: HostedConfig) -> ByokLiveCouncilManager:
     """One place where the deployment contract becomes runtime limits."""
     limiter = ByokRateLimiter(
@@ -99,11 +190,13 @@ def create_local_ced_app(
     normal_live_manager: Optional[NormalLiveCouncilManager] = None,
     byok_live_manager: Optional[ByokLiveCouncilManager] = None,
     hosted_config: Optional[HostedConfig] = None,
+    source_verifier: Optional[Callable[[], Any]] = None,
     web_root: Optional[Path] = None,
 ) -> FastAPI:
     # Loading the contract can refuse outright. That is the intent: an unsafe
     # deployment should fail at startup, not on the first credential.
     config = hosted_config or load_hosted_config()
+    verifier = source_verifier or verify_production_normal_live_source_authorization_v1
     local_manager = manager or LocalCouncilManager()
     normal_manager = normal_live_manager or NormalLiveCouncilManager()
     byok_manager = byok_live_manager or _byok_manager_from_config(config)
@@ -205,6 +298,31 @@ def create_local_ced_app(
         """Liveness only. It answers "is this process running" and nothing else."""
         return JSONResponse({"status": "ok"})
 
+    # The verifier shells out to Git across the whole authorized path universe,
+    # and a platform health check runs every few seconds, so the answer is
+    # computed once per process. That is not a staleness risk: this process
+    # already holds the imported source, and the execute path re-verifies
+    # authorization immediately before it constructs a runtime regardless.
+    authorization_probe: Dict[str, bool] = {}
+
+    def _source_is_authorized() -> bool:
+        if "authorized" not in authorization_probe:
+            try:
+                receipt = verifier()
+            except Exception:
+                # Any failure at all means not authorized. The reason is
+                # deliberately discarded here rather than narrowed: a readiness
+                # probe is unauthenticated, and a verifier exception can name a
+                # path, a digest or a Git object.
+                authorization_probe["authorized"] = False
+            else:
+                # The same exact-type check the live managers make. A verifier
+                # that returns something else has not verified anything.
+                authorization_probe["authorized"] = (
+                    type(receipt) is VerifiedNormalLiveSourceAuthorizationV1
+                )
+        return authorization_probe["authorized"]
+
     @app.get("/ready", include_in_schema=False)
     async def _ready() -> JSONResponse:
         """Readiness from local state, with finite reason codes and no detail.
@@ -212,12 +330,24 @@ def create_local_ced_app(
         Deliberately silent about source hashes, Git identities, authorization
         ids, filesystem paths and provider accounts. A readiness probe is an
         unauthenticated endpoint, so everything it says is public.
+
+        When a live mode is enabled this also answers the only question a load
+        balancer actually cares about: can this build accept a BYOK preflight?
+        An unauthorized build cannot, and used to say "ok" anyway.
         """
-        status, reasons = readiness_report(config)
+        authorized: Optional[bool] = None
+        if config.requires_source_authorization:
+            authorized = await run_in_threadpool(_source_is_authorized)
+        status, reasons = readiness_report(config, source_authorized=authorized)
         body = {"status": status, "mode": config.mode.value}
         if reasons:
             body["reasons"] = list(reasons)
         return JSONResponse(body, status_code=200 if status == "ok" else 503)
+
+    # Added last so it wraps everything above: Starlette applies the most
+    # recently added middleware outermost. The security layer, the routes and
+    # the rate limiter must all see an already-normalized request.
+    app.add_middleware(_TrustedProxyNormalization, config=config)
 
     app.state.hosted_config = config
     app.state.local_council_manager = local_manager

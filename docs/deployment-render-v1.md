@@ -52,7 +52,8 @@ absence is what makes an accidental operator-funded charge impossible.
 | `SOCRATES_PUBLIC_ORIGIN` | `https://<your-domain>` | Declares hosted mode. Absent means local development. Blank is refused. |
 | `SOCRATES_ENABLE_BYOK` | `1` | The public funding model. |
 | `SOCRATES_ENABLE_OPERATOR_NORMAL_LIVE` | `0` | Operator-funded live is not a public control. |
-| `SOCRATES_TRUST_PROXY` | `0` | Forwarded headers are caller-controlled until a specific proxy is named. |
+| `SOCRATES_TRUST_PROXY` | `1` | Render terminates TLS and forwards plain HTTP. Without this the service refuses every BYOK request as insecure. |
+| `SOCRATES_TRUSTED_PROXY_HOSTS` | `platform-edge` | Names the trust basis. See below — this is not a wildcard. |
 | `SOCRATES_WORKERS` | `1` | Readiness degrades above one: the limiter is in-process. |
 | `SOCRATES_RUN_ROOT` | leave unset unless a disk is attached | See persistence below. |
 | `SOCRATES_MAX_ACTIVE_BYOK_RUNS_GLOBAL` | `2` | Preview capacity. |
@@ -64,6 +65,52 @@ The process refuses to start on an unsafe combination — hosted BYOK without an
 `https://` origin, a wildcard origin, an origin carrying a path, proxy trust
 with no named proxy, a per-client cap above the global cap. That refusal is the
 point: a misconfigured preview should never reach a user's credential.
+
+## The proxy trust boundary
+
+Render terminates public TLS at its edge and forwards plain HTTP to the
+service. So the connection this process sees is `http`, from an internal
+address, no matter what the user's browser did. Every transport rule in the
+application is written against the request, and the request has to be told the
+truth before those rules run.
+
+`SOCRATES_TRUST_PROXY=1` turns on one small layer that sits outside everything
+else and rewrites two things from the forwarded headers: the scheme, and the
+peer address. Nothing downstream knows a proxy exists.
+
+Two rules keep that from becoming a hole:
+
+- **It cannot be enabled in local development.** Proxy trust plus no public
+  origin is refused at startup, so nothing on a developer's machine can claim
+  HTTPS semantics by sending a header.
+- **Only the last value of a forwarded header is believed.** A caller can send
+  its own `X-Forwarded-For`; the platform *appends* what it actually observed.
+  The rightmost entry is the only one the caller did not choose. Reading the
+  leftmost would hand every user an endless supply of rate-limit identities.
+
+### Why `platform-edge` and not an IP allowlist
+
+`SOCRATES_TRUSTED_PROXY_HOSTS` normally holds the peer addresses that are
+allowed to speak for a client, and those addresses are checked. Render does not
+give a service a stable set of internal proxy addresses to enumerate, so an
+allowlist written for it would be a setting that reads like a control and
+enforces nothing.
+
+The honest basis on Render is the topology: the service port has no public
+route of its own, and the platform edge is the only thing that can open a
+connection to it. `platform-edge` says exactly that, in one word, on purpose —
+so that a reviewer sees a decision rather than a wildcard nobody remembers
+agreeing to. It may not be combined with peer addresses, and `*` is refused.
+
+If you deploy somewhere that *does* publish stable proxy addresses, list them
+instead and the peer is checked against them.
+
+### What this means for rate limiting
+
+Behind the edge, every request would otherwise arrive from the same internal
+address, and a per-client limit keyed on that would throttle the whole world as
+one client. With the boundary configured, the limiter keys on the address the
+platform observed, so one user exhausting a quota does not affect anyone else.
 
 ## Persistence
 
@@ -81,9 +128,20 @@ run fails; it must never resume under a different key.
 
 ## Health and readiness
 
-- `GET /health` → `{"status":"ok"}`. Liveness only.
+- `GET /health` → `{"status":"ok"}`. Liveness only. It stays `200` even when
+  the service cannot serve, which is what lets a platform tell "restart this"
+  apart from "do not send it traffic".
 - `GET /ready` → `{"status":"ok","mode":"hosted_preview"}`, or `503` with
-  finite reason codes such as `in_memory_limits_need_one_worker`.
+  finite reason codes: `source_not_authorized`,
+  `in_memory_limits_need_one_worker`, `hosted_origin_is_not_https`.
+
+When a live mode is enabled, readiness runs the real production source verifier
+and answers `not_ready` if it fails. That is the only question a load balancer
+actually cares about — can this build accept a BYOK preflight — and an
+unauthorized build cannot. The check runs once per process, because the source
+a running process has already imported does not change under it, and the
+execute path re-verifies authorization immediately before it builds a runtime
+regardless.
 
 Neither reveals source hashes, Git identities, authorization ids, filesystem
 paths, provider accounts or key material. Both are unauthenticated, so
@@ -94,7 +152,9 @@ everything they say is public by construction.
 - [ ] Repository is private.
 - [ ] `OPENROUTER_API_KEY` is **not** set on the service.
 - [ ] `SOCRATES_PUBLIC_ORIGIN` matches the real domain exactly, `https://`.
-- [ ] `/ready` returns `ok`, not `degraded`.
+- [ ] `/ready` returns `ok` — not `degraded`, and not `not_ready`.
+- [ ] `SOCRATES_TRUST_PROXY=1` and `SOCRATES_TRUSTED_PROXY_HOSTS=platform-edge`,
+      or BYOK will refuse every request as insecure.
 - [ ] HTTPS is live and the certificate resolves for the custom domain.
 - [ ] A BYOK run has been exercised against the deployed origin with a
       dedicated key carrying a small account spending limit.
