@@ -49,7 +49,14 @@ Every commit descending from a previous authorization carries the manifest, so t
 
 Two further corrections to the V0.4 record: `_source_set_digest` hashes `authorized_implementation_commit_sha` and `authorized_implementation_tree_sha` along with the file list, and `authorization_id` hashes the whole payload, so rebinding to a different commit changes the digest and the id as well as those two fields. And `verify_production_...` additionally requires an empty `git status --porcelain=v2 --untracked-files=all`.
 
-The path list is unchanged — no source file was added or removed — so the successor manifest covers the same 97 paths, and `socrates/runtime.py` is the only one whose sha256 moved, from `d6f7181b…4615dc` to `bf2c1d97…eefc9f`.
+The path list is unchanged — no source file was added or removed — so the successor manifest covers the same 97 paths. Diffed entry by entry against the manifest at commit E, `socrates/runtime.py` is the only path whose hash moved. The other 96 are byte-identical.
+
+Its hash exists in two registers, and an earlier draft of this file mixed them. `.gitattributes` pins `socrates/runtime.py text eol=crlf`, so the git blob is LF and the checkout is CRLF:
+
+- blob sha256, which is what the manifest carries via `_commit_blob`: `d6f7181b…4615dc` → `7d96c6bd…83ad310`.
+- checkout sha256, which is what `_materialize_checkout_bytes` reconstructs and compares against the working tree: `bf2c1d97…eefc9f`.
+
+Both are correct; only the first belongs in the manifest. Any future review that hashes the working-tree file directly and compares it to a manifest entry will see a false mismatch on every `eol=crlf` path.
 
 ## Next safe step
 
