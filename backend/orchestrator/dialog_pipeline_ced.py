@@ -246,7 +246,7 @@ async def _call_model(
             s.provider_runtime_statuses = {}
         s.provider_runtime_statuses[model_id] = _provider_status(
             s, model_id, real_api_call=False, fallback_used=True,
-            error_type=type(exc).__name__, error_message=str(exc)
+            error_type=type(exc).__name__, error_message="Provider request failed."
         )
         print(f"Model call failed for {model_id}: {type(exc).__name__}")
         return None

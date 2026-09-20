@@ -20,7 +20,7 @@ from backend.orchestrator.session import session_manager
 
 
 def _client():
-    return TestClient(create_app())
+    return TestClient(create_app(), base_url="http://localhost", client=("127.0.0.1", 50000))
 
 
 def _session(topic="Is knowledge a process or a final answer?"):

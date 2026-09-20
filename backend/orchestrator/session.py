@@ -179,6 +179,13 @@ class DialogSessionManager:
         self._sessions: Dict[str, EnhancedDialogSession] = {}
 
     def create(self, session_id: str, config: DialogConfig, api_keys: dict) -> EnhancedDialogSession:
+        if session_id in self._sessions:
+            raise HTTPException(409, "Session already exists.")
+        if len(self._sessions) >= 100:
+            raise HTTPException(429, "Session storage is full. Delete completed sessions first.")
+        active = sum(session.status not in {"completed", "stopped", "error"} for session in self._sessions.values())
+        if active >= 2:
+            raise HTTPException(429, "At most two dialogs may run at once.")
         session = EnhancedDialogSession(session_id, config, api_keys)
         session.manager = DialogManager(config, api_keys)
         self._sessions[session_id] = session
@@ -194,6 +201,9 @@ class DialogSessionManager:
         return session
 
     def delete(self, session_id: str) -> bool:
+        session = self.get(session_id)
+        if session is not None and session.status not in {"completed", "stopped", "error"}:
+            raise HTTPException(409, "Stop the dialog and wait for completion before deleting it.")
         return self._sessions.pop(session_id, None) is not None
 
     def list_all(self) -> List[dict]:

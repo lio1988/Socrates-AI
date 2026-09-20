@@ -1,0 +1,19 @@
+title = "Socrates secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exact synthetic credentials used to test redaction; never allowlist entire test files"
+regexTarget = "secret"
+regexes = [
+  '''^(?:api_key=)?(?:abcdef123456|abcdefgh12345678|abcdefghijklmnop|sk-abc123456789)$''',
+]
+
+[[allowlists]]
+description = "Non-secret protocol identifiers and SHA-256 evidence bindings"
+regexTarget = "match"
+regexes = [
+  '''evaluator_key_sha256"\s*:\s*"[0-9a-f]{64}"''',
+  '''(?i)prompt_token_estimator_id(?:_v1)?"?\s*[:=]\s*"wire_utf8_byte_upper_bound_v1"''',
+]
