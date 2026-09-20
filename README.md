@@ -481,6 +481,9 @@ and the sole authority of `CEDOrchestrator`.
 
 ## Security, privacy, and evidence boundaries
 
+See [SECURITY.md](SECURITY.md) before exposing the legacy HTTP application or
+configuring remote access. Public source does not require a public backend.
+
 - No API keys or secrets in source, HTML, frontend code, prompts, receipts, or
   committed files.
 - No hidden chain-of-thought retained as an authority-bearing artifact.

@@ -18,8 +18,8 @@ except ImportError:  # python-dotenv optional; env vars may be set externally
     pass
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
+from backend.security import AccessBoundary, access_settings
 
 
 class UTF8JSONResponse(JSONResponse):
@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    security_settings = access_settings()
     app = FastAPI(
         title="Socratic Dialog API",
         description=(
@@ -62,13 +63,7 @@ def create_app() -> FastAPI:
         default_response_class=UTF8JSONResponse,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    app.add_middleware(AccessBoundary, **security_settings)
 
     app.include_router(dialog_router)
     app.include_router(claims_router)

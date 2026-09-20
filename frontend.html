@@ -126,7 +126,7 @@
 </div>
 
 <script>
-const API = "http://localhost:8000";
+const API = window.location.origin;
 let sessionId = null, pollTimer = null, renderedCount = 0;
 
 async function startDialog() {
@@ -154,7 +154,7 @@ async function startDialog() {
     poll();
     pollTimer = setInterval(poll, 2500);
   } catch (e) {
-    document.getElementById('log').innerHTML = `<div class="empty">❌ ${e.message}. Is the backend running at ${API}?</div>`;
+    document.getElementById('log').textContent = `❌ ${e.message}. Is the backend running at ${API}?`;
   } finally {
     document.getElementById('startBtn').disabled = false;
   }
@@ -193,10 +193,10 @@ function render(s) {
 
   const scoresEl = document.getElementById('scores');
   scoresEl.innerHTML = Object.entries(s.scores || {})
-    .map(([m, v]) => `<span>${m}: <b>${v}</b></span>`).join('');
+    .map(([m, v]) => `<span>${escapeHtml(m)}: <b>${escapeHtml(v)}</b></span>`).join('');
 
   const violEl = document.getElementById('violations');
-  violEl.innerHTML = (s.constitution_violations || []).length
+  violEl.textContent = (s.constitution_violations || []).length
     ? '⚠️ ' + s.constitution_violations.join(' · ')
     : '';
 
@@ -310,7 +310,7 @@ function downloadJson(filename, payload) {
 
 function metric(label, value) {
   const safe = value === undefined || value === null ? '—' : value;
-  return `<div class="metric"><div class="k">${label}</div><div class="v">${safe}</div></div>`;
+  return `<div class="metric"><div class="k">${escapeHtml(label)}</div><div class="v">${escapeHtml(safe)}</div></div>`;
 }
 
 function renderAuditChecks(checks) {
@@ -318,7 +318,7 @@ function renderAuditChecks(checks) {
   if (!entries.length) return '<div class="empty">No audit checks available.</div>';
   return `<ul class="timeline-list">${
     entries.map(([k, v]) =>
-      `<li><span class="${v ? 'check-ok' : 'check-bad'}">${v ? '✓' : '✗'}</span> ${k}</li>`
+      `<li><span class="${v ? 'check-ok' : 'check-bad'}">${v ? '✓' : '✗'}</span> ${escapeHtml(k)}</li>`
     ).join('')
   }</ul>`;
 }
@@ -330,7 +330,7 @@ function renderClaimTimeline(rows) {
       const state = row.state || 'unknown';
       const confidence = row.confidence === undefined ? '—' : row.confidence;
       const text = (row.text || '').slice(0, 180);
-      return `<li><b>${state}</b> · confidence ${confidence}<br>${escapeHtml(text)}</li>`;
+      return `<li><b>${escapeHtml(state)}</b> · confidence ${escapeHtml(confidence)}<br>${escapeHtml(text)}</li>`;
     }).join('')
   }</ol>`;
 }
@@ -392,7 +392,7 @@ function renderReplaySummary(replay) {
 }
 
 function escapeHtml(value) {
-  return String(value || '')
+  return String(value ?? '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -410,8 +410,8 @@ function renderTurn(t) {
   div.className = cls;
   div.innerHTML = `
     <div class="turn-head">
-      <span><span class="model">${t.model_id}</span> ${tag}</span>
-      <span>round ${t.round}</span>
+      <span><span class="model">${escapeHtml(t.model_id)}</span> ${tag}</span>
+      <span>round ${escapeHtml(t.round)}</span>
     </div>
     <div class="content"></div>`;
   div.querySelector('.content').textContent = t.content; // textContent: safe + correct UTF-8 rendering

@@ -1,6 +1,14 @@
 # Environment
 .env
 .env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.*
+secrets.*
 .venv/
 venv/
 __pycache__/
@@ -19,6 +27,7 @@ __pycache__/
 # Output
 *.json
 *.md
+!/SECURITY.md
 dialog_*.txt
 *.log
 

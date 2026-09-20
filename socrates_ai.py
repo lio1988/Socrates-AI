@@ -238,7 +238,7 @@ class DialogManager:
     async def _call_claude(self, prompt: str) -> Optional[str]:
         """Call Claude API"""
         try:
-            client = anthropic.Anthropic(api_key=self.api_keys["claude"])
+            client = anthropic.Anthropic(api_key=self.api_keys["claude"], timeout=60.0, max_retries=0)
             message = client.messages.create(
                 model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
                 max_tokens=1024,
@@ -246,13 +246,15 @@ class DialogManager:
             )
             return message.content[0].text
         except Exception as e:
-            raise Exception(f"Claude API error: {str(e)}")
+            raise RuntimeError(f"Claude API request failed ({type(e).__name__}).") from None
 
     async def _call_grok(self, prompt: str) -> Optional[str]:
         """Call Grok (xAI) API"""
         try:
             response = requests.post(
                 "https://api.x.ai/v1/chat/completions",
+                timeout=(10, 60),
+                allow_redirects=False,
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_keys['grok']}",
@@ -266,27 +268,30 @@ class DialogManager:
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
         except Exception as e:
-            raise Exception(f"Grok API error: {str(e)}")
+            raise RuntimeError(f"Grok API request failed ({type(e).__name__}).") from None
 
     async def _call_gemini(self, prompt: str) -> Optional[str]:
         """Call Google Gemini API"""
         try:
             response = requests.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')}:generateContent",
-                headers={"Content-Type": "application/json"},
-                params={"key": self.api_keys["gemini"]},
+                headers={"Content-Type": "application/json", "x-goog-api-key": self.api_keys["gemini"]},
+                timeout=(10, 60),
+                allow_redirects=False,
                 json={"contents": [{"parts": [{"text": prompt}]}]},
             )
             response.raise_for_status()
             return response.json()["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:
-            raise Exception(f"Gemini API error: {str(e)}")
+            raise RuntimeError(f"Gemini API request failed ({type(e).__name__}).") from None
 
     async def _call_openai(self, prompt: str) -> Optional[str]:
         """Call OpenAI (ChatGPT) API"""
         try:
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
+                timeout=(10, 60),
+                allow_redirects=False,
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_keys['chatgpt']}",
@@ -300,7 +305,7 @@ class DialogManager:
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
         except Exception as e:
-            raise Exception(f"OpenAI API error: {str(e)}")
+            raise RuntimeError(f"OpenAI API request failed ({type(e).__name__}).") from None
 
     def _build_socratic_prompt(self, model_id: str, round_num: int) -> str:
         """Build prompt for Socratic questioning"""

@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from backend.app import create_app
 
-client = TestClient(create_app())
+client = TestClient(create_app(), base_url="http://localhost", client=("127.0.0.1", 50000))
 
 
 @pytest.fixture(scope="module")
